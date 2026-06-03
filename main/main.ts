@@ -14,6 +14,13 @@ import {
   type Task,
 } from './helpers/store'
 import { getGitInfo, provisionWorktree } from './helpers/git'
+import {
+  killAllSessions,
+  killSession,
+  resizeSession,
+  startSession,
+  writeSession,
+} from './helpers/pty'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -91,6 +98,34 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     removeTask(taskId)
     return getState()
   })
+
+  // --- Interactive terminal / PTY (Phase 3) ---
+
+  ipcMain.handle(
+    'pty:start',
+    (
+      event,
+      payload: { taskId: string; cwd: string; command?: string }
+    ) => startSession(payload.taskId, payload.cwd, event.sender, payload.command)
+  )
+
+  ipcMain.on(
+    'pty:input',
+    (_event, payload: { taskId: string; data: string }) => {
+      writeSession(payload.taskId, payload.data)
+    }
+  )
+
+  ipcMain.on(
+    'pty:resize',
+    (_event, payload: { taskId: string; cols: number; rows: number }) => {
+      resizeSession(payload.taskId, payload.cols, payload.rows)
+    }
+  )
+
+  ipcMain.on('pty:kill', (_event, taskId: string) => {
+    killSession(taskId)
+  })
 }
 
 ;(async () => {
@@ -116,7 +151,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 })()
 
 app.on('window-all-closed', () => {
+  killAllSessions()
   app.quit()
+})
+
+app.on('before-quit', () => {
+  killAllSessions()
 })
 
 ipcMain.on('message', async (event, arg) => {

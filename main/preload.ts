@@ -39,6 +39,41 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:createTask', payload),
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),
+
+  // Interactive terminal bridge (Phase 3).
+  term: {
+    start: (
+      taskId: string,
+      cwd: string,
+      command?: string
+    ): Promise<{ pid: number }> =>
+      ipcRenderer.invoke('pty:start', { taskId, cwd, command }),
+    input: (taskId: string, data: string): void =>
+      ipcRenderer.send('pty:input', { taskId, data }),
+    resize: (taskId: string, cols: number, rows: number): void =>
+      ipcRenderer.send('pty:resize', { taskId, cols, rows }),
+    kill: (taskId: string): void => ipcRenderer.send('pty:kill', taskId),
+    onData: (
+      callback: (payload: { taskId: string; data: string }) => void
+    ): (() => void) => {
+      const sub = (
+        _event: IpcRendererEvent,
+        payload: { taskId: string; data: string }
+      ) => callback(payload)
+      ipcRenderer.on('pty:data', sub)
+      return () => ipcRenderer.removeListener('pty:data', sub)
+    },
+    onExit: (
+      callback: (payload: { taskId: string; exitCode: number }) => void
+    ): (() => void) => {
+      const sub = (
+        _event: IpcRendererEvent,
+        payload: { taskId: string; exitCode: number }
+      ) => callback(payload)
+      ipcRenderer.on('pty:exit', sub)
+      return () => ipcRenderer.removeListener('pty:exit', sub)
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('vibeflow', vibeflow)

@@ -1,12 +1,21 @@
+import { useState } from 'react'
 import {
   DragDropContext,
   Droppable,
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { FolderOpen, GitBranch, Plus, Terminal } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  GitBranch,
+  Plus,
+  Terminal as TerminalIcon,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { TaskTerminal } from '@/components/task-terminal'
 import { cn } from '@/lib/utils'
 import type { BoardState, ColumnId } from '@/lib/types'
 
@@ -31,6 +40,17 @@ export function KanbanBoard({
   onSelectProject,
   onNewTask,
 }: KanbanBoardProps) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (taskId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskId)) next.delete(taskId)
+      else next.add(taskId)
+      return next
+    })
+  }
+
   const onDragEnd = (result: DropResult) => {
     const { source, destination } = result
     if (!destination) return
@@ -106,41 +126,69 @@ export function KanbanBoard({
                   </div>
 
                   <div className="flex min-h-24 flex-col gap-2">
-                    {board[column.id].map((task, index) => (
-                      <Draggable
-                        draggableId={task.id}
-                        index={index}
-                        key={task.id}
-                      >
-                        {(dragProvided, dragSnapshot) => (
-                          <div
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            {...dragProvided.dragHandleProps}
-                            className={cn(
-                              'rounded-md border bg-background p-3 shadow-xs',
-                              dragSnapshot.isDragging && 'ring-2 ring-ring'
-                            )}
-                          >
-                            <p className="mb-2 text-sm font-medium">
-                              {task.title}
-                            </p>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span className="inline-flex items-center gap-1">
-                                <GitBranch className="size-3" />
-                                {task.branch}
-                              </span>
-                              {column.id === 'in_progress' && (
-                                <span className="inline-flex items-center gap-1">
-                                  <Terminal className="size-3" />
-                                  PTY
-                                </span>
+                    {board[column.id].map((task, index) => {
+                      const isExpanded = expanded.has(task.id)
+                      const cwd = task.worktreePath ?? projectPath
+                      return (
+                        <Draggable
+                          draggableId={task.id}
+                          index={index}
+                          key={task.id}
+                        >
+                          {(dragProvided, dragSnapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              className={cn(
+                                'rounded-md border bg-background p-3 shadow-xs',
+                                dragSnapshot.isDragging && 'ring-2 ring-ring'
+                              )}
+                            >
+                              <div className="flex items-start gap-2">
+                                {/* Drag handle limited to this region so the
+                                    terminal below stays interactive. */}
+                                <div
+                                  {...dragProvided.dragHandleProps}
+                                  className="min-w-0 flex-1 cursor-grab active:cursor-grabbing"
+                                >
+                                  <p className="mb-2 text-sm font-medium">
+                                    {task.title}
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                    <span className="inline-flex items-center gap-1">
+                                      <GitBranch className="size-3" />
+                                      {task.branch}
+                                    </span>
+                                    {task.pushed && (
+                                      <span className="text-[10px] uppercase tracking-wide text-emerald-500">
+                                        pushed
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpanded(task.id)}
+                                  title={isExpanded ? '收合終端' : '展開終端'}
+                                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                >
+                                  <TerminalIcon className="size-3.5" />
+                                  {isExpanded ? (
+                                    <ChevronDown className="size-3" />
+                                  ) : (
+                                    <ChevronRight className="size-3" />
+                                  )}
+                                </button>
+                              </div>
+
+                              {isExpanded && (
+                                <TaskTerminal taskId={task.id} cwd={cwd} />
                               )}
                             </div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
+                          )}
+                        </Draggable>
+                      )
+                    })}
                     {provided.placeholder}
                   </div>
                 </div>
