@@ -77,6 +77,13 @@ web_modules/
 # Next.js build output
 .next
 out
+next-env.d.ts
+
+# Nextron / Electron build output
+/app
+
+# VibeFlow runtime worktrees (per-project, but ignore here defensively)
+.vibeflow/
 
 # Nuxt.js build / generate output
 .nuxt
