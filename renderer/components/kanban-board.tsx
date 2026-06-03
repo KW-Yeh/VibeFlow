@@ -60,8 +60,15 @@ export function KanbanBoard({
   onToggleAutoMode,
 }: KanbanBoardProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Tasks whose terminal has ever been opened. Once mounted, the `TaskTerminal`
+  // stays mounted (just hidden when collapsed) so its PTY + scrollback survive
+  // toggling and the launch command runs only once.
+  const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed launch command; bumping `nonce` (re-)fires it in the terminal.
   const [launch, setLaunch] = useState<Record<string, LaunchEntry>>({})
+
+  const markMounted = (taskId: string) =>
+    setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
   const toggleExpanded = (taskId: string) => {
     setExpanded((prev) => {
@@ -70,11 +77,13 @@ export function KanbanBoard({
       else next.add(taskId)
       return next
     })
+    markMounted(taskId)
   }
 
   // Expand the card and arm (or re-arm) its Claude launch command.
   const armLaunch = (task: Task) => {
     setExpanded((prev) => new Set(prev).add(task.id))
+    markMounted(task.id)
     setLaunch((prev) => ({
       ...prev,
       [task.id]: {
@@ -318,8 +327,8 @@ export function KanbanBoard({
                                 </div>
                               </div>
 
-                              {isExpanded && (
-                                <>
+                              {mounted.has(task.id) && (
+                                <div className={cn(!isExpanded && 'hidden')}>
                                   {task.description && (
                                     <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
                                       {task.description}
@@ -332,7 +341,7 @@ export function KanbanBoard({
                                     launchNonce={launch[task.id]?.nonce ?? 0}
                                     onLaunchRequest={() => runTask(task)}
                                   />
-                                </>
+                                </div>
                               )}
                             </div>
                           )}
