@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type { BoardState, Task, VibeFlowState } from './helpers/store'
-import type { GitInfo } from './helpers/git'
+import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -39,6 +39,17 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:createTask', payload),
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),
+
+  // Review & finalize (Phase 4).
+  getDiff: (taskId: string): Promise<DiffFile[]> =>
+    ipcRenderer.invoke('git:getDiff', taskId),
+  approve: (
+    taskId: string,
+    message: string
+  ): Promise<{ result: FinalizeResult; state: VibeFlowState }> =>
+    ipcRenderer.invoke('git:approve', { taskId, message }),
+  cleanupTask: (taskId: string): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('vibeflow:cleanupTask', taskId),
 
   // Interactive terminal bridge (Phase 3).
   term: {

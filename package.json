@@ -21,6 +21,7 @@
     "electron-store": "^11.0.2",
     "lucide-react": "^1.17.0",
     "node-pty": "^1.1.0",
+    "react-diff-viewer-continued": "^4.2.2",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

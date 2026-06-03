@@ -10,6 +10,7 @@ import {
   ChevronRight,
   FolderOpen,
   GitBranch,
+  GitCompare,
   Plus,
   Terminal as TerminalIcon,
 } from 'lucide-react'
@@ -31,6 +32,8 @@ interface KanbanBoardProps {
   projectPath: string | null
   onSelectProject: () => void
   onNewTask: () => void
+  onReview: (taskId: string) => void
+  onTaskDone: (taskId: string) => void
 }
 
 export function KanbanBoard({
@@ -39,6 +42,8 @@ export function KanbanBoard({
   projectPath,
   onSelectProject,
   onNewTask,
+  onReview,
+  onTaskDone,
 }: KanbanBoardProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
@@ -72,6 +77,11 @@ export function KanbanBoard({
     const [moved] = next[from].splice(source.index, 1)
     next[to].splice(destination.index, 0, moved)
     onBoardChange(next)
+
+    // Moving a card into Done finalizes it: tear down PTY + worktree.
+    if (to === 'done' && from !== 'done') {
+      onTaskDone(moved.id)
+    }
   }
 
   return (
@@ -166,19 +176,31 @@ export function KanbanBoard({
                                     )}
                                   </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExpanded(task.id)}
-                                  title={isExpanded ? '收合終端' : '展開終端'}
-                                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                >
-                                  <TerminalIcon className="size-3.5" />
-                                  {isExpanded ? (
-                                    <ChevronDown className="size-3" />
-                                  ) : (
-                                    <ChevronRight className="size-3" />
+                                <div className="flex shrink-0 items-center gap-1">
+                                  {task.worktreePath && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onReview(task.id)}
+                                      title="審查變更"
+                                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    >
+                                      <GitCompare className="size-3.5" />
+                                    </button>
                                   )}
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleExpanded(task.id)}
+                                    title={isExpanded ? '收合終端' : '展開終端'}
+                                    className="flex items-center rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  >
+                                    <TerminalIcon className="size-3.5" />
+                                    {isExpanded ? (
+                                      <ChevronDown className="size-3" />
+                                    ) : (
+                                      <ChevronRight className="size-3" />
+                                    )}
+                                  </button>
+                                </div>
                               </div>
 
                               {isExpanded && (

@@ -189,4 +189,151 @@ export async function removeWorktree(
   }
 }
 
+// --- Review & finalize (Phase 4) ---
+
+export interface DiffFile {
+  path: string
+  /** Single-letter git status: A(dded) M(odified) D(eleted) R(enamed) ?(untracked) */
+  status: string
+  oldValue: string
+  newValue: string
+  /** True if content was truncated for display. */
+  truncated: boolean
+}
+
+const MAX_BYTES = 200 * 1024 // per-side content cap for the diff viewer
+const MAX_FILES = 80
+
+function clip(content: string): { value: string; truncated: boolean } {
+  if (content.length > MAX_BYTES) {
+    return { value: content.slice(0, MAX_BYTES) + '\n… (truncated)', truncated: true }
+  }
+  return { value: content, truncated: false }
+}
+
+/** Resolve the comparison ref for a worktree's base branch (prefer origin/<base>). */
+async function resolveBaseRef(
+  worktreePath: string,
+  baseBranch: string
+): Promise<string> {
+  try {
+    await git(worktreePath, ['rev-parse', '--verify', `origin/${baseBranch}`])
+    return `origin/${baseBranch}`
+  } catch {
+    /* fall through */
+  }
+  try {
+    await git(worktreePath, ['rev-parse', '--verify', baseBranch])
+    return baseBranch
+  } catch {
+    return 'HEAD'
+  }
+}
+
+/**
+ * Compute the set of changed files in a worktree relative to its base branch,
+ * returning full old/new file contents suitable for a side-by-side diff viewer.
+ */
+export async function getWorktreeDiff(
+  worktreePath: string,
+  baseBranch: string
+): Promise<DiffFile[]> {
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+
+  // Tracked changes (committed + working tree) vs base.
+  const nameStatus = await git(worktreePath, [
+    'diff',
+    '--name-status',
+    baseRef,
+  ]).catch(() => '')
+
+  type Entry = { status: string; path: string }
+  const entries: Entry[] = []
+  for (const line of nameStatus.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    const parts = line.split('\t')
+    const code = parts[0]?.[0] ?? 'M'
+    // For renames (R100\told\tnew) use the new path.
+    const filePath = parts[parts.length - 1]
+    entries.push({ status: code, path: filePath })
+  }
+
+  // Untracked files (not yet added).
+  const untracked = await git(worktreePath, [
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ]).catch(() => '')
+  for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    if (!entries.some((e) => e.path === p)) {
+      entries.push({ status: '?', path: p })
+    }
+  }
+
+  const limited = entries.slice(0, MAX_FILES)
+  const files: DiffFile[] = []
+  for (const entry of limited) {
+    let oldValue = ''
+    if (entry.status !== 'A' && entry.status !== '?') {
+      oldValue = await git(worktreePath, [
+        'show',
+        `${baseRef}:${entry.path}`,
+      ]).catch(() => '')
+    }
+    let newValue = ''
+    if (entry.status !== 'D') {
+      try {
+        newValue = await fs.readFile(
+          path.join(worktreePath, entry.path),
+          'utf8'
+        )
+      } catch {
+        newValue = ''
+      }
+    }
+    const oldClip = clip(oldValue)
+    const newClip = clip(newValue)
+    files.push({
+      path: entry.path,
+      status: entry.status,
+      oldValue: oldClip.value,
+      newValue: newClip.value,
+      truncated: oldClip.truncated || newClip.truncated,
+    })
+  }
+  return files
+}
+
+export interface FinalizeResult {
+  committed: boolean
+  pushed: boolean
+  message: string
+}
+
+/** Stage everything, commit, and push the worktree's branch upstream. */
+export async function commitAndPush(
+  worktreePath: string,
+  message: string
+): Promise<FinalizeResult> {
+  await git(worktreePath, ['add', '-A'])
+
+  let committed = false
+  try {
+    await git(worktreePath, ['commit', '-m', message])
+    committed = true
+  } catch {
+    // nothing to commit (working tree clean) — not an error
+    committed = false
+  }
+
+  let pushed = false
+  try {
+    await git(worktreePath, ['push'])
+    pushed = true
+  } catch {
+    pushed = false
+  }
+
+  return { committed, pushed, message }
+}
+
 export { git as runGit }

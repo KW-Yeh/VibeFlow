@@ -5,15 +5,23 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
   addTask,
+  findTask,
   getProjectPath,
   getState,
   removeTask,
   setBoard,
   setProjectPath,
+  updateTask,
   type BoardState,
   type Task,
 } from './helpers/store'
-import { getGitInfo, provisionWorktree } from './helpers/git'
+import {
+  commitAndPush,
+  getGitInfo,
+  getWorktreeDiff,
+  provisionWorktree,
+  removeWorktree,
+} from './helpers/git'
 import {
   killAllSessions,
   killSession,
@@ -125,6 +133,39 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.on('pty:kill', (_event, taskId: string) => {
     killSession(taskId)
+  })
+
+  // --- Review & finalize (Phase 4) ---
+
+  ipcMain.handle('git:getDiff', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) return []
+    return getWorktreeDiff(task.worktreePath, task.baseBranch ?? 'HEAD')
+  })
+
+  // Approve: commit everything in the worktree and push the branch upstream.
+  ipcMain.handle(
+    'git:approve',
+    async (_event, payload: { taskId: string; message: string }) => {
+      const task = findTask(payload.taskId)
+      if (!task?.worktreePath) {
+        throw new Error('找不到此任務的 worktree')
+      }
+      const result = await commitAndPush(task.worktreePath, payload.message)
+      if (result.pushed) updateTask(payload.taskId, { pushed: true })
+      return { result, state: getState() }
+    }
+  )
+
+  // Cleanup: tear down the PTY and remove the worktree (e.g. when card → Done).
+  ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
+    const projectPath = getProjectPath()
+    killSession(taskId)
+    if (projectPath) {
+      await removeWorktree(projectPath, taskId)
+    }
+    updateTask(taskId, { worktreePath: undefined })
+    return getState()
   })
 }
 

@@ -1,4 +1,11 @@
-import type { BoardState, GitInfo, Task, VibeFlowState } from '@/lib/types'
+import type {
+  BoardState,
+  DiffFile,
+  FinalizeResult,
+  GitInfo,
+  Task,
+  VibeFlowState,
+} from '@/lib/types'
 
 /**
  * Returns the preload-exposed VibeFlow bridge, or null when it is unavailable
@@ -44,4 +51,24 @@ export async function createTask(payload: {
 export async function removeTask(taskId: string): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.removeTask(taskId) : null
+}
+
+export async function getDiff(taskId: string): Promise<DiffFile[]> {
+  const b = bridge()
+  return b ? b.getDiff(taskId) : []
+}
+
+export async function approve(
+  taskId: string,
+  message: string
+): Promise<{ result: FinalizeResult; state: VibeFlowState } | null> {
+  const b = bridge()
+  return b ? b.approve(taskId, message) : null
+}
+
+export async function cleanupTask(
+  taskId: string
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.cleanupTask(taskId) : null
 }

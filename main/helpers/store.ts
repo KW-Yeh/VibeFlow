@@ -94,6 +94,17 @@ export function findTask(taskId: string): Task | null {
   return null
 }
 
+/** Shallow-merge a patch into a task (by id) across all columns, and persist. */
+export function updateTask(taskId: string, patch: Partial<Task>): void {
+  const board = getStore().get('board')
+  ;(Object.keys(board) as ColumnId[]).forEach((col) => {
+    board[col] = board[col].map((t) =>
+      t.id === taskId ? { ...t, ...patch } : t
+    )
+  })
+  getStore().set('board', board)
+}
+
 /** Remove a task by id from whichever column holds it, and persist. */
 export function removeTask(taskId: string): void {
   const board = getStore().get('board')
