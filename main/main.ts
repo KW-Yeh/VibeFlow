@@ -6,11 +6,9 @@ import { createWindow } from './helpers/create-window'
 import {
   addTask,
   findTask,
-  getProjectPath,
   getState,
   removeTask,
   setBoard,
-  setProjectPath,
   updateTask,
   type BoardState,
   type Task,
@@ -46,46 +44,36 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getState()
   })
 
-  ipcMain.handle(
-    'vibeflow:setProjectPath',
-    (_event, projectPath: string | null) => {
-      setProjectPath(projectPath)
-      return getState()
-    }
-  )
-
-  // Open a native folder picker and persist the chosen project path.
-  ipcMain.handle('vibeflow:selectProject', async () => {
+  // Open a native folder picker and return the chosen path (no global state).
+  ipcMain.handle('dialog:pickFolder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '選擇本地專案資料夾',
       properties: ['openDirectory', 'createDirectory'],
     })
-    if (result.canceled || result.filePaths.length === 0) {
-      return getState()
-    }
-    setProjectPath(result.filePaths[0])
-    return getState()
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
   })
 
   // --- Git automation (Phase 2) ---
 
-  ipcMain.handle('git:getInfo', async () => {
-    const projectPath = getProjectPath()
-    if (!projectPath) return getGitInfo('')
-    return getGitInfo(projectPath)
+  // Inspect a specific folder (per-task project selection).
+  ipcMain.handle('git:getInfo', async (_event, projectPath: string) => {
+    return getGitInfo(projectPath || '')
   })
 
-  // Create a task: provision an isolated worktree + branch, then persist it.
+  // Create a task in the chosen project: provision an isolated worktree, persist.
   ipcMain.handle(
     'vibeflow:createTask',
-    async (_event, payload: { title: string; baseBranch: string | null }) => {
-      const projectPath = getProjectPath()
-      if (!projectPath) {
+    async (
+      _event,
+      payload: { title: string; projectPath: string; baseBranch: string | null }
+    ) => {
+      if (!payload.projectPath) {
         throw new Error('尚未選擇專案資料夾')
       }
       const taskId = randomUUID().slice(0, 8)
       const result = await provisionWorktree(
-        projectPath,
+        payload.projectPath,
         taskId,
         payload.baseBranch
       )
@@ -93,6 +81,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         id: taskId,
         title: payload.title.trim() || `Task ${taskId}`,
         branch: result.branch,
+        projectPath: payload.projectPath,
+        projectName: path.basename(payload.projectPath),
         worktreePath: result.worktreePath,
         baseBranch: result.baseBranch,
         pushed: result.pushed,
@@ -159,10 +149,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Cleanup: tear down the PTY and remove the worktree (e.g. when card → Done).
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
-    const projectPath = getProjectPath()
+    const task = findTask(taskId)
     killSession(taskId)
-    if (projectPath) {
-      await removeWorktree(projectPath, taskId)
+    if (task?.projectPath) {
+      await removeWorktree(task.projectPath, taskId)
     }
     updateTask(taskId, { worktreePath: undefined })
     return getState()
@@ -170,10 +160,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Delete: cleanup (PTY + worktree) AND drop the card from the board.
   ipcMain.handle('vibeflow:deleteTask', async (_event, taskId: string) => {
-    const projectPath = getProjectPath()
+    const task = findTask(taskId)
     killSession(taskId)
-    if (projectPath) {
-      await removeWorktree(projectPath, taskId)
+    if (task?.projectPath) {
+      await removeWorktree(task.projectPath, taskId)
     }
     removeTask(taskId)
     return getState()

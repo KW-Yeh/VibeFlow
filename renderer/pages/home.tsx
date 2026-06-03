@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
@@ -13,9 +13,9 @@ import {
   getGitInfo,
   loadState,
   persistBoard,
-  selectProject,
+  pickFolder,
 } from '@/lib/api'
-import type { BoardState, DiffFile, GitInfo, Task } from '@/lib/types'
+import type { BoardState, DiffFile, Task } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
 // Electron bridge is unavailable (plain browser / static export preview).
@@ -35,10 +35,8 @@ function findTask(board: BoardState, taskId: string): Task | null {
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
-  const [projectPath, setProjectPath] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
-  const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -55,52 +53,37 @@ export default function HomePage() {
   } | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
 
-  const refreshGitInfo = useCallback(async () => {
-    const info = await getGitInfo()
-    setGitInfo(info)
-  }, [])
-
   useEffect(() => {
     let active = true
     loadState().then((state) => {
       if (!active) return
-      if (state) {
-        setBoard(state.board)
-        setProjectPath(state.projectPath)
-        if (state.projectPath) void refreshGitInfo()
-      }
+      if (state) setBoard(state.board)
       setLoaded(true)
     })
     return () => {
       active = false
     }
-  }, [refreshGitInfo])
+  }, [])
 
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
     void persistBoard(next)
   }
 
-  const handleSelectProject = async () => {
-    const state = await selectProject()
-    if (state) {
-      setProjectPath(state.projectPath)
-      setBoard(state.board)
-      await refreshGitInfo()
-    }
-  }
-
-  const handleOpenNewTask = async () => {
+  const handleOpenNewTask = () => {
     setCreateError(null)
-    await refreshGitInfo()
     setDialogOpen(true)
   }
 
-  const handleCreateTask = async (title: string, baseBranch: string | null) => {
+  const handleCreateTask = async (
+    title: string,
+    projectPath: string,
+    baseBranch: string | null
+  ) => {
     setCreating(true)
     setCreateError(null)
     try {
-      const result = await createTask({ title, baseBranch })
+      const result = await createTask({ title, projectPath, baseBranch })
       if (result) {
         setBoard(result.state.board)
         setDialogOpen(false)
@@ -167,8 +150,6 @@ export default function HomePage() {
             <KanbanBoard
               board={board}
               onBoardChange={handleBoardChange}
-              projectPath={projectPath}
-              onSelectProject={handleSelectProject}
               onNewTask={handleOpenNewTask}
               onReview={handleReview}
               onTaskDone={handleTaskDone}
@@ -176,9 +157,10 @@ export default function HomePage() {
             />
             <NewTaskDialog
               open={dialogOpen}
-              gitInfo={gitInfo}
               creating={creating}
               error={createError}
+              pickFolder={pickFolder}
+              loadGitInfo={getGitInfo}
               onSubmit={handleCreateTask}
               onClose={() => setDialogOpen(false)}
             />

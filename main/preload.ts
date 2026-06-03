@@ -27,13 +27,14 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:getState'),
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:setBoard', board),
-  setProjectPath: (projectPath: string | null): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('vibeflow:setProjectPath', projectPath),
-  selectProject: (): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('vibeflow:selectProject'),
-  getGitInfo: (): Promise<GitInfo> => ipcRenderer.invoke('git:getInfo'),
+  /** Native folder picker — returns the chosen absolute path, or null. */
+  pickFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:pickFolder'),
+  getGitInfo: (projectPath: string): Promise<GitInfo> =>
+    ipcRenderer.invoke('git:getInfo', projectPath),
   createTask: (payload: {
     title: string
+    projectPath: string
     baseBranch: string | null
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),

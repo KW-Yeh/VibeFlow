@@ -6,6 +6,10 @@ export interface Task {
   id: string
   title: string
   branch: string
+  /** Absolute path of the project this task belongs to (chosen per task). */
+  projectPath?: string
+  /** Display name of the project (basename of projectPath). */
+  projectName?: string
   /** Absolute path of this task's git worktree, once provisioned. */
   worktreePath?: string
   /** Base branch the worktree was created from. */
@@ -26,13 +30,8 @@ export interface VibeFlowState {
 }
 
 const DEFAULT_BOARD: BoardState = {
-  backlog: [
-    { id: 'task-1', title: '搭建 Electron + Next.js 環境', branch: 'vf-task-1' },
-    { id: 'task-2', title: '實作看板拖曳介面', branch: 'vf-task-2' },
-  ],
-  in_progress: [
-    { id: 'task-3', title: '整合 node-pty 互動終端', branch: 'vf-task-3' },
-  ],
+  backlog: [],
+  in_progress: [],
   done: [],
 }
 

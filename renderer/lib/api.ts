@@ -30,18 +30,19 @@ export async function persistBoard(board: BoardState): Promise<void> {
   if (b) await b.setBoard(board)
 }
 
-export async function selectProject(): Promise<VibeFlowState | null> {
+export async function pickFolder(): Promise<string | null> {
   const b = bridge()
-  return b ? b.selectProject() : null
+  return b ? b.pickFolder() : null
 }
 
-export async function getGitInfo(): Promise<GitInfo | null> {
+export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
   const b = bridge()
-  return b ? b.getGitInfo() : null
+  return b ? b.getGitInfo(projectPath) : null
 }
 
 export async function createTask(payload: {
   title: string
+  projectPath: string
   baseBranch: string | null
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()

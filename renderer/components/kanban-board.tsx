@@ -8,7 +8,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
-  FolderOpen,
+  FolderGit2,
   GitBranch,
   GitCompare,
   Plus,
@@ -30,8 +30,6 @@ const COLUMNS: { id: ColumnId; title: string }[] = [
 interface KanbanBoardProps {
   board: BoardState
   onBoardChange: (board: BoardState) => void
-  projectPath: string | null
-  onSelectProject: () => void
   onNewTask: () => void
   onReview: (taskId: string) => void
   onTaskDone: (taskId: string) => void
@@ -41,8 +39,6 @@ interface KanbanBoardProps {
 export function KanbanBoard({
   board,
   onBoardChange,
-  projectPath,
-  onSelectProject,
   onNewTask,
   onReview,
   onTaskDone,
@@ -92,28 +88,14 @@ export function KanbanBoard({
       <header className="mb-6 flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">VibeFlow</h1>
-          <button
-            type="button"
-            onClick={onSelectProject}
-            className="mt-1 inline-flex max-w-full items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-            title="點擊以選擇專案資料夾"
-          >
-            <FolderOpen className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {projectPath ?? '尚未選擇專案資料夾'}
-            </span>
-          </button>
+          <p className="mt-1 text-sm text-muted-foreground">
+            意圖驅動的本地開發看板 · 可同時管理多個專案
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onSelectProject}>
-            <FolderOpen />
-            選擇專案
-          </Button>
-          <Button size="sm" onClick={onNewTask} disabled={!projectPath}>
-            <Plus />
-            新增任務
-          </Button>
-        </div>
+        <Button size="sm" onClick={onNewTask}>
+          <Plus />
+          新增任務
+        </Button>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -141,7 +123,7 @@ export function KanbanBoard({
                   <div className="flex min-h-24 flex-col gap-2">
                     {board[column.id].map((task, index) => {
                       const isExpanded = expanded.has(task.id)
-                      const cwd = task.worktreePath ?? projectPath
+                      const cwd = task.worktreePath ?? task.projectPath ?? null
                       return (
                         <Draggable
                           draggableId={task.id}
@@ -164,6 +146,14 @@ export function KanbanBoard({
                                   {...dragProvided.dragHandleProps}
                                   className="min-w-0 flex-1 cursor-grab active:cursor-grabbing"
                                 >
+                                  {task.projectName && (
+                                    <span className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                                      <FolderGit2 className="size-2.5 shrink-0" />
+                                      <span className="truncate">
+                                        {task.projectName}
+                                      </span>
+                                    </span>
+                                  )}
                                   <p className="mb-2 text-sm font-medium">
                                     {task.title}
                                   </p>
