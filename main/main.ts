@@ -1,7 +1,13 @@
 import path from 'path'
-import { app, ipcMain } from 'electron'
+import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
+import {
+  getState,
+  setBoard,
+  setProjectPath,
+  type BoardState,
+} from './helpers/store'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -9,6 +15,36 @@ if (isProd) {
   serve({ directory: 'app' })
 } else {
   app.setPath('userData', `${app.getPath('userData')} (development)`)
+}
+
+function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('vibeflow:getState', () => getState())
+
+  ipcMain.handle('vibeflow:setBoard', (_event, board: BoardState) => {
+    setBoard(board)
+    return getState()
+  })
+
+  ipcMain.handle(
+    'vibeflow:setProjectPath',
+    (_event, projectPath: string | null) => {
+      setProjectPath(projectPath)
+      return getState()
+    }
+  )
+
+  // Open a native folder picker and persist the chosen project path.
+  ipcMain.handle('vibeflow:selectProject', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '選擇本地專案資料夾',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return getState()
+    }
+    setProjectPath(result.filePaths[0])
+    return getState()
+  })
 }
 
 ;(async () => {
@@ -21,6 +57,8 @@ if (isProd) {
       preload: path.join(import.meta.dirname, 'preload.js'),
     },
   })
+
+  registerIpcHandlers(mainWindow)
 
   if (isProd) {
     await mainWindow.loadURL('app://./home')

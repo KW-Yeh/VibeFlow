@@ -1,22 +1,14 @@
-import { useState } from 'react'
 import {
   DragDropContext,
   Droppable,
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { GitBranch, Plus, Terminal } from 'lucide-react'
+import { FolderOpen, GitBranch, Plus, Terminal } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-type ColumnId = 'backlog' | 'in_progress' | 'done'
-
-interface Task {
-  id: string
-  title: string
-  branch: string
-}
+import type { BoardState, ColumnId } from '@/lib/types'
 
 const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'backlog', title: 'Backlog' },
@@ -24,52 +16,69 @@ const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'done', title: 'Done' },
 ]
 
-const INITIAL_TASKS: Record<ColumnId, Task[]> = {
-  backlog: [
-    { id: 'task-1', title: '搭建 Electron + Next.js 環境', branch: 'vf-task-1' },
-    { id: 'task-2', title: '實作看板拖曳介面', branch: 'vf-task-2' },
-  ],
-  in_progress: [
-    { id: 'task-3', title: '整合 node-pty 互動終端', branch: 'vf-task-3' },
-  ],
-  done: [],
+interface KanbanBoardProps {
+  board: BoardState
+  onBoardChange: (board: BoardState) => void
+  projectPath: string | null
+  onSelectProject: () => void
 }
 
-export function KanbanBoard() {
-  const [columns, setColumns] = useState(INITIAL_TASKS)
-
+export function KanbanBoard({
+  board,
+  onBoardChange,
+  projectPath,
+  onSelectProject,
+}: KanbanBoardProps) {
   const onDragEnd = (result: DropResult) => {
     const { source, destination } = result
     if (!destination) return
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
+      return
+    }
 
     const from = source.droppableId as ColumnId
     const to = destination.droppableId as ColumnId
 
-    setColumns((prev) => {
-      const next: Record<ColumnId, Task[]> = {
-        backlog: [...prev.backlog],
-        in_progress: [...prev.in_progress],
-        done: [...prev.done],
-      }
-      const [moved] = next[from].splice(source.index, 1)
-      next[to].splice(destination.index, 0, moved)
-      return next
-    })
+    const next: BoardState = {
+      backlog: [...board.backlog],
+      in_progress: [...board.in_progress],
+      done: [...board.done],
+    }
+    const [moved] = next[from].splice(source.index, 1)
+    next[to].splice(destination.index, 0, moved)
+    onBoardChange(next)
   }
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
+      <header className="mb-6 flex items-center justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">VibeFlow</h1>
-          <p className="text-sm text-muted-foreground">
-            意圖驅動的本地開發看板
-          </p>
+          <button
+            type="button"
+            onClick={onSelectProject}
+            className="mt-1 inline-flex max-w-full items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+            title="點擊以選擇專案資料夾"
+          >
+            <FolderOpen className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {projectPath ?? '尚未選擇專案資料夾'}
+            </span>
+          </button>
         </div>
-        <Button size="sm">
-          <Plus />
-          新增任務
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onSelectProject}>
+            <FolderOpen />
+            選擇專案
+          </Button>
+          <Button size="sm">
+            <Plus />
+            新增任務
+          </Button>
+        </div>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -90,12 +99,12 @@ export function KanbanBoard() {
                       {column.title}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {columns[column.id].length}
+                      {board[column.id].length}
                     </span>
                   </div>
 
                   <div className="flex min-h-24 flex-col gap-2">
-                    {columns[column.id].map((task, index) => (
+                    {board[column.id].map((task, index) => (
                       <Draggable
                         draggableId={task.id}
                         index={index}
