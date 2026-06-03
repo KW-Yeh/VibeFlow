@@ -17,10 +17,12 @@ import {
 } from './helpers/store'
 import {
   commitAndPush,
+  deleteBranch,
   getGitInfo,
   getWorktreeDiff,
   provisionWorktree,
   removeWorktree,
+  syncBaseBranch,
 } from './helpers/git'
 import {
   killAllSessions,
@@ -179,12 +181,16 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   )
 
-  // Cleanup: tear down the PTY and remove the worktree (e.g. when card → Done).
+  // Cleanup: finalize a card moved to Done. Tear down the PTY, remove the
+  // worktree, delete the local branch, then bring the main working tree back to
+  // the task's base branch and fast-forward it. Git sync steps are best-effort.
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     killSession(taskId)
     if (task?.projectPath) {
       await removeWorktree(task.projectPath, taskId)
+      await deleteBranch(task.projectPath, taskId)
+      await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
     updateTask(taskId, { worktreePath: undefined })
     return getState()
@@ -196,6 +202,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     killSession(taskId)
     if (task?.projectPath) {
       await removeWorktree(task.projectPath, taskId)
+      await deleteBranch(task.projectPath, taskId)
     }
     removeTask(taskId)
     return getState()

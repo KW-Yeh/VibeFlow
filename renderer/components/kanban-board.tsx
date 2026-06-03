@@ -216,6 +216,7 @@ function TaskCard({
             launchCommand={launch?.command}
             launchNonce={launch?.nonce ?? 0}
             onLaunchRequest={() => onRun(task)}
+            readOnly={column === 'done'}
           />
         </div>
       )}

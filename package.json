@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "nextron",
     "build": "nextron build",
+    "rebuild": "./rebuild.sh",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

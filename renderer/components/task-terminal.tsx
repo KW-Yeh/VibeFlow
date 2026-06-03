@@ -17,6 +17,12 @@ interface TaskTerminalProps {
   launchNonce?: number
   /** Fired when the user clicks the in-terminal launch button. */
   onLaunchRequest?: () => void
+  /**
+   * When true (card is Done), the terminal is view-only: no PTY is started,
+   * keystrokes are not forwarded, and the launch affordance is hidden. Existing
+   * scrollback from the live session is preserved for review.
+   */
+  readOnly?: boolean
 }
 
 export function TaskTerminal({
@@ -25,6 +31,7 @@ export function TaskTerminal({
   launchCommand,
   launchNonce = 0,
   onLaunchRequest,
+  readOnly = false,
 }: TaskTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
@@ -38,9 +45,15 @@ export function TaskTerminal({
   const launchNonceRef = useRef(launchNonce)
   launchCmdRef.current = launchCommand
   launchNonceRef.current = launchNonce
+  // cwd / readOnly via refs so the init effect can depend on [taskId] only —
+  // when a card moves to Done its cwd changes (worktree → project root); we must
+  // NOT re-run init (which would dispose the buffer and spawn a fresh shell).
+  const cwdRef = useRef<string | null>(cwd)
+  cwdRef.current = cwd
+  const readOnlyRef = useRef(readOnly)
 
   const maybeLaunch = useCallback(() => {
-    if (!readyRef.current) return
+    if (!readyRef.current || readOnlyRef.current) return
     const cmd = launchCmdRef.current
     if (!cmd) return
     const nonce = launchNonceRef.current
@@ -48,6 +61,12 @@ export function TaskTerminal({
     sentNonceRef.current = nonce
     window.vibeflow?.term.input(taskId, cmd)
   }, [taskId])
+
+  // Keep the read-only flag (and xterm's stdin gate) in sync without remounting.
+  useEffect(() => {
+    readOnlyRef.current = readOnly
+    if (termRef.current) termRef.current.options.disableStdin = readOnly
+  }, [readOnly])
 
   useEffect(() => {
     let disposed = false
@@ -65,6 +84,7 @@ export function TaskTerminal({
         fontSize: 12,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
+        disableStdin: readOnlyRef.current,
         theme: { background: '#0a0a0a', foreground: '#e5e5e5' },
       })
       const fit = new FitAddon()
@@ -78,19 +98,28 @@ export function TaskTerminal({
         term.writeln('⚠️  Electron bridge 無法使用（僅在 app 內可開啟終端）。')
         return
       }
-      if (!cwd) {
+      // A Done card mounted fresh (e.g. after reload): show a note, no PTY.
+      if (readOnlyRef.current) {
+        term.writeln('ℹ️  任務已完成 — 終端為唯讀，僅供查閱訊息。')
+        return
+      }
+      const startCwd = cwdRef.current
+      if (!startCwd) {
         term.writeln('⚠️  尚未設定工作目錄，請先選擇專案或建立任務。')
         return
       }
 
-      await api.term.start(taskId, cwd)
+      await api.term.start(taskId, startCwd)
       offData = api.term.onData(({ taskId: id, data }) => {
         if (id === taskId) term.write(data)
       })
       offExit = api.term.onExit(({ taskId: id, exitCode }) => {
         if (id === taskId) term.writeln(`\r\n[process exited: ${exitCode}]`)
       })
-      term.onData((data) => api.term.input(taskId, data))
+      // Forward keystrokes only while the card is interactive (not Done).
+      term.onData((data) => {
+        if (!readOnlyRef.current) api.term.input(taskId, data)
+      })
 
       resizeObs = new ResizeObserver(() => {
         try {
@@ -118,7 +147,7 @@ export function TaskTerminal({
       termRef.current?.dispose()
       termRef.current = null
     }
-  }, [taskId, cwd, maybeLaunch])
+  }, [taskId, maybeLaunch])
 
   // Re-launch when the parent bumps the nonce while already mounted.
   useEffect(() => {
@@ -131,16 +160,22 @@ export function TaskTerminal({
         <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 shrink-0 px-2 text-[10px]"
-          onClick={onLaunchRequest}
-          disabled={!onLaunchRequest}
-        >
-          <Sparkles className="size-3" />
-          啟動 Claude
-        </Button>
+        {readOnly ? (
+          <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+            唯讀
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-[10px]"
+            onClick={onLaunchRequest}
+            disabled={!onLaunchRequest}
+          >
+            <Sparkles className="size-3" />
+            啟動 Claude
+          </Button>
+        )}
       </div>
       <div ref={containerRef} className="h-64 w-full overflow-hidden p-1" />
     </div>

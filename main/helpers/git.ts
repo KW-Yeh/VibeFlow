@@ -189,6 +189,57 @@ export async function removeWorktree(
   }
 }
 
+/**
+ * Delete a task's local branch `vf-<taskId>` (best-effort). The branch must not
+ * be checked out in any worktree — call this AFTER removeWorktree. The remote
+ * branch (if pushed) is intentionally left intact for any open PR / merge.
+ */
+export async function deleteBranch(
+  projectPath: string,
+  taskId: string
+): Promise<void> {
+  const branch = `vf-${taskId}`
+  try {
+    await git(projectPath, ['branch', '-D', branch])
+  } catch {
+    // ignore — branch may not exist (e.g. never created / already gone)
+  }
+}
+
+export interface SyncResult {
+  baseBranch: string
+  /** Whether the main working tree is now on `baseBranch`. */
+  switched: boolean
+  /** Whether a fast-forward pull succeeded. */
+  pulled: boolean
+}
+
+/**
+ * Bring the main working tree back to `baseBranch` and fast-forward it to the
+ * remote. Best-effort: a dirty tree, missing upstream, or absent remote leaves
+ * the result flags false rather than throwing (used during task finalize).
+ */
+export async function syncBaseBranch(
+  projectPath: string,
+  baseBranch: string
+): Promise<SyncResult> {
+  let switched = false
+  try {
+    await git(projectPath, ['checkout', baseBranch])
+    switched = true
+  } catch {
+    switched = false
+  }
+  let pulled = false
+  try {
+    await git(projectPath, ['pull', '--ff-only'])
+    pulled = true
+  } catch {
+    pulled = false
+  }
+  return { baseBranch, switched, pulled }
+}
+
 // --- Review & finalize (Phase 4) ---
 
 export interface DiffFile {
