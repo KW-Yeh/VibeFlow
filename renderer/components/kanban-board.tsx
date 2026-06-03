@@ -168,13 +168,13 @@ export function KanbanBoard({
           >
             <span
               className={cn(
-                'relative h-4 w-7 rounded-full transition-colors',
+                'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
                 autoMode ? 'bg-emerald-500' : 'bg-muted'
               )}
             >
               <span
                 className={cn(
-                  'absolute top-0.5 size-3 rounded-full bg-white transition-transform',
+                  'absolute left-0 top-0.5 size-3 rounded-full bg-white transition-transform',
                   autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
                 )}
               />
