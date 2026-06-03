@@ -4,6 +4,7 @@ export type {
   ColumnId,
   Task,
   BoardState,
+  AppSettings,
   VibeFlowState,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult } from '../../main/helpers/git'

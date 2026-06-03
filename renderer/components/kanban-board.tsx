@@ -12,6 +12,7 @@ import {
   GitBranch,
   GitCompare,
   Pencil,
+  Play,
   Plus,
   Terminal as TerminalIcon,
   Trash2,
@@ -19,8 +20,9 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
+import { buildClaudeCommand } from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId } from '@/lib/types'
+import type { BoardState, ColumnId, Task } from '@/lib/types'
 
 const COLUMNS: { id: ColumnId; title: string }[] = [
   { id: 'backlog', title: 'Backlog' },
@@ -36,6 +38,14 @@ interface KanbanBoardProps {
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
+  /** Global Auto Mode: auto-run a card's Claude execution on entering In Progress. */
+  autoMode: boolean
+  onToggleAutoMode: () => void
+}
+
+interface LaunchEntry {
+  command: string
+  nonce: number
 }
 
 export function KanbanBoard({
@@ -46,8 +56,12 @@ export function KanbanBoard({
   onEditTask,
   onTaskDone,
   onDeleteTask,
+  autoMode,
+  onToggleAutoMode,
 }: KanbanBoardProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Per-task armed launch command; bumping `nonce` (re-)fires it in the terminal.
+  const [launch, setLaunch] = useState<Record<string, LaunchEntry>>({})
 
   const toggleExpanded = (taskId: string) => {
     setExpanded((prev) => {
@@ -56,6 +70,37 @@ export function KanbanBoard({
       else next.add(taskId)
       return next
     })
+  }
+
+  // Expand the card and arm (or re-arm) its Claude launch command.
+  const armLaunch = (task: Task) => {
+    setExpanded((prev) => new Set(prev).add(task.id))
+    setLaunch((prev) => ({
+      ...prev,
+      [task.id]: {
+        command: buildClaudeCommand(task),
+        nonce: (prev[task.id]?.nonce ?? 0) + 1,
+      },
+    }))
+  }
+
+  // Manual run (▶ button): always (re-)launches, and stamps launchedAt once.
+  const runTask = (task: Task) => {
+    armLaunch(task)
+    if (!task.launchedAt) {
+      const stamp = Date.now()
+      onBoardChange({
+        backlog: board.backlog.map((t) =>
+          t.id === task.id ? { ...t, launchedAt: stamp } : t
+        ),
+        in_progress: board.in_progress.map((t) =>
+          t.id === task.id ? { ...t, launchedAt: stamp } : t
+        ),
+        done: board.done.map((t) =>
+          t.id === task.id ? { ...t, launchedAt: stamp } : t
+        ),
+      })
+    }
   }
 
   const onDragEnd = (result: DropResult) => {
@@ -77,13 +122,30 @@ export function KanbanBoard({
       done: [...board.done],
     }
     const [moved] = next[from].splice(source.index, 1)
-    next[to].splice(destination.index, 0, moved)
+
+    // Entering In Progress auto-runs the card's Claude execution once, when
+    // Auto Mode is on and it hasn't been launched before.
+    let toInsert = moved
+    let autoLaunch = false
+    if (
+      to === 'in_progress' &&
+      from !== 'in_progress' &&
+      autoMode &&
+      !moved.launchedAt
+    ) {
+      toInsert = { ...moved, launchedAt: Date.now() }
+      autoLaunch = true
+    }
+
+    next[to].splice(destination.index, 0, toInsert)
     onBoardChange(next)
 
     // Moving a card into Done finalizes it: tear down PTY + worktree.
     if (to === 'done' && from !== 'done') {
       onTaskDone(moved.id)
     }
+
+    if (autoLaunch) armLaunch(toInsert)
   }
 
   return (
@@ -95,10 +157,35 @@ export function KanbanBoard({
             意圖驅動的本地開發看板 · 可同時管理多個專案
           </p>
         </div>
-        <Button size="sm" onClick={onNewTask}>
-          <Plus />
-          新增任務
-        </Button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoMode}
+            onClick={onToggleAutoMode}
+            title="開啟時：將卡片拖到 In Progress 會自動執行 Claude"
+            className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <span
+              className={cn(
+                'relative h-4 w-7 rounded-full transition-colors',
+                autoMode ? 'bg-emerald-500' : 'bg-muted'
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 size-3 rounded-full bg-white transition-transform',
+                  autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
+                )}
+              />
+            </span>
+            Auto Mode
+          </button>
+          <Button size="sm" onClick={onNewTask}>
+            <Plus />
+            新增任務
+          </Button>
+        </div>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -175,6 +262,20 @@ export function KanbanBoard({
                                   </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
+                                  {cwd && (
+                                    <button
+                                      type="button"
+                                      onClick={() => runTask(task)}
+                                      title={
+                                        task.launchedAt
+                                          ? '重新執行（啟動 Claude）'
+                                          : '開始執行（啟動 Claude）'
+                                      }
+                                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-emerald-500"
+                                    >
+                                      <Play className="size-3.5" />
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => onEditTask(task.id)}
@@ -224,7 +325,13 @@ export function KanbanBoard({
                                       {task.description}
                                     </p>
                                   )}
-                                  <TaskTerminal taskId={task.id} cwd={cwd} />
+                                  <TaskTerminal
+                                    taskId={task.id}
+                                    cwd={cwd}
+                                    launchCommand={launch[task.id]?.command}
+                                    launchNonce={launch[task.id]?.nonce ?? 0}
+                                    onLaunchRequest={() => runTask(task)}
+                                  />
                                 </>
                               )}
                             </div>

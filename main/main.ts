@@ -9,7 +9,9 @@ import {
   getState,
   removeTask,
   setBoard,
+  setSettings,
   updateTask,
+  type AppSettings,
   type BoardState,
   type Task,
 } from './helpers/store'
@@ -43,6 +45,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     setBoard(board)
     return getState()
   })
+
+  ipcMain.handle(
+    'vibeflow:setSettings',
+    (_event, patch: Partial<AppSettings>) => {
+      setSettings(patch)
+      return getState()
+    }
+  )
 
   // Open a native folder picker and return the chosen path (no global state).
   ipcMain.handle('dialog:pickFolder', async () => {

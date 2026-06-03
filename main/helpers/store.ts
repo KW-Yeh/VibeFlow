@@ -18,9 +18,23 @@ export interface Task {
   baseBranch?: string
   /** Whether the branch was pushed upstream at creation. */
   pushed?: boolean
+  /**
+   * Epoch ms when this card's Claude execution was first launched. Used to
+   * auto-run at most once when the card enters In Progress; unset = never run.
+   */
+  launchedAt?: number
 }
 
 export type BoardState = Record<ColumnId, Task[]>
+
+/** Global, board-wide user settings. */
+export interface AppSettings {
+  /**
+   * When true, dragging a card into In Progress auto-launches its Claude
+   * execution (once). The manual run button works regardless of this flag.
+   */
+  autoMode: boolean
+}
 
 export interface VibeFlowState {
   /** Schema version, bumped on breaking persisted-shape changes for migrations. */
@@ -29,6 +43,8 @@ export interface VibeFlowState {
   projectPath: string | null
   /** Kanban columns and their tasks. */
   board: BoardState
+  /** Global user settings. */
+  settings: AppSettings
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -37,10 +53,15 @@ const DEFAULT_BOARD: BoardState = {
   done: [],
 }
 
+const DEFAULT_SETTINGS: AppSettings = {
+  autoMode: true,
+}
+
 const defaults: VibeFlowState = {
   version: 1,
   projectPath: null,
   board: DEFAULT_BOARD,
+  settings: DEFAULT_SETTINGS,
 }
 
 let _store: Store<VibeFlowState> | null = null
@@ -63,7 +84,21 @@ export function getState(): VibeFlowState {
     version: store.get('version'),
     projectPath: store.get('projectPath'),
     board: store.get('board'),
+    // `settings` may be absent in state persisted before this field existed;
+    // fall back to defaults so the renderer always receives a value.
+    settings: store.get('settings') ?? DEFAULT_SETTINGS,
   }
+}
+
+export function getSettings(): AppSettings {
+  return getStore().get('settings') ?? DEFAULT_SETTINGS
+}
+
+/** Shallow-merge a patch into settings and persist; returns the merged value. */
+export function setSettings(patch: Partial<AppSettings>): AppSettings {
+  const next = { ...getSettings(), ...patch }
+  getStore().set('settings', next)
+  return next
 }
 
 export function setBoard(board: BoardState): void {

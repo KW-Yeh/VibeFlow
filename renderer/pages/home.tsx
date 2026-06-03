@@ -15,6 +15,7 @@ import {
   loadState,
   persistBoard,
   pickFolder,
+  setSettings,
   updateTask,
 } from '@/lib/api'
 import type { BoardState, DiffFile, Task } from '@/lib/types'
@@ -37,6 +38,7 @@ function findTask(board: BoardState, taskId: string): Task | null {
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
+  const [autoMode, setAutoMode] = useState(true)
   const [loaded, setLoaded] = useState(false)
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -64,7 +66,10 @@ export default function HomePage() {
     let active = true
     loadState().then((state) => {
       if (!active) return
-      if (state) setBoard(state.board)
+      if (state) {
+        setBoard(state.board)
+        setAutoMode(state.settings.autoMode)
+      }
       setLoaded(true)
     })
     return () => {
@@ -80,6 +85,12 @@ export default function HomePage() {
   const handleOpenNewTask = () => {
     setCreateError(null)
     setDialogOpen(true)
+  }
+
+  const handleToggleAutoMode = () => {
+    const next = !autoMode
+    setAutoMode(next) // optimistic; persisted below
+    void setSettings({ autoMode: next })
   }
 
   const handleCreateTask = async (
@@ -188,6 +199,8 @@ export default function HomePage() {
               onEditTask={handleOpenEditTask}
               onTaskDone={handleTaskDone}
               onDeleteTask={handleDeleteTask}
+              autoMode={autoMode}
+              onToggleAutoMode={handleToggleAutoMode}
             />
             <NewTaskDialog
               open={dialogOpen}

@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
-import type { BoardState, Task, VibeFlowState } from './helpers/store'
+import type {
+  AppSettings,
+  BoardState,
+  Task,
+  VibeFlowState,
+} from './helpers/store'
 import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
 
 const handler = {
@@ -27,6 +32,8 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:getState'),
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:setBoard', board),
+  setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('vibeflow:setSettings', patch),
   /** Native folder picker — returns the chosen absolute path, or null. */
   pickFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickFolder'),

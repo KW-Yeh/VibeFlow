@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
@@ -8,14 +8,50 @@ interface TaskTerminalProps {
   taskId: string
   /** Working directory: the task's worktree, or the project root as fallback. */
   cwd: string | null
+  /**
+   * Shell command to launch once the PTY is ready (e.g. the Claude auto-run).
+   * Sent at most once per distinct `launchNonce` value.
+   */
+  launchCommand?: string | null
+  /** Bump to request a (re-)launch of `launchCommand`. */
+  launchNonce?: number
+  /** Fired when the user clicks the in-terminal launch button. */
+  onLaunchRequest?: () => void
 }
 
-export function TaskTerminal({ taskId, cwd }: TaskTerminalProps) {
+export function TaskTerminal({
+  taskId,
+  cwd,
+  launchCommand,
+  launchNonce = 0,
+  onLaunchRequest,
+}: TaskTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
 
+  // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
+  // PTY-start flow and the nonce effect read the latest values without
+  // re-running the heavy terminal-init effect.
+  const readyRef = useRef(false)
+  const sentNonceRef = useRef(-1)
+  const launchCmdRef = useRef<string | null | undefined>(launchCommand)
+  const launchNonceRef = useRef(launchNonce)
+  launchCmdRef.current = launchCommand
+  launchNonceRef.current = launchNonce
+
+  const maybeLaunch = useCallback(() => {
+    if (!readyRef.current) return
+    const cmd = launchCmdRef.current
+    if (!cmd) return
+    const nonce = launchNonceRef.current
+    if (sentNonceRef.current === nonce) return
+    sentNonceRef.current = nonce
+    window.vibeflow?.term.input(taskId, cmd)
+  }, [taskId])
+
   useEffect(() => {
     let disposed = false
+    readyRef.current = false
     let offData: (() => void) | undefined
     let offExit: (() => void) | undefined
     let resizeObs: ResizeObserver | undefined
@@ -66,10 +102,15 @@ export function TaskTerminal({ taskId, cwd }: TaskTerminalProps) {
       })
       resizeObs.observe(containerRef.current)
       api.term.resize(taskId, term.cols, term.rows)
+
+      // PTY is live: send any armed launch command (e.g. auto-run on expand).
+      readyRef.current = true
+      maybeLaunch()
     })()
 
     return () => {
       disposed = true
+      readyRef.current = false
       offData?.()
       offExit?.()
       resizeObs?.disconnect()
@@ -77,11 +118,12 @@ export function TaskTerminal({ taskId, cwd }: TaskTerminalProps) {
       termRef.current?.dispose()
       termRef.current = null
     }
-  }, [taskId, cwd])
+  }, [taskId, cwd, maybeLaunch])
 
-  const launchClaude = () => {
-    window.vibeflow?.term.input(taskId, 'claude\r')
-  }
+  // Re-launch when the parent bumps the nonce while already mounted.
+  useEffect(() => {
+    maybeLaunch()
+  }, [launchCommand, launchNonce, maybeLaunch])
 
   return (
     <div className="mt-2 overflow-hidden rounded-md bg-black">
@@ -93,7 +135,8 @@ export function TaskTerminal({ taskId, cwd }: TaskTerminalProps) {
           variant="ghost"
           size="sm"
           className="h-6 shrink-0 px-2 text-[10px]"
-          onClick={launchClaude}
+          onClick={onLaunchRequest}
+          disabled={!onLaunchRequest}
         >
           <Sparkles className="size-3" />
           啟動 Claude
