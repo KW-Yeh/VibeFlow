@@ -1,13 +1,19 @@
 import path from 'path'
+import { randomUUID } from 'crypto'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
+  addTask,
+  getProjectPath,
   getState,
+  removeTask,
   setBoard,
   setProjectPath,
   type BoardState,
+  type Task,
 } from './helpers/store'
+import { getGitInfo, provisionWorktree } from './helpers/git'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -43,6 +49,46 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return getState()
     }
     setProjectPath(result.filePaths[0])
+    return getState()
+  })
+
+  // --- Git automation (Phase 2) ---
+
+  ipcMain.handle('git:getInfo', async () => {
+    const projectPath = getProjectPath()
+    if (!projectPath) return getGitInfo('')
+    return getGitInfo(projectPath)
+  })
+
+  // Create a task: provision an isolated worktree + branch, then persist it.
+  ipcMain.handle(
+    'vibeflow:createTask',
+    async (_event, payload: { title: string; baseBranch: string | null }) => {
+      const projectPath = getProjectPath()
+      if (!projectPath) {
+        throw new Error('尚未選擇專案資料夾')
+      }
+      const taskId = randomUUID().slice(0, 8)
+      const result = await provisionWorktree(
+        projectPath,
+        taskId,
+        payload.baseBranch
+      )
+      const task: Task = {
+        id: taskId,
+        title: payload.title.trim() || `Task ${taskId}`,
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+        baseBranch: result.baseBranch,
+        pushed: result.pushed,
+      }
+      addTask(task)
+      return { state: getState(), task }
+    }
+  )
+
+  ipcMain.handle('vibeflow:removeTask', async (_event, taskId: string) => {
+    removeTask(taskId)
     return getState()
   })
 }

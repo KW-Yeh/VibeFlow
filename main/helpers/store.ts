@@ -6,6 +6,12 @@ export interface Task {
   id: string
   title: string
   branch: string
+  /** Absolute path of this task's git worktree, once provisioned. */
+  worktreePath?: string
+  /** Base branch the worktree was created from. */
+  baseBranch?: string
+  /** Whether the branch was pushed upstream at creation. */
+  pushed?: boolean
 }
 
 export type BoardState = Record<ColumnId, Task[]>
@@ -65,4 +71,34 @@ export function setBoard(board: BoardState): void {
 
 export function setProjectPath(projectPath: string | null): void {
   getStore().set('projectPath', projectPath)
+}
+
+export function getProjectPath(): string | null {
+  return getStore().get('projectPath')
+}
+
+/** Add a task to the backlog column and persist. */
+export function addTask(task: Task): void {
+  const board = getStore().get('board')
+  board.backlog = [task, ...board.backlog]
+  getStore().set('board', board)
+}
+
+/** Find a task by id across all columns. */
+export function findTask(taskId: string): Task | null {
+  const board = getStore().get('board')
+  for (const column of Object.values(board)) {
+    const found = column.find((t) => t.id === taskId)
+    if (found) return found
+  }
+  return null
+}
+
+/** Remove a task by id from whichever column holds it, and persist. */
+export function removeTask(taskId: string): void {
+  const board = getStore().get('board')
+  ;(Object.keys(board) as ColumnId[]).forEach((col) => {
+    board[col] = board[col].filter((t) => t.id !== taskId)
+  })
+  getStore().set('board', board)
 }

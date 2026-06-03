@@ -6,3 +6,4 @@ export type {
   BoardState,
   VibeFlowState,
 } from '../../main/helpers/store'
+export type { GitInfo } from '../../main/helpers/git'

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
-import type { BoardState, VibeFlowState } from './helpers/store'
+import type { BoardState, Task, VibeFlowState } from './helpers/store'
+import type { GitInfo } from './helpers/git'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -30,6 +31,14 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:setProjectPath', projectPath),
   selectProject: (): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:selectProject'),
+  getGitInfo: (): Promise<GitInfo> => ipcRenderer.invoke('git:getInfo'),
+  createTask: (payload: {
+    title: string
+    baseBranch: string | null
+  }): Promise<{ state: VibeFlowState; task: Task }> =>
+    ipcRenderer.invoke('vibeflow:createTask', payload),
+  removeTask: (taskId: string): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('vibeflow:removeTask', taskId),
 }
 
 contextBridge.exposeInMainWorld('vibeflow', vibeflow)

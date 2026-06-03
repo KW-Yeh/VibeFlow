@@ -1,4 +1,4 @@
-import type { BoardState, VibeFlowState } from '@/lib/types'
+import type { BoardState, GitInfo, Task, VibeFlowState } from '@/lib/types'
 
 /**
  * Returns the preload-exposed VibeFlow bridge, or null when it is unavailable
@@ -26,4 +26,22 @@ export async function persistBoard(board: BoardState): Promise<void> {
 export async function selectProject(): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.selectProject() : null
+}
+
+export async function getGitInfo(): Promise<GitInfo | null> {
+  const b = bridge()
+  return b ? b.getGitInfo() : null
+}
+
+export async function createTask(payload: {
+  title: string
+  baseBranch: string | null
+}): Promise<{ state: VibeFlowState; task: Task } | null> {
+  const b = bridge()
+  return b ? b.createTask(payload) : null
+}
+
+export async function removeTask(taskId: string): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.removeTask(taskId) : null
 }

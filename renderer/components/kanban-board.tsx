@@ -21,6 +21,7 @@ interface KanbanBoardProps {
   onBoardChange: (board: BoardState) => void
   projectPath: string | null
   onSelectProject: () => void
+  onNewTask: () => void
 }
 
 export function KanbanBoard({
@@ -28,6 +29,7 @@ export function KanbanBoard({
   onBoardChange,
   projectPath,
   onSelectProject,
+  onNewTask,
 }: KanbanBoardProps) {
   const onDragEnd = (result: DropResult) => {
     const { source, destination } = result
@@ -74,7 +76,7 @@ export function KanbanBoard({
             <FolderOpen />
             選擇專案
           </Button>
-          <Button size="sm">
+          <Button size="sm" onClick={onNewTask} disabled={!projectPath}>
             <Plus />
             新增任務
           </Button>
