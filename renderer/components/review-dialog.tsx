@@ -112,7 +112,7 @@ export function ReviewDialog({
         <div className="border-t px-5 py-3">
           {result ? (
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 text-sm text-emerald-500">
+              <span className="inline-flex items-center gap-2 text-sm text-primary">
                 <CheckCircle2 className="size-4" />
                 {result.committed ? '已提交' : '無變更可提交'}
                 {result.pushed ? '並已推送至遠端' : '（未推送）'}

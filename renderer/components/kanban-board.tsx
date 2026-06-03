@@ -1,11 +1,6 @@
 import { useState } from 'react'
 import {
-  DragDropContext,
-  Droppable,
-  Draggable,
-  type DropResult,
-} from '@hello-pangea/dnd'
-import {
+  Check,
   ChevronDown,
   ChevronRight,
   FolderGit2,
@@ -16,6 +11,7 @@ import {
   Plus,
   Terminal as TerminalIcon,
   Trash2,
+  Undo2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -24,11 +20,21 @@ import { buildClaudeCommand } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { BoardState, ColumnId, Task } from '@/lib/types'
 
-const COLUMNS: { id: ColumnId; title: string }[] = [
-  { id: 'backlog', title: 'Backlog' },
+// Views in the segmented control. In Progress comes first because it is the
+// page users live in; Backlog and Done are secondary, freely switchable views.
+// All three panels stay mounted — switching only toggles visibility — so the
+// terminals (PTY + scrollback) on In Progress cards survive view changes.
+const VIEWS: { id: ColumnId; title: string }[] = [
   { id: 'in_progress', title: 'In Progress' },
+  { id: 'backlog', title: 'Backlog' },
   { id: 'done', title: 'Done' },
 ]
+
+const EMPTY_HINTS: Record<ColumnId, string> = {
+  in_progress: '沒有進行中的任務 — 到 Backlog 按 ▶ 開始執行',
+  backlog: '佇列是空的 — 點「新增任務」建立卡片',
+  done: '還沒有完成的任務',
+}
 
 interface KanbanBoardProps {
   board: BoardState
@@ -48,6 +54,175 @@ interface LaunchEntry {
   nonce: number
 }
 
+interface TaskCardProps {
+  task: Task
+  column: ColumnId
+  isExpanded: boolean
+  isMounted: boolean
+  launch?: LaunchEntry
+  onToggleExpanded: (taskId: string) => void
+  /** In Progress: (re-)launch Claude in place. */
+  onRun: (task: Task) => void
+  /** Backlog: move the card into In Progress and launch Claude. */
+  onStart: (task: Task) => void
+  /** In Progress → Backlog. */
+  onMoveBack: (task: Task) => void
+  /** In Progress → Done (tears down PTY + worktree). */
+  onComplete: (task: Task) => void
+  onReview: (taskId: string) => void
+  onEdit: (taskId: string) => void
+  onDelete: (taskId: string) => void
+}
+
+// Module-level component (not defined inside KanbanBoard) so its identity is
+// stable across renders — an inline component type would remount the subtree
+// every render and kill the embedded terminal.
+function TaskCard({
+  task,
+  column,
+  isExpanded,
+  isMounted,
+  launch,
+  onToggleExpanded,
+  onRun,
+  onStart,
+  onMoveBack,
+  onComplete,
+  onReview,
+  onEdit,
+  onDelete,
+}: TaskCardProps) {
+  const cwd = task.worktreePath ?? task.projectPath ?? null
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          {task.projectName && (
+            <span className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+              <FolderGit2 className="size-2.5 shrink-0" />
+              <span className="truncate">{task.projectName}</span>
+            </span>
+          )}
+          <p className="mb-2 break-words text-sm font-medium">{task.title}</p>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <GitBranch className="size-3 shrink-0" />
+              <span className="break-all">{task.branch}</span>
+            </span>
+            {task.pushed && (
+              <span className="text-[10px] uppercase tracking-wide text-primary">
+                pushed
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {column === 'backlog' && cwd && (
+            <button
+              type="button"
+              onClick={() => onStart(task)}
+              title="移至 In Progress 並啟動 Claude"
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+            >
+              <Play className="size-3.5" />
+            </button>
+          )}
+          {column === 'in_progress' && (
+            <>
+              {cwd && (
+                <button
+                  type="button"
+                  onClick={() => onRun(task)}
+                  title={
+                    task.launchedAt
+                      ? '重新執行（啟動 Claude）'
+                      : '開始執行（啟動 Claude）'
+                  }
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+                >
+                  <Play className="size-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onMoveBack(task)}
+                title="退回 Backlog"
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onComplete(task)}
+                title="標記完成（清理 PTY 與 worktree）"
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
+              >
+                <Check className="size-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => onEdit(task.id)}
+            title="編輯任務"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+          {task.worktreePath && (
+            <button
+              type="button"
+              onClick={() => onReview(task.id)}
+              title="審查變更"
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <GitCompare className="size-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onToggleExpanded(task.id)}
+            title={isExpanded ? '收合終端' : '展開終端'}
+            className="flex items-center rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <TerminalIcon className="size-3.5" />
+            {isExpanded ? (
+              <ChevronDown className="size-3" />
+            ) : (
+              <ChevronRight className="size-3" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(task.id)}
+            title="刪除卡片（並清理 worktree）"
+            className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {isMounted && (
+        <div className={cn(!isExpanded && 'hidden')}>
+          {task.description && (
+            <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
+              {task.description}
+            </p>
+          )}
+          <TaskTerminal
+            taskId={task.id}
+            cwd={cwd}
+            launchCommand={launch?.command}
+            launchNonce={launch?.nonce ?? 0}
+            onLaunchRequest={() => onRun(task)}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function KanbanBoard({
   board,
   onBoardChange,
@@ -59,6 +234,9 @@ export function KanbanBoard({
   autoMode,
   onToggleAutoMode,
 }: KanbanBoardProps) {
+  // Active view. In Progress is the home view; the other two are reachable via
+  // the segmented control. Hidden views stay mounted (CSS only).
+  const [view, setView] = useState<ColumnId>('in_progress')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // Tasks whose terminal has ever been opened. Once mounted, the `TaskTerminal`
   // stays mounted (just hidden when collapsed) so its PTY + scrollback survive
@@ -93,7 +271,8 @@ export function KanbanBoard({
     }))
   }
 
-  // Manual run (▶ button): always (re-)launches, and stamps launchedAt once.
+  // Manual run (▶ on an In Progress card): always (re-)launches in place, and
+  // stamps launchedAt once.
   const runTask = (task: Task) => {
     armLaunch(task)
     if (!task.launchedAt) {
@@ -112,73 +291,105 @@ export function KanbanBoard({
     }
   }
 
-  const onDragEnd = (result: DropResult) => {
-    const { source, destination } = result
-    if (!destination) return
-    if (
-      source.droppableId === destination.droppableId &&
-      source.index === destination.index
-    ) {
-      return
-    }
-
-    const from = source.droppableId as ColumnId
-    const to = destination.droppableId as ColumnId
+  // Cross-column move; preserves the semantics the drag-and-drop board had:
+  // entering In Progress auto-runs once (Auto Mode), entering Done finalizes.
+  const moveTask = (
+    task: Task,
+    to: ColumnId,
+    opts?: { forceLaunch?: boolean }
+  ) => {
+    const willLaunch =
+      to === 'in_progress' &&
+      (opts?.forceLaunch === true || (autoMode && !task.launchedAt))
+    const toInsert =
+      willLaunch && !task.launchedAt
+        ? { ...task, launchedAt: Date.now() }
+        : task
 
     const next: BoardState = {
-      backlog: [...board.backlog],
-      in_progress: [...board.in_progress],
-      done: [...board.done],
+      backlog: board.backlog.filter((t) => t.id !== task.id),
+      in_progress: board.in_progress.filter((t) => t.id !== task.id),
+      done: board.done.filter((t) => t.id !== task.id),
     }
-    const [moved] = next[from].splice(source.index, 1)
-
-    // Entering In Progress auto-runs the card's Claude execution once, when
-    // Auto Mode is on and it hasn't been launched before.
-    let toInsert = moved
-    let autoLaunch = false
-    if (
-      to === 'in_progress' &&
-      from !== 'in_progress' &&
-      autoMode &&
-      !moved.launchedAt
-    ) {
-      toInsert = { ...moved, launchedAt: Date.now() }
-      autoLaunch = true
-    }
-
-    next[to].splice(destination.index, 0, toInsert)
+    next[to] = [toInsert, ...next[to]]
     onBoardChange(next)
 
     // Moving a card into Done finalizes it: tear down PTY + worktree.
-    if (to === 'done' && from !== 'done') {
-      onTaskDone(moved.id)
-    }
-
-    if (autoLaunch) armLaunch(toInsert)
+    if (to === 'done') onTaskDone(task.id)
+    if (willLaunch) armLaunch(toInsert)
   }
+
+  // ▶ on a Backlog card: pull it into In Progress, switch there, and launch.
+  const startTask = (task: Task) => {
+    moveTask(task, 'in_progress', { forceLaunch: true })
+    setView('in_progress')
+  }
+
+  const completeTask = (task: Task) => moveTask(task, 'done')
+  const moveBackTask = (task: Task) => moveTask(task, 'backlog')
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
-      <header className="mb-6 flex items-center justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">VibeFlow</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">VibeFlow</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             意圖驅動的本地開發看板 · 可同時管理多個專案
           </p>
         </div>
+
+        {/* Segmented view switcher — pill grammar per DESIGN.md: the full-pill
+            radius is the action signal, with the single blue accent. */}
+        <nav
+          role="tablist"
+          aria-label="看板分頁"
+          className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-card p-1"
+        >
+          {VIEWS.map((v) => {
+            const active = view === v.id
+            return (
+              <button
+                key={v.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setView(v.id)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors active:scale-95',
+                  active
+                    ? 'bg-primary font-semibold text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {v.title}
+                <span
+                  className={cn(
+                    'text-[11px] tabular-nums',
+                    active
+                      ? 'text-primary-foreground/75'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  {board[v.id].length}
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+
         <div className="flex items-center gap-3">
           <button
             type="button"
             role="switch"
             aria-checked={autoMode}
             onClick={onToggleAutoMode}
-            title="開啟時：將卡片拖到 In Progress 會自動執行 Claude"
+            title="開啟時：將卡片移至 In Progress 會自動執行 Claude"
             className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <span
               className={cn(
                 'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
-                autoMode ? 'bg-emerald-500' : 'bg-muted'
+                autoMode ? 'bg-primary' : 'bg-muted'
               )}
             >
               <span
@@ -190,172 +401,63 @@ export function KanbanBoard({
             </span>
             Auto Mode
           </button>
-          <Button size="sm" onClick={onNewTask}>
+          <Button
+            size="sm"
+            className="rounded-full active:scale-95"
+            onClick={onNewTask}
+          >
             <Plus />
             新增任務
           </Button>
         </div>
       </header>
 
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {COLUMNS.map((column) => (
-            <Droppable droppableId={column.id} key={column.id}>
-              {(provided, snapshot) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className={cn(
-                    'flex flex-col rounded-lg border border-border/40 bg-card p-3 transition-colors',
-                    snapshot.isDraggingOver && 'bg-accent'
-                  )}
-                >
-                  <div className="mb-3 flex items-center justify-between px-1">
-                    <span className="text-sm font-semibold">
-                      {column.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {board[column.id].length}
-                    </span>
-                  </div>
-
-                  <div className="flex min-h-24 flex-col gap-2">
-                    {board[column.id].map((task, index) => {
-                      const isExpanded = expanded.has(task.id)
-                      const cwd = task.worktreePath ?? task.projectPath ?? null
-                      return (
-                        <Draggable
-                          draggableId={task.id}
-                          index={index}
-                          key={task.id}
-                        >
-                          {(dragProvided, dragSnapshot) => (
-                            <div
-                              ref={dragProvided.innerRef}
-                              {...dragProvided.draggableProps}
-                              className={cn(
-                                'rounded-md border bg-background p-3 shadow-xs',
-                                dragSnapshot.isDragging && 'ring-2 ring-ring'
-                              )}
-                            >
-                              <div className="flex items-start gap-2">
-                                {/* Drag handle limited to this region so the
-                                    terminal below stays interactive. */}
-                                <div
-                                  {...dragProvided.dragHandleProps}
-                                  className="min-w-0 flex-1 cursor-grab active:cursor-grabbing"
-                                >
-                                  {task.projectName && (
-                                    <span className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                                      <FolderGit2 className="size-2.5 shrink-0" />
-                                      <span className="truncate">
-                                        {task.projectName}
-                                      </span>
-                                    </span>
-                                  )}
-                                  <p className="mb-2 break-words text-sm font-medium">
-                                    {task.title}
-                                  </p>
-                                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                                    <span className="inline-flex min-w-0 max-w-full items-center gap-1">
-                                      <GitBranch className="size-3 shrink-0" />
-                                      <span className="break-all">
-                                        {task.branch}
-                                      </span>
-                                    </span>
-                                    {task.pushed && (
-                                      <span className="text-[10px] uppercase tracking-wide text-emerald-500">
-                                        pushed
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-1">
-                                  {cwd && (
-                                    <button
-                                      type="button"
-                                      onClick={() => runTask(task)}
-                                      title={
-                                        task.launchedAt
-                                          ? '重新執行（啟動 Claude）'
-                                          : '開始執行（啟動 Claude）'
-                                      }
-                                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-emerald-500"
-                                    >
-                                      <Play className="size-3.5" />
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => onEditTask(task.id)}
-                                    title="編輯任務"
-                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                  >
-                                    <Pencil className="size-3.5" />
-                                  </button>
-                                  {task.worktreePath && (
-                                    <button
-                                      type="button"
-                                      onClick={() => onReview(task.id)}
-                                      title="審查變更"
-                                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                    >
-                                      <GitCompare className="size-3.5" />
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleExpanded(task.id)}
-                                    title={isExpanded ? '收合終端' : '展開終端'}
-                                    className="flex items-center rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                  >
-                                    <TerminalIcon className="size-3.5" />
-                                    {isExpanded ? (
-                                      <ChevronDown className="size-3" />
-                                    ) : (
-                                      <ChevronRight className="size-3" />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => onDeleteTask(task.id)}
-                                    title="刪除卡片（並清理 worktree）"
-                                    className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              {mounted.has(task.id) && (
-                                <div className={cn(!isExpanded && 'hidden')}>
-                                  {task.description && (
-                                    <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
-                                      {task.description}
-                                    </p>
-                                  )}
-                                  <TaskTerminal
-                                    taskId={task.id}
-                                    cwd={cwd}
-                                    launchCommand={launch[task.id]?.command}
-                                    launchNonce={launch[task.id]?.nonce ?? 0}
-                                    onLaunchRequest={() => runTask(task)}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </Draggable>
-                      )
-                    })}
-                    {provided.placeholder}
-                  </div>
-                </div>
-              )}
-            </Droppable>
-          ))}
-        </div>
-      </DragDropContext>
+      {/* All panels stay mounted; only visibility toggles, so In Progress
+          terminals keep running while browsing Backlog / Done. */}
+      <main>
+        {VIEWS.map((v) => (
+          <section
+            key={v.id}
+            role="tabpanel"
+            aria-label={v.title}
+            className={cn(view !== v.id && 'hidden')}
+          >
+            {board[v.id].length === 0 ? (
+              <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
+                {EMPTY_HINTS[v.id]}
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  'grid grid-cols-1 items-start gap-4',
+                  v.id === 'in_progress'
+                    ? 'lg:grid-cols-2 2xl:grid-cols-3'
+                    : 'md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
+                )}
+              >
+                {board[v.id].map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    column={v.id}
+                    isExpanded={expanded.has(task.id)}
+                    isMounted={mounted.has(task.id)}
+                    launch={launch[task.id]}
+                    onToggleExpanded={toggleExpanded}
+                    onRun={runTask}
+                    onStart={startTask}
+                    onMoveBack={moveBackTask}
+                    onComplete={completeTask}
+                    onReview={onReview}
+                    onEdit={onEditTask}
+                    onDelete={onDeleteTask}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+      </main>
     </div>
   )
 }
