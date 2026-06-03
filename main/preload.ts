@@ -50,6 +50,8 @@ const vibeflow = {
     ipcRenderer.invoke('git:approve', { taskId, message }),
   cleanupTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:cleanupTask', taskId),
+  deleteTask: (taskId: string): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('vibeflow:deleteTask', taskId),
 
   // Interactive terminal bridge (Phase 3).
   term: {

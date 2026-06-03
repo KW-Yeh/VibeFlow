@@ -72,3 +72,10 @@ export async function cleanupTask(
   const b = bridge()
   return b ? b.cleanupTask(taskId) : null
 }
+
+export async function deleteTask(
+  taskId: string
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.deleteTask(taskId) : null
+}

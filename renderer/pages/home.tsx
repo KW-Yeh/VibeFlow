@@ -8,6 +8,7 @@ import {
   approve,
   cleanupTask,
   createTask,
+  deleteTask,
   getDiff,
   getGitInfo,
   loadState,
@@ -150,6 +151,11 @@ export default function HomePage() {
     if (state) setBoard(state.board)
   }
 
+  const handleDeleteTask = async (taskId: string) => {
+    const state = await deleteTask(taskId)
+    if (state) setBoard(state.board)
+  }
+
   return (
     <React.Fragment>
       <Head>
@@ -166,6 +172,7 @@ export default function HomePage() {
               onNewTask={handleOpenNewTask}
               onReview={handleReview}
               onTaskDone={handleTaskDone}
+              onDeleteTask={handleDeleteTask}
             />
             <NewTaskDialog
               open={dialogOpen}

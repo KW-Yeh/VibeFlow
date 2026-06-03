@@ -13,6 +13,7 @@ import {
   GitCompare,
   Plus,
   Terminal as TerminalIcon,
+  Trash2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ interface KanbanBoardProps {
   onNewTask: () => void
   onReview: (taskId: string) => void
   onTaskDone: (taskId: string) => void
+  onDeleteTask: (taskId: string) => void
 }
 
 export function KanbanBoard({
@@ -44,6 +46,7 @@ export function KanbanBoard({
   onNewTask,
   onReview,
   onTaskDone,
+  onDeleteTask,
 }: KanbanBoardProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
@@ -199,6 +202,14 @@ export function KanbanBoard({
                                     ) : (
                                       <ChevronRight className="size-3" />
                                     )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteTask(task.id)}
+                                    title="刪除卡片（並清理 worktree）"
+                                    className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                                  >
+                                    <Trash2 className="size-3.5" />
                                   </button>
                                 </div>
                               </div>

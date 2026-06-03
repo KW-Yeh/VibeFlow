@@ -167,6 +167,17 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     updateTask(taskId, { worktreePath: undefined })
     return getState()
   })
+
+  // Delete: cleanup (PTY + worktree) AND drop the card from the board.
+  ipcMain.handle('vibeflow:deleteTask', async (_event, taskId: string) => {
+    const projectPath = getProjectPath()
+    killSession(taskId)
+    if (projectPath) {
+      await removeWorktree(projectPath, taskId)
+    }
+    removeTask(taskId)
+    return getState()
+  })
 }
 
 ;(async () => {
