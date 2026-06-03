@@ -34,10 +34,17 @@ const vibeflow = {
     ipcRenderer.invoke('git:getInfo', projectPath),
   createTask: (payload: {
     title: string
+    description?: string
     projectPath: string
     baseBranch: string | null
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
+  updateTask: (payload: {
+    taskId: string
+    title: string
+    description?: string
+  }): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('vibeflow:updateTask', payload),
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),
 

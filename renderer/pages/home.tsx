@@ -3,6 +3,7 @@ import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
 import { NewTaskDialog } from '@/components/new-task-dialog'
+import { EditTaskDialog } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
 import {
   approve,
@@ -14,6 +15,7 @@ import {
   loadState,
   persistBoard,
   pickFolder,
+  updateTask,
 } from '@/lib/api'
 import type { BoardState, DiffFile, Task } from '@/lib/types'
 
@@ -40,6 +42,11 @@ export default function HomePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+
+  // Edit dialog state
+  const [editTask, setEditTask] = useState<Task | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   // Review dialog state
   const [reviewTaskId, setReviewTaskId] = useState<string | null>(null)
@@ -77,13 +84,19 @@ export default function HomePage() {
 
   const handleCreateTask = async (
     title: string,
+    description: string,
     projectPath: string,
     baseBranch: string | null
   ) => {
     setCreating(true)
     setCreateError(null)
     try {
-      const result = await createTask({ title, projectPath, baseBranch })
+      const result = await createTask({
+        title,
+        description,
+        projectPath,
+        baseBranch,
+      })
       if (result) {
         setBoard(result.state.board)
         setDialogOpen(false)
@@ -92,6 +105,26 @@ export default function HomePage() {
       setCreateError(err instanceof Error ? err.message : String(err))
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleOpenEditTask = (taskId: string) => {
+    setEditError(null)
+    setEditTask(findTask(board, taskId))
+  }
+
+  const handleSaveEdit = async (title: string, description: string) => {
+    if (!editTask) return
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      const state = await updateTask({ taskId: editTask.id, title, description })
+      if (state) setBoard(state.board)
+      setEditTask(null)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -152,6 +185,7 @@ export default function HomePage() {
               onBoardChange={handleBoardChange}
               onNewTask={handleOpenNewTask}
               onReview={handleReview}
+              onEditTask={handleOpenEditTask}
               onTaskDone={handleTaskDone}
               onDeleteTask={handleDeleteTask}
             />
@@ -163,6 +197,13 @@ export default function HomePage() {
               loadGitInfo={getGitInfo}
               onSubmit={handleCreateTask}
               onClose={() => setDialogOpen(false)}
+            />
+            <EditTaskDialog
+              task={editTask}
+              saving={savingEdit}
+              error={editError}
+              onSubmit={handleSaveEdit}
+              onClose={() => setEditTask(null)}
             />
             <ReviewDialog
               open={reviewTaskId !== null}

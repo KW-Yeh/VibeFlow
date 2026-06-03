@@ -66,7 +66,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'vibeflow:createTask',
     async (
       _event,
-      payload: { title: string; projectPath: string; baseBranch: string | null }
+      payload: {
+        title: string
+        description?: string
+        projectPath: string
+        baseBranch: string | null
+      }
     ) => {
       if (!payload.projectPath) {
         throw new Error('尚未選擇專案資料夾')
@@ -80,6 +85,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const task: Task = {
         id: taskId,
         title: payload.title.trim() || `Task ${taskId}`,
+        description: payload.description?.trim() || undefined,
         branch: result.branch,
         projectPath: payload.projectPath,
         projectName: path.basename(payload.projectPath),
@@ -96,6 +102,22 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     removeTask(taskId)
     return getState()
   })
+
+  // Edit an existing card's user-facing fields (title / description). Git-bound
+  // fields (branch, projectPath, worktreePath) are intentionally not editable.
+  ipcMain.handle(
+    'vibeflow:updateTask',
+    async (
+      _event,
+      payload: { taskId: string; title: string; description?: string }
+    ) => {
+      updateTask(payload.taskId, {
+        title: payload.title.trim() || `Task ${payload.taskId}`,
+        description: payload.description?.trim() || undefined,
+      })
+      return getState()
+    }
+  )
 
   // --- Interactive terminal / PTY (Phase 3) ---
 

@@ -13,6 +13,7 @@ interface NewTaskDialogProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   onSubmit: (
     title: string,
+    description: string,
     projectPath: string,
     baseBranch: string | null
   ) => void
@@ -34,6 +35,7 @@ export function NewTaskDialog({
   onClose,
 }: NewTaskDialogProps) {
   const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
@@ -43,6 +45,7 @@ export function NewTaskDialog({
   useEffect(() => {
     if (open) {
       setTitle('')
+      setDescription('')
       setProjectPath(null)
       setGitInfo(null)
       setLoadingInfo(false)
@@ -78,7 +81,12 @@ export function NewTaskDialog({
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
-    onSubmit(title.trim(), projectPath, hasRemote ? baseBranch || null : null)
+    onSubmit(
+      title.trim(),
+      description.trim(),
+      projectPath,
+      hasRemote ? baseBranch || null : null
+    )
   }
 
   return (
@@ -146,9 +154,19 @@ export function NewTaskDialog({
                   autoFocus
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                   placeholder="例如：實作登入頁面"
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">詳細描述（選填）</span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  placeholder="描述這個任務的目標、需求或背景脈絡…"
+                  className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
               </label>
 

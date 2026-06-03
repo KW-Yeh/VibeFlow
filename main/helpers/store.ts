@@ -5,6 +5,8 @@ export type ColumnId = 'backlog' | 'in_progress' | 'done'
 export interface Task {
   id: string
   title: string
+  /** Optional long-form description / intent for this task. */
+  description?: string
   branch: string
   /** Absolute path of the project this task belongs to (chosen per task). */
   projectPath?: string

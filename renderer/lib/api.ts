@@ -42,11 +42,21 @@ export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
 
 export async function createTask(payload: {
   title: string
+  description?: string
   projectPath: string
   baseBranch: string | null
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
+}
+
+export async function updateTask(payload: {
+  taskId: string
+  title: string
+  description?: string
+}): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.updateTask(payload) : null
 }
 
 export async function removeTask(taskId: string): Promise<VibeFlowState | null> {

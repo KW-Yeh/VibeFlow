@@ -11,6 +11,7 @@ import {
   FolderGit2,
   GitBranch,
   GitCompare,
+  Pencil,
   Plus,
   Terminal as TerminalIcon,
   Trash2,
@@ -32,6 +33,7 @@ interface KanbanBoardProps {
   onBoardChange: (board: BoardState) => void
   onNewTask: () => void
   onReview: (taskId: string) => void
+  onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
 }
@@ -41,6 +43,7 @@ export function KanbanBoard({
   onBoardChange,
   onNewTask,
   onReview,
+  onEditTask,
   onTaskDone,
   onDeleteTask,
 }: KanbanBoardProps) {
@@ -107,7 +110,7 @@ export function KanbanBoard({
                   ref={provided.innerRef}
                   {...provided.droppableProps}
                   className={cn(
-                    'flex flex-col rounded-lg border bg-card p-3 transition-colors',
+                    'flex flex-col rounded-lg border border-border/40 bg-card p-3 transition-colors',
                     snapshot.isDraggingOver && 'bg-accent'
                   )}
                 >
@@ -154,13 +157,15 @@ export function KanbanBoard({
                                       </span>
                                     </span>
                                   )}
-                                  <p className="mb-2 text-sm font-medium">
+                                  <p className="mb-2 break-words text-sm font-medium">
                                     {task.title}
                                   </p>
                                   <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                                    <span className="inline-flex items-center gap-1">
-                                      <GitBranch className="size-3" />
-                                      {task.branch}
+                                    <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                                      <GitBranch className="size-3 shrink-0" />
+                                      <span className="break-all">
+                                        {task.branch}
+                                      </span>
                                     </span>
                                     {task.pushed && (
                                       <span className="text-[10px] uppercase tracking-wide text-emerald-500">
@@ -170,6 +175,14 @@ export function KanbanBoard({
                                   </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => onEditTask(task.id)}
+                                    title="編輯任務"
+                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  >
+                                    <Pencil className="size-3.5" />
+                                  </button>
                                   {task.worktreePath && (
                                     <button
                                       type="button"
@@ -205,7 +218,14 @@ export function KanbanBoard({
                               </div>
 
                               {isExpanded && (
-                                <TaskTerminal taskId={task.id} cwd={cwd} />
+                                <>
+                                  {task.description && (
+                                    <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
+                                      {task.description}
+                                    </p>
+                                  )}
+                                  <TaskTerminal taskId={task.id} cwd={cwd} />
+                                </>
                               )}
                             </div>
                           )}

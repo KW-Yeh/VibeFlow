@@ -84,15 +84,15 @@ export function TaskTerminal({ taskId, cwd }: TaskTerminalProps) {
   }
 
   return (
-    <div className="mt-2 rounded-md border bg-black">
-      <div className="flex items-center justify-between border-b border-white/10 px-2 py-1">
-        <span className="font-mono text-[10px] text-muted-foreground">
+    <div className="mt-2 overflow-hidden rounded-md bg-black">
+      <div className="flex items-center justify-between bg-white/[0.06] px-2 py-1">
+        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-[10px]"
+          className="h-6 shrink-0 px-2 text-[10px]"
           onClick={launchClaude}
         >
           <Sparkles className="size-3" />
