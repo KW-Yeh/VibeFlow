@@ -1,38 +1,13 @@
-import os from 'os'
 import * as nodePty from 'node-pty'
 import type { WebContents } from 'electron'
+import { buildEnv } from './env'
 
 /** Active PTY sessions keyed by task id (supports multiple parallel cards). */
 const sessions = new Map<string, nodePty.IPty>()
 
-/**
- * Build the child env with a sane PATH. Apps launched from Finder inherit a
- * minimal PATH, so `claude` and other user-installed CLIs would not be found —
- * we augment PATH with the common bin locations as a fallback. Spawning a login
- * shell additionally loads the user's profile for the full PATH.
- */
-function buildEnv(): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) {
-    if (typeof v === 'string') env[k] = v
-  }
-  const home = os.homedir()
-  const extras = [
-    '/opt/homebrew/bin',
-    '/opt/homebrew/sbin',
-    '/usr/local/bin',
-    '/usr/bin',
-    '/bin',
-    '/usr/sbin',
-    '/sbin',
-    `${home}/.local/bin`,
-    `${home}/.npm-global/bin`,
-  ]
-  const parts = (env.PATH ?? '').split(':').filter(Boolean)
-  for (const p of extras) if (!parts.includes(p)) parts.push(p)
-  env.PATH = parts.join(':')
-  env.TERM = 'xterm-256color'
-  return env
+/** Shared augmented env (sane PATH) plus the terminal-specific TERM. */
+function buildPtyEnv(): Record<string, string> {
+  return { ...buildEnv(), TERM: 'xterm-256color' }
 }
 
 function defaultShell(): string {
@@ -73,7 +48,7 @@ export function startSession(
   const proc = nodePty.spawn(shell, args, {
     name: 'xterm-256color',
     cwd,
-    env: buildEnv(),
+    env: buildPtyEnv(),
     cols: 80,
     rows: 24,
   })

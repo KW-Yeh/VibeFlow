@@ -3,15 +3,21 @@ import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
 import { PROGRESS_FILE } from './progress'
+import { buildEnv } from './env'
 
 const pexec = promisify(execFile)
 
-/** Run a git command in `cwd` and return trimmed stdout. */
+/**
+ * Run a git command in `cwd` and return trimmed stdout. Uses an augmented PATH
+ * (see env.ts) so git hooks that shell out — notably the Git LFS
+ * post-checkout/-commit hooks — can find `git-lfs` even when the app was
+ * launched from Finder with a minimal PATH.
+ */
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await pexec('git', args, {
     cwd,
     maxBuffer: 32 * 1024 * 1024,
-    env: process.env,
+    env: { ...process.env, PATH: buildEnv().PATH },
   })
   return stdout.toString().trim()
 }
@@ -149,14 +155,23 @@ export async function provisionWorktree(
     }
   }
 
-  await git(projectPath, [
-    'worktree',
-    'add',
-    '-b',
-    branch,
-    relativePath,
-    startPoint,
-  ])
+  try {
+    await git(projectPath, [
+      'worktree',
+      'add',
+      '-b',
+      branch,
+      relativePath,
+      startPoint,
+    ])
+  } catch (err) {
+    // `worktree add` can fail AFTER creating the dir + branch (e.g. a failing
+    // post-checkout hook), leaving orphans that clutter the repo. Roll back the
+    // partial state before surfacing the error.
+    await removeWorktree(projectPath, taskId)
+    await deleteBranch(projectPath, taskId)
+    throw err
+  }
 
   let pushed = false
   if (info.hasRemote) {
