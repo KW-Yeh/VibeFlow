@@ -15,11 +15,14 @@ import {
   getGitInfo,
   loadState,
   onProgressUpdate,
+  onUpdateAvailable,
   persistBoard,
   pickFolder,
+  relaunchApp,
   setSettings,
   updateTask,
 } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import type { BoardState, DiffFile, Task } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
@@ -71,6 +74,11 @@ export default function HomePage() {
   } | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
 
+  // A newer build has replaced the running bundle (rebuild.sh --install);
+  // offer a one-click restart instead of requiring a manual quit + reopen.
+  const [updateReady, setUpdateReady] = useState(false)
+  const [relaunching, setRelaunching] = useState(false)
+
   useEffect(() => {
     let active = true
     loadState().then((state) => {
@@ -102,6 +110,15 @@ export default function HomePage() {
       }))
     })
   }, [])
+
+  useEffect(() => {
+    return onUpdateAvailable(() => setUpdateReady(true))
+  }, [])
+
+  const handleRelaunch = () => {
+    setRelaunching(true)
+    void relaunchApp()
+  }
 
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
@@ -282,6 +299,27 @@ export default function HomePage() {
               onApprove={handleApprove}
               onClose={() => setReviewTaskId(null)}
             />
+            {updateReady && (
+              <div
+                role="status"
+                className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-border/40 bg-card py-2 pl-4 pr-2 text-sm shadow-lg"
+              >
+                <span className="text-foreground">
+                  新版本已建置完成
+                  <span className="ml-1.5 text-muted-foreground">
+                    重新啟動以套用
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  className="rounded-full active:scale-95"
+                  disabled={relaunching}
+                  onClick={handleRelaunch}
+                >
+                  {relaunching ? '重新啟動中…' : '立即重啟'}
+                </Button>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">

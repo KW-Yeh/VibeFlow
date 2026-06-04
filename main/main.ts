@@ -36,6 +36,11 @@ import {
   unwatchProgress,
   watchProgress,
 } from './helpers/progress'
+import {
+  relaunchApp,
+  stopUpdateWatcher,
+  watchForNewBuild,
+} from './helpers/update'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -47,6 +52,17 @@ if (isProd) {
 
 function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:getState', () => getState())
+
+  // --- App self-update (local hot update) ---
+
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+
+  // Restart into the build currently on disk (after rebuild.sh --install
+  // replaced the bundle). app.relaunch re-executes the same .app path, so
+  // the new code is picked up.
+  ipcMain.handle('app:relaunch', () => {
+    relaunchApp()
+  })
 
   ipcMain.handle('vibeflow:setBoard', (_event, board: BoardState) => {
     setBoard(board)
@@ -252,6 +268,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   registerIpcHandlers(mainWindow)
 
+  // Notify the renderer when a newer build replaces the running bundle
+  // (e.g. `./rebuild.sh --install`), so it can offer a one-click restart.
+  watchForNewBuild(() => {
+    if (!mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('update:available')
+    }
+  })
+
   if (isProd) {
     await mainWindow.loadURL('app://./home')
   } else {
@@ -270,6 +294,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   killAllSessions()
   unwatchAllProgress()
+  stopUpdateWatcher()
 })
 
 ipcMain.on('message', async (event, arg) => {

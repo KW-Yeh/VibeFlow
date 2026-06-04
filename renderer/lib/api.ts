@@ -27,6 +27,26 @@ export async function loadState(): Promise<VibeFlowState | null> {
   return b ? b.getState() : null
 }
 
+export async function getAppVersion(): Promise<string | null> {
+  const b = bridge()
+  return b ? b.getVersion() : null
+}
+
+/** Restart the app to pick up a newer build (no-op without the bridge). */
+export async function relaunchApp(): Promise<void> {
+  const b = bridge()
+  if (b) await b.relaunch()
+}
+
+/**
+ * Subscribe to the "a newer build replaced the running bundle" signal.
+ * Returns an unsubscribe function (no-op when the bridge is absent).
+ */
+export function onUpdateAvailable(callback: () => void): () => void {
+  const b = bridge()
+  return b ? b.onUpdateAvailable(callback) : () => {}
+}
+
 export async function persistBoard(board: BoardState): Promise<void> {
   const b = bridge()
   if (b) await b.setBoard(board)
