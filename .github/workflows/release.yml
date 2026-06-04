@@ -1,0 +1,57 @@
+name: Release
+
+# Build installers and upload them to a draft GitHub Release.
+# Trigger: push a tag like `v0.1.0` (must match the version in package.json),
+# or run manually from the Actions tab (workflow_dispatch builds but does not publish).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # electron-builder needs this to create the release + upload assets
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            # Apple Silicon + Intel from the same runner (clang cross-compiles node-pty)
+            build_args: --mac --arm64 --x64
+          - os: windows-latest
+            build_args: --win
+          - os: ubuntu-latest
+            build_args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # node-pty is a native module; postinstall (electron-builder install-app-deps)
+      # compiles it against the Electron headers on each platform.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish
+        # On workflow_dispatch (no tag) skip uploading — just verify the build packages.
+        run: npm run build -- ${{ matrix.build_args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibeflow-${{ matrix.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+          if-no-files-found: warn

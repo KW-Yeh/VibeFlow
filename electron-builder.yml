@@ -9,4 +9,25 @@ files:
     filter:
       - package.json
       - app
-publish: null
+# Distinguish artifacts per platform/arch so a single GitHub Release can host them all.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+linux:
+  category: Development
+  target:
+    - AppImage
+# Upload artifacts to GitHub Releases. electron-builder only publishes when
+# --publish is passed explicitly (CI does this); local `npm run build` never uploads.
+publish:
+  provider: github
+  owner: KW-Yeh
+  repo: VibeFlow
+  # CI uploads artifacts to a *draft* release — review it, then click Publish.
+  releaseType: draft
