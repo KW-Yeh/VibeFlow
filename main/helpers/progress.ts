@@ -64,6 +64,8 @@ export function readProgressFile(cwd: string): TaskProgress | null {
 interface WatchEntry {
   file: string
   lastJson: string | null
+  /** Re-read the file and emit when its (valid) content changed. */
+  sync: () => void
 }
 
 /** Active progress-file watchers keyed by task id (one per PTY session). */
@@ -81,9 +83,6 @@ export function watchProgress(
 ): void {
   unwatchProgress(taskId)
   const file = path.join(cwd, PROGRESS_FILE)
-  const entry: WatchEntry = { file, lastJson: null }
-  watchers.set(taskId, entry)
-
   const sync = () => {
     const progress = readProgressFile(cwd)
     if (!progress) return
@@ -95,15 +94,22 @@ export function watchProgress(
     entry.lastJson = json
     onUpdate(progress)
   }
+  const entry: WatchEntry = { file, lastJson: null, sync }
+  watchers.set(taskId, entry)
 
   fs.watchFile(file, { interval: 800 }, sync)
   sync() // pick up pre-existing content immediately (e.g. on re-run)
 }
 
-/** Stop watching a task's progress file (PTY killed / task cleaned up). */
+/**
+ * Stop watching a task's progress file (PTY exited/killed, task cleaned up).
+ * Runs one final sync first so a write landing just before the session ended
+ * is not lost to the polling interval.
+ */
 export function unwatchProgress(taskId: string): void {
   const entry = watchers.get(taskId)
   if (entry) {
+    entry.sync()
     fs.unwatchFile(entry.file)
     watchers.delete(taskId)
   }

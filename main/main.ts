@@ -146,7 +146,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         payload.taskId,
         payload.cwd,
         event.sender,
-        payload.command
+        payload.command,
+        // Session ended (natural exit included) — nothing can write the
+        // progress file anymore, so stop polling (final sync inside).
+        () => unwatchProgress(payload.taskId)
       )
       // Mirror the agent-maintained progress file into the store (persisted)
       // and push live updates to the renderer while the session is alive.

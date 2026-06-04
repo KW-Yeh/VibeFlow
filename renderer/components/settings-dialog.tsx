@@ -35,14 +35,17 @@ export function SettingsDialog({
 
   if (!open) return null
 
-  const isDefault = text.trim() === DEFAULT_SYSTEM_PROMPT.trim()
-  const canSubmit = text.trim().length > 0 && !saving
+  const trimmed = text.trim()
+  // Blank and equal-to-default both mean "the built-in default is in effect":
+  // clearing the field and saving reverts to the default.
+  const isDefault = trimmed === '' || trimmed === DEFAULT_SYSTEM_PROMPT.trim()
+  const canSubmit = !saving
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    // Persist '' when the text matches the default, so future default
-    // improvements apply automatically instead of freezing a stale copy.
-    onSave(isDefault ? '' : text.trim())
+    // Persist '' when the text is blank or matches the default, so future
+    // default improvements apply automatically instead of freezing a copy.
+    onSave(isDefault ? '' : trimmed)
   }
 
   return (
@@ -83,7 +86,7 @@ export function SettingsDialog({
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              disabled={saving || isDefault}
+              disabled={saving || trimmed === DEFAULT_SYSTEM_PROMPT.trim()}
               onClick={() => setText(DEFAULT_SYSTEM_PROMPT)}
             >
               <RotateCcw className="size-3" />
@@ -100,6 +103,7 @@ export function SettingsDialog({
           <p className="text-xs text-muted-foreground">
             啟動 Claude 時會以此 prompt 作為 system prompt；
             進度追蹤協議（寫入 .vibeflow-progress.json）會自動附加在後面，無需在此填寫。
+            清空內容並儲存即可恢復為內建預設。
           </p>
 
           {error && (
