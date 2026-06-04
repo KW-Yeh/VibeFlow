@@ -5,6 +5,7 @@ import type {
   FinalizeResult,
   GitInfo,
   Task,
+  TaskProgress,
   VibeFlowState,
 } from '@/lib/types'
 
@@ -83,6 +84,17 @@ export async function approve(
 ): Promise<{ result: FinalizeResult; state: VibeFlowState } | null> {
   const b = bridge()
   return b ? b.approve(taskId, message) : null
+}
+
+/**
+ * Subscribe to live task-progress updates pushed from the main process.
+ * Returns an unsubscribe function (no-op when the bridge is absent).
+ */
+export function onProgressUpdate(
+  callback: (payload: { taskId: string; progress: TaskProgress }) => void
+): () => void {
+  const b = bridge()
+  return b ? b.onProgressUpdate(callback) : () => {}
 }
 
 export async function cleanupTask(

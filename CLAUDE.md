@@ -50,6 +50,7 @@ main/                      Electron main process (ESM, bundled by nextron/webpac
 └── helpers/
     ├── store.ts           electron-store: VibeFlowState, Task, board mutators (LAZY init)
     ├── git.ts             git via child_process: info / worktree / diff / commit+push
+    ├── progress.ts        task-progress types + .vibeflow-progress.json reader/watcher
     ├── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
     └── create-window.ts   window-state persistence (scaffold)
 

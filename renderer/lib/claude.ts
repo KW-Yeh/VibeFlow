@@ -4,6 +4,7 @@ import type { Task } from '@/lib/types'
  * Default system prompt appended when auto-launching Claude for a card. It
  * drives a plan-then-execute, hands-off workflow inside the task's isolated
  * git worktree. Kept concise so it fits comfortably on the command line.
+ * Users can override it via the settings dialog (AppSettings.systemPrompt).
  */
 export const DEFAULT_SYSTEM_PROMPT = [
   '你是在一個隔離的 git worktree 中自動執行任務的工程師助理。請依以下流程進行，全程使用繁體中文回報：',
@@ -11,6 +12,28 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '2. 直接依計劃逐步實作，不要停下來等待額外確認。',
   '3. 完成後執行專案既有的檢查（typecheck / lint / test / build，若存在），並修正所有錯誤。',
   '4. 最後用條列式回報：做了什麼、驗證了哪些指令、有什麼風險或待辦。',
+].join('\n')
+
+/**
+ * Progress file the agent maintains at the session cwd. Must match
+ * PROGRESS_FILE in main/helpers/progress.ts (string literal duplicated because
+ * the renderer cannot runtime-import main-process modules).
+ */
+const PROGRESS_FILE = '.vibeflow-progress.json'
+
+/**
+ * Fixed protocol appended after the (editable) system prompt. It makes the
+ * agent persist its plan + step states to PROGRESS_FILE, which main watches
+ * and mirrors into the task record — enabling card progress display and
+ * resume-on-rerun. Kept separate from DEFAULT_SYSTEM_PROMPT so editing the
+ * workflow prompt cannot break progress tracking.
+ */
+export const PROGRESS_PROTOCOL_PROMPT = [
+  '進度追蹤協議（務必遵守）：',
+  `1. 開始實作前，先把執行計劃寫入目前工作目錄的 ${PROGRESS_FILE}，JSON 格式：{"summary": "一句話描述目前狀態", "steps": [{"text": "步驟描述", "done": false}]}。`,
+  '2. 每完成一個步驟，立即把該步驟的 done 改為 true 並更新 summary。',
+  `3. 若 ${PROGRESS_FILE} 已存在，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
+  `4. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
 ].join('\n')
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -21,27 +44,53 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-/** Build the initial prompt fed to Claude from a card's title + description. */
-export function buildPrompt(task: Pick<Task, 'title' | 'description'>): string {
+/**
+ * Resolve the effective system prompt: the user's custom prompt when set
+ * (non-blank), otherwise the built-in default — always followed by the fixed
+ * progress-tracking protocol.
+ */
+export function resolveSystemPrompt(custom?: string | null): string {
+  const base = custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
+  return `${base}\n\n${PROGRESS_PROTOCOL_PROMPT}`
+}
+
+/**
+ * Build the initial prompt fed to Claude from a card's title + description.
+ * When the card carries previously recorded progress, it is included so a
+ * re-run resumes from the recorded state instead of starting over.
+ */
+export function buildPrompt(
+  task: Pick<Task, 'title' | 'description' | 'progress'>
+): string {
+  const lines = [`任務標題：${task.title}`]
   const description = task.description?.trim()
   if (description) {
-    return `任務標題：${task.title}\n\n任務描述：\n${description}`
+    lines.push('', '任務描述：', description)
   }
-  return `任務標題：${task.title}`
+  const progress = task.progress
+  if (progress && progress.steps.length > 0) {
+    lines.push('', '先前已記錄的進度（請接續執行，勿重做已完成的步驟）：')
+    if (progress.summary) lines.push(`摘要：${progress.summary}`)
+    for (const step of progress.steps) {
+      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
+    }
+  }
+  return lines.join('\n')
 }
 
 /**
  * Build the full shell command (terminated with a carriage return) that
- * launches Claude in auto mode with the card's prompt and the default system
- * prompt. Written verbatim into the card's PTY.
+ * launches Claude in auto mode with the card's prompt and the effective
+ * system prompt. Written verbatim into the card's PTY.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'title' | 'description'>
+  task: Pick<Task, 'title' | 'description' | 'progress'>,
+  systemPrompt?: string | null
 ): string {
   const prompt = buildPrompt(task)
   return (
     `claude --permission-mode ${DEFAULT_PERMISSION_MODE}` +
-    ` --append-system-prompt ${shellQuote(DEFAULT_SYSTEM_PROMPT)}` +
+    ` --append-system-prompt ${shellQuote(resolveSystemPrompt(systemPrompt))}` +
     ` ${shellQuote(prompt)}\r`
   )
 }

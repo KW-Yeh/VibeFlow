@@ -29,6 +29,11 @@ import {
   startSession,
   writeSession,
 } from './helpers/pty'
+import {
+  unwatchAllProgress,
+  unwatchProgress,
+  watchProgress,
+} from './helpers/progress'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -136,7 +141,26 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     (
       event,
       payload: { taskId: string; cwd: string; command?: string }
-    ) => startSession(payload.taskId, payload.cwd, event.sender, payload.command)
+    ) => {
+      const result = startSession(
+        payload.taskId,
+        payload.cwd,
+        event.sender,
+        payload.command
+      )
+      // Mirror the agent-maintained progress file into the store (persisted)
+      // and push live updates to the renderer while the session is alive.
+      watchProgress(payload.taskId, payload.cwd, (progress) => {
+        updateTask(payload.taskId, { progress })
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('progress:update', {
+            taskId: payload.taskId,
+            progress,
+          })
+        }
+      })
+      return result
+    }
   )
 
   ipcMain.on(
@@ -155,6 +179,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.on('pty:kill', (_event, taskId: string) => {
     killSession(taskId)
+    unwatchProgress(taskId)
   })
 
   // --- Review & finalize (Phase 4) ---
@@ -183,6 +208,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     killSession(taskId)
+    unwatchProgress(taskId)
     if (task?.projectPath) {
       await removeWorktree(task.projectPath, taskId)
     }
@@ -194,6 +220,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:deleteTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     killSession(taskId)
+    unwatchProgress(taskId)
     if (task?.projectPath) {
       await removeWorktree(task.projectPath, taskId)
     }
@@ -226,11 +253,13 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
 app.on('window-all-closed', () => {
   killAllSessions()
+  unwatchAllProgress()
   app.quit()
 })
 
 app.on('before-quit', () => {
   killAllSessions()
+  unwatchAllProgress()
 })
 
 ipcMain.on('message', async (event, arg) => {

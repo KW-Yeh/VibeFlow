@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import {
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Circle,
   FolderGit2,
   GitBranch,
   GitCompare,
+  ListChecks,
   Pencil,
   Play,
   Plus,
+  Settings,
   Terminal as TerminalIcon,
   Trash2,
   Undo2,
@@ -47,6 +51,9 @@ interface KanbanBoardProps {
   /** Global Auto Mode: auto-run a card's Claude execution on entering In Progress. */
   autoMode: boolean
   onToggleAutoMode: () => void
+  /** Custom system prompt for launches ('' = use the built-in default). */
+  systemPrompt: string
+  onOpenSettings: () => void
 }
 
 interface LaunchEntry {
@@ -93,6 +100,9 @@ function TaskCard({
   onDelete,
 }: TaskCardProps) {
   const cwd = task.worktreePath ?? task.projectPath ?? null
+  const progress = task.progress
+  const totalSteps = progress?.steps.length ?? 0
+  const doneSteps = progress?.steps.filter((s) => s.done).length ?? 0
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="flex items-start gap-2">
@@ -115,6 +125,30 @@ function TaskCard({
               </span>
             )}
           </div>
+          {progress && totalSteps > 0 && (
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <ListChecks className="size-3 shrink-0" />
+                  進度
+                </span>
+                <span className="tabular-nums">
+                  {doneSteps}/{totalSteps}
+                </span>
+              </div>
+              <div className="h-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${(doneSteps / totalSteps) * 100}%` }}
+                />
+              </div>
+              {progress.summary && (
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {progress.summary}
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {column === 'backlog' && cwd && (
@@ -205,6 +239,27 @@ function TaskCard({
 
       {isMounted && (
         <div className={cn(!isExpanded && 'hidden')}>
+          {progress && totalSteps > 0 && (
+            <ul className="mt-2 space-y-1 rounded-md bg-muted/40 p-2.5 text-xs">
+              {progress.steps.map((step, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  {step.done ? (
+                    <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-primary" />
+                  ) : (
+                    <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                  )}
+                  <span
+                    className={cn(
+                      'break-words',
+                      step.done && 'text-muted-foreground line-through'
+                    )}
+                  >
+                    {step.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           {task.description && (
             <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
               {task.description}
@@ -233,6 +288,8 @@ export function KanbanBoard({
   onDeleteTask,
   autoMode,
   onToggleAutoMode,
+  systemPrompt,
+  onOpenSettings,
 }: KanbanBoardProps) {
   // Active view. In Progress is the home view; the other two are reachable via
   // the segmented control. Hidden views stay mounted (CSS only).
@@ -265,7 +322,7 @@ export function KanbanBoard({
     setLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildClaudeCommand(task),
+        command: buildClaudeCommand(task, systemPrompt),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -400,6 +457,14 @@ export function KanbanBoard({
               />
             </span>
             Auto Mode
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            title="設定（System Prompt）"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Settings className="size-4" />
           </button>
           <Button
             size="sm"
