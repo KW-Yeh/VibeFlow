@@ -20,7 +20,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
-import { buildClaudeCommand } from '@/lib/claude'
+import { AGENT_NAMES, buildAgentCommand, taskAgent } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { BoardState, ColumnId, Task } from '@/lib/types'
 
@@ -100,6 +100,7 @@ function TaskCard({
   onDelete,
 }: TaskCardProps) {
   const cwd = task.worktreePath ?? task.projectPath ?? null
+  const agentName = AGENT_NAMES[taskAgent(task)]
   const progress = task.progress
   const totalSteps = progress?.steps.length ?? 0
   const doneSteps = progress?.steps.filter((s) => s.done).length ?? 0
@@ -125,37 +126,13 @@ function TaskCard({
               </span>
             )}
           </div>
-          {progress && totalSteps > 0 && (
-            <div className="mt-2 space-y-1">
-              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <ListChecks className="size-3 shrink-0" />
-                  進度
-                </span>
-                <span className="tabular-nums">
-                  {doneSteps}/{totalSteps}
-                </span>
-              </div>
-              <div className="h-1 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-300"
-                  style={{ width: `${(doneSteps / totalSteps) * 100}%` }}
-                />
-              </div>
-              {progress.summary && (
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {progress.summary}
-                </p>
-              )}
-            </div>
-          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {column === 'backlog' && cwd && (
             <button
               type="button"
               onClick={() => onStart(task)}
-              title="移至 In Progress 並啟動 Claude"
+              title={`移至 In Progress 並啟動 ${agentName}`}
               className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
             >
               <Play className="size-3.5" />
@@ -169,8 +146,8 @@ function TaskCard({
                   onClick={() => onRun(task)}
                   title={
                     task.launchedAt
-                      ? '重新執行（啟動 Claude）'
-                      : '開始執行（啟動 Claude）'
+                      ? `重新執行（啟動 ${agentName}）`
+                      : `開始執行（啟動 ${agentName}）`
                   }
                   className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-primary"
                 >
@@ -237,6 +214,33 @@ function TaskCard({
         </div>
       </div>
 
+      {/* Progress bar lives outside the header flex row so it spans the full
+          card width instead of being squeezed beside the action buttons. */}
+      {progress && totalSteps > 0 && (
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <ListChecks className="size-3 shrink-0" />
+              進度
+            </span>
+            <span className="tabular-nums">
+              {doneSteps}/{totalSteps}
+            </span>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-300"
+              style={{ width: `${(doneSteps / totalSteps) * 100}%` }}
+            />
+          </div>
+          {progress.summary && (
+            <p className="truncate text-[11px] text-muted-foreground">
+              {progress.summary}
+            </p>
+          )}
+        </div>
+      )}
+
       {isMounted && (
         <div className={cn(!isExpanded && 'hidden')}>
           {progress && totalSteps > 0 && (
@@ -270,6 +274,7 @@ function TaskCard({
             cwd={cwd}
             launchCommand={launch?.command}
             launchNonce={launch?.nonce ?? 0}
+            launchLabel={`啟動 ${agentName}`}
             onLaunchRequest={() => onRun(task)}
             readOnly={column === 'done'}
           />
@@ -323,7 +328,7 @@ export function KanbanBoard({
     setLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildClaudeCommand(task, systemPrompt),
+        command: buildAgentCommand(task, systemPrompt),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -372,8 +377,17 @@ export function KanbanBoard({
     next[to] = [toInsert, ...next[to]]
     onBoardChange(next)
 
-    // Moving a card into Done finalizes it: tear down PTY + worktree.
-    if (to === 'done') onTaskDone(task.id)
+    // Moving a card into Done finalizes it: tear down PTY + worktree, and
+    // auto-collapse the terminal — a finished card no longer needs it open.
+    if (to === 'done') {
+      setExpanded((prev) => {
+        if (!prev.has(task.id)) return prev
+        const collapsed = new Set(prev)
+        collapsed.delete(task.id)
+        return collapsed
+      })
+      onTaskDone(task.id)
+    }
     if (willLaunch) armLaunch(toInsert)
   }
 
@@ -441,7 +455,7 @@ export function KanbanBoard({
             role="switch"
             aria-checked={autoMode}
             onClick={onToggleAutoMode}
-            title="開啟時：將卡片移至 In Progress 會自動執行 Claude"
+            title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
             className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <span

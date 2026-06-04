@@ -1,4 +1,4 @@
-import type { Task } from '@/lib/types'
+import type { AgentCliId, Task } from '@/lib/types'
 
 /**
  * Default system prompt appended when auto-launching Claude for a card. It
@@ -93,4 +93,37 @@ export function buildClaudeCommand(
     ` --append-system-prompt ${shellQuote(resolveSystemPrompt(systemPrompt))}` +
     ` ${shellQuote(prompt)}\r`
   )
+}
+
+/** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
+export const AGENT_NAMES: Record<AgentCliId, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex CLI',
+  gemini: 'Gemini CLI',
+}
+
+/** Resolve a task's agent (tasks created before the field existed = claude). */
+export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
+  return task.agentCli ?? 'claude'
+}
+
+/**
+ * Build the launch command for the task's chosen agent CLI. Codex and Gemini
+ * have no separate system-prompt flag, so the effective system prompt (incl.
+ * the progress protocol) is folded into the prompt text instead.
+ */
+export function buildAgentCommand(
+  task: Pick<Task, 'title' | 'description' | 'progress' | 'agentCli'>,
+  systemPrompt?: string | null
+): string {
+  const agent = taskAgent(task)
+  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt)
+  const combined = `${resolveSystemPrompt(systemPrompt)}\n\n${buildPrompt(task)}`
+  if (agent === 'codex') {
+    // --full-auto: workspace-write sandbox with automatic command approval.
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
+  // interactive (mirrors how the claude launch keeps the session open).
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, GitBranch, Loader2, X } from 'lucide-react'
+import { Bot, FolderOpen, GitBranch, Loader2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { GitInfo } from '@/lib/types'
+import type { AgentCli, AgentCliId, GitInfo } from '@/lib/types'
 
 interface NewTaskDialogProps {
   open: boolean
@@ -11,11 +11,14 @@ interface NewTaskDialogProps {
   error: string | null
   pickFolder: () => Promise<string | null>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
+  /** Agent CLIs detected on PATH (claude / codex / gemini). */
+  detectAgents: () => Promise<AgentCli[]>
   onSubmit: (
     title: string,
     description: string,
     projectPath: string,
-    baseBranch: string | null
+    baseBranch: string | null,
+    agentCli: AgentCliId
   ) => void
   onClose: () => void
 }
@@ -31,6 +34,7 @@ export function NewTaskDialog({
   error,
   pickFolder,
   loadGitInfo,
+  detectAgents,
   onSubmit,
   onClose,
 }: NewTaskDialogProps) {
@@ -40,18 +44,35 @@ export function NewTaskDialog({
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
+  // null = detection still running; [] = none found on PATH.
+  const [agents, setAgents] = useState<AgentCli[] | null>(null)
+  const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
 
-  // Reset everything whenever the dialog opens.
+  // Reset everything whenever the dialog opens, and (re-)detect the agent
+  // CLIs available in the current environment.
   useEffect(() => {
-    if (open) {
-      setTitle('')
-      setDescription('')
-      setProjectPath(null)
-      setGitInfo(null)
-      setLoadingInfo(false)
-      setBaseBranch('')
+    if (!open) return
+    setTitle('')
+    setDescription('')
+    setProjectPath(null)
+    setGitInfo(null)
+    setLoadingInfo(false)
+    setBaseBranch('')
+    setAgents(null)
+    setAgentCli('claude')
+    let active = true
+    void detectAgents().then((found) => {
+      if (!active) return
+      setAgents(found)
+      // Prefer claude when installed, otherwise the first detected agent.
+      if (!found.some((a) => a.id === 'claude') && found.length > 0) {
+        setAgentCli(found[0].id)
+      }
+    })
+    return () => {
+      active = false
     }
-  }, [open])
+  }, [open, detectAgents])
 
   if (!open) return null
 
@@ -85,7 +106,8 @@ export function NewTaskDialog({
       title.trim(),
       description.trim(),
       projectPath,
-      hasRemote ? baseBranch || null : null
+      hasRemote ? baseBranch || null : null,
+      agentCli
     )
   }
 
@@ -194,6 +216,37 @@ export function NewTaskDialog({
                   {gitInfo?.currentBranch ?? 'HEAD'}) 為基準建立本地 worktree。
                 </p>
               )}
+
+              {/* Agent CLI — only agents actually installed on PATH show up. */}
+              <div className="space-y-1.5">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <Bot className="size-3.5" />
+                  Agent CLI
+                </span>
+                {agents === null ? (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    偵測可用的 Agent CLI 中…
+                  </p>
+                ) : agents.length === 0 ? (
+                  <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+                    未在環境中偵測到任何 Agent CLI（claude / codex /
+                    gemini），任務建立後將無法自動執行。
+                  </p>
+                ) : (
+                  <select
+                    value={agentCli}
+                    onChange={(e) => setAgentCli(e.target.value as AgentCliId)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </>
           )}
 

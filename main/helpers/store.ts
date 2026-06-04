@@ -1,4 +1,5 @@
 import Store from 'electron-store'
+import type { AgentCliId } from './agents'
 import type { TaskProgress } from './progress'
 
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
@@ -19,6 +20,8 @@ export interface Task {
   baseBranch?: string
   /** Whether the branch was pushed upstream at creation. */
   pushed?: boolean
+  /** Agent CLI used to execute this task. Absent = 'claude' (pre-field tasks). */
+  agentCli?: AgentCliId
   /**
    * Epoch ms when this card's Claude execution was first launched. Used to
    * auto-run at most once when the card enters In Progress; unset = never run.
