@@ -1,11 +1,21 @@
 {
-  "summary": "全部完成：in-app 更新偵測 + 一鍵重啟、rebuild.sh --install/--relaunch，typecheck 與 next build 均通過",
+  "summary": "全部完成:GitHub Releases 打包/發佈流程已建立並驗證(本地打包+App 啟動 OK)",
   "steps": [
-    { "text": "新增 main/helpers/update.ts：relaunchApp + app.asar mtime watcher", "done": true },
-    { "text": "main.ts 註冊 app:relaunch / app:getVersion IPC 並啟動 watcher 推播 update:available", "done": true },
-    { "text": "preload.ts 與 renderer/lib/api.ts 暴露 relaunch / onUpdateAvailable / getAppVersion", "done": true },
-    { "text": "home.tsx 加入「新版本已就緒 → 立即重啟」banner", "done": true },
-    { "text": "rebuild.sh 新增 --install / --relaunch 流程", "done": true },
-    { "text": "驗證：tsc main、tsc renderer、next build、bash -n rebuild.sh", "done": true }
+    {
+      "text": "更新 electron-builder.yml:GitHub publish 設定 + targets + artifactName",
+      "done": true
+    },
+    {
+      "text": "新增 .github/workflows/release.yml(tag v* 觸發,多平台打包上傳 Release)",
+      "done": true
+    },
+    {
+      "text": "更新 README.md:下載安裝、使用前提、發佈流程章節",
+      "done": true
+    },
+    {
+      "text": "驗證:typecheck + 本地 npm run build + YAML 語法檢查",
+      "done": true
+    }
   ]
 }
