@@ -6,6 +6,7 @@ import type {
   VibeFlowState,
 } from './helpers/store'
 import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
+import type { TaskProgress } from './helpers/progress'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -65,6 +66,17 @@ const vibeflow = {
     ipcRenderer.invoke('git:approve', { taskId, message }),
   cleanupTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:cleanupTask', taskId),
+  /** Live task-progress updates pushed from main while a session runs. */
+  onProgressUpdate: (
+    callback: (payload: { taskId: string; progress: TaskProgress }) => void
+  ): (() => void) => {
+    const sub = (
+      _event: IpcRendererEvent,
+      payload: { taskId: string; progress: TaskProgress }
+    ) => callback(payload)
+    ipcRenderer.on('progress:update', sub)
+    return () => ipcRenderer.removeListener('progress:update', sub)
+  },
   deleteTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:deleteTask', taskId),
 

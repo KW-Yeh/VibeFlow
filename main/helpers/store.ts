@@ -1,4 +1,5 @@
 import Store from 'electron-store'
+import type { TaskProgress } from './progress'
 
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -23,6 +24,12 @@ export interface Task {
    * auto-run at most once when the card enters In Progress; unset = never run.
    */
   launchedAt?: number
+  /**
+   * Latest execution progress, mirrored from the agent-maintained progress
+   * file (see helpers/progress.ts). Survives restarts; a re-run feeds it back
+   * into the prompt so the agent resumes instead of starting over.
+   */
+  progress?: TaskProgress
 }
 
 export type BoardState = Record<ColumnId, Task[]>
@@ -34,6 +41,11 @@ export interface AppSettings {
    * execution (once). The manual run button works regardless of this flag.
    */
   autoMode: boolean
+  /**
+   * Custom system prompt appended when launching Claude for a card. Absent or
+   * blank = use the renderer's built-in default (DEFAULT_SYSTEM_PROMPT).
+   */
+  systemPrompt?: string
 }
 
 export interface VibeFlowState {
@@ -97,6 +109,11 @@ export function getSettings(): AppSettings {
 /** Shallow-merge a patch into settings and persist; returns the merged value. */
 export function setSettings(patch: Partial<AppSettings>): AppSettings {
   const next = { ...getSettings(), ...patch }
+  // A blank custom system prompt means "use the built-in default" — drop the
+  // key instead of persisting an empty string.
+  if (typeof next.systemPrompt === 'string' && next.systemPrompt.trim() === '') {
+    delete next.systemPrompt
+  }
   getStore().set('settings', next)
   return next
 }

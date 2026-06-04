@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
+import { PROGRESS_FILE } from './progress'
 
 const pexec = promisify(execFile)
 
@@ -320,7 +321,11 @@ export async function getWorktreeDiff(
     }
   }
 
-  const limited = entries.slice(0, MAX_FILES)
+  // The agent-maintained progress file is VibeFlow metadata, not a change to
+  // review — keep it out of the diff viewer.
+  const limited = entries
+    .filter((e) => e.path !== PROGRESS_FILE)
+    .slice(0, MAX_FILES)
   const files: DiffFile[] = []
   for (const entry of limited) {
     let oldValue = ''
@@ -365,7 +370,8 @@ export async function commitAndPush(
   worktreePath: string,
   message: string
 ): Promise<FinalizeResult> {
-  await git(worktreePath, ['add', '-A'])
+  // Stage everything except the agent-maintained progress file (metadata).
+  await git(worktreePath, ['add', '-A', '--', '.', `:(exclude)${PROGRESS_FILE}`])
 
   let committed = false
   try {

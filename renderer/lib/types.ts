@@ -8,3 +8,7 @@ export type {
   VibeFlowState,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult } from '../../main/helpers/git'
+export type {
+  TaskProgress,
+  TaskProgressStep,
+} from '../../main/helpers/progress'

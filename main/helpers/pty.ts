@@ -50,12 +50,15 @@ export interface StartResult {
  * Start (or restart) a PTY session for a task. When `command` is provided it is
  * run inside a login shell (full PATH); otherwise an interactive login shell is
  * started so the user can drive the CLI (e.g. type `claude`).
+ * `onExit` fires when this session ends for any reason (natural exit included),
+ * unless it has already been replaced by a newer session for the same task.
  */
 export function startSession(
   taskId: string,
   cwd: string,
   sender: WebContents,
-  command?: string
+  command?: string,
+  onExit?: () => void
 ): StartResult {
   killSession(taskId)
 
@@ -81,7 +84,13 @@ export function startSession(
   })
   proc.onExit(({ exitCode }) => {
     if (!sender.isDestroyed()) sender.send('pty:exit', { taskId, exitCode })
-    sessions.delete(taskId)
+    // Guard against a stale exit: a kill-and-restart replaces the map entry
+    // before the old process's exit event fires, and that old event must not
+    // deregister (or fire callbacks for) the new session.
+    if (sessions.get(taskId) === proc) {
+      sessions.delete(taskId)
+      onExit?.()
+    }
   })
 
   return { pid: proc.pid }

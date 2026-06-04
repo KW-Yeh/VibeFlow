@@ -5,6 +5,7 @@ import { KanbanBoard } from '@/components/kanban-board'
 import { NewTaskDialog } from '@/components/new-task-dialog'
 import { EditTaskDialog } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
+import { SettingsDialog } from '@/components/settings-dialog'
 import {
   approve,
   cleanupTask,
@@ -13,6 +14,7 @@ import {
   getDiff,
   getGitInfo,
   loadState,
+  onProgressUpdate,
   persistBoard,
   pickFolder,
   setSettings,
@@ -39,7 +41,14 @@ function findTask(board: BoardState, taskId: string): Task | null {
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
   const [autoMode, setAutoMode] = useState(true)
+  // Custom system prompt ('' = the built-in default is in effect).
+  const [systemPrompt, setSystemPrompt] = useState('')
   const [loaded, setLoaded] = useState(false)
+
+  // Settings dialog state
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -69,12 +78,29 @@ export default function HomePage() {
       if (state) {
         setBoard(state.board)
         setAutoMode(state.settings.autoMode)
+        setSystemPrompt(state.settings.systemPrompt ?? '')
       }
       setLoaded(true)
     })
     return () => {
       active = false
     }
+  }, [])
+
+  // Mirror live progress updates (pushed from main while sessions run) into
+  // the local board copy. Main already persisted them — no persistBoard here.
+  useEffect(() => {
+    return onProgressUpdate(({ taskId, progress }) => {
+      setBoard((prev) => ({
+        backlog: prev.backlog.map((t) =>
+          t.id === taskId ? { ...t, progress } : t
+        ),
+        in_progress: prev.in_progress.map((t) =>
+          t.id === taskId ? { ...t, progress } : t
+        ),
+        done: prev.done.map((t) => (t.id === taskId ? { ...t, progress } : t)),
+      }))
+    })
   }, [])
 
   const handleBoardChange = (next: BoardState) => {
@@ -91,6 +117,20 @@ export default function HomePage() {
     const next = !autoMode
     setAutoMode(next) // optimistic; persisted below
     void setSettings({ autoMode: next })
+  }
+
+  const handleSaveSettings = async (nextPrompt: string) => {
+    setSavingSettings(true)
+    setSettingsError(null)
+    try {
+      await setSettings({ systemPrompt: nextPrompt })
+      setSystemPrompt(nextPrompt)
+      setSettingsOpen(false)
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingSettings(false)
+    }
   }
 
   const handleCreateTask = async (
@@ -201,6 +241,11 @@ export default function HomePage() {
               onDeleteTask={handleDeleteTask}
               autoMode={autoMode}
               onToggleAutoMode={handleToggleAutoMode}
+              systemPrompt={systemPrompt}
+              onOpenSettings={() => {
+                setSettingsError(null)
+                setSettingsOpen(true)
+              }}
             />
             <NewTaskDialog
               open={dialogOpen}
@@ -217,6 +262,14 @@ export default function HomePage() {
               error={editError}
               onSubmit={handleSaveEdit}
               onClose={() => setEditTask(null)}
+            />
+            <SettingsDialog
+              open={settingsOpen}
+              systemPrompt={systemPrompt}
+              saving={savingSettings}
+              error={settingsError}
+              onSave={handleSaveSettings}
+              onClose={() => setSettingsOpen(false)}
             />
             <ReviewDialog
               open={reviewTaskId !== null}
