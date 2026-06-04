@@ -31,6 +31,16 @@ export type IpcHandler = typeof handler
 const vibeflow = {
   getState: (): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:getState'),
+  /** Running app version (package.json version baked into the build). */
+  getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+  /** Restart the app — picks up a newer build installed over the bundle. */
+  relaunch: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
+  /** Fired once when a newer build has replaced the running bundle on disk. */
+  onUpdateAvailable: (callback: () => void): (() => void) => {
+    const sub = () => callback()
+    ipcRenderer.on('update:available', sub)
+    return () => ipcRenderer.removeListener('update:available', sub)
+  },
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:setBoard', board),
   setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>

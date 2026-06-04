@@ -32,6 +32,8 @@ the project folder is chosen **per task** at creation time (there is no global
 |---|---|---|
 | Dev (hot reload) | `npm run dev` | Launches Next dev (port 8888) + Electron with `--remote-debugging-port=5858` |
 | Package app | `npm run build` | `nextron build` → `dist/` (`.app`, `.dmg`, `.zip`, macOS arm64) |
+| Rebuild + hot update | `./rebuild.sh --install` | Clean build, then swap the new `.app` over the running/installed copy — the live app shows a「立即重啟」banner (see `main/helpers/update.ts`) |
+| Rebuild + auto relaunch | `./rebuild.sh --relaunch` | `--install`, then quit + reopen VibeFlow automatically |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
 | Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app` |

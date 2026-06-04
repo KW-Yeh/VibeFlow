@@ -1,0 +1,11 @@
+{
+  "summary": "全部完成：in-app 更新偵測 + 一鍵重啟、rebuild.sh --install/--relaunch，typecheck 與 next build 均通過",
+  "steps": [
+    { "text": "新增 main/helpers/update.ts：relaunchApp + app.asar mtime watcher", "done": true },
+    { "text": "main.ts 註冊 app:relaunch / app:getVersion IPC 並啟動 watcher 推播 update:available", "done": true },
+    { "text": "preload.ts 與 renderer/lib/api.ts 暴露 relaunch / onUpdateAvailable / getAppVersion", "done": true },
+    { "text": "home.tsx 加入「新版本已就緒 → 立即重啟」banner", "done": true },
+    { "text": "rebuild.sh 新增 --install / --relaunch 流程", "done": true },
+    { "text": "驗證：tsc main、tsc renderer、next build、bash -n rebuild.sh", "done": true }
+  ]
+}
