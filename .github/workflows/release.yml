@@ -37,7 +37,7 @@ jobs:
       # node-pty is a native module; postinstall (electron-builder install-app-deps)
       # compiles it against the Electron headers on each platform.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --verbose
 
       - name: Build and publish
         # On workflow_dispatch (no tag) skip uploading — just verify the build packages.
