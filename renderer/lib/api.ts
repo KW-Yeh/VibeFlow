@@ -1,4 +1,6 @@
 import type {
+  AgentCli,
+  AgentCliId,
   AppSettings,
   BoardState,
   DiffFile,
@@ -69,11 +71,18 @@ export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
   return b ? b.getGitInfo(projectPath) : null
 }
 
+/** Agent CLIs installed on PATH ([] without the bridge). */
+export async function detectAgents(): Promise<AgentCli[]> {
+  const b = bridge()
+  return b ? b.detectAgents() : []
+}
+
 export async function createTask(payload: {
   title: string
   description?: string
   projectPath: string
   baseBranch: string | null
+  agentCli?: AgentCliId
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null

@@ -15,6 +15,7 @@ import {
   type BoardState,
   type Task,
 } from './helpers/store'
+import { detectAgents, type AgentCliId } from './helpers/agents'
 import {
   commitAndPush,
   deleteBranch,
@@ -87,6 +88,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return result.filePaths[0]
   })
 
+  // Detect which agent CLIs (claude / codex / gemini) exist on PATH, so the
+  // new-task dialog can offer only the agents actually installed.
+  ipcMain.handle('env:detectAgents', () => detectAgents())
+
   // --- Git automation (Phase 2) ---
 
   // Inspect a specific folder (per-task project selection).
@@ -104,6 +109,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description?: string
         projectPath: string
         baseBranch: string | null
+        agentCli?: AgentCliId
       }
     ) => {
       if (!payload.projectPath) {
@@ -125,6 +131,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         worktreePath: result.worktreePath,
         baseBranch: result.baseBranch,
         pushed: result.pushed,
+        agentCli: payload.agentCli ?? 'claude',
       }
       addTask(task)
       return { state: getState(), task }

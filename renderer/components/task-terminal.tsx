@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Sparkles } from 'lucide-react'
 
 interface TaskTerminalProps {
@@ -17,6 +18,8 @@ interface TaskTerminalProps {
   launchNonce?: number
   /** Fired when the user clicks the in-terminal launch button. */
   onLaunchRequest?: () => void
+  /** Launch-button label (e.g. 「啟動 Claude Code」); defaults to 啟動 Agent. */
+  launchLabel?: string
   /**
    * When true (card is Done), the terminal is view-only: no PTY is started,
    * keystrokes are not forwarded, and the launch affordance is hidden. Existing
@@ -31,6 +34,7 @@ export function TaskTerminal({
   launchCommand,
   launchNonce = 0,
   onLaunchRequest,
+  launchLabel,
   readOnly = false,
 }: TaskTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -173,11 +177,18 @@ export function TaskTerminal({
             disabled={!onLaunchRequest}
           >
             <Sparkles className="size-3" />
-            啟動 Claude
+            {launchLabel ?? '啟動 Agent'}
           </Button>
         )}
       </div>
-      <div ref={containerRef} className="h-64 w-full overflow-hidden p-1" />
+      {/* Done cards are review-only — a shorter viewport is enough there. */}
+      <div
+        ref={containerRef}
+        className={cn(
+          'w-full overflow-hidden p-1',
+          readOnly ? 'h-36' : 'h-64'
+        )}
+      />
     </div>
   )
 }

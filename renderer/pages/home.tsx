@@ -11,6 +11,7 @@ import {
   cleanupTask,
   createTask,
   deleteTask,
+  detectAgents,
   getDiff,
   getGitInfo,
   loadState,
@@ -23,7 +24,7 @@ import {
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import type { BoardState, DiffFile, Task } from '@/lib/types'
+import type { AgentCliId, BoardState, DiffFile, Task } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
 // Electron bridge is unavailable (plain browser / static export preview).
@@ -154,7 +155,8 @@ export default function HomePage() {
     title: string,
     description: string,
     projectPath: string,
-    baseBranch: string | null
+    baseBranch: string | null,
+    agentCli: AgentCliId
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -164,6 +166,7 @@ export default function HomePage() {
         description,
         projectPath,
         baseBranch,
+        agentCli,
       })
       if (result) {
         setBoard(result.state.board)
@@ -270,6 +273,7 @@ export default function HomePage() {
               error={createError}
               pickFolder={pickFolder}
               loadGitInfo={getGitInfo}
+              detectAgents={detectAgents}
               onSubmit={handleCreateTask}
               onClose={() => setDialogOpen(false)}
             />

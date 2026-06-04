@@ -8,6 +8,7 @@ export type {
   VibeFlowState,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult } from '../../main/helpers/git'
+export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {
   TaskProgress,
   TaskProgressStep,

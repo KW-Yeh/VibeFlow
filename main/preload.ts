@@ -5,6 +5,7 @@ import type {
   Task,
   VibeFlowState,
 } from './helpers/store'
+import type { AgentCli, AgentCliId } from './helpers/agents'
 import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
 
@@ -50,11 +51,15 @@ const vibeflow = {
     ipcRenderer.invoke('dialog:pickFolder'),
   getGitInfo: (projectPath: string): Promise<GitInfo> =>
     ipcRenderer.invoke('git:getInfo', projectPath),
+  /** Agent CLIs (claude / codex / gemini) actually installed on PATH. */
+  detectAgents: (): Promise<AgentCli[]> =>
+    ipcRenderer.invoke('env:detectAgents'),
   createTask: (payload: {
     title: string
     description?: string
     projectPath: string
     baseBranch: string | null
+    agentCli?: AgentCliId
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {
