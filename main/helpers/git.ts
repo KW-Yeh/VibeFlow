@@ -116,6 +116,32 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
   await fs.writeFile(gitignorePath, content + addition, 'utf8')
 }
 
+/**
+ * Ensure the agent-maintained progress file is excluded via the repository's
+ * `.git/info/exclude`. Unlike `.gitignore` this never enters the project's
+ * history, and it applies to every worktree of the clone — so the progress
+ * file can't be committed even by a `git add -A` run inside a task worktree.
+ */
+export async function ensureLocalExclude(projectPath: string): Promise<void> {
+  const commonDir = await git(projectPath, ['rev-parse', '--git-common-dir'])
+  const infoDir = path.resolve(projectPath, commonDir, 'info')
+  const excludePath = path.join(infoDir, 'exclude')
+  let content = ''
+  try {
+    content = await fs.readFile(excludePath, 'utf8')
+  } catch {
+    content = ''
+  }
+  const entries = content.split('\n').map((l) => l.trim())
+  if (entries.includes(PROGRESS_FILE)) {
+    return
+  }
+  const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
+  const addition = `${prefix}\n# VibeFlow task progress file (runtime-only)\n${PROGRESS_FILE}\n`
+  await fs.mkdir(infoDir, { recursive: true })
+  await fs.writeFile(excludePath, content + addition, 'utf8')
+}
+
 export interface ProvisionResult {
   branch: string
   /** Absolute path of the created worktree. */
@@ -136,6 +162,7 @@ export async function provisionWorktree(
   baseBranch: string | null
 ): Promise<ProvisionResult> {
   await ensureGitignore(projectPath)
+  await ensureLocalExclude(projectPath)
 
   const branch = `vf-${taskId}`
   const relativePath = path.join('.vibeflow', branch)

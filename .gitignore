@@ -85,6 +85,9 @@ next-env.d.ts
 # VibeFlow runtime worktrees (per-project, but ignore here defensively)
 .vibeflow/
 
+# VibeFlow task progress file (runtime-only, one per task worktree)
+.vibeflow-progress.json
+
 # Nuxt.js build / generate output
 .nuxt
 dist
