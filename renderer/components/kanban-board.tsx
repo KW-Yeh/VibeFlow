@@ -105,8 +105,17 @@ function TaskCard({
   const totalSteps = progress?.steps.length ?? 0
   const doneSteps = progress?.steps.filter((s) => s.done).length ?? 0
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="flex items-start gap-2">
+    // Expanded cards get a fixed per-column height (In Progress taller than
+    // Backlog/Done) so the grid rows stay aligned; inner content scrolls and
+    // the terminal absorbs the leftover space instead of stretching the card.
+    <div
+      className={cn(
+        'flex flex-col rounded-lg border bg-card p-3',
+        isExpanded && 'overflow-hidden',
+        isExpanded && (column === 'in_progress' ? 'h-[34rem]' : 'h-[26rem]')
+      )}
+    >
+      <div className="flex shrink-0 items-start gap-2">
         <div className="min-w-0 flex-1">
           {task.projectName && (
             <span className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
@@ -217,7 +226,7 @@ function TaskCard({
       {/* Progress bar lives outside the header flex row so it spans the full
           card width instead of being squeezed beside the action buttons. */}
       {progress && totalSteps > 0 && (
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 shrink-0 space-y-1">
           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <ListChecks className="size-3 shrink-0" />
@@ -242,32 +251,41 @@ function TaskCard({
       )}
 
       {isMounted && (
-        <div className={cn(!isExpanded && 'hidden')}>
-          {progress && totalSteps > 0 && (
-            <ul className="mt-2 space-y-1 rounded-md bg-muted/40 p-2.5 text-xs">
-              {progress.steps.map((step, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  {step.done ? (
-                    <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-primary" />
-                  ) : (
-                    <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                  )}
-                  <span
-                    className={cn(
-                      'break-words',
-                      step.done && 'text-muted-foreground line-through'
-                    )}
-                  >
-                    {step.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
+        <div
+          className={cn(
+            'flex min-h-0 flex-1 flex-col',
+            !isExpanded && 'hidden'
           )}
-          {task.description && (
-            <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
-              {task.description}
-            </p>
+        >
+          {((progress && totalSteps > 0) || task.description) && (
+            <div className="mt-2 min-h-0 space-y-2 overflow-y-auto">
+              {progress && totalSteps > 0 && (
+                <ul className="space-y-1 rounded-md bg-muted/40 p-2.5 text-xs">
+                  {progress.steps.map((step, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      {step.done ? (
+                        <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-primary" />
+                      ) : (
+                        <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                      )}
+                      <span
+                        className={cn(
+                          'break-words',
+                          step.done && 'text-muted-foreground line-through'
+                        )}
+                      >
+                        {step.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {task.description && (
+                <p className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground">
+                  {task.description}
+                </p>
+              )}
+            </div>
           )}
           <TaskTerminal
             taskId={task.id}
