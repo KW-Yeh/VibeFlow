@@ -146,26 +146,79 @@ export interface ProvisionResult {
   branch: string
   /** Absolute path of the created worktree. */
   worktreePath: string
-  /** Relative path from the project root (e.g. .vibeflow/vf-xxxx). */
+  /** Relative path from the project root (e.g. .vibeflow/feature-WR-4832). */
   relativePath: string
   pushed: boolean
   baseBranch: string
 }
 
+/** Worktree directory name for a branch — `/` flattened so the directory
+ *  always sits directly under `.vibeflow/` (e.g. feature/WR-4832 → feature-WR-4832). */
+function worktreeDirName(branch: string): string {
+  return branch.replace(/\//g, '-')
+}
+
+/** Whether `branch` already exists locally or on origin. */
+async function branchExists(
+  projectPath: string,
+  branch: string
+): Promise<boolean> {
+  for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+    try {
+      await git(projectPath, ['rev-parse', '--verify', '--quiet', ref])
+      return true
+    } catch {
+      // not this ref — keep checking
+    }
+  }
+  return false
+}
+
 /**
- * Create an isolated worktree for a task under `.vibeflow/vf-<id>` on a new
- * branch `vf-<id>`, and (when a remote exists) push the branch upstream.
+ * Resolve the branch to create for a task. Prefers the meaningful name from
+ * branch-name.ts (validated via `git check-ref-format`); appends `-<taskId>`
+ * when the name (or its worktree dir) is already taken; falls back to the
+ * legacy `vf-<taskId>` when no preferred name was derived or it's invalid.
+ */
+async function resolveBranchName(
+  projectPath: string,
+  taskId: string,
+  preferredBranch: string | null | undefined
+): Promise<string> {
+  const fallback = `vf-${taskId}`
+  if (!preferredBranch) return fallback
+  try {
+    await git(projectPath, ['check-ref-format', '--branch', preferredBranch])
+  } catch {
+    return fallback
+  }
+  const dirTaken = await fs
+    .access(path.join(projectPath, '.vibeflow', worktreeDirName(preferredBranch)))
+    .then(() => true)
+    .catch(() => false)
+  if (dirTaken || (await branchExists(projectPath, preferredBranch))) {
+    return `${preferredBranch}-${taskId}`
+  }
+  return preferredBranch
+}
+
+/**
+ * Create an isolated worktree for a task under `.vibeflow/<branch-dir>` on a
+ * new branch, and (when a remote exists) push the branch upstream. The branch
+ * is named from `preferredBranch` (e.g. feature/WR-4832, fix/WCL260522-0002,
+ * feature/<title-slug>) when given, otherwise the legacy `vf-<taskId>`.
  */
 export async function provisionWorktree(
   projectPath: string,
   taskId: string,
-  baseBranch: string | null
+  baseBranch: string | null,
+  preferredBranch?: string | null
 ): Promise<ProvisionResult> {
   await ensureGitignore(projectPath)
   await ensureLocalExclude(projectPath)
 
-  const branch = `vf-${taskId}`
-  const relativePath = path.join('.vibeflow', branch)
+  const branch = await resolveBranchName(projectPath, taskId, preferredBranch)
+  const relativePath = path.join('.vibeflow', worktreeDirName(branch))
   const worktreePath = path.join(projectPath, relativePath)
 
   const info = await getGitInfo(projectPath)
@@ -195,8 +248,8 @@ export async function provisionWorktree(
     // `worktree add` can fail AFTER creating the dir + branch (e.g. a failing
     // post-checkout hook), leaving orphans that clutter the repo. Roll back the
     // partial state before surfacing the error.
-    await removeWorktree(projectPath, taskId)
-    await deleteBranch(projectPath, taskId)
+    await removeWorktree(projectPath, branch)
+    await deleteBranch(projectPath, branch)
     throw err
   }
 
@@ -213,13 +266,12 @@ export async function provisionWorktree(
   return { branch, worktreePath, relativePath, pushed, baseBranch: base }
 }
 
-/** Remove a task's worktree directory and prune stale worktree metadata. */
+/** Remove a task branch's worktree directory and prune stale worktree metadata. */
 export async function removeWorktree(
   projectPath: string,
-  taskId: string
+  branch: string
 ): Promise<void> {
-  const branch = `vf-${taskId}`
-  const relativePath = path.join('.vibeflow', branch)
+  const relativePath = path.join('.vibeflow', worktreeDirName(branch))
   try {
     await git(projectPath, ['worktree', 'remove', '--force', relativePath])
   } catch {
@@ -233,15 +285,14 @@ export async function removeWorktree(
 }
 
 /**
- * Delete a task's local branch `vf-<taskId>` (best-effort). The branch must not
- * be checked out in any worktree — call this AFTER removeWorktree. The remote
- * branch (if pushed) is intentionally left intact for any open PR / merge.
+ * Delete a task's local branch (best-effort). The branch must not be checked
+ * out in any worktree — call this AFTER removeWorktree. The remote branch
+ * (if pushed) is intentionally left intact for any open PR / merge.
  */
 export async function deleteBranch(
   projectPath: string,
-  taskId: string
+  branch: string
 ): Promise<void> {
-  const branch = `vf-${taskId}`
   try {
     await git(projectPath, ['branch', '-D', branch])
   } catch {

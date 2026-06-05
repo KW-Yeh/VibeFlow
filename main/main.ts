@@ -16,6 +16,7 @@ import {
   type Task,
 } from './helpers/store'
 import { detectAgents, type AgentCliId } from './helpers/agents'
+import { generateBranchName } from './helpers/branch-name'
 import {
   commitAndPush,
   deleteBranch,
@@ -116,10 +117,17 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         throw new Error('尚未選擇專案資料夾')
       }
       const taskId = randomUUID().slice(0, 8)
+      // Meaningful branch name from the card (Jira/eBug code, or an English
+      // slug of the title); null falls back to the legacy vf-<id> naming.
+      const preferredBranch = await generateBranchName(
+        payload.title,
+        payload.description
+      )
       const result = await provisionWorktree(
         payload.projectPath,
         taskId,
-        payload.baseBranch
+        payload.baseBranch,
+        preferredBranch
       )
       const task: Task = {
         id: taskId,
@@ -240,8 +248,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     killSession(taskId)
     unwatchProgress(taskId)
     if (task?.projectPath) {
-      await removeWorktree(task.projectPath, taskId)
-      await deleteBranch(task.projectPath, taskId)
+      const branch = task.branch || `vf-${taskId}`
+      await removeWorktree(task.projectPath, branch)
+      await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
     updateTask(taskId, { worktreePath: undefined })
@@ -254,8 +263,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     killSession(taskId)
     unwatchProgress(taskId)
     if (task?.projectPath) {
-      await removeWorktree(task.projectPath, taskId)
-      await deleteBranch(task.projectPath, taskId)
+      const branch = task.branch || `vf-${taskId}`
+      await removeWorktree(task.projectPath, branch)
+      await deleteBranch(task.projectPath, branch)
     }
     removeTask(taskId)
     return getState()
