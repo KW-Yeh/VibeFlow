@@ -104,6 +104,10 @@ function TaskCard({
   const progress = task.progress
   const totalSteps = progress?.steps.length ?? 0
   const doneSteps = progress?.steps.filter((s) => s.done).length ?? 0
+  const hasProgress = !!progress && totalSteps > 0
+  // Step list + description start collapsed so the terminal owns the card's
+  // height — a buried terminal hides that the agent already finished.
+  const [showDetails, setShowDetails] = useState(false)
   return (
     // Expanded cards get a fixed per-column height (In Progress taller than
     // Backlog/Done) so the grid rows stay aligned; inner content scrolls and
@@ -224,18 +228,40 @@ function TaskCard({
       </div>
 
       {/* Progress bar lives outside the header flex row so it spans the full
-          card width instead of being squeezed beside the action buttons. */}
-      {progress && totalSteps > 0 && (
+          card width instead of being squeezed beside the action buttons. On an
+          expanded card it doubles as the toggle for the step-list details. */}
+      {hasProgress && (
         <div className="mt-2 shrink-0 space-y-1">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => isExpanded && setShowDetails((v) => !v)}
+            disabled={!isExpanded}
+            title={
+              isExpanded
+                ? showDetails
+                  ? '收合進度詳情'
+                  : '展開進度詳情'
+                : undefined
+            }
+            className={cn(
+              'flex w-full items-center justify-between text-[10px] text-muted-foreground',
+              isExpanded ? 'hover:text-foreground' : 'cursor-default'
+            )}
+          >
             <span className="inline-flex items-center gap-1">
               <ListChecks className="size-3 shrink-0" />
               進度
+              {isExpanded &&
+                (showDetails ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                ))}
             </span>
             <span className="tabular-nums">
               {doneSteps}/{totalSteps}
             </span>
-          </div>
+          </button>
           <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-[width] duration-300"
@@ -257,9 +283,26 @@ function TaskCard({
             !isExpanded && 'hidden'
           )}
         >
-          {((progress && totalSteps > 0) || task.description) && (
-            <div className="mt-2 min-h-0 space-y-2 overflow-y-auto">
-              {progress && totalSteps > 0 && (
+          {!hasProgress && task.description && (
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              title={showDetails ? '收合任務說明' : '展開任務說明'}
+              className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              {showDetails ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )}
+              任務說明
+            </button>
+          )}
+          {/* Details are capped so the terminal keeps the lion's share of the
+              card even with the step list open. */}
+          {showDetails && (hasProgress || task.description) && (
+            <div className="mt-2 max-h-44 shrink-0 space-y-2 overflow-y-auto">
+              {hasProgress && (
                 <ul className="space-y-1 rounded-md bg-muted/40 p-2.5 text-xs">
                   {progress.steps.map((step, i) => (
                     <li key={i} className="flex items-start gap-1.5">
