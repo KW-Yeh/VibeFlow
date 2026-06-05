@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { Sparkles } from 'lucide-react'
 
 interface TaskTerminalProps {
@@ -159,8 +158,10 @@ export function TaskTerminal({
   }, [launchCommand, launchNonce, maybeLaunch])
 
   return (
-    <div className="mt-2 overflow-hidden rounded-md bg-black">
-      <div className="flex items-center justify-between bg-white/[0.06] px-2 py-1">
+    // Height is owned by the card (fixed expanded height per column): the
+    // terminal fills whatever space is left after the steps/description block.
+    <div className="mt-2 flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md bg-black">
+      <div className="flex shrink-0 items-center justify-between bg-white/[0.06] px-2 py-1">
         <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>
@@ -181,13 +182,9 @@ export function TaskTerminal({
           </Button>
         )}
       </div>
-      {/* Done cards are review-only — a shorter viewport is enough there. */}
       <div
         ref={containerRef}
-        className={cn(
-          'w-full overflow-hidden p-1',
-          readOnly ? 'h-36' : 'h-64'
-        )}
+        className="min-h-0 w-full flex-1 overflow-hidden p-1"
       />
     </div>
   )
