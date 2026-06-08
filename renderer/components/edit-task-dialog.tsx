@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, UserRound, X } from 'lucide-react'
+import { Loader2, ShieldCheck, UserRound, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { RoleAvatar } from '@/components/roles-dialog'
@@ -13,7 +13,12 @@ interface EditTaskDialogProps {
   roles: Role[]
   saving: boolean
   error: string | null
-  onSubmit: (title: string, description: string, roleId: string) => void
+  onSubmit: (
+    title: string,
+    description: string,
+    roleId: string,
+    reviewerRoleId: string
+  ) => void
   onClose: () => void
 }
 
@@ -28,6 +33,7 @@ export function EditTaskDialog({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [roleId, setRoleId] = useState('')
+  const [reviewerRoleId, setReviewerRoleId] = useState('')
 
   // Seed the fields from the task whenever a new one is opened.
   useEffect(() => {
@@ -35,6 +41,7 @@ export function EditTaskDialog({
       setTitle(task.title)
       setDescription(task.description ?? '')
       setRoleId(task.roleId ?? '')
+      setReviewerRoleId(task.reviewerRoleId ?? '')
     }
   }, [task])
 
@@ -42,10 +49,12 @@ export function EditTaskDialog({
 
   const canSubmit = title.trim().length > 0 && !saving
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
+  const selectedReviewerRole =
+    roles.find((r) => r.id === reviewerRoleId) ?? null
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSubmit(title.trim(), description.trim(), roleId)
+    onSubmit(title.trim(), description.trim(), roleId, reviewerRoleId)
   }
 
   return (
@@ -105,6 +114,33 @@ export function EditTaskDialog({
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <option value="">預設（不指派角色）</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <ShieldCheck className="size-3.5" />
+              Code Reviewer（選填，啟用自動審查）
+            </span>
+            <div className="flex items-center gap-2">
+              {selectedReviewerRole && (
+                <RoleAvatar
+                  role={selectedReviewerRole}
+                  className="size-8 text-sm"
+                />
+              )}
+              <select
+                value={reviewerRoleId}
+                onChange={(e) => setReviewerRoleId(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <option value="">不自動審查</option>
                 {roles.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}

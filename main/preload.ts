@@ -62,6 +62,7 @@ const vibeflow = {
     baseBranch: string | null
     agentCli?: AgentCliId
     roleId?: string
+    reviewerRoleId?: string
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {
@@ -69,6 +70,7 @@ const vibeflow = {
     title: string
     description?: string
     roleId?: string
+    reviewerRoleId?: string
   }): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:updateTask', payload),
 

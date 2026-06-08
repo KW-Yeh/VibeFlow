@@ -14,8 +14,10 @@ import {
   setSettings,
   updateRole,
   updateTask,
+  DEFAULT_MAX_REVIEW_ROUNDS,
   type AppSettings,
   type BoardState,
+  type PipelineRun,
   type Role,
   type Task,
 } from './helpers/store'
@@ -116,6 +118,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         baseBranch: string | null
         agentCli?: AgentCliId
         roleId?: string
+        reviewerRoleId?: string
       }
     ) => {
       if (!payload.projectPath) {
@@ -134,6 +137,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         payload.baseBranch,
         preferredBranch
       )
+      // A reviewer role turns the task into a pipeline: seed its review-loop
+      // state so the orchestrator can drive executor → reviewer hand-offs.
+      const pipeline: PipelineRun | undefined = payload.reviewerRoleId
+        ? { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
+        : undefined
       const task: Task = {
         id: taskId,
         title: payload.title.trim() || `Task ${taskId}`,
@@ -146,6 +154,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         pushed: result.pushed,
         agentCli: payload.agentCli ?? 'claude',
         roleId: payload.roleId || undefined,
+        reviewerRoleId: payload.reviewerRoleId || undefined,
+        pipeline,
       }
       addTask(task)
       return { state: getState(), task }
@@ -168,12 +178,26 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         title: string
         description?: string
         roleId?: string
+        reviewerRoleId?: string
       }
     ) => {
+      const reviewerRoleId = payload.reviewerRoleId || undefined
+      const existing = findTask(payload.taskId)
+      // Reconcile pipeline state with the (edited) reviewer assignment: adding a
+      // reviewer seeds a fresh loop; removing it drops the pipeline. An existing
+      // in-flight pipeline is preserved when the reviewer is unchanged.
+      let pipeline: PipelineRun | undefined = existing?.pipeline
+      if (!reviewerRoleId) {
+        pipeline = undefined
+      } else if (!pipeline) {
+        pipeline = { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
+      }
       updateTask(payload.taskId, {
         title: payload.title.trim() || `Task ${payload.taskId}`,
         description: payload.description?.trim() || undefined,
         roleId: payload.roleId || undefined,
+        reviewerRoleId,
+        pipeline,
       })
       return getState()
     }

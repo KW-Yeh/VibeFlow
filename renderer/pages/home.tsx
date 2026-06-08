@@ -168,7 +168,8 @@ export default function HomePage() {
     projectPath: string,
     baseBranch: string | null,
     agentCli: AgentCliId,
-    roleId: string
+    roleId: string,
+    reviewerRoleId: string
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -180,6 +181,7 @@ export default function HomePage() {
         baseBranch,
         agentCli,
         roleId: roleId || undefined,
+        reviewerRoleId: reviewerRoleId || undefined,
       })
       if (result) {
         setBoard(result.state.board)
@@ -200,7 +202,8 @@ export default function HomePage() {
   const handleSaveEdit = async (
     title: string,
     description: string,
-    roleId: string
+    roleId: string,
+    reviewerRoleId: string
   ) => {
     if (!editTask) return
     setSavingEdit(true)
@@ -211,6 +214,7 @@ export default function HomePage() {
         title,
         description,
         roleId: roleId || undefined,
+        reviewerRoleId: reviewerRoleId || undefined,
       })
       if (state) setBoard(state.board)
       setEditTask(null)

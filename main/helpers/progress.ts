@@ -8,6 +8,21 @@ export interface TaskProgressStep {
 }
 
 /**
+ * Code-review verdict emitted by the reviewer stage of the auto-assign
+ * pipeline. The reviewer agent writes it into the `review` field of the
+ * progress file; main mirrors it onto the task so the renderer's pipeline
+ * orchestrator can decide whether to approve or send the work back for changes.
+ */
+export interface ReviewVerdict {
+  /** "approve" = no changes needed; "request_changes" = comments must be fixed. */
+  verdict: 'approve' | 'request_changes'
+  /** One-line summary of the review outcome. */
+  summary?: string
+  /** Concrete points that must be addressed (empty when approved). */
+  comments: string[]
+}
+
+/**
  * Persisted execution progress of a task. The Claude agent maintains a
  * `.vibeflow-progress.json` file at the session cwd (per the progress protocol
  * appended to the system prompt); main watches that file and mirrors its
@@ -18,6 +33,11 @@ export interface TaskProgress {
   /** One-line summary of where the task currently stands. */
   summary?: string
   steps: TaskProgressStep[]
+  /**
+   * Present only after the reviewer stage runs: the code-review verdict the
+   * reviewer agent wrote into the progress file. The executor stages omit it.
+   */
+  review?: ReviewVerdict
   /** Epoch ms when this snapshot was read from the progress file. */
   updatedAt: number
 }
@@ -28,12 +48,29 @@ export interface TaskProgress {
  */
 export const PROGRESS_FILE = '.vibeflow-progress.json'
 
+/** Parse the optional reviewer verdict; undefined when absent or malformed. */
+function parseReview(raw: unknown): ReviewVerdict | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const obj = raw as { verdict?: unknown; summary?: unknown; comments?: unknown }
+  if (obj.verdict !== 'approve' && obj.verdict !== 'request_changes') {
+    return undefined
+  }
+  const comments = Array.isArray(obj.comments)
+    ? obj.comments.filter((c): c is string => typeof c === 'string')
+    : []
+  return {
+    verdict: obj.verdict,
+    summary: typeof obj.summary === 'string' ? obj.summary : undefined,
+    comments,
+  }
+}
+
 /** Parse + validate raw file content; null when malformed (e.g. mid-write). */
 function parseProgress(raw: string): TaskProgress | null {
   try {
     const data: unknown = JSON.parse(raw)
     if (!data || typeof data !== 'object') return null
-    const obj = data as { summary?: unknown; steps?: unknown }
+    const obj = data as { summary?: unknown; steps?: unknown; review?: unknown }
     if (!Array.isArray(obj.steps)) return null
     const steps: TaskProgressStep[] = []
     for (const s of obj.steps) {
@@ -45,6 +82,7 @@ function parseProgress(raw: string): TaskProgress | null {
     return {
       summary: typeof obj.summary === 'string' ? obj.summary : undefined,
       steps,
+      review: parseReview(obj.review),
       updatedAt: Date.now(),
     }
   } catch {
@@ -89,6 +127,7 @@ export function watchProgress(
     const json = JSON.stringify({
       summary: progress.summary,
       steps: progress.steps,
+      review: progress.review,
     })
     if (json === entry.lastJson) return
     entry.lastJson = json

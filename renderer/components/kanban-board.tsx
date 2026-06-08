@@ -1,17 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   Check,
+  CheckCheck,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
+  Eye,
   FolderGit2,
   GitBranch,
   GitCompare,
+  Hammer,
   ListChecks,
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Settings,
   Terminal as TerminalIcon,
   Trash2,
@@ -25,11 +30,19 @@ import { RoleAvatar } from '@/components/roles-dialog'
 import {
   AGENT_NAMES,
   buildAgentCommand,
+  buildReviewCommand,
+  buildReviseCommand,
   isTaskComplete,
   taskAgent,
 } from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId, Role, Task } from '@/lib/types'
+import type {
+  BoardState,
+  ColumnId,
+  ReviewVerdict,
+  Role,
+  Task,
+} from '@/lib/types'
 
 // Views in the segmented control. In Progress comes first because it is the
 // page users live in; Backlog and Done are secondary, freely switchable views.
@@ -71,11 +84,84 @@ interface LaunchEntry {
   nonce: number
 }
 
+// Visual treatment for each pipeline stage shown on the card's status badge.
+const STAGE_BADGE: Record<
+  NonNullable<Task['pipeline']>['stage'],
+  { label: string; icon: typeof Eye; tone: string }
+> = {
+  developing: {
+    label: '開發中',
+    icon: Hammer,
+    tone: 'bg-secondary text-secondary-foreground',
+  },
+  reviewing: {
+    label: '審查中',
+    icon: Eye,
+    tone: 'bg-amber-500/15 text-amber-500',
+  },
+  revising: {
+    label: '修正中',
+    icon: RefreshCw,
+    tone: 'bg-amber-500/15 text-amber-500',
+  },
+  approved: {
+    label: '已通過',
+    icon: CheckCheck,
+    tone: 'bg-primary/15 text-primary',
+  },
+  blocked: {
+    label: '需人工介入',
+    icon: AlertTriangle,
+    tone: 'bg-destructive/15 text-destructive',
+  },
+}
+
+/**
+ * Status chip for a pipeline task: shows the current review-loop stage, the
+ * round number while iterating, and the reviewer persona while reviewing.
+ */
+function PipelineBadge({
+  task,
+  reviewerRole,
+}: {
+  task: Task
+  reviewerRole: Role | null
+}) {
+  const p = task.pipeline
+  if (!p) return null
+  const meta = STAGE_BADGE[p.stage]
+  const Icon = meta.icon
+  const suffix =
+    p.stage === 'revising'
+      ? ` · 第 ${p.round} 輪`
+      : p.stage === 'blocked'
+        ? ` · 已達 ${p.maxRounds} 輪`
+        : ''
+  return (
+    <span
+      className={cn(
+        'mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+        meta.tone
+      )}
+      title={p.lastReview?.summary ?? `Code Reviewer：${reviewerRole?.name ?? '未指派'}`}
+    >
+      <Icon className="size-2.5 shrink-0" />
+      <span className="truncate">
+        {meta.label}
+        {suffix}
+        {p.stage === 'reviewing' && reviewerRole ? ` · ${reviewerRole.name}` : ''}
+      </span>
+    </span>
+  )
+}
+
 interface TaskCardProps {
   task: Task
   column: ColumnId
-  /** Resolved role assigned to this task, if any. */
+  /** Resolved executor role assigned to this task, if any. */
   role: Role | null
+  /** Resolved reviewer role (pipeline tasks only), if any. */
+  reviewerRole: Role | null
   isExpanded: boolean
   isMounted: boolean
   launch?: LaunchEntry
@@ -100,6 +186,7 @@ function TaskCard({
   task,
   column,
   role,
+  reviewerRole,
   isExpanded,
   isMounted,
   launch,
@@ -141,15 +228,18 @@ function TaskCard({
             </span>
           )}
           <p className="mb-2 break-words text-sm font-medium">{task.title}</p>
-          {role && (
-            <span
-              className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-[10px] font-medium text-secondary-foreground"
-              title={`指派角色：${role.name}`}
-            >
-              <RoleAvatar role={role} className="size-4 text-[8px]" />
-              <span className="truncate">{role.name}</span>
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {role && (
+              <span
+                className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-[10px] font-medium text-secondary-foreground"
+                title={`執行角色：${role.name}`}
+              >
+                <RoleAvatar role={role} className="size-4 text-[8px]" />
+                <span className="truncate">{role.name}</span>
+              </span>
+            )}
+            <PipelineBadge task={task} reviewerRole={reviewerRole} />
+          </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex min-w-0 max-w-full items-center gap-1">
               <GitBranch className="size-3 shrink-0" />
@@ -423,24 +513,122 @@ export function KanbanBoard({
     }
   }
 
-  // Expand the card and arm (or re-arm) its agent launch command. `resume`
-  // continues the prior session rather than starting a fresh conversation.
-  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
-    setExpanded((prev) => new Set(prev).add(task.id))
-    markMounted(task.id)
+  // Expand the card, mount its terminal, and arm a (re-)launch of `command`.
+  // Bumping the nonce is what fires it in the TaskTerminal.
+  const armCommand = (taskId: string, command: string) => {
+    setExpanded((prev) => new Set(prev).add(taskId))
+    markMounted(taskId)
     setLaunch((prev) => ({
       ...prev,
-      [task.id]: {
-        command: buildAgentCommand(
-          task,
-          systemPrompt,
-          roleById(task.roleId),
-          opts
-        ),
-        nonce: (prev[task.id]?.nonce ?? 0) + 1,
-      },
+      [taskId]: { command, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
     }))
   }
+
+  // Arm the executor launch for a card (the default, non-pipeline launch path).
+  // `resume` continues the prior session rather than starting a fresh one.
+  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
+    armCommand(
+      task.id,
+      buildAgentCommand(task, systemPrompt, roleById(task.roleId), opts)
+    )
+  }
+
+  // Merge a patch into a task across all columns and persist (used by the
+  // pipeline orchestrator to advance stage / round state).
+  const patchTask = (taskId: string, patch: Partial<Task>) => {
+    onBoardChange({
+      backlog: board.backlog.map((t) =>
+        t.id === taskId ? { ...t, ...patch } : t
+      ),
+      in_progress: board.in_progress.map((t) =>
+        t.id === taskId ? { ...t, ...patch } : t
+      ),
+      done: board.done.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+    })
+  }
+
+  // --- Auto-assign pipeline orchestration ---
+  //
+  // For tasks with both an executor (roleId) and a reviewer (reviewerRoleId),
+  // drive the executor → reviewer → (revise → reviewer)* → approve loop in a
+  // single worktree. Transitions are event-driven off live progress updates
+  // (mirrored into `board`), so they only fire while an agent is actively
+  // working — never spuriously on app reload. Gated on Auto Mode, the global
+  // automation switch.
+  //
+  // `firedRef` dedupes by a (stage, allDone, verdict, round) signature so an
+  // identical board snapshot can't re-trigger the same hand-off twice.
+  const firedRef = useRef<Map<string, string>>(new Map())
+
+  const advanceToReview = (task: Task) => {
+    const next = { ...task.pipeline!, stage: 'reviewing' as const }
+    patchTask(task.id, { pipeline: next })
+    armCommand(
+      task.id,
+      buildReviewCommand(task, systemPrompt, roleById(task.reviewerRoleId))
+    )
+  }
+
+  const advanceToRevise = (task: Task, review: ReviewVerdict) => {
+    const next = {
+      ...task.pipeline!,
+      stage: 'revising' as const,
+      round: task.pipeline!.round + 1,
+      lastReview: review,
+    }
+    patchTask(task.id, { pipeline: next })
+    armCommand(
+      task.id,
+      buildReviseCommand(
+        task,
+        systemPrompt,
+        roleById(task.roleId),
+        review.comments
+      )
+    )
+  }
+
+  useEffect(() => {
+    if (!autoMode) return
+    // Act on at most one transition per pass; the resulting board change
+    // re-runs this effect to handle any remaining tasks, avoiding clobbered
+    // onBoardChange writes from a stale closure.
+    for (const task of board.in_progress) {
+      const p = task.pipeline
+      if (!p || !task.reviewerRoleId) continue
+      if (p.stage === 'approved' || p.stage === 'blocked') continue
+
+      const allDone = isTaskComplete(task)
+      const review = task.progress?.review
+      const sig = `${p.stage}|${allDone}|${review?.verdict ?? 'none'}|${p.round}`
+      if (firedRef.current.get(task.id) === sig) continue
+
+      // Executor finished (and hasn't yet been reviewed this round) → review.
+      if ((p.stage === 'developing' || p.stage === 'revising') && allDone && !review) {
+        firedRef.current.set(task.id, sig)
+        advanceToReview(task)
+        break
+      }
+      // Reviewer produced a verdict → approve, send back, or escalate.
+      if (p.stage === 'reviewing' && review) {
+        firedRef.current.set(task.id, sig)
+        if (review.verdict === 'approve') {
+          patchTask(task.id, {
+            pipeline: { ...p, stage: 'approved', lastReview: review },
+          })
+        } else if (p.round + 1 > p.maxRounds) {
+          patchTask(task.id, {
+            pipeline: { ...p, stage: 'blocked', lastReview: review },
+          })
+        } else {
+          advanceToRevise(task, review)
+        }
+        break
+      }
+    }
+    // eslint/exhaustive-deps not configured here; the board snapshot + the
+    // automation switch are the only inputs that should retrigger evaluation.
+  }, [board, autoMode, systemPrompt, roles])
 
   // Manual run (▶ on an In Progress card): (re-)launches in place, resuming the
   // prior session when the task has run before, and stamps launchedAt once.
@@ -640,6 +828,7 @@ export function KanbanBoard({
                     task={task}
                     column={v.id}
                     role={roleById(task.roleId)}
+                    reviewerRole={roleById(task.reviewerRoleId)}
                     isExpanded={expanded.has(task.id)}
                     isMounted={mounted.has(task.id)}
                     launch={launch[task.id]}

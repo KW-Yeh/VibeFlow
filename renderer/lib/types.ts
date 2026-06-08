@@ -7,10 +7,13 @@ export type {
   BoardState,
   AppSettings,
   VibeFlowState,
+  PipelineStage,
+  PipelineRun,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult } from '../../main/helpers/git'
 export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {
   TaskProgress,
   TaskProgressStep,
+  ReviewVerdict,
 } from '../../main/helpers/progress'
