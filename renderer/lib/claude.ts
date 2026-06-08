@@ -85,6 +85,16 @@ export function resolveSystemPrompt(
 }
 
 /**
+ * True when the card's recorded progress shows every step done — i.e. the task
+ * has finished. Used to decide whether a re-open should resume the agent (work
+ * still pending) or simply keep the terminal open without auto-running.
+ */
+export function isTaskComplete(task: Pick<Task, 'progress'>): boolean {
+  const steps = task.progress?.steps
+  return !!steps && steps.length > 0 && steps.every((s) => s.done)
+}
+
+/**
  * Build the initial prompt fed to Claude from a card's title + description.
  * When the card carries previously recorded progress, it is included so a
  * re-run resumes from the recorded state instead of starting over.
@@ -109,21 +119,59 @@ export function buildPrompt(
 }
 
 /**
+ * Build the message sent as a new turn when resuming a prior agent session.
+ * The conversation history is restored by the CLI's resume flag, so this only
+ * needs to nudge the agent to pick up from the last recorded progress instead
+ * of re-stating the whole task.
+ */
+export function buildResumePrompt(
+  task: Pick<Task, 'progress'>
+): string {
+  const lines = [
+    '請接續先前的工作：從尚未完成的步驟繼續執行，已完成的步驟請勿重做。',
+  ]
+  const progress = task.progress
+  if (progress && progress.steps.length > 0) {
+    lines.push('', '最後記錄的進度：')
+    if (progress.summary) lines.push(`摘要：${progress.summary}`)
+    for (const step of progress.steps) {
+      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+/** Options controlling how a launch command is built. */
+export interface LaunchOptions {
+  /**
+   * Resume the prior agent session instead of starting a fresh conversation.
+   * For Claude this uses `--continue` so the previous session in the task's
+   * worktree is restored and continued from the last recorded progress.
+   */
+  resume?: boolean
+}
+
+/**
  * Build the full shell command (terminated with a carriage return) that
  * launches Claude in auto mode with the card's prompt and the effective
  * system prompt. Written verbatim into the card's PTY.
+ *
+ * When `opts.resume` is set, `--continue` restores the most recent conversation
+ * in the worktree (claude keys history by cwd) and a short resume nudge is sent
+ * as the new turn. The system prompt — including the progress-tracking protocol
+ * — is re-appended each invocation, so the resumed session keeps maintaining
+ * the progress file.
  */
 export function buildClaudeCommand(
   task: Pick<Task, 'title' | 'description' | 'progress'>,
   systemPrompt?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0]
+  role?: Parameters<typeof buildRolePrompt>[0],
+  opts?: LaunchOptions
 ): string {
-  const prompt = buildPrompt(task)
-  return (
-    `claude --permission-mode ${DEFAULT_PERMISSION_MODE}` +
-    ` --append-system-prompt ${shellQuote(resolveSystemPrompt(systemPrompt, role))}` +
-    ` ${shellQuote(prompt)}\r`
-  )
+  const sys = shellQuote(resolveSystemPrompt(systemPrompt, role))
+  const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}`
+  const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+  return `${head} --append-system-prompt ${sys} ${shellQuote(prompt)}\r`
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
@@ -142,14 +190,19 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
  * Build the launch command for the task's chosen agent CLI. Codex and Gemini
  * have no separate system-prompt flag, so the effective system prompt (incl.
  * the progress protocol) is folded into the prompt text instead.
+ *
+ * Only Claude has a wired session-resume flag (`--continue`). Codex/Gemini fall
+ * back to a fresh launch whose prompt already folds in the recorded progress
+ * (via buildPrompt), giving a soft resume regardless of `opts.resume`.
  */
 export function buildAgentCommand(
   task: Pick<Task, 'title' | 'description' | 'progress' | 'agentCli'>,
   systemPrompt?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0]
+  role?: Parameters<typeof buildRolePrompt>[0],
+  opts?: LaunchOptions
 ): string {
   const agent = taskAgent(task)
-  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt, role)
+  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt, role, opts)
   const combined = `${resolveSystemPrompt(systemPrompt, role)}\n\n${buildPrompt(task)}`
   if (agent === 'codex') {
     // --full-auto: workspace-write sandbox with automatic command approval.
