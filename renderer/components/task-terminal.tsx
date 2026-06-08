@@ -119,6 +119,25 @@ export function TaskTerminal({
       offExit = api.term.onExit(({ taskId: id, exitCode }) => {
         if (id === taskId) term.writeln(`\r\n[process exited: ${exitCode}]`)
       })
+      // Shift+Enter inserts a newline instead of submitting. xterm sends a plain
+      // CR for both Enter and Shift+Enter, so the CLI running in the PTY (e.g.
+      // Claude Code) can't tell them apart and submits early. We intercept
+      // Shift+Enter and forward ESC+CR — the same sequence Option+Enter produces,
+      // which these TUIs interpret as「insert newline」— then suppress xterm's
+      // default CR so the line isn't also submitted.
+      term.attachCustomKeyEventHandler((event) => {
+        if (
+          event.type === 'keydown' &&
+          event.key === 'Enter' &&
+          event.shiftKey &&
+          !readOnlyRef.current
+        ) {
+          api.term.input(taskId, '\x1b\r')
+          return false
+        }
+        return true
+      })
+
       // Forward keystrokes only while the card is interactive (not Done).
       term.onData((data) => {
         if (!readOnlyRef.current) api.term.input(taskId, data)
