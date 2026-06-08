@@ -463,8 +463,11 @@ export async function commitAndPush(
   worktreePath: string,
   message: string
 ): Promise<FinalizeResult> {
-  // Stage everything except the agent-maintained progress file (metadata).
-  await git(worktreePath, ['add', '-A', '--', '.', `:(exclude)${PROGRESS_FILE}`])
+  // Stage everything. The agent-maintained progress file is kept out of the
+  // commit by `.git/info/exclude` (see ensureLocalExclude), so `git add -A`
+  // skips it on its own. An explicit `:(exclude)` pathspec here is redundant
+  // and, on modern git, throws when the ignored file is present on disk.
+  await git(worktreePath, ['add', '-A'])
 
   let committed = false
   try {

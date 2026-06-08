@@ -5,7 +5,7 @@ Found while building the headless test suite for `main/helpers/*`. These are
 
 ---
 
-## BUG #1 — `commitAndPush` throws on every real finalize (HIGH)
+## BUG #1 — `commitAndPush` throws on every real finalize (HIGH) — ✅ FIXED
 
 **Where:** `main/helpers/git.ts` → `commitAndPush()`
 
@@ -42,13 +42,13 @@ agent (i.e. all of them). `tracked.txt` does get staged before git errors, but
 the function never reaches `commit`, so nothing is committed or pushed.
 
 **Captured by:** `git.test.mjs` →
-`commitAndPush — never commits the agent progress file` (marked `todo`; it
-asserts the correct behavior and will start passing once fixed).
+`commitAndPush — never commits the agent progress file` (now a passing
+regression test).
 
-**Suggested fix direction (for Developer):** since `.vibeflow-progress.json` is
-already excluded via `.git/info/exclude`, the `:(exclude)` pathspec is
-redundant and is what trips the guard — `git add -A` alone already skips it.
-Alternatively pass `--ignore-errors` / drop the explicit exclude pathspec.
+**Fix applied:** dropped the redundant `:(exclude)` pathspec — `commitAndPush`
+now runs plain `git add -A`. Since `.vibeflow-progress.json` is already in
+`.git/info/exclude` (via `ensureLocalExclude`), `git add -A` skips it on its
+own without ever naming an ignored path, so the guard no longer trips.
 
 ---
 
