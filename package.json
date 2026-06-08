@@ -10,6 +10,7 @@
     "dev": "nextron",
     "build": "nextron build",
     "rebuild": "./rebuild.sh",
+    "test": "NODE_OPTIONS=\"--experimental-strip-types --import ./test/support/register.mjs\" node --test \"./test/**/*.test.mjs\"",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
