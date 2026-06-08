@@ -270,14 +270,29 @@ export default function HomePage() {
     setRolesOpen(true)
   }
 
-  const handleCreateRole = async (input: Omit<Role, 'id'>) => {
+  const roleNameTaken = (name: string, excludeId?: string) => {
+    const target = name.trim().toLowerCase()
+    return roles.some(
+      (r) => r.id !== excludeId && r.name.trim().toLowerCase() === target
+    )
+  }
+
+  const handleCreateRole = async (
+    input: Omit<Role, 'id'>
+  ): Promise<boolean> => {
+    if (roleNameTaken(input.name)) {
+      setRoleError(`已存在名稱為「${input.name.trim()}」的角色`)
+      return false
+    }
     setSavingRole(true)
     setRoleError(null)
     try {
       const res = await createRole(input)
       if (res) setRoles(res.state.roles)
+      return true
     } catch (err) {
       setRoleError(err instanceof Error ? err.message : String(err))
+      return false
     } finally {
       setSavingRole(false)
     }
@@ -286,14 +301,20 @@ export default function HomePage() {
   const handleUpdateRole = async (
     roleId: string,
     patch: Omit<Role, 'id'>
-  ) => {
+  ): Promise<boolean> => {
+    if (roleNameTaken(patch.name, roleId)) {
+      setRoleError(`已存在名稱為「${patch.name.trim()}」的角色`)
+      return false
+    }
     setSavingRole(true)
     setRoleError(null)
     try {
       const state = await updateRole(roleId, patch)
       if (state) setRoles(state.roles)
+      return true
     } catch (err) {
       setRoleError(err instanceof Error ? err.message : String(err))
+      return false
     } finally {
       setSavingRole(false)
     }
