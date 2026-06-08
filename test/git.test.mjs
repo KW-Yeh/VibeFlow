@@ -373,17 +373,16 @@ test('commitAndPush — stages, commits, and pushes the worktree branch', async 
   }
 })
 
-// KNOWN BUG (todo) — see test/BUG-REPORT.md #1.
-// commitAndPush runs `git add -A -- . :(exclude).vibeflow-progress.json`. On
-// git >= 2.x, when the excluded file is ALSO ignored (provisionWorktree adds it
-// to .git/info/exclude) and present on disk — i.e. every real task finalize —
-// git treats the :(exclude) pathspec as "explicitly naming an ignored path" and
-// exits 1, so the un-try/caught `git add` throws and the whole finalize rejects.
-// This todo asserts the CORRECT behavior; it fails until the source is fixed,
-// but `todo` keeps the suite green and flags the defect in the report.
+// REGRESSION — see test/BUG-REPORT.md #1 (fixed).
+// commitAndPush used to run `git add -A -- . :(exclude).vibeflow-progress.json`.
+// On git >= 2.x, when the excluded file is ALSO ignored (provisionWorktree adds
+// it to .git/info/exclude) and present on disk — i.e. every real task finalize —
+// git treated the :(exclude) pathspec as "explicitly naming an ignored path" and
+// exited 1, so the un-try/caught `git add` threw and the whole finalize rejected.
+// The fix drops the redundant pathspec — `.git/info/exclude` already hides the
+// file from `git add -A`. This test now guards that behavior.
 test(
   'commitAndPush — never commits the agent progress file',
-  { todo: 'BUG #1: git add throws when the excluded progress file is present' },
   async () => {
     const { projectPath, cleanup } = await makeRepo({ withRemote: true })
     try {
