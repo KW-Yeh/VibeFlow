@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, UserRound, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
-import type { Task } from '@/lib/types'
+import type { Role, Task } from '@/lib/types'
 
 interface EditTaskDialogProps {
   /** The task being edited, or null when the dialog is closed. */
   task: Task | null
+  /** Roles available for assignment ('' = use the default, no role). */
+  roles: Role[]
   saving: boolean
   error: string | null
-  onSubmit: (title: string, description: string) => void
+  onSubmit: (title: string, description: string, roleId: string) => void
   onClose: () => void
 }
 
 export function EditTaskDialog({
   task,
+  roles,
   saving,
   error,
   onSubmit,
@@ -23,22 +27,25 @@ export function EditTaskDialog({
 }: EditTaskDialogProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [roleId, setRoleId] = useState('')
 
   // Seed the fields from the task whenever a new one is opened.
   useEffect(() => {
     if (task) {
       setTitle(task.title)
       setDescription(task.description ?? '')
+      setRoleId(task.roleId ?? '')
     }
   }, [task])
 
   if (!task) return null
 
   const canSubmit = title.trim().length > 0 && !saving
+  const selectedRole = roles.find((r) => r.id === roleId) ?? null
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSubmit(title.trim(), description.trim())
+    onSubmit(title.trim(), description.trim(), roleId)
   }
 
   return (
@@ -82,6 +89,30 @@ export function EditTaskDialog({
               className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
           </label>
+
+          <div className="space-y-1.5">
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <UserRound className="size-3.5" />
+              指派角色（選填）
+            </span>
+            <div className="flex items-center gap-2">
+              {selectedRole && (
+                <RoleAvatar role={selectedRole} className="size-8 text-sm" />
+              )}
+              <select
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <option value="">預設（不指派角色）</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {error && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">

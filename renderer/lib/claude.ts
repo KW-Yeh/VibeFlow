@@ -1,4 +1,4 @@
-import type { AgentCliId, Task } from '@/lib/types'
+import type { AgentCliId, Role, Task } from '@/lib/types'
 
 /**
  * Default system prompt appended when auto-launching Claude for a card. It
@@ -39,19 +39,49 @@ export const PROGRESS_PROTOCOL_PROMPT = [
 /** The permission mode passed to the Claude CLI ("auto mode"). */
 export const DEFAULT_PERMISSION_MODE = 'auto'
 
+/**
+ * Build the role preamble prepended to the system prompt when a task is
+ * assigned a role. It instructs the agent to take on the role's persona, so it
+ * understands and executes the task from that role's perspective. Returns ''
+ * for no role (default behavior) or an empty/unnamed role.
+ */
+export function buildRolePrompt(
+  role?: Pick<
+    Role,
+    'name' | 'positioning' | 'responsibilities' | 'boundaries'
+  > | null
+): string {
+  if (!role || !role.name?.trim()) return ''
+  const lines = [
+    `你被指派的角色是「${role.name.trim()}」。請完全以此角色的視角來認知、判斷並執行任務。`,
+  ]
+  const positioning = role.positioning?.trim()
+  const responsibilities = role.responsibilities?.trim()
+  const boundaries = role.boundaries?.trim()
+  if (positioning) lines.push('', '【角色定位】', positioning)
+  if (responsibilities) lines.push('', '【職責內容】', responsibilities)
+  if (boundaries) lines.push('', '【執行邊界】', boundaries)
+  return lines.join('\n')
+}
+
 /** Quote an arbitrary string for safe use as a single shell argument (POSIX). */
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 /**
- * Resolve the effective system prompt: the user's custom prompt when set
- * (non-blank), otherwise the built-in default — always followed by the fixed
- * progress-tracking protocol.
+ * Resolve the effective system prompt: the assigned role's persona (when set)
+ * in front, then the user's custom prompt when set (non-blank) otherwise the
+ * built-in default — always followed by the fixed progress-tracking protocol.
  */
-export function resolveSystemPrompt(custom?: string | null): string {
+export function resolveSystemPrompt(
+  custom?: string | null,
+  role?: Parameters<typeof buildRolePrompt>[0]
+): string {
   const base = custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
-  return `${base}\n\n${PROGRESS_PROTOCOL_PROMPT}`
+  const rolePrompt = buildRolePrompt(role)
+  const head = rolePrompt ? `${rolePrompt}\n\n${base}` : base
+  return `${head}\n\n${PROGRESS_PROTOCOL_PROMPT}`
 }
 
 /**
@@ -85,12 +115,13 @@ export function buildPrompt(
  */
 export function buildClaudeCommand(
   task: Pick<Task, 'title' | 'description' | 'progress'>,
-  systemPrompt?: string | null
+  systemPrompt?: string | null,
+  role?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const prompt = buildPrompt(task)
   return (
     `claude --permission-mode ${DEFAULT_PERMISSION_MODE}` +
-    ` --append-system-prompt ${shellQuote(resolveSystemPrompt(systemPrompt))}` +
+    ` --append-system-prompt ${shellQuote(resolveSystemPrompt(systemPrompt, role))}` +
     ` ${shellQuote(prompt)}\r`
   )
 }
@@ -114,11 +145,12 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
  */
 export function buildAgentCommand(
   task: Pick<Task, 'title' | 'description' | 'progress' | 'agentCli'>,
-  systemPrompt?: string | null
+  systemPrompt?: string | null,
+  role?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const agent = taskAgent(task)
-  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt)
-  const combined = `${resolveSystemPrompt(systemPrompt)}\n\n${buildPrompt(task)}`
+  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt, role)
+  const combined = `${resolveSystemPrompt(systemPrompt, role)}\n\n${buildPrompt(task)}`
   if (agent === 'codex') {
     // --full-auto: workspace-write sandbox with automatic command approval.
     return `codex --full-auto ${shellQuote(combined)}\r`

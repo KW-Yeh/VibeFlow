@@ -6,6 +6,7 @@ import type {
   DiffFile,
   FinalizeResult,
   GitInfo,
+  Role,
   Task,
   TaskProgress,
   VibeFlowState,
@@ -83,6 +84,7 @@ export async function createTask(payload: {
   projectPath: string
   baseBranch: string | null
   agentCli?: AgentCliId
+  roleId?: string
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
@@ -92,9 +94,32 @@ export async function updateTask(payload: {
   taskId: string
   title: string
   description?: string
+  roleId?: string
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null
+}
+
+export async function createRole(
+  input: Omit<Role, 'id'>
+): Promise<{ state: VibeFlowState; role: Role } | null> {
+  const b = bridge()
+  return b ? b.createRole(input) : null
+}
+
+export async function updateRole(
+  roleId: string,
+  patch: Partial<Role>
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.updateRole(roleId, patch) : null
+}
+
+export async function removeRole(
+  roleId: string
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.removeRole(roleId) : null
 }
 
 export async function removeTask(taskId: string): Promise<VibeFlowState | null> {
