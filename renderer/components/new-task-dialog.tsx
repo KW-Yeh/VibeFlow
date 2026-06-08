@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Bot, FolderOpen, GitBranch, Loader2, X } from 'lucide-react'
+import { Bot, FolderOpen, GitBranch, Loader2, UserRound, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
-import type { AgentCli, AgentCliId, GitInfo } from '@/lib/types'
+import type { AgentCli, AgentCliId, GitInfo, Role } from '@/lib/types'
 
 interface NewTaskDialogProps {
   open: boolean
@@ -13,12 +14,16 @@ interface NewTaskDialogProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   /** Agent CLIs detected on PATH (claude / codex / gemini). */
   detectAgents: () => Promise<AgentCli[]>
+  /** Roles available for assignment ('' = use the default, no role). */
+  roles: Role[]
+  onManageRoles: () => void
   onSubmit: (
     title: string,
     description: string,
     projectPath: string,
     baseBranch: string | null,
-    agentCli: AgentCliId
+    agentCli: AgentCliId,
+    roleId: string
   ) => void
   onClose: () => void
 }
@@ -35,6 +40,8 @@ export function NewTaskDialog({
   pickFolder,
   loadGitInfo,
   detectAgents,
+  roles,
+  onManageRoles,
   onSubmit,
   onClose,
 }: NewTaskDialogProps) {
@@ -47,6 +54,8 @@ export function NewTaskDialog({
   // null = detection still running; [] = none found on PATH.
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
+  // '' = no role assigned (default behavior).
+  const [roleId, setRoleId] = useState('')
 
   // Reset everything whenever the dialog opens, and (re-)detect the agent
   // CLIs available in the current environment.
@@ -60,6 +69,7 @@ export function NewTaskDialog({
     setBaseBranch('')
     setAgents(null)
     setAgentCli('claude')
+    setRoleId('')
     let active = true
     void detectAgents().then((found) => {
       if (!active) return
@@ -107,9 +117,12 @@ export function NewTaskDialog({
       description.trim(),
       projectPath,
       hasRemote ? baseBranch || null : null,
-      agentCli
+      agentCli,
+      roleId
     )
   }
+
+  const selectedRole = roles.find((r) => r.id === roleId) ?? null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -246,6 +259,43 @@ export function NewTaskDialog({
                     ))}
                   </select>
                 )}
+              </div>
+
+              {/* Role assignment — optional; blank uses the default behavior. */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <UserRound className="size-3.5" />
+                    指派角色（選填）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onManageRoles}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    管理角色
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedRole && (
+                    <RoleAvatar
+                      role={selectedRole}
+                      className="size-8 text-sm"
+                    />
+                  )}
+                  <select
+                    value={roleId}
+                    onChange={(e) => setRoleId(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="">預設（不指派角色）</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </>
           )}

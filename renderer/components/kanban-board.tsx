@@ -16,13 +16,15 @@ import {
   Terminal as TerminalIcon,
   Trash2,
   Undo2,
+  Users,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
+import { RoleAvatar } from '@/components/roles-dialog'
 import { AGENT_NAMES, buildAgentCommand, taskAgent } from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId, Task } from '@/lib/types'
+import type { BoardState, ColumnId, Role, Task } from '@/lib/types'
 
 // Views in the segmented control. In Progress comes first because it is the
 // page users live in; Backlog and Done are secondary, freely switchable views.
@@ -54,6 +56,9 @@ interface KanbanBoardProps {
   /** Custom system prompt for launches ('' = use the built-in default). */
   systemPrompt: string
   onOpenSettings: () => void
+  /** Roles available for assignment / display. */
+  roles: Role[]
+  onManageRoles: () => void
 }
 
 interface LaunchEntry {
@@ -64,6 +69,8 @@ interface LaunchEntry {
 interface TaskCardProps {
   task: Task
   column: ColumnId
+  /** Resolved role assigned to this task, if any. */
+  role: Role | null
   isExpanded: boolean
   isMounted: boolean
   launch?: LaunchEntry
@@ -87,6 +94,7 @@ interface TaskCardProps {
 function TaskCard({
   task,
   column,
+  role,
   isExpanded,
   isMounted,
   launch,
@@ -128,6 +136,15 @@ function TaskCard({
             </span>
           )}
           <p className="mb-2 break-words text-sm font-medium">{task.title}</p>
+          {role && (
+            <span
+              className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-[10px] font-medium text-secondary-foreground"
+              title={`指派角色：${role.name}`}
+            >
+              <RoleAvatar role={role} className="size-4 text-[8px]" />
+              <span className="truncate">{role.name}</span>
+            </span>
+          )}
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex min-w-0 max-w-full items-center gap-1">
               <GitBranch className="size-3 shrink-0" />
@@ -357,7 +374,11 @@ export function KanbanBoard({
   onToggleAutoMode,
   systemPrompt,
   onOpenSettings,
+  roles,
+  onManageRoles,
 }: KanbanBoardProps) {
+  const roleById = (id?: string): Role | null =>
+    (id && roles.find((r) => r.id === id)) || null
   // Active view. In Progress is the home view; the other two are reachable via
   // the segmented control. Hidden views stay mounted (CSS only).
   const [view, setView] = useState<ColumnId>('in_progress')
@@ -389,7 +410,7 @@ export function KanbanBoard({
     setLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildAgentCommand(task, systemPrompt),
+        command: buildAgentCommand(task, systemPrompt, roleById(task.roleId)),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -536,6 +557,14 @@ export function KanbanBoard({
           </button>
           <button
             type="button"
+            onClick={onManageRoles}
+            title="管理角色"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Users className="size-4" />
+          </button>
+          <button
+            type="button"
             onClick={onOpenSettings}
             title="設定（System Prompt）"
             className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -581,6 +610,7 @@ export function KanbanBoard({
                     key={task.id}
                     task={task}
                     column={v.id}
+                    role={roleById(task.roleId)}
                     isExpanded={expanded.has(task.id)}
                     isMounted={mounted.has(task.id)}
                     launch={launch[task.id]}

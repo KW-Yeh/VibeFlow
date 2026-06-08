@@ -4,6 +4,26 @@ import type { TaskProgress } from './progress'
 
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
+/**
+ * A reusable persona that can be assigned to tasks. When a task carries a
+ * roleId, the role's positioning / responsibilities / boundaries are folded
+ * into the agent's system prompt so it executes the task from that role's
+ * perspective.
+ */
+export interface Role {
+  id: string
+  /** Display name, e.g. "資深前端工程師". */
+  name: string
+  /** Avatar: an emoji/initials string, or a (downscaled) data-URL image. */
+  avatar?: string
+  /** 角色定位描述 — who this role is and how it positions itself. */
+  positioning?: string
+  /** 職責內容 — what this role is responsible for. */
+  responsibilities?: string
+  /** 執行邊界描述 — what this role must / must not do. */
+  boundaries?: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -22,6 +42,8 @@ export interface Task {
   pushed?: boolean
   /** Agent CLI used to execute this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
+  /** Assigned role id. Absent = no role (default agent behavior). */
+  roleId?: string
   /**
    * Epoch ms when this card's Claude execution was first launched. Used to
    * auto-run at most once when the card enters In Progress; unset = never run.
@@ -60,6 +82,8 @@ export interface VibeFlowState {
   board: BoardState
   /** Global user settings. */
   settings: AppSettings
+  /** Reusable roles that can be assigned to tasks. */
+  roles: Role[]
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -77,6 +101,7 @@ const defaults: VibeFlowState = {
   projectPath: null,
   board: DEFAULT_BOARD,
   settings: DEFAULT_SETTINGS,
+  roles: [],
 }
 
 let _store: Store<VibeFlowState> | null = null
@@ -102,6 +127,8 @@ export function getState(): VibeFlowState {
     // `settings` may be absent in state persisted before this field existed;
     // fall back to defaults so the renderer always receives a value.
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
+    // `roles` may be absent in state persisted before the role feature existed.
+    roles: store.get('roles') ?? [],
   }
 }
 
@@ -168,4 +195,36 @@ export function removeTask(taskId: string): void {
     board[col] = board[col].filter((t) => t.id !== taskId)
   })
   getStore().set('board', board)
+}
+
+// --- Roles ---
+
+export function getRoles(): Role[] {
+  return getStore().get('roles') ?? []
+}
+
+/** Append a role and persist; returns the full roles list. */
+export function addRole(role: Role): Role[] {
+  const roles = [...getRoles(), role]
+  getStore().set('roles', roles)
+  return roles
+}
+
+/** Shallow-merge a patch into a role (by id) and persist; returns the list. */
+export function updateRole(roleId: string, patch: Partial<Role>): Role[] {
+  const roles = getRoles().map((r) =>
+    r.id === roleId ? { ...r, ...patch, id: r.id } : r
+  )
+  getStore().set('roles', roles)
+  return roles
+}
+
+/**
+ * Remove a role by id and persist. Tasks still referencing it keep their
+ * roleId; resolution falls back to default behavior when the role is gone.
+ */
+export function removeRole(roleId: string): Role[] {
+  const roles = getRoles().filter((r) => r.id !== roleId)
+  getStore().set('roles', roles)
+  return roles
 }

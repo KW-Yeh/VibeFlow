@@ -4,15 +4,19 @@ import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
+  addRole,
   addTask,
   findTask,
   getState,
+  removeRole,
   removeTask,
   setBoard,
   setSettings,
+  updateRole,
   updateTask,
   type AppSettings,
   type BoardState,
+  type Role,
   type Task,
 } from './helpers/store'
 import { detectAgents, type AgentCliId } from './helpers/agents'
@@ -111,6 +115,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         projectPath: string
         baseBranch: string | null
         agentCli?: AgentCliId
+        roleId?: string
       }
     ) => {
       if (!payload.projectPath) {
@@ -140,6 +145,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         baseBranch: result.baseBranch,
         pushed: result.pushed,
         agentCli: payload.agentCli ?? 'claude',
+        roleId: payload.roleId || undefined,
       }
       addTask(task)
       return { state: getState(), task }
@@ -157,15 +163,42 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'vibeflow:updateTask',
     async (
       _event,
-      payload: { taskId: string; title: string; description?: string }
+      payload: {
+        taskId: string
+        title: string
+        description?: string
+        roleId?: string
+      }
     ) => {
       updateTask(payload.taskId, {
         title: payload.title.trim() || `Task ${payload.taskId}`,
         description: payload.description?.trim() || undefined,
+        roleId: payload.roleId || undefined,
       })
       return getState()
     }
   )
+
+  // --- Roles ---
+
+  ipcMain.handle('roles:create', (_event, input: Omit<Role, 'id'>) => {
+    const role: Role = { ...input, id: randomUUID().slice(0, 8) }
+    addRole(role)
+    return { state: getState(), role }
+  })
+
+  ipcMain.handle(
+    'roles:update',
+    (_event, payload: { roleId: string; patch: Partial<Role> }) => {
+      updateRole(payload.roleId, payload.patch)
+      return getState()
+    }
+  )
+
+  ipcMain.handle('roles:remove', (_event, roleId: string) => {
+    removeRole(roleId)
+    return getState()
+  })
 
   // --- Interactive terminal / PTY (Phase 3) ---
 

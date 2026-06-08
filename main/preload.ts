@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   AppSettings,
   BoardState,
+  Role,
   Task,
   VibeFlowState,
 } from './helpers/store'
@@ -60,14 +61,29 @@ const vibeflow = {
     projectPath: string
     baseBranch: string | null
     agentCli?: AgentCliId
+    roleId?: string
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {
     taskId: string
     title: string
     description?: string
+    roleId?: string
   }): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:updateTask', payload),
+
+  // --- Roles ---
+  createRole: (
+    input: Omit<Role, 'id'>
+  ): Promise<{ state: VibeFlowState; role: Role }> =>
+    ipcRenderer.invoke('roles:create', input),
+  updateRole: (
+    roleId: string,
+    patch: Partial<Role>
+  ): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('roles:update', { roleId, patch }),
+  removeRole: (roleId: string): Promise<VibeFlowState> =>
+    ipcRenderer.invoke('roles:remove', roleId),
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),
 

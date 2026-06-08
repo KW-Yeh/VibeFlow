@@ -6,9 +6,11 @@ import { NewTaskDialog } from '@/components/new-task-dialog'
 import { EditTaskDialog } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { RolesDialog } from '@/components/roles-dialog'
 import {
   approve,
   cleanupTask,
+  createRole,
   createTask,
   deleteTask,
   detectAgents,
@@ -20,11 +22,13 @@ import {
   persistBoard,
   pickFolder,
   relaunchApp,
+  removeRole,
   setSettings,
+  updateRole,
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import type { AgentCliId, BoardState, DiffFile, Task } from '@/lib/types'
+import type { AgentCliId, BoardState, DiffFile, Role, Task } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
 // Electron bridge is unavailable (plain browser / static export preview).
@@ -53,6 +57,12 @@ export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
+
+  // Roles state + dialog
+  const [roles, setRoles] = useState<Role[]>([])
+  const [rolesOpen, setRolesOpen] = useState(false)
+  const [savingRole, setSavingRole] = useState(false)
+  const [roleError, setRoleError] = useState<string | null>(null)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -88,6 +98,7 @@ export default function HomePage() {
         setBoard(state.board)
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
+        setRoles(state.roles ?? [])
       }
       setLoaded(true)
     })
@@ -156,7 +167,8 @@ export default function HomePage() {
     description: string,
     projectPath: string,
     baseBranch: string | null,
-    agentCli: AgentCliId
+    agentCli: AgentCliId,
+    roleId: string
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -167,6 +179,7 @@ export default function HomePage() {
         projectPath,
         baseBranch,
         agentCli,
+        roleId: roleId || undefined,
       })
       if (result) {
         setBoard(result.state.board)
@@ -184,12 +197,21 @@ export default function HomePage() {
     setEditTask(findTask(board, taskId))
   }
 
-  const handleSaveEdit = async (title: string, description: string) => {
+  const handleSaveEdit = async (
+    title: string,
+    description: string,
+    roleId: string
+  ) => {
     if (!editTask) return
     setSavingEdit(true)
     setEditError(null)
     try {
-      const state = await updateTask({ taskId: editTask.id, title, description })
+      const state = await updateTask({
+        taskId: editTask.id,
+        title,
+        description,
+        roleId: roleId || undefined,
+      })
       if (state) setBoard(state.board)
       setEditTask(null)
     } catch (err) {
@@ -243,6 +265,53 @@ export default function HomePage() {
     if (state) setBoard(state.board)
   }
 
+  const handleOpenRoles = () => {
+    setRoleError(null)
+    setRolesOpen(true)
+  }
+
+  const handleCreateRole = async (input: Omit<Role, 'id'>) => {
+    setSavingRole(true)
+    setRoleError(null)
+    try {
+      const res = await createRole(input)
+      if (res) setRoles(res.state.roles)
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingRole(false)
+    }
+  }
+
+  const handleUpdateRole = async (
+    roleId: string,
+    patch: Omit<Role, 'id'>
+  ) => {
+    setSavingRole(true)
+    setRoleError(null)
+    try {
+      const state = await updateRole(roleId, patch)
+      if (state) setRoles(state.roles)
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingRole(false)
+    }
+  }
+
+  const handleDeleteRole = async (roleId: string) => {
+    setSavingRole(true)
+    setRoleError(null)
+    try {
+      const state = await removeRole(roleId)
+      if (state) setRoles(state.roles)
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingRole(false)
+    }
+  }
+
   return (
     <React.Fragment>
       <Head>
@@ -266,6 +335,8 @@ export default function HomePage() {
                 setSettingsError(null)
                 setSettingsOpen(true)
               }}
+              roles={roles}
+              onManageRoles={handleOpenRoles}
             />
             <NewTaskDialog
               open={dialogOpen}
@@ -274,11 +345,14 @@ export default function HomePage() {
               pickFolder={pickFolder}
               loadGitInfo={getGitInfo}
               detectAgents={detectAgents}
+              roles={roles}
+              onManageRoles={handleOpenRoles}
               onSubmit={handleCreateTask}
               onClose={() => setDialogOpen(false)}
             />
             <EditTaskDialog
               task={editTask}
+              roles={roles}
               saving={savingEdit}
               error={editError}
               onSubmit={handleSaveEdit}
@@ -291,6 +365,16 @@ export default function HomePage() {
               error={settingsError}
               onSave={handleSaveSettings}
               onClose={() => setSettingsOpen(false)}
+            />
+            <RolesDialog
+              open={rolesOpen}
+              roles={roles}
+              saving={savingRole}
+              error={roleError}
+              onCreate={handleCreateRole}
+              onUpdate={handleUpdateRole}
+              onDelete={handleDeleteRole}
+              onClose={() => setRolesOpen(false)}
             />
             <ReviewDialog
               open={reviewTaskId !== null}
