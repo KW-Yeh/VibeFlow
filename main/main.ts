@@ -26,6 +26,7 @@ import { generateBranchName } from './helpers/branch-name'
 import {
   commitAndPush,
   deleteBranch,
+  fallbackBranchName,
   getGitInfo,
   getWorktreeDiff,
   provisionWorktree,
@@ -56,6 +57,18 @@ if (isProd) {
   serve({ directory: 'app' })
 } else {
   app.setPath('userData', `${app.getPath('userData')} (development)`)
+}
+
+/** Short, URL/branch-safe id derived from a UUID (tasks and roles share it). */
+function generateShortId(): string {
+  return randomUUID().slice(0, 8)
+}
+
+/** Tear down a task's live session: stop the PTY and the progress watcher
+ *  (the watcher runs a final sync on its way out). */
+function teardownSession(taskId: string): void {
+  killSession(taskId)
+  unwatchProgress(taskId)
 }
 
 function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -124,7 +137,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (!payload.projectPath) {
         throw new Error('尚未選擇專案資料夾')
       }
-      const taskId = randomUUID().slice(0, 8)
+      const taskId = generateShortId()
       // Meaningful branch name from the card (Jira/eBug code, or an English
       // slug of the title); null falls back to the legacy vf-<id> naming.
       const preferredBranch = await generateBranchName(
@@ -206,7 +219,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // --- Roles ---
 
   ipcMain.handle('roles:create', (_event, input: Omit<Role, 'id'>) => {
-    const role: Role = { ...input, id: randomUUID().slice(0, 8) }
+    const role: Role = { ...input, id: generateShortId() }
     addRole(role)
     return { state: getState(), role }
   })
@@ -271,8 +284,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   )
 
   ipcMain.on('pty:kill', (_event, taskId: string) => {
-    killSession(taskId)
-    unwatchProgress(taskId)
+    teardownSession(taskId)
   })
 
   // --- Review & finalize (Phase 4) ---
@@ -302,10 +314,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // the task's base branch and fast-forward it. Git sync steps are best-effort.
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    killSession(taskId)
-    unwatchProgress(taskId)
+    teardownSession(taskId)
     if (task?.projectPath) {
-      const branch = task.branch || `vf-${taskId}`
+      const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, branch)
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
@@ -317,10 +328,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Delete: cleanup (PTY + worktree) AND drop the card from the board.
   ipcMain.handle('vibeflow:deleteTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    killSession(taskId)
-    unwatchProgress(taskId)
+    teardownSession(taskId)
     if (task?.projectPath) {
-      const branch = task.branch || `vf-${taskId}`
+      const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, branch)
       await deleteBranch(task.projectPath, branch)
     }

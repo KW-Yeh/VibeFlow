@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { buildEnv } from './env'
+import { execEnv } from './env'
 
 const pexec = promisify(execFile)
 
@@ -29,7 +29,7 @@ export const AGENT_CLIS: AgentCli[] = [
 async function which(bin: string): Promise<boolean> {
   try {
     await pexec('which', [bin], {
-      env: { ...process.env, PATH: buildEnv().PATH },
+      env: execEnv(),
     })
     return true
   } catch {
