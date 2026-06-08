@@ -203,16 +203,44 @@ export function getRoles(): Role[] {
   return getStore().get('roles') ?? []
 }
 
+/** Normalize a role name for uniqueness comparison (trim + case-insensitive). */
+function normalizeRoleName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+/**
+ * Throw if `name` collides with an existing role (case-insensitive, trimmed),
+ * ignoring the role identified by `excludeId`. Enforces the uniqueness
+ * invariant at the persistence layer so no path can write a duplicate.
+ */
+function assertRoleNameAvailable(
+  roles: Role[],
+  name: string,
+  excludeId?: string
+): void {
+  const target = normalizeRoleName(name)
+  const clash = roles.some(
+    (r) => r.id !== excludeId && normalizeRoleName(r.name) === target
+  )
+  if (clash) throw new Error(`已存在名稱為「${name.trim()}」的角色`)
+}
+
 /** Append a role and persist; returns the full roles list. */
 export function addRole(role: Role): Role[] {
-  const roles = [...getRoles(), role]
+  const existing = getRoles()
+  assertRoleNameAvailable(existing, role.name)
+  const roles = [...existing, role]
   getStore().set('roles', roles)
   return roles
 }
 
 /** Shallow-merge a patch into a role (by id) and persist; returns the list. */
 export function updateRole(roleId: string, patch: Partial<Role>): Role[] {
-  const roles = getRoles().map((r) =>
+  const existing = getRoles()
+  if (patch.name !== undefined) {
+    assertRoleNameAvailable(existing, patch.name, roleId)
+  }
+  const roles = existing.map((r) =>
     r.id === roleId ? { ...r, ...patch, id: r.id } : r
   )
   getStore().set('roles', roles)

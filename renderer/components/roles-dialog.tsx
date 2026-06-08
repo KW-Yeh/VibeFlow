@@ -10,8 +10,8 @@ interface RolesDialogProps {
   roles: Role[]
   saving: boolean
   error: string | null
-  onCreate: (input: Omit<Role, 'id'>) => void
-  onUpdate: (roleId: string, patch: Omit<Role, 'id'>) => void
+  onCreate: (input: Omit<Role, 'id'>) => Promise<boolean>
+  onUpdate: (roleId: string, patch: Omit<Role, 'id'>) => Promise<boolean>
   onDelete: (roleId: string) => void
   onClose: () => void
 }
@@ -157,7 +157,7 @@ export function RolesDialog({
   const isEditing = editingId !== null
   const canSubmit = form.name.trim().length > 0 && !saving
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return
     const input: Omit<Role, 'id'> = {
       name: form.name.trim(),
@@ -166,8 +166,19 @@ export function RolesDialog({
       responsibilities: form.responsibilities.trim() || undefined,
       boundaries: form.boundaries.trim() || undefined,
     }
-    if (editingId === 'new') onCreate(input)
-    else if (editingId) onUpdate(editingId, input)
+    const ok =
+      editingId === 'new'
+        ? await onCreate(input)
+        : editingId
+          ? await onUpdate(editingId, input)
+          : false
+    // Return to the list view only on a successful save; on failure the form
+    // stays put so the user can fix the error (e.g. a duplicate name).
+    if (ok) {
+      setEditingId(null)
+      setForm(EMPTY_FORM)
+      setAvatarError(null)
+    }
   }
 
   return (
