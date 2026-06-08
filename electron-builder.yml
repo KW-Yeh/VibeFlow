@@ -11,6 +11,14 @@ files:
       - app
 # Distinguish artifacts per platform/arch so a single GitHub Release can host them all.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# Squeeze the installer/archive harder — slower to build, smaller to download.
+compression: maximum
+# Chromium ships ~220 UI locale packs (~47 MB). The app itself only speaks
+# English + Chinese, so drop the rest from the Electron Framework.
+electronLanguages:
+  - en
+  - zh_CN
+  - zh_TW
 mac:
   category: public.app-category.developer-tools
   target:

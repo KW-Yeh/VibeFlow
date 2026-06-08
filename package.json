@@ -14,29 +14,29 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "electron-serve": "^3.0.0",
+    "electron-store": "^11.0.2",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
     "@hello-pangea/dnd": "^18.0.1",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^20.11.16",
+    "@types/react": "^19.2.14",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "electron-serve": "^3.0.0",
-    "electron-store": "^11.0.2",
-    "lucide-react": "^1.17.0",
-    "node-pty": "^1.1.0",
-    "react-diff-viewer-continued": "^4.2.2",
-    "tailwind-merge": "^3.6.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
-    "@types/node": "^20.11.16",
-    "@types/react": "^19.2.14",
     "electron": "^41.0.3",
     "electron-builder": "^26.8.1",
+    "lucide-react": "^1.17.0",
     "next": "^16.2.1",
     "nextron": "^10.0.0",
     "postcss": "^8.5.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-diff-viewer-continued": "^4.2.2",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.7.3"
   }
