@@ -22,7 +22,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
 import { RoleAvatar } from '@/components/roles-dialog'
-import { AGENT_NAMES, buildAgentCommand, taskAgent } from '@/lib/claude'
+import {
+  AGENT_NAMES,
+  buildAgentCommand,
+  isTaskComplete,
+  taskAgent,
+} from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { BoardState, ColumnId, Role, Task } from '@/lib/types'
 
@@ -393,7 +398,12 @@ export function KanbanBoard({
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
+  // A task has run before once it carries a launch timestamp. Re-executing such
+  // a task resumes its prior agent session instead of starting fresh.
+  const wasLaunched = (task: Task) => task.launchedAt != null
+
   const toggleExpanded = (taskId: string) => {
+    const wasExpanded = expanded.has(taskId)
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(taskId)) next.delete(taskId)
@@ -401,25 +411,41 @@ export function KanbanBoard({
       return next
     })
     markMounted(taskId)
+    // Opening the terminal of an In Progress card that was launched before but
+    // has no live launch armed (e.g. after an app restart wiped the PTY)
+    // auto-resumes its agent session, continuing from the recorded progress.
+    // A finished task just gets an open shell — no command is sent.
+    if (!wasExpanded && !launch[taskId]) {
+      const task = board.in_progress.find((t) => t.id === taskId)
+      if (task && wasLaunched(task) && !isTaskComplete(task)) {
+        armLaunch(task, { resume: true })
+      }
+    }
   }
 
-  // Expand the card and arm (or re-arm) its Claude launch command.
-  const armLaunch = (task: Task) => {
+  // Expand the card and arm (or re-arm) its agent launch command. `resume`
+  // continues the prior session rather than starting a fresh conversation.
+  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
     setExpanded((prev) => new Set(prev).add(task.id))
     markMounted(task.id)
     setLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildAgentCommand(task, systemPrompt, roleById(task.roleId)),
+        command: buildAgentCommand(
+          task,
+          systemPrompt,
+          roleById(task.roleId),
+          opts
+        ),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
   }
 
-  // Manual run (▶ on an In Progress card): always (re-)launches in place, and
-  // stamps launchedAt once.
+  // Manual run (▶ on an In Progress card): (re-)launches in place, resuming the
+  // prior session when the task has run before, and stamps launchedAt once.
   const runTask = (task: Task) => {
-    armLaunch(task)
+    armLaunch(task, { resume: wasLaunched(task) })
     if (!task.launchedAt) {
       const stamp = Date.now()
       onBoardChange({
@@ -443,8 +469,11 @@ export function KanbanBoard({
     to: ColumnId,
     opts?: { forceLaunch?: boolean }
   ) => {
+    // A finished task is never auto-run on entering In Progress — it just keeps
+    // its terminal available (per the resume spec: completed → no auto command).
     const willLaunch =
       to === 'in_progress' &&
+      !isTaskComplete(task) &&
       (opts?.forceLaunch === true || (autoMode && !task.launchedAt))
     const toInsert =
       willLaunch && !task.launchedAt
@@ -470,7 +499,7 @@ export function KanbanBoard({
       })
       onTaskDone(task.id)
     }
-    if (willLaunch) armLaunch(toInsert)
+    if (willLaunch) armLaunch(toInsert, { resume: wasLaunched(task) })
   }
 
   // ▶ on a Backlog card: pull it into In Progress, switch there, and launch.
