@@ -85,6 +85,7 @@ export async function createTask(payload: {
   baseBranch: string | null
   agentCli?: AgentCliId
   roleId?: string
+  reviewerRoleId?: string
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
@@ -95,6 +96,7 @@ export async function updateTask(payload: {
   title: string
   description?: string
   roleId?: string
+  reviewerRoleId?: string
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

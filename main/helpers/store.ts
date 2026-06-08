@@ -1,8 +1,38 @@
 import Store from 'electron-store'
 import type { AgentCliId } from './agents'
-import type { TaskProgress } from './progress'
+import type { ReviewVerdict, TaskProgress } from './progress'
 
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
+
+/** Default number of review rounds before a stuck pipeline escalates to human. */
+export const DEFAULT_MAX_REVIEW_ROUNDS = 3
+
+/**
+ * Stage of the auto-assign review pipeline for a task that has both an executor
+ * (roleId) and a reviewer (reviewerRoleId) assigned:
+ * - developing: executor working the first pass
+ * - reviewing:  reviewer examining the diff
+ * - revising:   executor addressing the reviewer's change requests
+ * - approved:   reviewer approved — ready for the human to push / open a PR
+ * - blocked:    hit the round cap without approval — needs human intervention
+ */
+export type PipelineStage =
+  | 'developing'
+  | 'reviewing'
+  | 'revising'
+  | 'approved'
+  | 'blocked'
+
+/** Runtime state of a task's executor↔reviewer review loop. */
+export interface PipelineRun {
+  stage: PipelineStage
+  /** Completed review rounds that requested changes (drives the round cap). */
+  round: number
+  /** Max change-request rounds before escalating to `blocked`. */
+  maxRounds: number
+  /** Latest reviewer verdict, kept for display on the card. */
+  lastReview?: ReviewVerdict
+}
 
 /**
  * A reusable persona that can be assigned to tasks. When a task carries a
@@ -42,8 +72,19 @@ export interface Task {
   pushed?: boolean
   /** Agent CLI used to execute this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
-  /** Assigned role id. Absent = no role (default agent behavior). */
+  /** Assigned executor role id. Absent = no role (default agent behavior). */
   roleId?: string
+  /**
+   * Assigned reviewer role id. When set (alongside an executor roleId), the
+   * task runs as a pipeline: the executor's completion auto-triggers a reviewer
+   * pass in the same worktree, looping until approval or the round cap.
+   */
+  reviewerRoleId?: string
+  /**
+   * Runtime state of the executor↔reviewer review loop. Present only for
+   * pipeline tasks (those carrying a reviewerRoleId at creation).
+   */
+  pipeline?: PipelineRun
   /**
    * Epoch ms when this card's Claude execution was first launched. Used to
    * auto-run at most once when the card enters In Progress; unset = never run.

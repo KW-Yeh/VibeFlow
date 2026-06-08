@@ -140,6 +140,101 @@ test('readProgressFile — drops a non-string summary', async () => {
   }
 })
 
+test('readProgressFile — review absent when the field is missing', async () => {
+  const dir = await tmpDir()
+  try {
+    await writeProgress(
+      dir,
+      JSON.stringify({ steps: [{ text: 'a', done: true }] })
+    )
+    const p = readProgressFile(dir)
+    assert.equal(p.review, undefined)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readProgressFile — parses an approve verdict', async () => {
+  const dir = await tmpDir()
+  try {
+    await writeProgress(
+      dir,
+      JSON.stringify({
+        steps: [{ text: 'a', done: true }],
+        review: { verdict: 'approve', summary: 'looks good', comments: [] },
+      })
+    )
+    const p = readProgressFile(dir)
+    assert.deepEqual(p.review, {
+      verdict: 'approve',
+      summary: 'looks good',
+      comments: [],
+    })
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readProgressFile — parses request_changes and keeps only string comments', async () => {
+  const dir = await tmpDir()
+  try {
+    await writeProgress(
+      dir,
+      JSON.stringify({
+        steps: [{ text: 'a', done: true }],
+        review: {
+          verdict: 'request_changes',
+          comments: ['fix the off-by-one', 42, null, 'handle null input'],
+        },
+      })
+    )
+    const p = readProgressFile(dir)
+    assert.equal(p.review.verdict, 'request_changes')
+    assert.deepEqual(p.review.comments, ['fix the off-by-one', 'handle null input'])
+    assert.equal(p.review.summary, undefined)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readProgressFile — drops review with an unknown verdict', async () => {
+  const dir = await tmpDir()
+  try {
+    for (const review of [
+      { verdict: 'maybe', comments: [] },
+      { comments: ['x'] },
+      'not-an-object',
+      42,
+    ]) {
+      await writeProgress(
+        dir,
+        JSON.stringify({ steps: [{ text: 'a', done: true }], review })
+      )
+      const p = readProgressFile(dir)
+      assert.equal(p.review, undefined, `review ${JSON.stringify(review)} should be dropped`)
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readProgressFile — defaults comments to [] when not an array', async () => {
+  const dir = await tmpDir()
+  try {
+    await writeProgress(
+      dir,
+      JSON.stringify({
+        steps: [{ text: 'a', done: true }],
+        review: { verdict: 'approve', comments: 'oops' },
+      })
+    )
+    const p = readProgressFile(dir)
+    assert.deepEqual(p.review.comments, [])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('watchProgress — emits pre-existing content immediately', async () => {
   const dir = await tmpDir()
   try {

@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Bot, FolderOpen, GitBranch, Loader2, UserRound, X } from 'lucide-react'
+import {
+  Bot,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  ShieldCheck,
+  UserRound,
+  X,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { RoleAvatar } from '@/components/roles-dialog'
@@ -23,7 +31,8 @@ interface NewTaskDialogProps {
     projectPath: string,
     baseBranch: string | null,
     agentCli: AgentCliId,
-    roleId: string
+    roleId: string,
+    reviewerRoleId: string
   ) => void
   onClose: () => void
 }
@@ -56,6 +65,8 @@ export function NewTaskDialog({
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   // '' = no role assigned (default behavior).
   const [roleId, setRoleId] = useState('')
+  // '' = no reviewer; setting one turns the task into a review pipeline.
+  const [reviewerRoleId, setReviewerRoleId] = useState('')
 
   // Reset everything whenever the dialog opens, and (re-)detect the agent
   // CLIs available in the current environment.
@@ -70,6 +81,7 @@ export function NewTaskDialog({
     setAgents(null)
     setAgentCli('claude')
     setRoleId('')
+    setReviewerRoleId('')
     let active = true
     void detectAgents().then((found) => {
       if (!active) return
@@ -118,11 +130,14 @@ export function NewTaskDialog({
       projectPath,
       hasRemote ? baseBranch || null : null,
       agentCli,
-      roleId
+      roleId,
+      reviewerRoleId
     )
   }
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
+  const selectedReviewerRole =
+    roles.find((r) => r.id === reviewerRoleId) ?? null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -296,6 +311,42 @@ export function NewTaskDialog({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Reviewer assignment — selecting one turns the task into a
+                  pipeline: the executor's completion auto-triggers a Code
+                  Reviewer pass, looping until it approves. */}
+              <div className="space-y-1.5">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <ShieldCheck className="size-3.5" />
+                  Code Reviewer（選填，啟用自動審查）
+                </span>
+                <div className="flex items-center gap-2">
+                  {selectedReviewerRole && (
+                    <RoleAvatar
+                      role={selectedReviewerRole}
+                      className="size-8 text-sm"
+                    />
+                  )}
+                  <select
+                    value={reviewerRoleId}
+                    onChange={(e) => setReviewerRoleId(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="">不自動審查</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedReviewerRole && (
+                  <p className="text-xs text-muted-foreground">
+                    執行角色完成後，{selectedReviewerRole.name}{' '}
+                    會自動審查改動並來回修正，直到通過為止（須開啟 Auto Mode）。
+                  </p>
+                )}
               </div>
             </>
           )}

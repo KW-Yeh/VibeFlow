@@ -141,6 +141,59 @@ export function buildResumePrompt(
   return lines.join('\n')
 }
 
+/**
+ * Prompt for the reviewer stage of the pipeline. The reviewer runs in the same
+ * worktree as the executor (so the diff is right there) as a fresh session with
+ * its own persona. It must write its verdict into the progress file's `review`
+ * field, which main mirrors onto the task so the orchestrator can branch.
+ */
+export function buildReviewPrompt(
+  task: Pick<Task, 'title' | 'description'>
+): string {
+  const lines = [`任務標題：${task.title}`]
+  const description = task.description?.trim()
+  if (description) lines.push('', '任務描述：', description)
+  lines.push(
+    '',
+    '你現在是 Code Reviewer。請審查這個 git worktree 中相對於 base branch 的所有改動（用 git diff 檢視）。',
+    '審查重點：需求達成度、正確性、邊界條件、錯誤處理、是否符合專案既有慣例與風格。',
+    '',
+    `完成審查後，請把結論寫入 ${PROGRESS_FILE}，在既有的 summary / steps 之外，再加上一個 review 欄位：`,
+    '{"summary": "...", "steps": [...], "review": {"verdict": "approve" 或 "request_changes", "summary": "一句話總結", "comments": ["需修正的具體問題", ...]}}',
+    '- 沒有需要修正的問題 → verdict 設為 "approve"，comments 用空陣列。',
+    '- 有必須修正的問題 → verdict 設為 "request_changes"，comments 逐條列出每個必須修正的點。',
+    '',
+    '注意：你只負責審查，不要修改任何程式碼。',
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Prompt for the revise stage: the executor re-runs (fresh session) to address
+ * the reviewer's change requests. The recorded comments are injected so the
+ * executor knows exactly what to fix; it must rewrite the progress file without
+ * a stale `review` field so the next executor-complete signal fires cleanly.
+ */
+export function buildRevisePrompt(
+  task: Pick<Task, 'title' | 'description'>,
+  comments: string[]
+): string {
+  const lines = [`任務標題：${task.title}`]
+  const description = task.description?.trim()
+  if (description) lines.push('', '任務描述：', description)
+  lines.push('', 'Code Reviewer 審查後要求以下修正，請逐項處理：')
+  if (comments.length > 0) {
+    for (const c of comments) lines.push(`- ${c}`)
+  } else {
+    lines.push('- （審查未列出具體項目，請依審查總結自行判斷並改善）')
+  }
+  lines.push(
+    '',
+    `修正完成後，請重新建立 ${PROGRESS_FILE}（只包含 summary 與 steps，不要保留 review 欄位），並把所有 steps 標記為完成。`,
+  )
+  return lines.join('\n')
+}
+
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
   /**
@@ -168,10 +221,66 @@ export function buildClaudeCommand(
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions
 ): string {
-  const sys = shellQuote(resolveSystemPrompt(systemPrompt, role))
-  const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}`
+  const sys = resolveSystemPrompt(systemPrompt, role)
   const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
-  return `${head} --append-system-prompt ${sys} ${shellQuote(prompt)}\r`
+  return assembleCommand('claude', sys, prompt, opts)
+}
+
+/**
+ * Assemble the final shell command (CR-terminated) for a given agent CLI from
+ * an already-resolved system prompt and prompt body. Centralizes the per-CLI
+ * differences (flags, how the system prompt is passed, session resume) so the
+ * normal launch and the pipeline review/revise launches stay in sync.
+ */
+function assembleCommand(
+  agent: AgentCliId,
+  systemPrompt: string,
+  prompt: string,
+  opts?: LaunchOptions
+): string {
+  if (agent === 'claude') {
+    const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}`
+    return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
+  }
+  // Codex / Gemini have no separate system-prompt flag — fold it into the body.
+  const combined = `${systemPrompt}\n\n${prompt}`
+  if (agent === 'codex') {
+    // --full-auto: workspace-write sandbox with automatic command approval.
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
+  // interactive (mirrors how the claude launch keeps the session open).
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
+}
+
+/**
+ * Build the launch command for the reviewer stage. Always a fresh session (no
+ * resume): the reviewer is a distinct persona and shares the worktree with the
+ * executor, so reusing the prior session would conflate the two.
+ */
+export function buildReviewCommand(
+  task: Pick<Task, 'title' | 'description' | 'agentCli'>,
+  systemPrompt?: string | null,
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+): string {
+  const sys = resolveSystemPrompt(systemPrompt, reviewerRole)
+  return assembleCommand(taskAgent(task), sys, buildReviewPrompt(task))
+}
+
+/**
+ * Build the launch command for a revise stage: the executor re-runs (fresh
+ * session) to address the reviewer's comments. Kept session-less to avoid the
+ * `--continue`-by-cwd collision with the reviewer session that ran in between;
+ * the worktree files + recorded comments give the executor the context it needs.
+ */
+export function buildReviseCommand(
+  task: Pick<Task, 'title' | 'description' | 'agentCli'>,
+  systemPrompt?: string | null,
+  executorRole?: Parameters<typeof buildRolePrompt>[0],
+  comments: string[] = []
+): string {
+  const sys = resolveSystemPrompt(systemPrompt, executorRole)
+  return assembleCommand(taskAgent(task), sys, buildRevisePrompt(task, comments))
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
@@ -202,13 +311,10 @@ export function buildAgentCommand(
   opts?: LaunchOptions
 ): string {
   const agent = taskAgent(task)
-  if (agent === 'claude') return buildClaudeCommand(task, systemPrompt, role, opts)
-  const combined = `${resolveSystemPrompt(systemPrompt, role)}\n\n${buildPrompt(task)}`
-  if (agent === 'codex') {
-    // --full-auto: workspace-write sandbox with automatic command approval.
-    return `codex --full-auto ${shellQuote(combined)}\r`
-  }
-  // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
-  // interactive (mirrors how the claude launch keeps the session open).
-  return `gemini --yolo -i ${shellQuote(combined)}\r`
+  const sys = resolveSystemPrompt(systemPrompt, role)
+  // Claude can resume a prior session; Codex/Gemini fold the recorded progress
+  // into the prompt (soft resume) regardless of opts.resume.
+  const prompt =
+    opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
+  return assembleCommand(agent, sys, prompt, opts)
 }
