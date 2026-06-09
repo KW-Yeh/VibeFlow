@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import os from 'os'
 import { promisify } from 'util'
-import { buildEnv } from './env'
+import { execEnv } from './env'
 
 const pexec = promisify(execFile)
 
@@ -94,7 +94,7 @@ async function translateTitleToSlug(title: string): Promise<string | null> {
         cwd: os.tmpdir(), // neutral cwd — don't pick up any project's CLAUDE.md
         timeout: 20_000,
         maxBuffer: 1024 * 1024,
-        env: { ...process.env, PATH: buildEnv().PATH },
+        env: execEnv(),
       }
     )
     // Take the last non-empty line and re-sanitize — never trust raw output

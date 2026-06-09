@@ -3,7 +3,7 @@ import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
 import { PROGRESS_FILE } from './progress'
-import { buildEnv } from './env'
+import { execEnv } from './env'
 
 const pexec = promisify(execFile)
 
@@ -17,7 +17,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await pexec('git', args, {
     cwd,
     maxBuffer: 32 * 1024 * 1024,
-    env: { ...process.env, PATH: buildEnv().PATH },
+    env: execEnv(),
   })
   return stdout.toString().trim()
 }
@@ -98,22 +98,42 @@ export async function getGitInfo(projectPath: string): Promise<GitInfo> {
   return { isRepo: true, hasRemote, remoteUrl, currentBranch, branches, defaultBase }
 }
 
-/** Ensure `.vibeflow/` is present in the project's .gitignore. */
-export async function ensureGitignore(projectPath: string): Promise<void> {
-  const gitignorePath = path.join(projectPath, '.gitignore')
+/**
+ * Append `entry` (under a `# header` line) to a git ignore-style file unless it
+ * — or one of `aliases` — is already present. Idempotent; preserves existing
+ * content and trailing-newline conventions. Creates the parent dir when asked.
+ */
+async function appendLineIfMissing(
+  filePath: string,
+  entry: string,
+  header: string,
+  options: { aliases?: string[]; mkdir?: boolean } = {}
+): Promise<void> {
   let content = ''
   try {
-    content = await fs.readFile(gitignorePath, 'utf8')
+    content = await fs.readFile(filePath, 'utf8')
   } catch {
     content = ''
   }
-  const entries = content.split('\n').map((l) => l.trim())
-  if (entries.includes('.vibeflow/') || entries.includes('.vibeflow')) {
-    return
-  }
+  const present = new Set([entry, ...(options.aliases ?? [])])
+  const lines = content.split('\n').map((l) => l.trim())
+  if (lines.some((l) => present.has(l))) return
   const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
-  const addition = `${prefix}\n# VibeFlow worktrees\n.vibeflow/\n`
-  await fs.writeFile(gitignorePath, content + addition, 'utf8')
+  const addition = `${prefix}\n${header}\n${entry}\n`
+  if (options.mkdir) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+  }
+  await fs.writeFile(filePath, content + addition, 'utf8')
+}
+
+/** Ensure `.vibeflow/` is present in the project's .gitignore. */
+export async function ensureGitignore(projectPath: string): Promise<void> {
+  await appendLineIfMissing(
+    path.join(projectPath, '.gitignore'),
+    '.vibeflow/',
+    '# VibeFlow worktrees',
+    { aliases: ['.vibeflow'] }
+  )
 }
 
 /**
@@ -125,21 +145,12 @@ export async function ensureGitignore(projectPath: string): Promise<void> {
 export async function ensureLocalExclude(projectPath: string): Promise<void> {
   const commonDir = await git(projectPath, ['rev-parse', '--git-common-dir'])
   const infoDir = path.resolve(projectPath, commonDir, 'info')
-  const excludePath = path.join(infoDir, 'exclude')
-  let content = ''
-  try {
-    content = await fs.readFile(excludePath, 'utf8')
-  } catch {
-    content = ''
-  }
-  const entries = content.split('\n').map((l) => l.trim())
-  if (entries.includes(PROGRESS_FILE)) {
-    return
-  }
-  const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : ''
-  const addition = `${prefix}\n# VibeFlow task progress file (runtime-only)\n${PROGRESS_FILE}\n`
-  await fs.mkdir(infoDir, { recursive: true })
-  await fs.writeFile(excludePath, content + addition, 'utf8')
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    PROGRESS_FILE,
+    '# VibeFlow task progress file (runtime-only)',
+    { mkdir: true }
+  )
 }
 
 export interface ProvisionResult {
@@ -175,6 +186,15 @@ async function branchExists(
 }
 
 /**
+ * Legacy branch name used when no meaningful name can be derived from a card.
+ * Shared so worktree provisioning and later cleanup/delete resolve the same
+ * branch for a task that fell back to this naming.
+ */
+export function fallbackBranchName(taskId: string): string {
+  return `vf-${taskId}`
+}
+
+/**
  * Resolve the branch to create for a task. Prefers the meaningful name from
  * branch-name.ts (validated via `git check-ref-format`); appends `-<taskId>`
  * when the name (or its worktree dir) is already taken; falls back to the
@@ -185,7 +205,7 @@ async function resolveBranchName(
   taskId: string,
   preferredBranch: string | null | undefined
 ): Promise<string> {
-  const fallback = `vf-${taskId}`
+  const fallback = fallbackBranchName(taskId)
   if (!preferredBranch) return fallback
   try {
     await git(projectPath, ['check-ref-format', '--branch', preferredBranch])
