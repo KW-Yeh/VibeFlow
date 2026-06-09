@@ -70,6 +70,39 @@ function shellQuote(s: string): string {
 }
 
 /**
+ * Directory the Claude hooks append one JSON file per Task-tool event into,
+ * relative to the session cwd. Must match SUBAGENTS_DIR in
+ * main/helpers/subagents.ts (the watcher reading these files).
+ */
+const SUBAGENTS_DIR = '.vibeflow-subagents'
+
+/**
+ * Build the `--settings` inline-JSON value that wires Claude's Task-tool hooks
+ * to record each spawned sub-agent. PreToolUse captures the prompt at spawn;
+ * PostToolUse captures the result at completion. Each event is written to its
+ * OWN file (`<epoch>-<pid>-<rand>.json`) so parallel sub-agents never interleave
+ * bytes into one log. The hook always exits 0 and emits no decision JSON, so it
+ * is purely passive — it never blocks or alters the main agent.
+ *
+ * The event dir is the worktree's absolute path so the location is stable
+ * regardless of the agent's cwd at hook time (more robust than $CLAUDE_PROJECT_DIR
+ * in a git worktree). `$(date +%s)`, `$$`, `$RANDOM` stay single-quoted here so
+ * the outer shell passes them through verbatim — they are expanded later by the
+ * shell that actually runs the hook.
+ */
+function buildSubAgentSettings(worktreePath: string): string {
+  const dir = `${worktreePath}/${SUBAGENTS_DIR}`
+  const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
+  const taskHook = {
+    matcher: 'Task',
+    hooks: [{ type: 'command', command }],
+  }
+  return JSON.stringify({
+    hooks: { PreToolUse: [taskHook], PostToolUse: [taskHook] },
+  })
+}
+
+/**
  * Resolve the effective system prompt: the assigned role's persona (when set)
  * in front, then the user's custom prompt when set (non-blank) otherwise the
  * built-in default — always followed by the fixed progress-tracking protocol.
@@ -229,14 +262,14 @@ export interface LaunchOptions {
  * the progress file.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'title' | 'description' | 'progress'>,
+  task: Pick<Task, 'title' | 'description' | 'progress' | 'worktreePath'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions
 ): string {
   const sys = resolveSystemPrompt(systemPrompt, role)
   const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
-  return assembleCommand('claude', sys, prompt, opts)
+  return assembleCommand('claude', sys, prompt, opts, task.worktreePath)
 }
 
 /**
@@ -249,10 +282,16 @@ function assembleCommand(
   agent: AgentCliId,
   systemPrompt: string,
   prompt: string,
-  opts?: LaunchOptions
+  opts?: LaunchOptions,
+  worktreePath?: string
 ): string {
   if (agent === 'claude') {
-    const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}`
+    // Install the sub-agent recording hooks via inline --settings (session-only,
+    // never touches the user's repo). Only when the worktree path is known.
+    const settings = worktreePath
+      ? ` --settings ${shellQuote(buildSubAgentSettings(worktreePath))}`
+      : ''
+    const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
@@ -333,7 +372,10 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
  * (via buildPrompt), giving a soft resume regardless of `opts.resume`.
  */
 export function buildAgentCommand(
-  task: Pick<Task, 'title' | 'description' | 'progress' | 'agentCli'>,
+  task: Pick<
+    Task,
+    'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'
+  >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions
@@ -344,5 +386,5 @@ export function buildAgentCommand(
   // into the prompt (soft resume) regardless of opts.resume.
   const prompt =
     opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
-  return assembleCommand(agent, sys, prompt, opts)
+  return assembleCommand(agent, sys, prompt, opts, task.worktreePath)
 }

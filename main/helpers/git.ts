@@ -3,6 +3,7 @@ import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
 import { PROGRESS_FILE } from './progress'
+import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
 
 const pexec = promisify(execFile)
@@ -149,6 +150,13 @@ export async function ensureLocalExclude(projectPath: string): Promise<void> {
     path.join(infoDir, 'exclude'),
     PROGRESS_FILE,
     '# VibeFlow task progress file (runtime-only)',
+    { mkdir: true }
+  )
+  // The sub-agent event log is VibeFlow runtime metadata, never to be committed.
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    `${SUBAGENTS_DIR}/`,
+    '# VibeFlow sub-agent event log (runtime-only)',
     { mkdir: true }
   )
 }
@@ -434,10 +442,15 @@ export async function getWorktreeDiff(
     }
   }
 
-  // The agent-maintained progress file is VibeFlow metadata, not a change to
-  // review — keep it out of the diff viewer.
+  // The agent-maintained progress file and sub-agent event log are VibeFlow
+  // metadata, not changes to review — keep them out of the diff viewer.
   const limited = entries
-    .filter((e) => e.path !== PROGRESS_FILE)
+    .filter(
+      (e) =>
+        e.path !== PROGRESS_FILE &&
+        e.path !== SUBAGENTS_DIR &&
+        !e.path.startsWith(`${SUBAGENTS_DIR}/`)
+    )
     .slice(0, MAX_FILES)
   const files: DiffFile[] = []
   for (const entry of limited) {

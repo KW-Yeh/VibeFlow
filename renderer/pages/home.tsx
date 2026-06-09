@@ -18,6 +18,7 @@ import {
   getGitInfo,
   loadState,
   onProgressUpdate,
+  onSubAgentsUpdate,
   onUpdateAvailable,
   persistBoard,
   pickFolder,
@@ -28,7 +29,14 @@ import {
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import type { AgentCliId, BoardState, DiffFile, Role, Task } from '@/lib/types'
+import type {
+  AgentCliId,
+  BoardState,
+  DiffFile,
+  Role,
+  SubAgentRun,
+  Task,
+} from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
 // Electron bridge is unavailable (plain browser / static export preview).
@@ -48,6 +56,10 @@ function findTask(board: BoardState, taskId: string): Task | null {
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
+  // Sub-agent runs are session-only (never persisted to the store), so they
+  // live in their own state keyed by task id — kept out of `board` so a
+  // persistBoard write can't leak them to disk.
+  const [subAgents, setSubAgents] = useState<Record<string, SubAgentRun[]>>({})
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = the built-in default is in effect).
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -120,6 +132,14 @@ export default function HomePage() {
         ),
         done: prev.done.map((t) => (t.id === taskId ? { ...t, progress } : t)),
       }))
+    })
+  }, [])
+
+  // Live sub-agent updates pushed from main while sessions run. Kept in a
+  // dedicated state map (not merged into `board`) so they stay session-only.
+  useEffect(() => {
+    return onSubAgentsUpdate(({ taskId, subAgents: runs }) => {
+      setSubAgents((prev) => ({ ...prev, [taskId]: runs }))
     })
   }, [])
 
@@ -362,6 +382,7 @@ export default function HomePage() {
               }}
               roles={roles}
               onManageRoles={handleOpenRoles}
+              subAgents={subAgents}
             />
             <NewTaskDialog
               open={dialogOpen}

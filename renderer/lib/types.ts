@@ -17,3 +17,7 @@ export type {
   TaskProgressStep,
   ReviewVerdict,
 } from '../../main/helpers/progress'
+export type {
+  SubAgentRun,
+  SubAgentStatus,
+} from '../../main/helpers/subagents'

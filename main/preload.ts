@@ -9,6 +9,7 @@ import type {
 import type { AgentCli, AgentCliId } from './helpers/agents'
 import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
+import type { SubAgentRun } from './helpers/subagents'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -109,6 +110,17 @@ const vibeflow = {
     ) => callback(payload)
     ipcRenderer.on('progress:update', sub)
     return () => ipcRenderer.removeListener('progress:update', sub)
+  },
+  /** Live sub-agent updates pushed from main while a session runs. */
+  onSubAgentsUpdate: (
+    callback: (payload: { taskId: string; subAgents: SubAgentRun[] }) => void
+  ): (() => void) => {
+    const sub = (
+      _event: IpcRendererEvent,
+      payload: { taskId: string; subAgents: SubAgentRun[] }
+    ) => callback(payload)
+    ipcRenderer.on('subagents:update', sub)
+    return () => ipcRenderer.removeListener('subagents:update', sub)
   },
   deleteTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:deleteTask', taskId),

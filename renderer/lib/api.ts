@@ -7,6 +7,7 @@ import type {
   FinalizeResult,
   GitInfo,
   Role,
+  SubAgentRun,
   Task,
   TaskProgress,
   VibeFlowState,
@@ -151,6 +152,17 @@ export function onProgressUpdate(
 ): () => void {
   const b = bridge()
   return b ? b.onProgressUpdate(callback) : () => {}
+}
+
+/**
+ * Subscribe to live sub-agent updates pushed from the main process while a
+ * session runs. Returns an unsubscribe function (no-op without the bridge).
+ */
+export function onSubAgentsUpdate(
+  callback: (payload: { taskId: string; subAgents: SubAgentRun[] }) => void
+): () => void {
+  const b = bridge()
+  return b ? b.onSubAgentsUpdate(callback) : () => {}
 }
 
 export async function cleanupTask(
