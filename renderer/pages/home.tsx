@@ -16,6 +16,7 @@ import {
   detectAgents,
   getDiff,
   getGitInfo,
+  initRepository,
   loadState,
   onProgressUpdate,
   onSubAgentsUpdate,
@@ -187,6 +188,7 @@ export default function HomePage() {
     description: string,
     projectPath: string,
     baseBranch: string | null,
+    mode: 'existing' | 'new',
     agentCli: AgentCliId,
     roleId: string,
     reviewerRoleId: string
@@ -199,6 +201,7 @@ export default function HomePage() {
         description,
         projectPath,
         baseBranch,
+        mode,
         agentCli,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
@@ -390,6 +393,7 @@ export default function HomePage() {
               error={createError}
               pickFolder={pickFolder}
               loadGitInfo={getGitInfo}
+              initRepository={initRepository}
               detectAgents={detectAgents}
               roles={roles}
               onManageRoles={handleOpenRoles}

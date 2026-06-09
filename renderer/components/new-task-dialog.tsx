@@ -14,12 +14,16 @@ import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
 import type { AgentCli, AgentCliId, GitInfo, Role } from '@/lib/types'
 
+type ProjectMode = 'existing' | 'new'
+
 interface NewTaskDialogProps {
   open: boolean
   creating: boolean
   error: string | null
   pickFolder: () => Promise<string | null>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
+  /** Initialise a brand-new git repo at the given path and return its GitInfo. */
+  initRepository: (projectPath: string) => Promise<GitInfo | null>
   /** Agent CLIs detected on PATH (claude / codex / gemini). */
   detectAgents: () => Promise<AgentCli[]>
   /** Roles available for assignment ('' = use the default, no role). */
@@ -30,6 +34,7 @@ interface NewTaskDialogProps {
     description: string,
     projectPath: string,
     baseBranch: string | null,
+    mode: ProjectMode,
     agentCli: AgentCliId,
     roleId: string,
     reviewerRoleId: string
@@ -48,17 +53,20 @@ export function NewTaskDialog({
   error,
   pickFolder,
   loadGitInfo,
+  initRepository,
   detectAgents,
   roles,
   onManageRoles,
   onSubmit,
   onClose,
 }: NewTaskDialogProps) {
+  const [mode, setMode] = useState<ProjectMode>('existing')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
+  const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
   // null = detection still running; [] = none found on PATH.
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
@@ -68,15 +76,18 @@ export function NewTaskDialog({
   // '' = no reviewer; setting one turns the task into a review pipeline.
   const [reviewerRoleId, setReviewerRoleId] = useState('')
 
-  // Reset everything whenever the dialog opens, and (re-)detect the agent
-  // CLIs available in the current environment.
+  // Reset project-related state whenever the dialog opens or mode is switched.
+  // Title / description / agent / role are preserved across mode switches so
+  // the user doesn't have to re-enter them.
   useEffect(() => {
     if (!open) return
+    setMode('existing')
     setTitle('')
     setDescription('')
     setProjectPath(null)
     setGitInfo(null)
     setLoadingInfo(false)
+    setInitializing(false)
     setBaseBranch('')
     setAgents(null)
     setAgentCli('claude')
@@ -96,6 +107,17 @@ export function NewTaskDialog({
     }
   }, [open, detectAgents])
 
+  const handleModeChange = (next: ProjectMode) => {
+    if (next === mode) return
+    setMode(next)
+    // Clear project-specific state; keep title/description/agent/role.
+    setProjectPath(null)
+    setGitInfo(null)
+    setLoadingInfo(false)
+    setInitializing(false)
+    setBaseBranch('')
+  }
+
   if (!open) return null
 
   const handlePick = async () => {
@@ -103,24 +125,39 @@ export function NewTaskDialog({
     if (!path) return
     setProjectPath(path)
     setGitInfo(null)
-    setLoadingInfo(true)
-    try {
-      const info = await loadGitInfo(path)
-      setGitInfo(info)
-      setBaseBranch(info?.defaultBase ?? '')
-    } finally {
-      setLoadingInfo(false)
+
+    if (mode === 'new') {
+      setInitializing(true)
+      try {
+        const info = await initRepository(path)
+        setGitInfo(info)
+      } finally {
+        setInitializing(false)
+      }
+    } else {
+      setLoadingInfo(true)
+      try {
+        const info = await loadGitInfo(path)
+        setGitInfo(info)
+        setBaseBranch(info?.defaultBase ?? '')
+      } finally {
+        setLoadingInfo(false)
+      }
     }
   }
 
   const isRepo = gitInfo?.isRepo ?? false
   const hasRemote = gitInfo?.hasRemote ?? false
+
+  const isProjectReady =
+    mode === 'new'
+      ? Boolean(projectPath) && isRepo && !initializing
+      : Boolean(projectPath) && isRepo && !loadingInfo
+
   const canSubmit =
-    Boolean(projectPath) &&
-    isRepo &&
+    isProjectReady &&
     title.trim().length > 0 &&
-    !creating &&
-    !loadingInfo
+    !creating
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
@@ -128,7 +165,8 @@ export function NewTaskDialog({
       title.trim(),
       description.trim(),
       projectPath,
-      hasRemote ? baseBranch || null : null,
+      mode === 'existing' && hasRemote ? baseBranch || null : null,
+      mode,
       agentCli,
       roleId,
       reviewerRoleId
@@ -159,15 +197,50 @@ export function NewTaskDialog({
         </div>
 
         <div className="space-y-4">
+          {/* Project mode selector */}
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium">專案類型</span>
+            <div className="flex rounded-md border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => handleModeChange('existing')}
+                disabled={creating || loadingInfo || initializing}
+                className={cn(
+                  'flex-1 px-3 py-1.5 text-sm transition-colors',
+                  mode === 'existing'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:text-foreground'
+                )}
+              >
+                現有專案
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('new')}
+                disabled={creating || loadingInfo || initializing}
+                className={cn(
+                  'flex-1 px-3 py-1.5 text-sm transition-colors',
+                  mode === 'new'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted-foreground hover:text-foreground'
+                )}
+              >
+                新專案
+              </button>
+            </div>
+          </div>
+
           {/* Project folder picker (per task) */}
           <div className="space-y-1.5">
-            <span className="text-sm font-medium">專案資料夾</span>
+            <span className="text-sm font-medium">
+              {mode === 'new' ? '專案位置' : '專案資料夾'}
+            </span>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handlePick}
-                disabled={creating}
+                disabled={creating || initializing || loadingInfo}
               >
                 <FolderOpen />
                 {projectPath ? '更換資料夾' : '選擇資料夾'}
@@ -181,16 +254,21 @@ export function NewTaskDialog({
                 </span>
               )}
             </div>
+            {mode === 'new' && !projectPath && (
+              <p className="text-xs text-muted-foreground">
+                選擇一個空的資料夾，系統將自動初始化 Git repository。
+              </p>
+            )}
           </div>
 
-          {loadingInfo && (
+          {(loadingInfo || initializing) && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
-              偵測 Git 狀態中…
+              {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
             </p>
           )}
 
-          {projectPath && !loadingInfo && !isRepo && (
+          {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
             <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
               這個資料夾不是 Git repository，請改選一個 Git 專案。
             </p>

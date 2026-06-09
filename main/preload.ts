@@ -53,6 +53,9 @@ const vibeflow = {
     ipcRenderer.invoke('dialog:pickFolder'),
   getGitInfo: (projectPath: string): Promise<GitInfo> =>
     ipcRenderer.invoke('git:getInfo', projectPath),
+  /** Initialise a new git repository and return its GitInfo. */
+  initRepository: (projectPath: string): Promise<GitInfo> =>
+    ipcRenderer.invoke('git:initRepository', projectPath),
   /** Agent CLIs (claude / codex / gemini) actually installed on PATH. */
   detectAgents: (): Promise<AgentCli[]> =>
     ipcRenderer.invoke('env:detectAgents'),
@@ -61,6 +64,7 @@ const vibeflow = {
     description?: string
     projectPath: string
     baseBranch: string | null
+    mode?: 'existing' | 'new'
     agentCli?: AgentCliId
     roleId?: string
     reviewerRoleId?: string
