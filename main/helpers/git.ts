@@ -127,6 +127,56 @@ async function appendLineIfMissing(
   await fs.writeFile(filePath, content + addition, 'utf8')
 }
 
+/**
+ * Initialise `projectPath` as a git repository with an initial commit so that
+ * `provisionWorktree` can create a worktree from it.  Idempotent: safe to call
+ * on a folder that is already a git repo or already has commits.
+ */
+export async function initRepository(projectPath: string): Promise<void> {
+  await fs.mkdir(projectPath, { recursive: true })
+
+  // Detect whether the path is already inside a git work-tree.
+  let alreadyRepo = false
+  try {
+    await git(projectPath, ['rev-parse', '--is-inside-work-tree'])
+    alreadyRepo = true
+  } catch {
+    // not a repo yet — fall through to git init
+  }
+
+  if (!alreadyRepo) {
+    // Prefer -b main (git ≥ 2.28) for a consistent default branch name.
+    try {
+      await git(projectPath, ['init', '-b', 'main'])
+    } catch {
+      await git(projectPath, ['init'])
+    }
+  }
+
+  // Write .vibeflow/ into .gitignore regardless (ensureGitignore is idempotent).
+  await ensureGitignore(projectPath)
+
+  // If there is already at least one commit, we are done.
+  try {
+    await git(projectPath, ['rev-parse', '--verify', 'HEAD'])
+    return
+  } catch {
+    // no commits yet — create the initial one
+  }
+
+  // Stage the .gitignore we just wrote and make the first commit.  Use inline
+  // -c overrides so the commit succeeds even when the user's git identity is
+  // not configured, without touching their global git config.
+  await git(projectPath, ['add', '.gitignore'])
+  await git(projectPath, [
+    '-c', 'user.name=VibeFlow',
+    '-c', 'user.email=vibeflow@local',
+    '-c', 'commit.gpgsign=false',
+    'commit',
+    '-m', 'chore: initialize repository',
+  ])
+}
+
 /** Ensure `.vibeflow/` is present in the project's .gitignore. */
 export async function ensureGitignore(projectPath: string): Promise<void> {
   await appendLineIfMissing(

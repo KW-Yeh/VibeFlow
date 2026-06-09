@@ -29,6 +29,7 @@ import {
   fallbackBranchName,
   getGitInfo,
   getWorktreeDiff,
+  initRepository,
   provisionWorktree,
   removeWorktree,
   syncBaseBranch,
@@ -125,6 +126,15 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getGitInfo(projectPath || '')
   })
 
+  // Initialise a new git repository at the given path and return its GitInfo.
+  // Called by the "new project" flow in the new-task dialog before provisioning
+  // a worktree.  Idempotent: safe to call on an already-initialised repo.
+  ipcMain.handle('git:initRepository', async (_event, projectPath: string) => {
+    if (!projectPath) throw new Error('尚未選擇專案資料夾')
+    await initRepository(projectPath)
+    return getGitInfo(projectPath)
+  })
+
   // Create a task in the chosen project: provision an isolated worktree, persist.
   ipcMain.handle(
     'vibeflow:createTask',
@@ -135,6 +145,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description?: string
         projectPath: string
         baseBranch: string | null
+        mode?: 'existing' | 'new'
         agentCli?: AgentCliId
         roleId?: string
         reviewerRoleId?: string
@@ -142,6 +153,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     ) => {
       if (!payload.projectPath) {
         throw new Error('尚未選擇專案資料夾')
+      }
+      // For new projects the UI already called initRepository, but we call it
+      // again here as a safety net (it is idempotent).
+      if (payload.mode === 'new') {
+        await initRepository(payload.projectPath)
       }
       const taskId = generateShortId()
       // Meaningful branch name from the card (Jira/eBug code, or an English

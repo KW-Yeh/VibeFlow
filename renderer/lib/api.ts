@@ -73,6 +73,13 @@ export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
   return b ? b.getGitInfo(projectPath) : null
 }
 
+export async function initRepository(
+  projectPath: string
+): Promise<GitInfo | null> {
+  const b = bridge()
+  return b ? b.initRepository(projectPath) : null
+}
+
 /** Agent CLIs installed on PATH ([] without the bridge). */
 export async function detectAgents(): Promise<AgentCli[]> {
   const b = bridge()
@@ -84,6 +91,7 @@ export async function createTask(payload: {
   description?: string
   projectPath: string
   baseBranch: string | null
+  mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   roleId?: string
   reviewerRoleId?: string
