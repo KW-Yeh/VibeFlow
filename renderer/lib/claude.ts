@@ -142,15 +142,22 @@ export function buildResumePrompt(
 }
 
 /**
- * Prompt for the reviewer stage of the pipeline. The reviewer runs in the same
- * worktree as the executor (so the diff is right there) as a fresh session with
- * its own persona. It must write its verdict into the progress file's `review`
- * field, which main mirrors onto the task so the orchestrator can branch.
+ * Prompt for the reviewer stage of the pipeline. The reviewer is fed as a new
+ * turn into the executor's still-open agent session (which shares the worktree,
+ * so the diff is right there). Because no fresh CLI is launched, the reviewer
+ * persona cannot be set via a system-prompt flag — instead the reviewer role is
+ * folded into the prompt body so this turn re-frames the agent as the reviewer.
+ * It must write its verdict into the progress file's `review` field, which main
+ * mirrors onto the task so the orchestrator can branch.
  */
 export function buildReviewPrompt(
-  task: Pick<Task, 'title' | 'description'>
+  task: Pick<Task, 'title' | 'description'>,
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
-  const lines = [`任務標題：${task.title}`]
+  const lines: string[] = []
+  const rolePrompt = buildRolePrompt(reviewerRole)
+  if (rolePrompt) lines.push(rolePrompt, '')
+  lines.push(`任務標題：${task.title}`)
   const description = task.description?.trim()
   if (description) lines.push('', '任務描述：', description)
   lines.push(
@@ -169,16 +176,22 @@ export function buildReviewPrompt(
 }
 
 /**
- * Prompt for the revise stage: the executor re-runs (fresh session) to address
- * the reviewer's change requests. The recorded comments are injected so the
- * executor knows exactly what to fix; it must rewrite the progress file without
- * a stale `review` field so the next executor-complete signal fires cleanly.
+ * Prompt for the revise stage: fed as a new turn into the same open session to
+ * address the reviewer's change requests. The executor role is folded back into
+ * the body to re-frame the agent (the previous turn was the reviewer persona).
+ * The recorded comments are injected so the executor knows exactly what to fix;
+ * it must rewrite the progress file without a stale `review` field so the next
+ * executor-complete signal fires cleanly.
  */
 export function buildRevisePrompt(
   task: Pick<Task, 'title' | 'description'>,
-  comments: string[]
+  comments: string[],
+  executorRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
-  const lines = [`任務標題：${task.title}`]
+  const lines: string[] = []
+  const rolePrompt = buildRolePrompt(executorRole)
+  if (rolePrompt) lines.push(rolePrompt, '')
+  lines.push(`任務標題：${task.title}`)
   const description = task.description?.trim()
   if (description) lines.push('', '任務描述：', description)
   lines.push('', 'Code Reviewer 審查後要求以下修正，請逐項處理：')
@@ -254,33 +267,48 @@ function assembleCommand(
 }
 
 /**
- * Build the launch command for the reviewer stage. Always a fresh session (no
- * resume): the reviewer is a distinct persona and shares the worktree with the
- * executor, so reusing the prior session would conflate the two.
+ * Encode a multi-line prompt as the keystrokes that submit it as ONE new turn
+ * inside an already-running agent REPL (Claude/Codex/Gemini), then auto-run.
+ *
+ * The pipeline's reviewer/revise turns are not fresh CLI launches — the
+ * executor's interactive session is still open in the PTY, so the prompt is
+ * typed straight into it. In these TUIs a bare CR submits the current input
+ * while ESC+CR inserts a newline (same convention task-terminal.tsx uses for
+ * Shift+Enter). A raw LF is not a reliable submit/newline, so a prompt joined
+ * with "\n" lands in the input box but never fires — the user had to press
+ * Enter. Sending each internal newline as ESC+CR and terminating with a single
+ * CR builds the whole multi-line message and submits it automatically.
  */
-export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description' | 'agentCli'>,
-  systemPrompt?: string | null,
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
-): string {
-  const sys = resolveSystemPrompt(systemPrompt, reviewerRole)
-  return assembleCommand(taskAgent(task), sys, buildReviewPrompt(task))
+function replSubmission(prompt: string): string {
+  return prompt.replace(/\n/g, '\x1b\r') + '\r'
 }
 
 /**
- * Build the launch command for a revise stage: the executor re-runs (fresh
- * session) to address the reviewer's comments. Kept session-less to avoid the
- * `--continue`-by-cwd collision with the reviewer session that ran in between;
- * the worktree files + recorded comments give the executor the context it needs.
+ * Build the keystrokes for the reviewer stage. The reviewer is NOT a fresh CLI
+ * launch: it is fed as a new turn into the executor's still-open session in the
+ * same worktree (the diff is right there). The reviewer persona therefore comes
+ * from the role folded into the prompt body — not a system-prompt flag — and
+ * the carrier system prompt (executor workflow) is intentionally omitted.
+ */
+export function buildReviewCommand(
+  task: Pick<Task, 'title' | 'description'>,
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+): string {
+  return replSubmission(buildReviewPrompt(task, reviewerRole))
+}
+
+/**
+ * Build the keystrokes for a revise stage: a new turn fed into the same open
+ * session to address the reviewer's comments. Like the reviewer turn it carries
+ * no system prompt; the executor role is folded into the prompt body to re-frame
+ * the agent, and the recorded comments tell it exactly what to fix.
  */
 export function buildReviseCommand(
-  task: Pick<Task, 'title' | 'description' | 'agentCli'>,
-  systemPrompt?: string | null,
+  task: Pick<Task, 'title' | 'description'>,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = []
 ): string {
-  const sys = resolveSystemPrompt(systemPrompt, executorRole)
-  return assembleCommand(taskAgent(task), sys, buildRevisePrompt(task, comments))
+  return replSubmission(buildRevisePrompt(task, comments, executorRole))
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
