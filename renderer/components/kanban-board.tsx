@@ -565,7 +565,7 @@ export function KanbanBoard({
     patchTask(task.id, { pipeline: next })
     armCommand(
       task.id,
-      buildReviewCommand(task, systemPrompt, roleById(task.reviewerRoleId))
+      buildReviewCommand(task, roleById(task.reviewerRoleId))
     )
   }
 
@@ -579,12 +579,7 @@ export function KanbanBoard({
     patchTask(task.id, { pipeline: next })
     armCommand(
       task.id,
-      buildReviseCommand(
-        task,
-        systemPrompt,
-        roleById(task.roleId),
-        review.comments
-      )
+      buildReviseCommand(task, roleById(task.roleId), review.comments)
     )
   }
 
