@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Bot,
   Check,
   CheckCheck,
   CheckCircle2,
@@ -26,6 +27,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
+import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   AGENT_NAMES,
@@ -41,6 +43,7 @@ import type {
   ColumnId,
   ReviewVerdict,
   Role,
+  SubAgentRun,
   Task,
 } from '@/lib/types'
 
@@ -77,6 +80,8 @@ interface KanbanBoardProps {
   /** Roles available for assignment / display. */
   roles: Role[]
   onManageRoles: () => void
+  /** Live sub-agent runs keyed by task id (session-only, not persisted). */
+  subAgents: Record<string, SubAgentRun[]>
 }
 
 interface LaunchEntry {
@@ -155,6 +160,41 @@ function PipelineBadge({
   )
 }
 
+/**
+ * Clickable chip showing how many sub-agents this card's agent has spawned via
+ * the Task tool, with a live count of those still running. Opens the read-only
+ * sub-agent drawer. Distinct from PipelineBadge (the in-session reviewer loop).
+ */
+function SubAgentBadge({
+  runs,
+  onOpen,
+}: {
+  runs: SubAgentRun[]
+  onOpen: () => void
+}) {
+  if (runs.length === 0) return null
+  const running = runs.filter((r) => r.status === 'running').length
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="查看子代理收到的 prompt 與執行狀況"
+      className={cn(
+        'mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+        running > 0
+          ? 'bg-amber-500/15 text-amber-500'
+          : 'bg-secondary text-secondary-foreground hover:bg-accent'
+      )}
+    >
+      <Bot className="size-2.5 shrink-0" />
+      <span className="truncate">
+        子代理 {runs.length}
+        {running > 0 ? ` · ${running} 執行中` : ''}
+      </span>
+    </button>
+  )
+}
+
 interface TaskCardProps {
   task: Task
   column: ColumnId
@@ -162,10 +202,14 @@ interface TaskCardProps {
   role: Role | null
   /** Resolved reviewer role (pipeline tasks only), if any. */
   reviewerRole: Role | null
+  /** Sub-agents this card's agent spawned this session (Task-tool hooks). */
+  subAgents: SubAgentRun[]
   isExpanded: boolean
   isMounted: boolean
   launch?: LaunchEntry
   onToggleExpanded: (taskId: string) => void
+  /** Open the read-only sub-agent drawer for this card. */
+  onOpenSubAgents: (taskId: string) => void
   /** In Progress: (re-)launch Claude in place. */
   onRun: (task: Task) => void
   /** Backlog: move the card into In Progress and launch Claude. */
@@ -187,10 +231,12 @@ function TaskCard({
   column,
   role,
   reviewerRole,
+  subAgents,
   isExpanded,
   isMounted,
   launch,
   onToggleExpanded,
+  onOpenSubAgents,
   onRun,
   onStart,
   onMoveBack,
@@ -239,6 +285,10 @@ function TaskCard({
               </span>
             )}
             <PipelineBadge task={task} reviewerRole={reviewerRole} />
+            <SubAgentBadge
+              runs={subAgents}
+              onOpen={() => onOpenSubAgents(task.id)}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex min-w-0 max-w-full items-center gap-1">
@@ -471,9 +521,12 @@ export function KanbanBoard({
   onOpenSettings,
   roles,
   onManageRoles,
+  subAgents,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
+  // Task whose sub-agent drawer is open (null = closed).
+  const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
   // Active view. In Progress is the home view; the other two are reachable via
   // the segmented control. Hidden views stay mounted (CSS only).
   const [view, setView] = useState<ColumnId>('in_progress')
@@ -824,10 +877,12 @@ export function KanbanBoard({
                     column={v.id}
                     role={roleById(task.roleId)}
                     reviewerRole={roleById(task.reviewerRoleId)}
+                    subAgents={subAgents[task.id] ?? []}
                     isExpanded={expanded.has(task.id)}
                     isMounted={mounted.has(task.id)}
                     launch={launch[task.id]}
                     onToggleExpanded={toggleExpanded}
+                    onOpenSubAgents={setSubAgentTaskId}
                     onRun={runTask}
                     onStart={startTask}
                     onMoveBack={moveBackTask}
@@ -842,6 +897,19 @@ export function KanbanBoard({
           </section>
         ))}
       </main>
+
+      <SubAgentDrawer
+        open={subAgentTaskId !== null}
+        taskTitle={
+          (subAgentTaskId &&
+            Object.values(board)
+              .flat()
+              .find((t) => t.id === subAgentTaskId)?.title) ||
+          ''
+        }
+        runs={(subAgentTaskId && subAgents[subAgentTaskId]) || []}
+        onClose={() => setSubAgentTaskId(null)}
+      />
     </div>
   )
 }

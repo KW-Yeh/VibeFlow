@@ -46,6 +46,11 @@ import {
   watchProgress,
 } from './helpers/progress'
 import {
+  unwatchAllSubAgents,
+  unwatchSubAgents,
+  watchSubAgents,
+} from './helpers/subagents'
+import {
   relaunchApp,
   stopUpdateWatcher,
   watchForNewBuild,
@@ -69,6 +74,7 @@ function generateShortId(): string {
 function teardownSession(taskId: string): void {
   killSession(taskId)
   unwatchProgress(taskId)
+  unwatchSubAgents(taskId)
 }
 
 function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -251,8 +257,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         event.sender,
         payload.command,
         // Session ended (natural exit included) — nothing can write the
-        // progress file anymore, so stop polling (final sync inside).
-        () => unwatchProgress(payload.taskId)
+        // progress / sub-agent files anymore, so stop polling both.
+        () => {
+          unwatchProgress(payload.taskId)
+          unwatchSubAgents(payload.taskId)
+        }
       )
       // Mirror the agent-maintained progress file into the store (persisted)
       // and push live updates to the renderer while the session is alive.
@@ -262,6 +271,16 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
           event.sender.send('progress:update', {
             taskId: payload.taskId,
             progress,
+          })
+        }
+      })
+      // Surface sub-agents spawned via the Task tool (captured by the Claude
+      // hooks installed at launch). Session-only: pushed live, never persisted.
+      watchSubAgents(payload.taskId, payload.cwd, (subAgents) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('subagents:update', {
+            taskId: payload.taskId,
+            subAgents,
           })
         }
       })
@@ -372,12 +391,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 app.on('window-all-closed', () => {
   killAllSessions()
   unwatchAllProgress()
+  unwatchAllSubAgents()
   app.quit()
 })
 
 app.on('before-quit', () => {
   killAllSessions()
   unwatchAllProgress()
+  unwatchAllSubAgents()
   stopUpdateWatcher()
 })
 
