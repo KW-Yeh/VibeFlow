@@ -137,12 +137,49 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoMode: true,
 }
 
+/**
+ * Current persisted-state schema version. Bumped when a migration must run on
+ * existing stores (see `migrateStore`). v2 introduced the seeded default roles.
+ */
+const STATE_VERSION = 2
+
+/**
+ * Built-in starter roles seeded for first-time users so the board ships with a
+ * usable executor + reviewer pair out of the box. These are ordinary roles —
+ * users may freely edit or delete them via the role manager; once seeded they
+ * are not re-created (the version gate in `migrateStore` only fires once).
+ */
+const DEFAULT_ROLES: Role[] = [
+  {
+    id: 'default-developer',
+    name: '一般開發者',
+    avatar: '👨‍💻',
+    positioning:
+      '你是一位全端開發者，負責將任務需求轉化為可運作、可維護的程式碼實作。你重視程式碼的可讀性與模組化，並以最小、聚焦的改動達成任務目標。',
+    responsibilities:
+      '解析任務需求並釐清模糊的邊界；規劃實作步驟；撰寫與修改程式碼；遵循專案既有的架構慣例與程式風格；執行專案既有的型別檢查、測試與建置；診斷並修正過程中出現的錯誤。',
+    boundaries:
+      '應做：保持改動聚焦於任務範圍、確實處理錯誤與邊界條件。禁做：嚴禁進行範疇外的無關重構；嚴禁為趕時程而略過標準的錯誤處理；不修改與任務無關的檔案。',
+  },
+  {
+    id: 'default-tester',
+    name: '測試者',
+    avatar: '🧪',
+    positioning:
+      '你是一位 QA／測試工程師，站在品質把關的立場審查程式碼改動，確保實作正確、符合需求且不引入回歸。',
+    responsibilities:
+      '審查 git diff 與實作邏輯；驗證需求達成度與邊界條件；檢查錯誤處理、潛在回歸與安全性問題；確認改動符合專案既有慣例；提出具體且可操作的修正建議。',
+    boundaries:
+      '應做：審查意見須具體指出問題的位置與原因，並區分必須修正與建議性意見。禁做：不主動改寫實作，僅提出修正建議；不給籠統含糊的評語；若無必須修正的問題即明確核可（approve）。',
+  },
+]
+
 const defaults: VibeFlowState = {
-  version: 1,
+  version: STATE_VERSION,
   projectPath: null,
   board: DEFAULT_BOARD,
   settings: DEFAULT_SETTINGS,
-  roles: [],
+  roles: DEFAULT_ROLES,
 }
 
 let _store: Store<VibeFlowState> | null = null
@@ -155,8 +192,28 @@ let _store: Store<VibeFlowState> | null = null
 function getStore(): Store<VibeFlowState> {
   if (!_store) {
     _store = new Store<VibeFlowState>({ name: 'vibeflow-state', defaults })
+    migrateStore(_store)
   }
   return _store
+}
+
+/**
+ * Run one-off, version-gated migrations against an already-constructed store.
+ * `electron-store` only applies `defaults` when a key is entirely absent, so
+ * existing installs (which already persisted `roles: []`) never receive the new
+ * seeded roles from `defaults`. This backfills them once: if the store predates
+ * v2 and carries no roles, we seed `DEFAULT_ROLES`. The version is bumped
+ * regardless so the seed runs at most once — a user who later deletes the
+ * defaults will not have them silently restored.
+ */
+function migrateStore(store: Store<VibeFlowState>): void {
+  const persistedVersion = store.get('version') ?? 1
+  if (persistedVersion < 2) {
+    if ((store.get('roles') ?? []).length === 0) {
+      store.set('roles', DEFAULT_ROLES)
+    }
+    store.set('version', STATE_VERSION)
+  }
 }
 
 export function getState(): VibeFlowState {
