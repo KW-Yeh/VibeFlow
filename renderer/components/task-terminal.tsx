@@ -6,6 +6,12 @@ import { Sparkles } from 'lucide-react'
 
 interface TaskTerminalProps {
   taskId: string
+  /**
+   * Composite session key passed to the PTY layer. Defaults to `taskId` for the
+   * executor terminal. Pass `${taskId}:review` for the reviewer's independent
+   * PTY pane so both can coexist without stomping each other's sessions.
+   */
+  sessionKey?: string
   /** Working directory: the task's worktree, or the project root as fallback. */
   cwd: string | null
   /**
@@ -29,6 +35,7 @@ interface TaskTerminalProps {
 
 export function TaskTerminal({
   taskId,
+  sessionKey: sessionKeyProp,
   cwd,
   launchCommand,
   launchNonce = 0,
@@ -36,6 +43,10 @@ export function TaskTerminal({
   launchLabel,
   readOnly = false,
 }: TaskTerminalProps) {
+  // Effective session key: use the prop when provided (reviewer pane uses
+  // `${taskId}:review`), otherwise fall back to taskId (executor session).
+  const sessionKey = sessionKeyProp ?? taskId
+
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
 
@@ -48,7 +59,7 @@ export function TaskTerminal({
   const launchNonceRef = useRef(launchNonce)
   launchCmdRef.current = launchCommand
   launchNonceRef.current = launchNonce
-  // cwd / readOnly via refs so the init effect can depend on [taskId] only —
+  // cwd / readOnly via refs so the init effect can depend on [sessionKey] only —
   // when a card moves to Done its cwd changes (worktree → project root); we must
   // NOT re-run init (which would dispose the buffer and spawn a fresh shell).
   const cwdRef = useRef<string | null>(cwd)
@@ -62,8 +73,8 @@ export function TaskTerminal({
     const nonce = launchNonceRef.current
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
-    window.vibeflow?.term.input(taskId, cmd)
-  }, [taskId])
+    window.vibeflow?.term.input(sessionKey, cmd)
+  }, [sessionKey])
 
   // Keep the read-only flag (and xterm's stdin gate) in sync without remounting.
   useEffect(() => {
@@ -112,12 +123,13 @@ export function TaskTerminal({
         return
       }
 
-      await api.term.start(taskId, startCwd)
-      offData = api.term.onData(({ taskId: id, data }) => {
-        if (id === taskId) term.write(data)
+      // Pass taskId + sessionKey so main knows the task and the session slot.
+      await api.term.start(taskId, startCwd, undefined, sessionKey)
+      offData = api.term.onData(({ sessionKey: id, data }) => {
+        if (id === sessionKey) term.write(data)
       })
-      offExit = api.term.onExit(({ taskId: id, exitCode }) => {
-        if (id === taskId) term.writeln(`\r\n[process exited: ${exitCode}]`)
+      offExit = api.term.onExit(({ sessionKey: id, exitCode }) => {
+        if (id === sessionKey) term.writeln(`\r\n[process exited: ${exitCode}]`)
       })
       // Shift+Enter inserts a newline instead of submitting. xterm sends a plain
       // CR for both Enter and Shift+Enter, so the CLI running in the PTY (e.g.
@@ -132,7 +144,7 @@ export function TaskTerminal({
           event.shiftKey &&
           !readOnlyRef.current
         ) {
-          api.term.input(taskId, '\x1b\r')
+          api.term.input(sessionKey, '\x1b\r')
           return false
         }
         return true
@@ -140,19 +152,19 @@ export function TaskTerminal({
 
       // Forward keystrokes only while the card is interactive (not Done).
       term.onData((data) => {
-        if (!readOnlyRef.current) api.term.input(taskId, data)
+        if (!readOnlyRef.current) api.term.input(sessionKey, data)
       })
 
       resizeObs = new ResizeObserver(() => {
         try {
           fit.fit()
-          api.term.resize(taskId, term.cols, term.rows)
+          api.term.resize(sessionKey, term.cols, term.rows)
         } catch {
           // ignore transient resize errors
         }
       })
       resizeObs.observe(containerRef.current)
-      api.term.resize(taskId, term.cols, term.rows)
+      api.term.resize(sessionKey, term.cols, term.rows)
 
       // PTY is live: send any armed launch command (e.g. auto-run on expand).
       readyRef.current = true
@@ -165,11 +177,13 @@ export function TaskTerminal({
       offData?.()
       offExit?.()
       resizeObs?.disconnect()
-      window.vibeflow?.term.kill(taskId)
+      // Kill only this session's PTY (pass the composite key so the reviewer pane
+      // doesn't accidentally tear down the executor session when it unmounts).
+      window.vibeflow?.term.kill(sessionKey)
       termRef.current?.dispose()
       termRef.current = null
     }
-  }, [taskId, maybeLaunch])
+  }, [taskId, sessionKey, maybeLaunch])
 
   // Re-launch when the parent bumps the nonce while already mounted.
   useEffect(() => {

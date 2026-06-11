@@ -175,21 +175,16 @@ export function buildResumePrompt(
 }
 
 /**
- * Prompt for the reviewer stage of the pipeline. The reviewer is fed as a new
- * turn into the executor's still-open agent session (which shares the worktree,
- * so the diff is right there). Because no fresh CLI is launched, the reviewer
- * persona cannot be set via a system-prompt flag — instead the reviewer role is
- * folded into the prompt body so this turn re-frames the agent as the reviewer.
- * It must write its verdict into the progress file's `review` field, which main
- * mirrors onto the task so the orchestrator can branch.
+ * Prompt body for the reviewer stage of the pipeline. The reviewer is launched
+ * as a fresh, independent CLI process (not a turn in the executor's session).
+ * The reviewer role persona is passed via `--append-system-prompt` at the CLI
+ * level; this body carries the task context and the verdict-writing instruction
+ * that the orchestrator depends on.
  */
 export function buildReviewPrompt(
-  task: Pick<Task, 'title' | 'description'>,
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+  task: Pick<Task, 'title' | 'description'>
 ): string {
   const lines: string[] = []
-  const rolePrompt = buildRolePrompt(reviewerRole)
-  if (rolePrompt) lines.push(rolePrompt, '')
   lines.push(`任務標題：${task.title}`)
   const description = task.description?.trim()
   if (description) lines.push('', '任務描述：', description)
@@ -240,14 +235,41 @@ export function buildRevisePrompt(
   return lines.join('\n')
 }
 
+/**
+ * Deterministic, stable session UUID for a task's executor conversation,
+ * derived from the task id so it survives restarts without persistence.
+ * Forces the version (4) and variant (8) nibbles so `claude --session-id`
+ * accepts it as a valid UUID.
+ */
+export function executorSessionId(taskId: string): string {
+  const hex = taskId.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(32, '0').slice(0, 32)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
   /**
    * Resume the prior agent session instead of starting a fresh conversation.
-   * For Claude this uses `--continue` so the previous session in the task's
-   * worktree is restored and continued from the last recorded progress.
+   * For Claude this uses `--resume <sessionId>` (when a sessionId is known)
+   * so the exact executor session is restored regardless of what other sessions
+   * have run in the same worktree.
    */
   resume?: boolean
+}
+
+/**
+ * Build the system prompt used for the reviewer fresh-launch. The reviewer
+ * role persona is the primary content; a minimal instruction to behave as
+ * code reviewer is added when no role is provided. Returns an empty string
+ * when the role body is empty (so the caller can skip `--append-system-prompt`).
+ */
+export function buildReviewerSystemPrompt(
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+): string {
+  const rolePrompt = buildRolePrompt(reviewerRole)
+  if (rolePrompt) return rolePrompt
+  // No role configured: minimal reviewer framing so the agent doesn't drift.
+  return '你是一位嚴謹的 Code Reviewer。請審查 git worktree 中的改動，依照任務描述中的指示輸出 verdict。'
 }
 
 /**
@@ -255,21 +277,21 @@ export interface LaunchOptions {
  * launches Claude in auto mode with the card's prompt and the effective
  * system prompt. Written verbatim into the card's PTY.
  *
- * When `opts.resume` is set, `--continue` restores the most recent conversation
- * in the worktree (claude keys history by cwd) and a short resume nudge is sent
- * as the new turn. The system prompt — including the progress-tracking protocol
- * — is re-appended each invocation, so the resumed session keeps maintaining
- * the progress file.
+ * The executor session is pinned to a deterministic UUID derived from the
+ * task id (`executorSessionId`):
+ *   - First launch: `--session-id <uuid>` creates and pins the session.
+ *   - Resume: `--resume <uuid>` restores that exact session, unaffected by any
+ *     other session (e.g. the reviewer) that ran in the same worktree cwd.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'title' | 'description' | 'progress' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'worktreePath'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions
 ): string {
   const sys = resolveSystemPrompt(systemPrompt, role)
   const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
-  return assembleCommand('claude', sys, prompt, opts, task.worktreePath)
+  return assembleCommand('claude', sys, prompt, opts, task.worktreePath, executorSessionId(task.id))
 }
 
 /**
@@ -277,13 +299,21 @@ export function buildClaudeCommand(
  * an already-resolved system prompt and prompt body. Centralizes the per-CLI
  * differences (flags, how the system prompt is passed, session resume) so the
  * normal launch and the pipeline review/revise launches stay in sync.
+ *
+ * When `sessionId` is provided the Claude session is pinned:
+ *   - First launch (resume=false): `--session-id <id>` creates and pins the id.
+ *   - Subsequent launches (resume=true): `--resume <id>` restores that exact session,
+ *     unaffected by any other session (e.g. the reviewer) that ran in the same cwd.
+ * When `sessionId` is absent, falls back to legacy behaviour (`--continue` for
+ * resume, no flag for fresh start) so other call paths are not broken.
  */
 function assembleCommand(
   agent: AgentCliId,
   systemPrompt: string,
   prompt: string,
   opts?: LaunchOptions,
-  worktreePath?: string
+  worktreePath?: string,
+  sessionId?: string
 ): string {
   if (agent === 'claude') {
     // Install the sub-agent recording hooks via inline --settings (session-only,
@@ -291,7 +321,13 @@ function assembleCommand(
     const settings = worktreePath
       ? ` --settings ${shellQuote(buildSubAgentSettings(worktreePath))}`
       : ''
-    const head = `claude${opts?.resume ? ' --continue' : ''} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
+    let sessionFlag: string
+    if (sessionId) {
+      sessionFlag = opts?.resume ? ` --resume ${sessionId}` : ` --session-id ${sessionId}`
+    } else {
+      sessionFlag = opts?.resume ? ' --continue' : ''
+    }
+    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
@@ -306,48 +342,76 @@ function assembleCommand(
 }
 
 /**
- * Encode a multi-line prompt as the keystrokes that submit it as ONE new turn
- * inside an already-running agent REPL (Claude/Codex/Gemini), then auto-run.
+ * Build the full shell command (CR-terminated) that launches the reviewer as an
+ * independent Claude Code process in the task's worktree. This is a fresh CLI
+ * launch — NOT a turn typed into the executor's running session — so:
+ *   - The reviewer role persona is passed via `--append-system-prompt`.
+ *   - Sub-agent hooks (--settings) are intentionally NOT installed to avoid
+ *     collisions with the executor's .vibeflow-subagents directory.
+ *   - `taskAgent(task)` is used so Codex/Gemini tasks fall through to their own
+ *     assembleCommand branch (which folds the system prompt into the body).
  *
- * The pipeline's reviewer/revise turns are not fresh CLI launches — the
- * executor's interactive session is still open in the PTY, so the prompt is
- * typed straight into it. In these TUIs a bare CR submits the current input
- * while ESC+CR inserts a newline (same convention task-terminal.tsx uses for
- * Shift+Enter). A raw LF is not a reliable submit/newline, so a prompt joined
- * with "\n" lands in the input box but never fires — the user had to press
- * Enter. Sending each internal newline as ESC+CR and terminating with a single
- * CR builds the whole multi-line message and submits it automatically.
- */
-function replSubmission(prompt: string): string {
-  return prompt.replace(/\n/g, '\x1b\r') + '\r'
-}
-
-/**
- * Build the keystrokes for the reviewer stage. The reviewer is NOT a fresh CLI
- * launch: it is fed as a new turn into the executor's still-open session in the
- * same worktree (the diff is right there). The reviewer persona therefore comes
- * from the role folded into the prompt body — not a system-prompt flag — and
- * the carrier system prompt (executor workflow) is intentionally omitted.
+ * The verdict-writing instruction (in `buildReviewPrompt`) is always present in
+ * the prompt body so the orchestrator can read the review field.
  */
 export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description'>,
+  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'worktreePath'>,
   reviewerRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
-  return replSubmission(buildReviewPrompt(task, reviewerRole))
+  const agent = taskAgent(task)
+  const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
+  const prompt = buildReviewPrompt(task)
+
+  if (agent === 'claude') {
+    // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}`
+    const sysArg = reviewSysPrompt
+      ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
+      : ''
+    return `${head}${sysArg} ${shellQuote(prompt)}\r`
+  }
+  // Codex / Gemini: fold system prompt into the body (they have no separate flag).
+  const combined = `${reviewSysPrompt}\n\n${prompt}`
+  if (agent === 'codex') {
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
 }
 
 /**
- * Build the keystrokes for a revise stage: a new turn fed into the same open
- * session to address the reviewer's comments. Like the reviewer turn it carries
- * no system prompt; the executor role is folded into the prompt body to re-frame
- * the agent, and the recorded comments tell it exactly what to fix.
+ * Build the full shell command (CR-terminated) that restarts the executor to
+ * address the reviewer's comments. For Claude, `--resume <sessionId>` restores
+ * the executor's pinned session by its exact UUID — the reviewer running in the
+ * same worktree cwd does NOT affect which session is resumed. For Codex/Gemini a
+ * fresh launch with the recorded progress folded in acts as a soft resume.
+ *
+ * The reviewer session must be killed before this runs (handled by the
+ * orchestrator) so only the executor PTY is live during the revise stage.
  */
 export function buildReviseCommand(
-  task: Pick<Task, 'title' | 'description'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'>,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = []
 ): string {
-  return replSubmission(buildRevisePrompt(task, comments, executorRole))
+  const agent = taskAgent(task)
+  const sys = resolveSystemPrompt(null, executorRole)
+  const prompt = buildRevisePrompt(task, comments, executorRole)
+
+  if (agent === 'claude') {
+    // Resume the executor's pinned session by its exact UUID so the reviewer
+    // session (which ran in the same cwd) does not pollute "most recent".
+    const settings = task.worktreePath
+      ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
+      : ''
+    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
+    return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
+  }
+  // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
+  const combined = `${sys}\n\n${prompt}`
+  if (agent === 'codex') {
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
@@ -367,14 +431,18 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
  * have no separate system-prompt flag, so the effective system prompt (incl.
  * the progress protocol) is folded into the prompt text instead.
  *
- * Only Claude has a wired session-resume flag (`--continue`). Codex/Gemini fall
- * back to a fresh launch whose prompt already folds in the recorded progress
- * (via buildPrompt), giving a soft resume regardless of `opts.resume`.
+ * For Claude the executor session is pinned to `executorSessionId(task.id)`:
+ *   - First launch: `--session-id <uuid>` creates and pins the session.
+ *   - Resume: `--resume <uuid>` restores that exact session regardless of what
+ *     other sessions (e.g. the reviewer) ran in the same worktree cwd.
+ * Codex/Gemini fall back to a fresh launch whose prompt already folds in the
+ * recorded progress (via buildPrompt), giving a soft resume regardless of
+ * `opts.resume`.
  */
 export function buildAgentCommand(
   task: Pick<
     Task,
-    'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'
+    'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'
   >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
@@ -386,5 +454,6 @@ export function buildAgentCommand(
   // into the prompt (soft resume) regardless of opts.resume.
   const prompt =
     opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
-  return assembleCommand(agent, sys, prompt, opts, task.worktreePath)
+  const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
+  return assembleCommand(agent, sys, prompt, opts, task.worktreePath, sessionId)
 }
