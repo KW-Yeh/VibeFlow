@@ -37,6 +37,7 @@ import {
   isTaskComplete,
   taskAgent,
 } from '@/lib/claude'
+import { termKill } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
   BoardState,
@@ -87,6 +88,11 @@ interface KanbanBoardProps {
 interface LaunchEntry {
   command: string
   nonce: number
+}
+
+/** Derive the reviewer session key from a task id (mirrors main/helpers/pty.ts). */
+function reviewSessionKey(taskId: string): string {
+  return `${taskId}:review`
 }
 
 // Visual treatment for each pipeline stage shown on the card's status badge.
@@ -207,6 +213,8 @@ interface TaskCardProps {
   isExpanded: boolean
   isMounted: boolean
   launch?: LaunchEntry
+  /** Armed launch for the reviewer's independent PTY session. */
+  reviewerLaunch?: LaunchEntry
   onToggleExpanded: (taskId: string) => void
   /** Open the read-only sub-agent drawer for this card. */
   onOpenSubAgents: (taskId: string) => void
@@ -235,6 +243,7 @@ function TaskCard({
   isExpanded,
   isMounted,
   launch,
+  reviewerLaunch,
   onToggleExpanded,
   onOpenSubAgents,
   onRun,
@@ -492,8 +501,10 @@ function TaskCard({
               )}
             </div>
           )}
+          {/* Executor terminal — always rendered for In Progress and Done cards. */}
           <TaskTerminal
             taskId={task.id}
+            sessionKey={task.id}
             cwd={cwd}
             launchCommand={launch?.command}
             launchNonce={launch?.nonce ?? 0}
@@ -501,6 +512,25 @@ function TaskCard({
             onLaunchRequest={() => onRun(task)}
             readOnly={column === 'done'}
           />
+          {/* Reviewer terminal — rendered only while the pipeline is in the
+              reviewing stage. Uses a composite session key so it runs in an
+              independent PTY that can coexist with the executor session. */}
+          {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
+            <div className="mt-1">
+              <div className="mb-0.5 flex items-center gap-1 text-[10px] text-amber-500">
+                <Eye className="size-3 shrink-0" />
+                <span>Reviewer — {reviewerRole?.name ?? '審查中'}</span>
+              </div>
+              <TaskTerminal
+                taskId={task.id}
+                sessionKey={reviewSessionKey(task.id)}
+                cwd={cwd}
+                launchCommand={reviewerLaunch?.command}
+                launchNonce={reviewerLaunch?.nonce ?? 0}
+                readOnly={false}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -537,6 +567,8 @@ export function KanbanBoard({
   const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed launch command; bumping `nonce` (re-)fires it in the terminal.
   const [launch, setLaunch] = useState<Record<string, LaunchEntry>>({})
+  // Per-task armed reviewer launch command (reviewer pane, `${taskId}:review` session).
+  const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
 
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
@@ -613,13 +645,39 @@ export function KanbanBoard({
   // identical board snapshot can't re-trigger the same hand-off twice.
   const firedRef = useRef<Map<string, string>>(new Map())
 
+  /**
+   * Kill the reviewer's independent PTY session (does not affect the executor).
+   * Called when transitioning out of the reviewing stage.
+   */
+  const killReviewerSession = (taskId: string) => {
+    termKill(reviewSessionKey(taskId))
+    setReviewerLaunch((prev) => {
+      if (!prev[taskId]) return prev
+      const next = { ...prev }
+      delete next[taskId]
+      return next
+    })
+  }
+
+  /**
+   * Arm the reviewer launch in its dedicated PTY slot (`${taskId}:review`).
+   * The executor session is left running (but idle) while reviewing; the two
+   * PTYs coexist via the composite session key.
+   */
   const advanceToReview = (task: Task) => {
     const next = { ...task.pipeline!, stage: 'reviewing' as const }
     patchTask(task.id, { pipeline: next })
-    armCommand(
-      task.id,
-      buildReviewCommand(task, roleById(task.reviewerRoleId))
-    )
+    // Expand the card and mount its terminal so the reviewer pane becomes visible.
+    setExpanded((prev) => new Set(prev).add(task.id))
+    markMounted(task.id)
+    // Arm the reviewer command in the independent reviewer launch slot.
+    setReviewerLaunch((prev) => ({
+      ...prev,
+      [task.id]: {
+        command: buildReviewCommand(task, roleById(task.reviewerRoleId)),
+        nonce: (prev[task.id]?.nonce ?? 0) + 1,
+      },
+    }))
   }
 
   const advanceToRevise = (task: Task, review: ReviewVerdict) => {
@@ -630,6 +688,9 @@ export function KanbanBoard({
       lastReview: review,
     }
     patchTask(task.id, { pipeline: next })
+    // Kill the reviewer session before re-launching the executor.
+    killReviewerSession(task.id)
+    // Arm the executor fresh launch (--continue) for the revise stage.
     armCommand(
       task.id,
       buildReviseCommand(task, roleById(task.roleId), review.comments)
@@ -661,14 +722,20 @@ export function KanbanBoard({
       if (p.stage === 'reviewing' && review) {
         firedRef.current.set(task.id, sig)
         if (review.verdict === 'approve') {
+          // Kill the reviewer session — it's done; executor session stays.
+          killReviewerSession(task.id)
           patchTask(task.id, {
             pipeline: { ...p, stage: 'approved', lastReview: review },
           })
         } else if (p.round + 1 > p.maxRounds) {
+          // Blocked: kill reviewer, require manual intervention.
+          killReviewerSession(task.id)
           patchTask(task.id, {
             pipeline: { ...p, stage: 'blocked', lastReview: review },
           })
         } else {
+          // advanceToRevise kills the reviewer session internally before
+          // arming the executor revise command.
           advanceToRevise(task, review)
         }
         break
@@ -881,6 +948,7 @@ export function KanbanBoard({
                     isExpanded={expanded.has(task.id)}
                     isMounted={mounted.has(task.id)}
                     launch={launch[task.id]}
+                    reviewerLaunch={reviewerLaunch[task.id]}
                     onToggleExpanded={toggleExpanded}
                     onOpenSubAgents={setSubAgentTaskId}
                     onRun={runTask}

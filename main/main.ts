@@ -38,6 +38,7 @@ import {
   killAllSessions,
   killSession,
   resizeSession,
+  reviewSessionKey,
   startSession,
   writeSession,
 } from './helpers/pty'
@@ -70,12 +71,19 @@ function generateShortId(): string {
   return randomUUID().slice(0, 8)
 }
 
-/** Tear down a task's live session: stop the PTY and the progress watcher
- *  (the watcher runs a final sync on its way out). */
+/**
+ * Tear down a task's live sessions: stop both the executor PTY and the reviewer
+ * PTY (if any), and stop their associated watchers.
+ * The watcher runs a final sync on its way out.
+ */
 function teardownSession(taskId: string): void {
   killSession(taskId)
   unwatchProgress(taskId)
   unwatchSubAgents(taskId)
+  // Also tear down the reviewer session (independent PTY + progress watcher).
+  const reviewKey = reviewSessionKey(taskId)
+  killSession(reviewKey)
+  unwatchProgress(reviewKey)
 }
 
 function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -265,61 +273,86 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'pty:start',
     (
       event,
-      payload: { taskId: string; cwd: string; command?: string }
+      payload: {
+        taskId: string
+        cwd: string
+        command?: string
+        /**
+         * Optional composite session key. Defaults to `taskId` (executor
+         * session). Pass `${taskId}:review` for the reviewer PTY so both
+         * can run concurrently without colliding in the session Maps.
+         */
+        sessionKey?: string
+      }
     ) => {
+      const sessionKey = payload.sessionKey ?? payload.taskId
+      const taskId = payload.taskId
       const result = startSession(
-        payload.taskId,
+        sessionKey,
         payload.cwd,
         event.sender,
         payload.command,
         // Session ended (natural exit included) — nothing can write the
         // progress / sub-agent files anymore, so stop polling both.
         () => {
-          unwatchProgress(payload.taskId)
-          unwatchSubAgents(payload.taskId)
+          unwatchProgress(sessionKey)
+          // Sub-agent watcher is only installed for executor sessions.
+          if (sessionKey === taskId) unwatchSubAgents(taskId)
         }
       )
       // Mirror the agent-maintained progress file into the store (persisted)
       // and push live updates to the renderer while the session is alive.
-      watchProgress(payload.taskId, payload.cwd, (progress) => {
-        updateTask(payload.taskId, { progress })
+      // Only the executor session persists progress to the store; both sessions
+      // push progress:update so the orchestrator can pick up the review verdict.
+      watchProgress(sessionKey, payload.cwd, (progress) => {
+        // Always persist: the reviewer writes the verdict into the same file.
+        updateTask(taskId, { progress })
         if (!event.sender.isDestroyed()) {
           event.sender.send('progress:update', {
-            taskId: payload.taskId,
+            taskId,
             progress,
           })
         }
       })
-      // Surface sub-agents spawned via the Task tool (captured by the Claude
-      // hooks installed at launch). Session-only: pushed live, never persisted.
-      watchSubAgents(payload.taskId, payload.cwd, (subAgents) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('subagents:update', {
-            taskId: payload.taskId,
-            subAgents,
-          })
-        }
-      })
+      // Sub-agent hooks are only installed for executor sessions (reviewer does
+      // not get --settings). Only watch for the executor session.
+      if (sessionKey === taskId) {
+        watchSubAgents(taskId, payload.cwd, (subAgents) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('subagents:update', {
+              taskId,
+              subAgents,
+            })
+          }
+        })
+      }
       return result
     }
   )
 
   ipcMain.on(
     'pty:input',
-    (_event, payload: { taskId: string; data: string }) => {
-      writeSession(payload.taskId, payload.data)
+    (_event, payload: { sessionKey: string; data: string }) => {
+      writeSession(payload.sessionKey, payload.data)
     }
   )
 
   ipcMain.on(
     'pty:resize',
-    (_event, payload: { taskId: string; cols: number; rows: number }) => {
-      resizeSession(payload.taskId, payload.cols, payload.rows)
+    (_event, payload: { sessionKey: string; cols: number; rows: number }) => {
+      resizeSession(payload.sessionKey, payload.cols, payload.rows)
     }
   )
 
-  ipcMain.on('pty:kill', (_event, taskId: string) => {
-    teardownSession(taskId)
+  ipcMain.on('pty:kill', (_event, sessionKey: string) => {
+    // If this is a taskId (executor session), teardown both executor + reviewer.
+    // If this is a composite reviewer key, only kill that reviewer session.
+    if (sessionKey.includes(':')) {
+      killSession(sessionKey)
+      unwatchProgress(sessionKey)
+    } else {
+      teardownSession(sessionKey)
+    }
   })
 
   // --- Review & finalize (Phase 4) ---

@@ -175,21 +175,16 @@ export function buildResumePrompt(
 }
 
 /**
- * Prompt for the reviewer stage of the pipeline. The reviewer is fed as a new
- * turn into the executor's still-open agent session (which shares the worktree,
- * so the diff is right there). Because no fresh CLI is launched, the reviewer
- * persona cannot be set via a system-prompt flag — instead the reviewer role is
- * folded into the prompt body so this turn re-frames the agent as the reviewer.
- * It must write its verdict into the progress file's `review` field, which main
- * mirrors onto the task so the orchestrator can branch.
+ * Prompt body for the reviewer stage of the pipeline. The reviewer is launched
+ * as a fresh, independent CLI process (not a turn in the executor's session).
+ * The reviewer role persona is passed via `--append-system-prompt` at the CLI
+ * level; this body carries the task context and the verdict-writing instruction
+ * that the orchestrator depends on.
  */
 export function buildReviewPrompt(
-  task: Pick<Task, 'title' | 'description'>,
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+  task: Pick<Task, 'title' | 'description'>
 ): string {
   const lines: string[] = []
-  const rolePrompt = buildRolePrompt(reviewerRole)
-  if (rolePrompt) lines.push(rolePrompt, '')
   lines.push(`任務標題：${task.title}`)
   const description = task.description?.trim()
   if (description) lines.push('', '任務描述：', description)
@@ -251,6 +246,21 @@ export interface LaunchOptions {
 }
 
 /**
+ * Build the system prompt used for the reviewer fresh-launch. The reviewer
+ * role persona is the primary content; a minimal instruction to behave as
+ * code reviewer is added when no role is provided. Returns an empty string
+ * when the role body is empty (so the caller can skip `--append-system-prompt`).
+ */
+export function buildReviewerSystemPrompt(
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+): string {
+  const rolePrompt = buildRolePrompt(reviewerRole)
+  if (rolePrompt) return rolePrompt
+  // No role configured: minimal reviewer framing so the agent doesn't drift.
+  return '你是一位嚴謹的 Code Reviewer。請審查 git worktree 中的改動，依照任務描述中的指示輸出 verdict。'
+}
+
+/**
  * Build the full shell command (terminated with a carriage return) that
  * launches Claude in auto mode with the card's prompt and the effective
  * system prompt. Written verbatim into the card's PTY.
@@ -306,48 +316,74 @@ function assembleCommand(
 }
 
 /**
- * Encode a multi-line prompt as the keystrokes that submit it as ONE new turn
- * inside an already-running agent REPL (Claude/Codex/Gemini), then auto-run.
+ * Build the full shell command (CR-terminated) that launches the reviewer as an
+ * independent Claude Code process in the task's worktree. This is a fresh CLI
+ * launch — NOT a turn typed into the executor's running session — so:
+ *   - The reviewer role persona is passed via `--append-system-prompt`.
+ *   - Sub-agent hooks (--settings) are intentionally NOT installed to avoid
+ *     collisions with the executor's .vibeflow-subagents directory.
+ *   - `taskAgent(task)` is used so Codex/Gemini tasks fall through to their own
+ *     assembleCommand branch (which folds the system prompt into the body).
  *
- * The pipeline's reviewer/revise turns are not fresh CLI launches — the
- * executor's interactive session is still open in the PTY, so the prompt is
- * typed straight into it. In these TUIs a bare CR submits the current input
- * while ESC+CR inserts a newline (same convention task-terminal.tsx uses for
- * Shift+Enter). A raw LF is not a reliable submit/newline, so a prompt joined
- * with "\n" lands in the input box but never fires — the user had to press
- * Enter. Sending each internal newline as ESC+CR and terminating with a single
- * CR builds the whole multi-line message and submits it automatically.
- */
-function replSubmission(prompt: string): string {
-  return prompt.replace(/\n/g, '\x1b\r') + '\r'
-}
-
-/**
- * Build the keystrokes for the reviewer stage. The reviewer is NOT a fresh CLI
- * launch: it is fed as a new turn into the executor's still-open session in the
- * same worktree (the diff is right there). The reviewer persona therefore comes
- * from the role folded into the prompt body — not a system-prompt flag — and
- * the carrier system prompt (executor workflow) is intentionally omitted.
+ * The verdict-writing instruction (in `buildReviewPrompt`) is always present in
+ * the prompt body so the orchestrator can read the review field.
  */
 export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description'>,
+  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'worktreePath'>,
   reviewerRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
-  return replSubmission(buildReviewPrompt(task, reviewerRole))
+  const agent = taskAgent(task)
+  const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
+  const prompt = buildReviewPrompt(task)
+
+  if (agent === 'claude') {
+    // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}`
+    const sysArg = reviewSysPrompt
+      ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
+      : ''
+    return `${head}${sysArg} ${shellQuote(prompt)}\r`
+  }
+  // Codex / Gemini: fold system prompt into the body (they have no separate flag).
+  const combined = `${reviewSysPrompt}\n\n${prompt}`
+  if (agent === 'codex') {
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
 }
 
 /**
- * Build the keystrokes for a revise stage: a new turn fed into the same open
- * session to address the reviewer's comments. Like the reviewer turn it carries
- * no system prompt; the executor role is folded into the prompt body to re-frame
- * the agent, and the recorded comments tell it exactly what to fix.
+ * Build the full shell command (CR-terminated) that restarts the executor in
+ * `--continue` mode to address the reviewer's comments. For Claude, `--continue`
+ * restores the most recent session in the task's worktree; for Codex/Gemini a
+ * fresh launch with the recorded progress folded in acts as a soft resume.
+ *
+ * The reviewer session must be killed before this runs (handled by the
+ * orchestrator) so only the executor PTY is live during the revise stage.
  */
 export function buildReviseCommand(
-  task: Pick<Task, 'title' | 'description'>,
+  task: Pick<Task, 'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'>,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = []
 ): string {
-  return replSubmission(buildRevisePrompt(task, comments, executorRole))
+  const agent = taskAgent(task)
+  const sys = resolveSystemPrompt(null, executorRole)
+  const prompt = buildRevisePrompt(task, comments, executorRole)
+
+  if (agent === 'claude') {
+    // Fresh launch with --continue to restore the executor's conversation history.
+    const settings = task.worktreePath
+      ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
+      : ''
+    const head = `claude --continue --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
+    return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
+  }
+  // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
+  const combined = `${sys}\n\n${prompt}`
+  if (agent === 'codex') {
+    return `codex --full-auto ${shellQuote(combined)}\r`
+  }
+  return `gemini --yolo -i ${shellQuote(combined)}\r`
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */

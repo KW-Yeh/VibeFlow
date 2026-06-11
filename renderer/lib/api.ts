@@ -186,3 +186,58 @@ export async function deleteTask(
   const b = bridge()
   return b ? b.deleteTask(taskId) : null
 }
+
+// --- Terminal API wrappers (sessionKey-aware) ---
+
+/**
+ * Start a PTY session. `sessionKey` defaults to `taskId` (executor session).
+ * Pass `${taskId}:review` for the independent reviewer PTY.
+ */
+export async function termStart(
+  taskId: string,
+  cwd: string,
+  command?: string,
+  sessionKey?: string
+): Promise<{ pid: number } | null> {
+  const b = bridge()
+  return b ? b.term.start(taskId, cwd, command, sessionKey) : null
+}
+
+/** Send keystrokes to the session identified by `sessionKey`. */
+export function termInput(sessionKey: string, data: string): void {
+  bridge()?.term.input(sessionKey, data)
+}
+
+/** Resize the session identified by `sessionKey`. */
+export function termResize(sessionKey: string, cols: number, rows: number): void {
+  bridge()?.term.resize(sessionKey, cols, rows)
+}
+
+/**
+ * Kill a session. Pass a plain taskId to tear down both executor and reviewer
+ * sessions; pass `${taskId}:review` to kill only the reviewer session.
+ */
+export function termKill(sessionKey: string): void {
+  bridge()?.term.kill(sessionKey)
+}
+
+/**
+ * Subscribe to PTY data. The payload carries `sessionKey` to identify which
+ * terminal pane the data belongs to.
+ */
+export function onTermData(
+  callback: (payload: { sessionKey: string; data: string }) => void
+): () => void {
+  const b = bridge()
+  return b ? b.term.onData(callback) : () => {}
+}
+
+/**
+ * Subscribe to PTY exit events. Carries `sessionKey`.
+ */
+export function onTermExit(
+  callback: (payload: { sessionKey: string; exitCode: number }) => void
+): () => void {
+  const b = bridge()
+  return b ? b.term.onExit(callback) : () => {}
+}

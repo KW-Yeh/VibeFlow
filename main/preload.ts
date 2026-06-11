@@ -131,33 +131,50 @@ const vibeflow = {
 
   // Interactive terminal bridge (Phase 3).
   term: {
+    /**
+     * Start a PTY session. Pass `sessionKey` to specify the composite session
+     * identifier (defaults to `taskId` for the executor). Use
+     * `${taskId}:review` for the reviewer's independent PTY session.
+     */
     start: (
       taskId: string,
       cwd: string,
-      command?: string
+      command?: string,
+      sessionKey?: string
     ): Promise<{ pid: number }> =>
-      ipcRenderer.invoke('pty:start', { taskId, cwd, command }),
-    input: (taskId: string, data: string): void =>
-      ipcRenderer.send('pty:input', { taskId, data }),
-    resize: (taskId: string, cols: number, rows: number): void =>
-      ipcRenderer.send('pty:resize', { taskId, cols, rows }),
-    kill: (taskId: string): void => ipcRenderer.send('pty:kill', taskId),
+      ipcRenderer.invoke('pty:start', { taskId, cwd, command, sessionKey }),
+    /** Send keystrokes to the session identified by `sessionKey`. */
+    input: (sessionKey: string, data: string): void =>
+      ipcRenderer.send('pty:input', { sessionKey, data }),
+    /** Resize the session identified by `sessionKey`. */
+    resize: (sessionKey: string, cols: number, rows: number): void =>
+      ipcRenderer.send('pty:resize', { sessionKey, cols, rows }),
+    /**
+     * Kill a session. Pass a taskId to tear down both the executor and reviewer
+     * sessions; pass `${taskId}:review` to kill only the reviewer session.
+     */
+    kill: (sessionKey: string): void => ipcRenderer.send('pty:kill', sessionKey),
+    /**
+     * Data pushed from the PTY. The payload carries `sessionKey` to let the
+     * renderer route output to the correct terminal pane.
+     */
     onData: (
-      callback: (payload: { taskId: string; data: string }) => void
+      callback: (payload: { sessionKey: string; data: string }) => void
     ): (() => void) => {
       const sub = (
         _event: IpcRendererEvent,
-        payload: { taskId: string; data: string }
+        payload: { sessionKey: string; data: string }
       ) => callback(payload)
       ipcRenderer.on('pty:data', sub)
       return () => ipcRenderer.removeListener('pty:data', sub)
     },
+    /** Exit event pushed when a PTY session ends. Carries `sessionKey`. */
     onExit: (
-      callback: (payload: { taskId: string; exitCode: number }) => void
+      callback: (payload: { sessionKey: string; exitCode: number }) => void
     ): (() => void) => {
       const sub = (
         _event: IpcRendererEvent,
-        payload: { taskId: string; exitCode: number }
+        payload: { sessionKey: string; exitCode: number }
       ) => callback(payload)
       ipcRenderer.on('pty:exit', sub)
       return () => ipcRenderer.removeListener('pty:exit', sub)

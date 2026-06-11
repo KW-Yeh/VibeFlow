@@ -106,20 +106,24 @@ interface WatchEntry {
   sync: () => void
 }
 
-/** Active progress-file watchers keyed by task id (one per PTY session). */
+/**
+ * Active progress-file watchers keyed by session key.
+ * Executor session key = taskId; reviewer session key = `${taskId}:review`.
+ * Each session watches independently so they can't displace each other.
+ */
 const watchers = new Map<string, WatchEntry>()
 
 /**
  * Poll-watch a session's progress file and invoke `onUpdate` whenever its
  * (valid) content changes. `fs.watchFile` is used because it tolerates the
- * file not existing yet. Re-watching the same task replaces the old watcher.
+ * file not existing yet. Re-watching the same session key replaces the old watcher.
  */
 export function watchProgress(
-  taskId: string,
+  sessionKey: string,
   cwd: string,
   onUpdate: (progress: TaskProgress) => void
 ): void {
-  unwatchProgress(taskId)
+  unwatchProgress(sessionKey)
   const file = path.join(cwd, PROGRESS_FILE)
   const sync = () => {
     const progress = readProgressFile(cwd)
@@ -134,28 +138,28 @@ export function watchProgress(
     onUpdate(progress)
   }
   const entry: WatchEntry = { file, lastJson: null, sync }
-  watchers.set(taskId, entry)
+  watchers.set(sessionKey, entry)
 
   fs.watchFile(file, { interval: 800 }, sync)
   sync() // pick up pre-existing content immediately (e.g. on re-run)
 }
 
 /**
- * Stop watching a task's progress file (PTY exited/killed, task cleaned up).
+ * Stop watching a session's progress file (PTY exited/killed, task cleaned up).
  * Runs one final sync first so a write landing just before the session ended
  * is not lost to the polling interval.
  */
-export function unwatchProgress(taskId: string): void {
-  const entry = watchers.get(taskId)
+export function unwatchProgress(sessionKey: string): void {
+  const entry = watchers.get(sessionKey)
   if (entry) {
     entry.sync()
     fs.unwatchFile(entry.file)
-    watchers.delete(taskId)
+    watchers.delete(sessionKey)
   }
 }
 
 export function unwatchAllProgress(): void {
-  for (const taskId of Array.from(watchers.keys())) {
-    unwatchProgress(taskId)
+  for (const key of Array.from(watchers.keys())) {
+    unwatchProgress(key)
   }
 }

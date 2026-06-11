@@ -201,21 +201,26 @@ interface WatchEntry {
   sync: () => void
 }
 
-/** Active sub-agent watchers keyed by task id (one per PTY session). */
+/**
+ * Active sub-agent watchers keyed by session key.
+ * Executor session key = taskId; reviewer session key = `${taskId}:review`.
+ * Reviewer sessions do not install sub-agent hooks, so only executor sessions
+ * will ever receive updates — but the key structure is consistent with pty.ts.
+ */
 const watchers = new Map<string, WatchEntry>()
 
 /**
  * Poll-watch a session's sub-agent event dir and invoke `onUpdate` whenever the
  * reconstructed run set changes. `fs.watchFile` tolerates the dir not existing
- * yet (created lazily by the first hook). Re-watching a task replaces the prior
- * watcher. Runs are session-only — main does NOT persist them to the store.
+ * yet (created lazily by the first hook). Re-watching a session key replaces
+ * the prior watcher. Runs are session-only — main does NOT persist them to the store.
  */
 export function watchSubAgents(
-  taskId: string,
+  sessionKey: string,
   cwd: string,
   onUpdate: (runs: SubAgentRun[]) => void
 ): void {
-  unwatchSubAgents(taskId)
+  unwatchSubAgents(sessionKey)
   const dir = path.join(cwd, SUBAGENTS_DIR)
   const sync = () => {
     const runs = readSubAgents(cwd)
@@ -230,23 +235,23 @@ export function watchSubAgents(
     onUpdate(runs)
   }
   const entry: WatchEntry = { dir, lastJson: null, sync }
-  watchers.set(taskId, entry)
+  watchers.set(sessionKey, entry)
 
   fs.watchFile(dir, { interval: 800 }, sync)
   sync() // pick up pre-existing events immediately (e.g. on resume)
 }
 
-/** Stop watching a task's sub-agent dir (PTY exited/killed, task cleaned up). */
-export function unwatchSubAgents(taskId: string): void {
-  const entry = watchers.get(taskId)
+/** Stop watching a session's sub-agent dir (PTY exited/killed, task cleaned up). */
+export function unwatchSubAgents(sessionKey: string): void {
+  const entry = watchers.get(sessionKey)
   if (entry) {
     fs.unwatchFile(entry.dir)
-    watchers.delete(taskId)
+    watchers.delete(sessionKey)
   }
 }
 
 export function unwatchAllSubAgents(): void {
-  for (const taskId of Array.from(watchers.keys())) {
-    unwatchSubAgents(taskId)
+  for (const key of Array.from(watchers.keys())) {
+    unwatchSubAgents(key)
   }
 }
