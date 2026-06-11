@@ -229,6 +229,12 @@ interface TaskCardProps {
   onReview: (taskId: string) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
+  /**
+   * Manually (re-)arm the reviewer PTY for a reviewing-stage task. Needed so
+   * the reviewer pane's launch button can trigger a reviewer restart after an
+   * app reload cleared the in-memory reviewerLaunch state.
+   */
+  onReviewerRun?: (task: Task) => void
 }
 
 // Module-level component (not defined inside KanbanBoard) so its identity is
@@ -253,6 +259,7 @@ function TaskCard({
   onReview,
   onEdit,
   onDelete,
+  onReviewerRun,
 }: TaskCardProps) {
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const agentName = AGENT_NAMES[taskAgent(task)]
@@ -527,6 +534,8 @@ function TaskCard({
                 cwd={cwd}
                 launchCommand={reviewerLaunch?.command}
                 launchNonce={reviewerLaunch?.nonce ?? 0}
+                launchLabel="啟動 Reviewer"
+                onLaunchRequest={onReviewerRun ? () => onReviewerRun(task) : undefined}
                 readOnly={false}
               />
             </div>
@@ -660,17 +669,15 @@ export function KanbanBoard({
   }
 
   /**
-   * Arm the reviewer launch in its dedicated PTY slot (`${taskId}:review`).
-   * The executor session is left running (but idle) while reviewing; the two
-   * PTYs coexist via the composite session key.
+   * Arm (or re-arm) the reviewer's independent PTY slot (`${taskId}:review`).
+   * Expand + mount the card so the reviewer pane is visible, then bump the
+   * nonce to fire the launch command. Extracted so both `advanceToReview` (auto
+   * orchestrator) and the manual "啟動 Reviewer" button (post-reload recovery)
+   * share the same arming logic.
    */
-  const advanceToReview = (task: Task) => {
-    const next = { ...task.pipeline!, stage: 'reviewing' as const }
-    patchTask(task.id, { pipeline: next })
-    // Expand the card and mount its terminal so the reviewer pane becomes visible.
+  const armReviewer = (task: Task) => {
     setExpanded((prev) => new Set(prev).add(task.id))
     markMounted(task.id)
-    // Arm the reviewer command in the independent reviewer launch slot.
     setReviewerLaunch((prev) => ({
       ...prev,
       [task.id]: {
@@ -678,6 +685,17 @@ export function KanbanBoard({
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
+  }
+
+  /**
+   * Transition to the reviewing stage and arm the reviewer launch in its
+   * dedicated PTY slot. The executor session is left running (but idle) while
+   * reviewing; the two PTYs coexist via the composite session key.
+   */
+  const advanceToReview = (task: Task) => {
+    const next = { ...task.pipeline!, stage: 'reviewing' as const }
+    patchTask(task.id, { pipeline: next })
+    armReviewer(task)
   }
 
   const advanceToRevise = (task: Task, review: ReviewVerdict) => {
@@ -958,6 +976,7 @@ export function KanbanBoard({
                     onReview={onReview}
                     onEdit={onEditTask}
                     onDelete={onDeleteTask}
+                    onReviewerRun={armReviewer}
                   />
                 ))}
               </div>

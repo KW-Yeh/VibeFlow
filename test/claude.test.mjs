@@ -6,6 +6,7 @@ import {
   buildReviewPrompt,
   buildRolePrompt,
   buildReviewerSystemPrompt,
+  executorSessionId,
   DEFAULT_SYSTEM_PROMPT,
   PROGRESS_PROTOCOL_PROMPT,
   DEFAULT_PERMISSION_MODE,
@@ -25,7 +26,9 @@ const EXECUTOR_ROLE = {
 }
 
 // Full task with all fields required by the new fresh-launch signatures.
+// `id` is a valid 8-char hex string that exercising executorSessionId derivation.
 const TASK = {
+  id: 'abcd1234',
   title: '修復登入流程',
   description: '使用者無法登入。',
   agentCli: /** @type {'claude'} */ ('claude'),
@@ -104,13 +107,34 @@ test('buildReviewerSystemPrompt — returns non-empty fallback when no role', ()
   assert.ok(!sys.includes('超夢'), 'must not reference the specific role name')
 })
 
-// ─── buildReviseCommand (fresh-launch + --continue) ─────────────────────────
+// ─── executorSessionId ───────────────────────────────────────────────────────
 
-test('buildReviseCommand — is a fresh claude launch with --continue', () => {
+test('executorSessionId — produces a valid v4-variant UUID from an 8-char hex task id', () => {
+  const uuid = executorSessionId('abcd1234')
+  assert.match(
+    uuid,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
+    'must be a valid RFC-4122 v4 UUID'
+  )
+})
+
+test('executorSessionId — is deterministic (same input → same output)', () => {
+  assert.equal(executorSessionId('abcd1234'), executorSessionId('abcd1234'))
+})
+
+test('executorSessionId — different task ids produce different UUIDs', () => {
+  assert.notEqual(executorSessionId('abcd1234'), executorSessionId('ef567890'))
+})
+
+// ─── buildReviseCommand (fresh-launch + --resume <uuid>) ─────────────────────
+
+test('buildReviseCommand — is a fresh claude launch with --resume <uuid> (not --continue)', () => {
   const comments = ['修正 off-by-one', '處理 null 輸入']
   const cmd = buildReviseCommand(TASK, EXECUTOR_ROLE, comments)
+  const expectedUuid = executorSessionId(TASK.id)
   assert.ok(cmd.startsWith('claude '), 'must be a fresh claude launch')
-  assert.ok(cmd.includes('--continue'), 'must use --continue to restore executor session')
+  assert.ok(!cmd.includes('--continue'), 'must NOT use --continue (would pick up reviewer session)')
+  assert.ok(cmd.includes(`--resume ${expectedUuid}`), 'must use --resume with the pinned executor UUID')
   assert.ok(cmd.includes(`--permission-mode ${DEFAULT_PERMISSION_MODE}`), 'must pass permission mode')
   assert.equal(cmd.endsWith('\r'), true, 'must end with CR')
 })
