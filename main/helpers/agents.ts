@@ -5,7 +5,7 @@ import { execEnv } from './env'
 const pexec = promisify(execFile)
 
 /** Agent CLIs VibeFlow knows how to launch inside a task's PTY. */
-export type AgentCliId = 'claude' | 'codex' | 'gemini'
+export type AgentCliId = 'claude' | 'codex' | 'gemini' | 'copilot'
 
 export interface AgentModel {
   /** Value passed to the CLI's --model flag. */
@@ -56,6 +56,18 @@ export const AGENT_CLIS: AgentCli[] = [
     models: [
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（輕量・預設）' },
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    ],
+  },
+  {
+    id: 'copilot',
+    bin: 'copilot',
+    name: 'GitHub Copilot CLI',
+    // Codex-series models per the task spec; lightest first. Values must match
+    // the copilot CLI's `--model` choices exactly or the launch is rejected.
+    models: [
+      { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini（輕量・預設）' },
+      { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
+      { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
     ],
   },
 ]
