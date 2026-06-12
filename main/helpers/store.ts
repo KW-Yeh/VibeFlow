@@ -72,6 +72,8 @@ export interface Task {
   pushed?: boolean
   /** Agent CLI used to execute this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
+  /** Model id passed to the agent CLI's --model flag. Absent = agent's default model. */
+  model?: string
   /** Assigned executor role id. Absent = no role (default agent behavior). */
   roleId?: string
   /**

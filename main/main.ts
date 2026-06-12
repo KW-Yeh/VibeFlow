@@ -155,6 +155,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         baseBranch: string | null
         mode?: 'existing' | 'new'
         agentCli?: AgentCliId
+        model?: string
         roleId?: string
         reviewerRoleId?: string
       }
@@ -196,6 +197,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         baseBranch: result.baseBranch,
         pushed: result.pushed,
         agentCli: payload.agentCli ?? 'claude',
+        model: payload.model || undefined,
         roleId: payload.roleId || undefined,
         reviewerRoleId: payload.reviewerRoleId || undefined,
         pipeline,

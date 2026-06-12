@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Bot,
+  Cpu,
   FolderOpen,
   GitBranch,
   Loader2,
@@ -36,6 +37,7 @@ interface NewTaskDialogProps {
     baseBranch: string | null,
     mode: ProjectMode,
     agentCli: AgentCliId,
+    model: string,
     roleId: string,
     reviewerRoleId: string
   ) => void
@@ -71,6 +73,8 @@ export function NewTaskDialog({
   // null = detection still running; [] = none found on PATH.
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
+  // '' until the agent's models load; the agent's lightweight default is then applied.
+  const [model, setModel] = useState('')
   // '' = no role assigned (default behavior).
   const [roleId, setRoleId] = useState('')
   // '' = no reviewer; setting one turns the task into a review pipeline.
@@ -91,6 +95,7 @@ export function NewTaskDialog({
     setBaseBranch('')
     setAgents(null)
     setAgentCli('claude')
+    setModel('')
     setRoleId('')
     setReviewerRoleId('')
     let active = true
@@ -106,6 +111,13 @@ export function NewTaskDialog({
       active = false
     }
   }, [open, detectAgents])
+
+  // Pin the model to the selected agent's lightweight default whenever the agent
+  // (or the detected agent list) changes, so each agent runs on its cheapest model.
+  useEffect(() => {
+    const agent = agents?.find((a) => a.id === agentCli)
+    if (agent && agent.models.length > 0) setModel(agent.models[0].id)
+  }, [agentCli, agents])
 
   const handleModeChange = (next: ProjectMode) => {
     if (next === mode) return
@@ -161,6 +173,7 @@ export function NewTaskDialog({
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
+    const effectiveModel = model || currentAgent?.models[0]?.id || ''
     onSubmit(
       title.trim(),
       description.trim(),
@@ -168,10 +181,14 @@ export function NewTaskDialog({
       mode === 'existing' && hasRemote ? baseBranch || null : null,
       mode,
       agentCli,
+      effectiveModel,
       roleId,
       reviewerRoleId
     )
   }
+
+  const currentAgent = agents?.find((a) => a.id === agentCli) ?? null
+  const agentModels = currentAgent?.models ?? []
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
   const selectedReviewerRole =
@@ -353,6 +370,28 @@ export function NewTaskDialog({
                   </select>
                 )}
               </div>
+
+              {/* Model — options depend on the selected agent; defaults to its
+                  lightweight model so task flow runs on the cheapest option. */}
+              {agentModels.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <Cpu className="size-3.5" />
+                    Model
+                  </span>
+                  <select
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    {agentModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Role assignment — optional; blank uses the default behavior. */}
               <div className="space-y-1.5">

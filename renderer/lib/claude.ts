@@ -284,14 +284,15 @@ export function buildReviewerSystemPrompt(
  *     other session (e.g. the reviewer) that ran in the same worktree cwd.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'worktreePath'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions
 ): string {
   const sys = resolveSystemPrompt(systemPrompt, role)
   const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
-  return assembleCommand('claude', sys, prompt, opts, task.worktreePath, executorSessionId(task.id))
+  const model = task.model || DEFAULT_MODELS.claude
+  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, executorSessionId(task.id))
 }
 
 /**
@@ -311,6 +312,7 @@ function assembleCommand(
   agent: AgentCliId,
   systemPrompt: string,
   prompt: string,
+  model: string,
   opts?: LaunchOptions,
   worktreePath?: string,
   sessionId?: string
@@ -327,18 +329,18 @@ function assembleCommand(
     } else {
       sessionFlag = opts?.resume ? ' --continue' : ''
     }
-    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
+    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
   const combined = `${systemPrompt}\n\n${prompt}`
   if (agent === 'codex') {
     // --full-auto: workspace-write sandbox with automatic command approval.
-    return `codex --full-auto ${shellQuote(combined)}\r`
+    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
   }
   // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
   // interactive (mirrors how the claude launch keeps the session open).
-  return `gemini --yolo -i ${shellQuote(combined)}\r`
+  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
 
 /**
@@ -355,16 +357,17 @@ function assembleCommand(
  * the prompt body so the orchestrator can read the review field.
  */
 export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'worktreePath'>,
+  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'worktreePath'>,
   reviewerRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const agent = taskAgent(task)
+  const model = taskModel(task)
   const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
   const prompt = buildReviewPrompt(task)
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
-    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}`
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}`
     const sysArg = reviewSysPrompt
       ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
       : ''
@@ -373,9 +376,9 @@ export function buildReviewCommand(
   // Codex / Gemini: fold system prompt into the body (they have no separate flag).
   const combined = `${reviewSysPrompt}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --full-auto ${shellQuote(combined)}\r`
+    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
   }
-  return `gemini --yolo -i ${shellQuote(combined)}\r`
+  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
 
 /**
@@ -389,11 +392,12 @@ export function buildReviewCommand(
  * orchestrator) so only the executor PTY is live during the revise stage.
  */
 export function buildReviseCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'model' | 'worktreePath'>,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = []
 ): string {
   const agent = taskAgent(task)
+  const model = taskModel(task)
   const sys = resolveSystemPrompt(null, executorRole)
   const prompt = buildRevisePrompt(task, comments, executorRole)
 
@@ -403,15 +407,15 @@ export function buildReviseCommand(
     const settings = task.worktreePath
       ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
       : ''
-    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}`
+    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}`
     return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
   const combined = `${sys}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --full-auto ${shellQuote(combined)}\r`
+    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
   }
-  return `gemini --yolo -i ${shellQuote(combined)}\r`
+  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
@@ -421,9 +425,25 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
   gemini: 'Gemini CLI',
 }
 
+/**
+ * Lightweight default model per agent, mirrored from main/helpers/agents.ts
+ * (the renderer cannot runtime-import main-process values). Used as a fallback
+ * for tasks created before the model field existed.
+ */
+const DEFAULT_MODELS: Record<AgentCliId, string> = {
+  claude: 'haiku',
+  codex: 'gpt-5-codex',
+  gemini: 'gemini-2.5-flash',
+}
+
 /** Resolve a task's agent (tasks created before the field existed = claude). */
 export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
   return task.agentCli ?? 'claude'
+}
+
+/** Resolve the model passed to the agent CLI (task.model, else agent default). */
+export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
+  return task.model || DEFAULT_MODELS[taskAgent(task)]
 }
 
 /**
@@ -442,7 +462,7 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
 export function buildAgentCommand(
   task: Pick<
     Task,
-    'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'worktreePath'
+    'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'model' | 'worktreePath'
   >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
@@ -455,5 +475,5 @@ export function buildAgentCommand(
   const prompt =
     opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
   const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
-  return assembleCommand(agent, sys, prompt, opts, task.worktreePath, sessionId)
+  return assembleCommand(agent, sys, prompt, taskModel(task), opts, task.worktreePath, sessionId)
 }
