@@ -28,6 +28,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { TaskTerminal } from '@/components/task-terminal'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
+import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   AGENT_NAMES,
@@ -235,6 +236,8 @@ interface TaskCardProps {
    * app reload cleared the in-memory reviewerLaunch state.
    */
   onReviewerRun?: (task: Task) => void
+  /** Open the reviewer terminal side panel for this task. */
+  onOpenReviewPanel?: (taskId: string) => void
 }
 
 // Module-level component (not defined inside KanbanBoard) so its identity is
@@ -260,6 +263,7 @@ function TaskCard({
   onEdit,
   onDelete,
   onReviewerRun,
+  onOpenReviewPanel,
 }: TaskCardProps) {
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const agentName = AGENT_NAMES[taskAgent(task)]
@@ -379,6 +383,16 @@ function TaskCard({
               className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <GitCompare className="size-3.5" />
+            </button>
+          )}
+          {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
+            <button
+              type="button"
+              onClick={() => onOpenReviewPanel?.(task.id)}
+              title="查看 Reviewer 終端"
+              className="rounded p-1 text-amber-500 hover:bg-accent hover:text-amber-400"
+            >
+              <Eye className="size-3.5" />
             </button>
           )}
           <button
@@ -519,27 +533,6 @@ function TaskCard({
             onLaunchRequest={() => onRun(task)}
             readOnly={column === 'done'}
           />
-          {/* Reviewer terminal — rendered only while the pipeline is in the
-              reviewing stage. Uses a composite session key so it runs in an
-              independent PTY that can coexist with the executor session. */}
-          {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
-            <div className="mt-1">
-              <div className="mb-0.5 flex items-center gap-1 text-[10px] text-amber-500">
-                <Eye className="size-3 shrink-0" />
-                <span>Reviewer — {reviewerRole?.name ?? '審查中'}</span>
-              </div>
-              <TaskTerminal
-                taskId={task.id}
-                sessionKey={reviewSessionKey(task.id)}
-                cwd={cwd}
-                launchCommand={reviewerLaunch?.command}
-                launchNonce={reviewerLaunch?.nonce ?? 0}
-                launchLabel="啟動 Reviewer"
-                onLaunchRequest={onReviewerRun ? () => onReviewerRun(task) : undefined}
-                readOnly={false}
-              />
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -578,6 +571,15 @@ export function KanbanBoard({
   const [launch, setLaunch] = useState<Record<string, LaunchEntry>>({})
   // Per-task armed reviewer launch command (reviewer pane, `${taskId}:review` session).
   const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
+  // Reviewer side panel state (pure UI, not persisted).
+  // `reviewPanelTaskId` — the task whose reviewer is currently shown (visible).
+  // `activeReviewerIds` — every task whose reviewer PTY must stay alive. Mirrors
+  // the executor `mounted` set: closing/switching the panel only changes which
+  // one is visible; a reviewer terminal stays mounted (PTY alive) until
+  // killReviewerSession removes it from this set. A single value would silently
+  // kill an earlier reviewer when a second task enters the reviewing stage.
+  const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
+  const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
 
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
@@ -656,7 +658,9 @@ export function KanbanBoard({
 
   /**
    * Kill the reviewer's independent PTY session (does not affect the executor).
-   * Called when transitioning out of the reviewing stage.
+   * Called when transitioning out of the reviewing stage (approve / blocked /
+   * revise). Also clears the reviewer panel states so the ReviewTerminalPanel
+   * truly unmounts — the TaskTerminal cleanup then kills the PTY cleanly.
    */
   const killReviewerSession = (taskId: string) => {
     termKill(reviewSessionKey(taskId))
@@ -666,17 +670,26 @@ export function KanbanBoard({
       delete next[taskId]
       return next
     })
+    // Drop this task from the keep-alive set so its ReviewTerminalPanel entry
+    // unmounts and the PTY is torn down cleanly; hide the panel if it was shown.
+    setActiveReviewerIds((prev) => {
+      if (!prev.has(taskId)) return prev
+      const next = new Set(prev)
+      next.delete(taskId)
+      return next
+    })
+    setReviewPanelTaskId((prev) => (prev === taskId ? null : prev))
   }
 
   /**
    * Arm (or re-arm) the reviewer's independent PTY slot (`${taskId}:review`).
-   * Expand + mount the card so the reviewer pane is visible, then bump the
-   * nonce to fire the launch command. Extracted so both `advanceToReview` (auto
-   * orchestrator) and the manual "啟動 Reviewer" button (post-reload recovery)
-   * share the same arming logic.
+   * Adds the task to `activeReviewerIds` so its ReviewTerminalPanel entry mounts
+   * and keeps the PTY alive. Does NOT set `reviewPanelTaskId` — the panel stays
+   * hidden until the user explicitly opens it via the Eye button (decision 3: no
+   * auto pop-up). Extracted so both `advanceToReview` (auto orchestrator) and the
+   * manual "啟動 Reviewer" button (post-reload recovery) share the same logic.
    */
   const armReviewer = (task: Task) => {
-    setExpanded((prev) => new Set(prev).add(task.id))
     markMounted(task.id)
     setReviewerLaunch((prev) => ({
       ...prev,
@@ -685,6 +698,23 @@ export function KanbanBoard({
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
+    // Keep this reviewer mounted (PTY alive) without opening the panel.
+    setActiveReviewerIds((prev) =>
+      prev.has(task.id) ? prev : new Set(prev).add(task.id)
+    )
+  }
+
+  /**
+   * Open (show) the reviewer side panel for a task. Also ensures the task is in
+   * `activeReviewerIds` so the panel mounts even when no session is running yet
+   * (e.g. after an app reload cleared the in-memory launch state) — the panel
+   * then shows its "啟動 Reviewer" button so the user can re-arm from there.
+   */
+  const openReviewPanel = (taskId: string) => {
+    setActiveReviewerIds((prev) =>
+      prev.has(taskId) ? prev : new Set(prev).add(taskId)
+    )
+    setReviewPanelTaskId(taskId)
   }
 
   /**
@@ -977,6 +1007,7 @@ export function KanbanBoard({
                     onEdit={onEditTask}
                     onDelete={onDeleteTask}
                     onReviewerRun={armReviewer}
+                    onOpenReviewPanel={openReviewPanel}
                   />
                 ))}
               </div>
@@ -997,6 +1028,40 @@ export function KanbanBoard({
         runs={(subAgentTaskId && subAgents[subAgentTaskId]) || []}
         onClose={() => setSubAgentTaskId(null)}
       />
+
+      {/* Reviewer terminal side panel. Every task in `activeReviewerIds` keeps a
+          mounted TaskTerminal (PTY alive); `reviewPanelTaskId` only selects which
+          one is visible. Closing the panel (reviewPanelTaskId → null) hides it via
+          CSS without unmounting any terminal. A reviewer entry unmounts (and its
+          PTY dies) only when killReviewerSession removes it from activeReviewerIds. */}
+      {(() => {
+        const allTasks = Object.values(board).flat()
+        const entries = Array.from(activeReviewerIds).flatMap((id) => {
+          const task = allTasks.find((t) => t.id === id)
+          if (!task) return []
+          return [
+            {
+              task,
+              sessionKey: reviewSessionKey(id),
+              cwd: task.worktreePath ?? task.projectPath ?? null,
+              launchCommand: reviewerLaunch[id]?.command,
+              launchNonce: reviewerLaunch[id]?.nonce,
+              reviewerRoleName: roleById(task.reviewerRoleId)?.name ?? undefined,
+            },
+          ]
+        })
+        return (
+          <ReviewTerminalPanel
+            entries={entries}
+            visibleTaskId={reviewPanelTaskId}
+            onClose={() => setReviewPanelTaskId(null)}
+            onLaunchRequest={(taskId) => {
+              const task = allTasks.find((t) => t.id === taskId)
+              if (task) armReviewer(task)
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }
