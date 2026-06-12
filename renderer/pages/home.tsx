@@ -190,6 +190,7 @@ export default function HomePage() {
     baseBranch: string | null,
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
+    model: string,
     roleId: string,
     reviewerRoleId: string
   ) => {
@@ -203,6 +204,7 @@ export default function HomePage() {
         baseBranch,
         mode,
         agentCli,
+        model: model || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
       })

@@ -93,6 +93,7 @@ export async function createTask(payload: {
   baseBranch: string | null
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
+  model?: string
   roleId?: string
   reviewerRoleId?: string
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
