@@ -4,6 +4,7 @@ import {
   Cpu,
   FolderOpen,
   GitBranch,
+  Layers,
   Loader2,
   ShieldCheck,
   UserRound,
@@ -375,32 +376,6 @@ export function NewTaskDialog({
               </p>
             )}
 
-            {/* Workspace — shown regardless of repo state to allow pre-selection. */}
-            {workspaces.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <FolderOpen className="size-3.5" />
-                  Workspace（選填）
-                </span>
-                <select
-                  value={workspaceId}
-                  onChange={(e) => setWorkspaceId(e.target.value)}
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  <option value="">不使用 Workspace</option>
-                  {workspaces.map((ws) => (
-                    <option key={ws.id} value={ws.id}>
-                      {ws.name}
-                    </option>
-                  ))}
-                </select>
-                {workspaceId && (
-                  <p className="text-xs text-muted-foreground">
-                    Agent 將在開始前讀取 context.html，並在完成後更新它。
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -548,6 +523,39 @@ export function NewTaskDialog({
                   執行角色完成後，{selectedReviewerRole.name}{' '}
                   會自動審查改動並來回修正，直到通過為止（須開啟 Auto Mode）。
                 </p>
+              )}
+            </div>
+
+            {/* Workspace */}
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                <Layers className="size-3.5" />
+                Workspace（選填）
+              </span>
+              {workspaces.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  尚無 Workspace — 可在側邊欄新增後再指派。
+                </p>
+              ) : (
+                <>
+                  <select
+                    value={workspaceId}
+                    onChange={(e) => setWorkspaceId(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="">不使用 Workspace</option>
+                    {workspaces.map((ws) => (
+                      <option key={ws.id} value={ws.id}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                  {workspaceId && (
+                    <p className="text-xs text-muted-foreground">
+                      Agent 將在開始前讀取 context.html，並在完成後更新它。
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
