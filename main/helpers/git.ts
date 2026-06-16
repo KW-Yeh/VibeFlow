@@ -303,8 +303,14 @@ export async function provisionWorktree(
   const base = baseBranch || info.defaultBase || info.currentBranch || 'HEAD'
 
   // Prefer origin/<base> as the start point when it exists on the remote.
+  // Fetch first so the worktree starts from the truly latest remote commit.
   let startPoint = base
   if (info.hasRemote) {
+    try {
+      await git(projectPath, ['fetch', 'origin', base])
+    } catch {
+      // fetch failure (e.g. offline) is non-fatal — fall back to local cache
+    }
     try {
       await git(projectPath, ['rev-parse', '--verify', `origin/${base}`])
       startPoint = `origin/${base}`
@@ -412,6 +418,48 @@ export async function syncBaseBranch(
   return { baseBranch, switched, pulled }
 }
 
+export interface RefreshResult {
+  fetched: boolean
+  rebased: boolean
+  /** True when rebase produced conflicts and was aborted — requires manual resolution. */
+  conflicts: boolean
+}
+
+/**
+ * Fetch the latest remote base branch and rebase the worktree's feature branch
+ * on top of it. Call this to synchronise a long-running task with upstream changes.
+ * On conflict the rebase is aborted and `conflicts` is set so the caller can surface
+ * an actionable error to the user.
+ */
+export async function refreshWorktreeBase(
+  worktreePath: string,
+  baseBranch: string
+): Promise<RefreshResult> {
+  let fetched = false
+  try {
+    await git(worktreePath, ['fetch', 'origin', baseBranch])
+    fetched = true
+  } catch {
+    fetched = false
+  }
+
+  let rebased = false
+  let conflicts = false
+  try {
+    await git(worktreePath, ['rebase', `origin/${baseBranch}`])
+    rebased = true
+  } catch {
+    conflicts = true
+    try {
+      await git(worktreePath, ['rebase', '--abort'])
+    } catch {
+      // ignore — rebase may not have started
+    }
+  }
+
+  return { fetched, rebased, conflicts }
+}
+
 // --- Review & finalize (Phase 4) ---
 
 export interface DiffFile {
@@ -461,6 +509,12 @@ export async function getWorktreeDiff(
   worktreePath: string,
   baseBranch: string
 ): Promise<DiffFile[]> {
+  // Refresh origin/<baseBranch> so the diff is always against the latest remote.
+  try {
+    await git(worktreePath, ['fetch', 'origin', baseBranch])
+  } catch {
+    // fetch failure (e.g. offline) is non-fatal — use local cache
+  }
   const baseRef = await resolveBaseRef(worktreePath, baseBranch)
 
   // Tracked changes (committed + working tree) vs base.

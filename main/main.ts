@@ -31,6 +31,7 @@ import {
   getWorktreeDiff,
   initRepository,
   provisionWorktree,
+  refreshWorktreeBase,
   removeWorktree,
   syncBaseBranch,
 } from './helpers/git'
@@ -358,6 +359,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   // --- Review & finalize (Phase 4) ---
+
+  // Fetch the latest remote base branch and rebase the task's feature branch on
+  // top of it — keeps long-running tasks in sync without leaving the app.
+  ipcMain.handle('git:refreshBase', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) throw new Error('找不到此任務的 worktree')
+    return refreshWorktreeBase(task.worktreePath, task.baseBranch ?? 'main')
+  })
 
   ipcMain.handle('git:getDiff', async (_event, taskId: string) => {
     const task = findTask(taskId)

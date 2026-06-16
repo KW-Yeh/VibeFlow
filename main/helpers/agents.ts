@@ -35,8 +35,8 @@ export const AGENT_CLIS: AgentCli[] = [
     bin: 'claude',
     name: 'Claude Code',
     models: [
-      { id: 'haiku', label: 'Haiku（輕量・預設）' },
-      { id: 'sonnet', label: 'Sonnet（平衡）' },
+      { id: 'sonnet', label: 'Sonnet（平衡・預設）' },
+      { id: 'haiku', label: 'Haiku（輕量）' },
       { id: 'opus', label: 'Opus（最強）' },
     ],
   },
