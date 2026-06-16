@@ -7,11 +7,14 @@ import { EditTaskDialog } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
+import { SideMenu } from '@/components/side-menu'
+import { WorkspaceDialog } from '@/components/workspace-dialog'
 import {
   approve,
   cleanupTask,
   createRole,
   createTask,
+  createWorkspace,
   deleteTask,
   detectAgents,
   getDiff,
@@ -24,10 +27,13 @@ import {
   persistBoard,
   pickFolder,
   relaunchApp,
+  refreshWorkspaces,
   removeRole,
+  removeWorkspace,
   setSettings,
   updateRole,
   updateTask,
+  updateWorkspace,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import type {
@@ -37,6 +43,7 @@ import type {
   Role,
   SubAgentRun,
   Task,
+  Workspace,
 } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
@@ -103,6 +110,16 @@ export default function HomePage() {
   const [updateReady, setUpdateReady] = useState(false)
   const [relaunching, setRelaunching] = useState(false)
 
+  // Workspaces + side menu state
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [sideMenuCollapsed, setSideMenuCollapsed] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [refreshingWorkspaces, setRefreshingWorkspaces] = useState(false)
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
+  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
+  const [savingWorkspace, setSavingWorkspace] = useState(false)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+
   useEffect(() => {
     let active = true
     loadState().then((state) => {
@@ -112,6 +129,7 @@ export default function HomePage() {
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setRoles(state.roles ?? [])
+        setWorkspaces(state.workspaces ?? [])
       }
       setLoaded(true)
     })
@@ -192,7 +210,8 @@ export default function HomePage() {
     agentCli: AgentCliId,
     model: string,
     roleId: string,
-    reviewerRoleId: string
+    reviewerRoleId: string,
+    workspaceId: string
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -207,6 +226,7 @@ export default function HomePage() {
         model: model || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
+        workspaceId: workspaceId || undefined,
       })
       if (result) {
         setBoard(result.state.board)
@@ -362,6 +382,62 @@ export default function HomePage() {
     }
   }
 
+  const handleAddWorkspace = () => {
+    setEditingWorkspace(null)
+    setWorkspaceError(null)
+    setWorkspaceDialogOpen(true)
+  }
+
+  const handleEditWorkspace = (ws: Workspace) => {
+    setEditingWorkspace(ws)
+    setWorkspaceError(null)
+    setWorkspaceDialogOpen(true)
+  }
+
+  const handleRefreshWorkspaces = async () => {
+    setRefreshingWorkspaces(true)
+    try {
+      const state = await refreshWorkspaces()
+      if (state) setWorkspaces(state.workspaces ?? [])
+    } finally {
+      setRefreshingWorkspaces(false)
+    }
+  }
+
+  const handleSaveWorkspace = async (name: string, path: string) => {
+    setSavingWorkspace(true)
+    setWorkspaceError(null)
+    try {
+      if (editingWorkspace) {
+        const state = await updateWorkspace(editingWorkspace.id, { name, path })
+        if (state) setWorkspaces(state.workspaces ?? [])
+      } else {
+        const res = await createWorkspace({ name, path })
+        if (res) setWorkspaces(res.state.workspaces ?? [])
+      }
+      setWorkspaceDialogOpen(false)
+    } catch (err) {
+      setWorkspaceError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingWorkspace(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async () => {
+    if (!editingWorkspace) return
+    setSavingWorkspace(true)
+    setWorkspaceError(null)
+    try {
+      const state = await removeWorkspace(editingWorkspace.id)
+      if (state) setWorkspaces(state.workspaces ?? [])
+      setWorkspaceDialogOpen(false)
+    } catch (err) {
+      setWorkspaceError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSavingWorkspace(false)
+    }
+  }
+
   return (
     <React.Fragment>
       <Head>
@@ -370,25 +446,45 @@ export default function HomePage() {
       <div className="dark">
         {loaded ? (
           <>
-            <KanbanBoard
-              board={board}
-              onBoardChange={handleBoardChange}
-              onNewTask={handleOpenNewTask}
-              onReview={handleReview}
-              onEditTask={handleOpenEditTask}
-              onTaskDone={handleTaskDone}
-              onDeleteTask={handleDeleteTask}
-              autoMode={autoMode}
-              onToggleAutoMode={handleToggleAutoMode}
-              systemPrompt={systemPrompt}
-              onOpenSettings={() => {
-                setSettingsError(null)
-                setSettingsOpen(true)
-              }}
-              roles={roles}
-              onManageRoles={handleOpenRoles}
-              subAgents={subAgents}
-            />
+            <div className="flex h-screen overflow-hidden">
+              <SideMenu
+                collapsed={sideMenuCollapsed}
+                onToggleCollapse={() => setSideMenuCollapsed((v) => !v)}
+                board={board}
+                workspaces={workspaces}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={setSelectedTaskId}
+                onNewTask={handleOpenNewTask}
+                onAddWorkspace={handleAddWorkspace}
+                onEditWorkspace={handleEditWorkspace}
+                onRefreshWorkspaces={handleRefreshWorkspaces}
+                refreshing={refreshingWorkspaces}
+              />
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <KanbanBoard
+                  board={board}
+                  onBoardChange={handleBoardChange}
+                  onNewTask={handleOpenNewTask}
+                  onReview={handleReview}
+                  onEditTask={handleOpenEditTask}
+                  onTaskDone={handleTaskDone}
+                  onDeleteTask={handleDeleteTask}
+                  autoMode={autoMode}
+                  onToggleAutoMode={handleToggleAutoMode}
+                  systemPrompt={systemPrompt}
+                  onOpenSettings={() => {
+                    setSettingsError(null)
+                    setSettingsOpen(true)
+                  }}
+                  roles={roles}
+                  onManageRoles={handleOpenRoles}
+                  subAgents={subAgents}
+                  selectedTaskId={selectedTaskId}
+                  onSelectTask={setSelectedTaskId}
+                  workspaces={workspaces}
+                />
+              </div>
+            </div>
             <NewTaskDialog
               open={dialogOpen}
               creating={creating}
@@ -399,6 +495,7 @@ export default function HomePage() {
               detectAgents={detectAgents}
               roles={roles}
               onManageRoles={handleOpenRoles}
+              workspaces={workspaces}
               onSubmit={handleCreateTask}
               onClose={() => setDialogOpen(false)}
             />
@@ -438,6 +535,16 @@ export default function HomePage() {
               error={reviewError}
               onApprove={handleApprove}
               onClose={() => setReviewTaskId(null)}
+            />
+            <WorkspaceDialog
+              open={workspaceDialogOpen}
+              workspace={editingWorkspace}
+              pickFolder={pickFolder}
+              saving={savingWorkspace}
+              error={workspaceError}
+              onSubmit={handleSaveWorkspace}
+              onDelete={editingWorkspace ? handleDeleteWorkspace : undefined}
+              onClose={() => setWorkspaceDialogOpen(false)}
             />
             {updateReady && (
               <div

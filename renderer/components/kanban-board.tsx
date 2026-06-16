@@ -47,6 +47,7 @@ import type {
   Role,
   SubAgentRun,
   Task,
+  Workspace,
 } from '@/lib/types'
 
 // Views in the segmented control. In Progress comes first because it is the
@@ -84,6 +85,12 @@ interface KanbanBoardProps {
   onManageRoles: () => void
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
+  /** Currently selected task id (shown in pipeline view). */
+  selectedTaskId?: string | null
+  /** Callback when user selects a task from within the board. */
+  onSelectTask?: (id: string | null) => void
+  /** Available workspaces for context injection. */
+  workspaces?: Workspace[]
 }
 
 interface LaunchEntry {
@@ -554,6 +561,8 @@ export function KanbanBoard({
   roles,
   onManageRoles,
   subAgents,
+  selectedTaskId,
+  workspaces,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
@@ -620,12 +629,15 @@ export function KanbanBoard({
     }))
   }
 
+  const resolveWorkspacePath = (workspaceId?: string): string | undefined =>
+    workspaceId ? workspaces?.find((w) => w.id === workspaceId)?.path : undefined
+
   // Arm the executor launch for a card (the default, non-pipeline launch path).
   // `resume` continues the prior session rather than starting a fresh one.
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
     armCommand(
       task.id,
-      buildAgentCommand(task, systemPrompt, roleById(task.roleId), opts)
+      buildAgentCommand(task, systemPrompt, roleById(task.roleId), opts, resolveWorkspacePath(task.workspaceId))
     )
   }
 
@@ -694,7 +706,7 @@ export function KanbanBoard({
     setReviewerLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildReviewCommand(task, roleById(task.reviewerRoleId)),
+        command: buildReviewCommand(task, roleById(task.reviewerRoleId), resolveWorkspacePath(task.workspaceId)),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -741,7 +753,7 @@ export function KanbanBoard({
     // Arm the executor fresh launch (--continue) for the revise stage.
     armCommand(
       task.id,
-      buildReviseCommand(task, roleById(task.roleId), review.comments)
+      buildReviseCommand(task, roleById(task.roleId), review.comments, resolveWorkspacePath(task.workspaceId))
     )
   }
 

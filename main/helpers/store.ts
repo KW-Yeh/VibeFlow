@@ -34,6 +34,14 @@ export interface PipelineRun {
   lastReview?: ReviewVerdict
 }
 
+export interface Workspace {
+  id: string
+  name: string
+  path: string
+  available?: boolean
+  lastScannedAt?: number
+}
+
 /**
  * A reusable persona that can be assigned to tasks. When a task carries a
  * roleId, the role's positioning / responsibilities / boundaries are folded
@@ -82,6 +90,7 @@ export interface Task {
    * pass in the same worktree, looping until approval or the round cap.
    */
   reviewerRoleId?: string
+  workspaceId?: string
   /**
    * Runtime state of the executor↔reviewer review loop. Present only for
    * pipeline tasks (those carrying a reviewerRoleId at creation).
@@ -127,6 +136,7 @@ export interface VibeFlowState {
   settings: AppSettings
   /** Reusable roles that can be assigned to tasks. */
   roles: Role[]
+  workspaces: Workspace[]
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -142,8 +152,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 /**
  * Current persisted-state schema version. Bumped when a migration must run on
  * existing stores (see `migrateStore`). v2 introduced the seeded default roles.
+ * v3 introduced workspaces.
  */
-const STATE_VERSION = 2
+const STATE_VERSION = 3
 
 /**
  * Built-in starter roles seeded for first-time users so the board ships with a
@@ -182,6 +193,7 @@ const defaults: VibeFlowState = {
   board: DEFAULT_BOARD,
   settings: DEFAULT_SETTINGS,
   roles: DEFAULT_ROLES,
+  workspaces: [],
 }
 
 let _store: Store<VibeFlowState> | null = null
@@ -216,6 +228,9 @@ function migrateStore(store: Store<VibeFlowState>): void {
     }
     store.set('version', STATE_VERSION)
   }
+  if (persistedVersion < 3) {
+    store.set('version', STATE_VERSION)
+  }
 }
 
 export function getState(): VibeFlowState {
@@ -229,6 +244,7 @@ export function getState(): VibeFlowState {
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
     // `roles` may be absent in state persisted before the role feature existed.
     roles: store.get('roles') ?? [],
+    workspaces: store.get('workspaces') ?? [],
   }
 }
 
@@ -355,4 +371,41 @@ export function removeRole(roleId: string): Role[] {
   const roles = getRoles().filter((r) => r.id !== roleId)
   getStore().set('roles', roles)
   return roles
+}
+
+// --- Workspaces ---
+
+export function getWorkspaces(): Workspace[] {
+  return getStore().get('workspaces') ?? []
+}
+
+/** Append a workspace and persist; returns the full workspaces list. */
+export function addWorkspace(ws: Workspace): Workspace[] {
+  const existing = getWorkspaces()
+  const pathClash = existing.some((w) => w.path === ws.path)
+  if (pathClash) throw new Error(`已存在路徑為「${ws.path}」的 Workspace`)
+  const workspaces = [...existing, ws]
+  getStore().set('workspaces', workspaces)
+  return workspaces
+}
+
+/** Shallow-merge a patch into a workspace (by id) and persist; returns the list. */
+export function updateWorkspace(id: string, patch: Partial<Workspace>): Workspace[] {
+  const existing = getWorkspaces()
+  if (patch.path !== undefined) {
+    const pathClash = existing.some((w) => w.id !== id && w.path === patch.path)
+    if (pathClash) throw new Error(`已存在路徑為「${patch.path}」的 Workspace`)
+  }
+  const workspaces = existing.map((w) =>
+    w.id === id ? { ...w, ...patch, id: w.id } : w
+  )
+  getStore().set('workspaces', workspaces)
+  return workspaces
+}
+
+/** Remove a workspace by id and persist; returns the remaining workspaces. */
+export function removeWorkspace(id: string): Workspace[] {
+  const workspaces = getWorkspaces().filter((w) => w.id !== id)
+  getStore().set('workspaces', workspaces)
+  return workspaces
 }
