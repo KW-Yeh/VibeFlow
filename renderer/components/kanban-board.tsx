@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bot,
@@ -14,6 +14,7 @@ import {
   GitCompare,
   Hammer,
   ListChecks,
+  Loader2,
   Pencil,
   Play,
   Plus,
@@ -50,16 +51,104 @@ import type {
   Workspace,
 } from '@/lib/types'
 
-const VIEWS: { id: ColumnId; title: string }[] = [
-  { id: 'in_progress', title: 'In Progress' },
-  { id: 'backlog', title: 'Backlog' },
-  { id: 'done', title: 'Done' },
-]
+// Visual treatment for each column shown as a status badge on the card.
+const COLUMN_STATUS_BADGE: Record<
+  ColumnId,
+  { label: string; icon: React.ComponentType<{ className?: string }>; tone: string }
+> = {
+  in_progress: {
+    label: '進行中',
+    icon: Play,
+    tone: 'bg-amber-500/15 text-amber-500',
+  },
+  backlog: {
+    label: '待辦',
+    icon: Circle,
+    tone: 'bg-secondary text-secondary-foreground',
+  },
+  done: {
+    label: '已完成',
+    icon: CheckCheck,
+    tone: 'bg-primary/15 text-primary',
+  },
+}
 
-const EMPTY_HINTS: Record<ColumnId, string> = {
-  in_progress: '沒有進行中的任務 — 到 Backlog 按 ▶ 開始執行',
-  backlog: '佇列是空的 — 點「新增任務」建立卡片',
-  done: '還沒有完成的任務',
+/** Status badge replacing the old section header — shows which column a card is in. */
+function ColumnStatusBadge({ column }: { column: ColumnId }) {
+  const meta = COLUMN_STATUS_BADGE[column]
+  const Icon = meta.icon
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+        meta.tone
+      )}
+    >
+      <Icon className="size-2.5 shrink-0" />
+      <span>{meta.label}</span>
+    </span>
+  )
+}
+
+/**
+ * Horizontal pipeline strip derived from sub-agent runs. Each run is one pill
+ * showing its description (or subagentType fallback) and its status.
+ * The scrollable area is a plain div to avoid triggering onClick on horizontal
+ * scroll; a dedicated icon button at the end opens the SubAgentDrawer.
+ */
+function TaskPipelineStrip({
+  runs,
+  onOpen,
+}: {
+  runs: SubAgentRun[]
+  onOpen: () => void
+}) {
+  if (runs.length === 0) return null
+  return (
+    <div className="mb-2 flex items-center gap-1">
+      <div
+        role="list"
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+      >
+        {runs.map((run, i) => (
+          <Fragment key={run.id}>
+            {i > 0 && (
+              <ChevronRight className="size-2.5 shrink-0 text-border" />
+            )}
+            <span
+              role="listitem"
+              className={cn(
+                'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                run.status === 'running' && 'bg-amber-500/15 text-amber-500',
+                run.status === 'completed' && 'bg-primary/10 text-primary',
+                run.status === 'error' && 'bg-destructive/15 text-destructive'
+              )}
+              title={run.prompt}
+            >
+              {run.status === 'running' ? (
+                <Loader2 className="size-2.5 shrink-0 animate-spin" />
+              ) : run.status === 'completed' ? (
+                <CheckCircle2 className="size-2.5 shrink-0" />
+              ) : (
+                <AlertTriangle className="size-2.5 shrink-0" />
+              )}
+              <span className="max-w-[8rem] truncate">
+                {run.description || run.subagentType || `步驟 ${i + 1}`}
+              </span>
+            </span>
+          </Fragment>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        title="查看子代理執行流程"
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <ChevronRight className="size-3" />
+      </button>
+    </div>
+  )
 }
 
 interface KanbanBoardProps {
@@ -170,40 +259,6 @@ function PipelineBadge({
   )
 }
 
-/**
- * Clickable chip showing how many sub-agents this card's agent has spawned via
- * the Task tool, with a live count of those still running. Opens the read-only
- * sub-agent drawer. Distinct from PipelineBadge (the in-session reviewer loop).
- */
-function SubAgentBadge({
-  runs,
-  onOpen,
-}: {
-  runs: SubAgentRun[]
-  onOpen: () => void
-}) {
-  if (runs.length === 0) return null
-  const running = runs.filter((r) => r.status === 'running').length
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title="查看子代理收到的 prompt 與執行狀況"
-      className={cn(
-        'mb-1.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
-        running > 0
-          ? 'bg-amber-500/15 text-amber-500'
-          : 'bg-secondary text-secondary-foreground hover:bg-accent'
-      )}
-    >
-      <Bot className="size-2.5 shrink-0" />
-      <span className="truncate">
-        子代理 {runs.length}
-        {running > 0 ? ` · ${running} 執行中` : ''}
-      </span>
-    </button>
-  )
-}
 
 interface TaskCardProps {
   task: Task
@@ -290,13 +345,20 @@ function TaskCard({
     >
       <div className="flex shrink-0 items-start gap-2">
         <div className="min-w-0 flex-1">
-          {task.projectName && (
-            <span className="mb-1.5 inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-              <FolderGit2 className="size-2.5 shrink-0" />
-              <span className="truncate">{task.projectName}</span>
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ColumnStatusBadge column={column} />
+            {task.projectName && (
+              <span className="inline-flex max-w-full items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                <FolderGit2 className="size-2.5 shrink-0" />
+                <span className="truncate">{task.projectName}</span>
+              </span>
+            )}
+          </div>
           <p className="mb-2 break-words text-sm font-medium">{task.title}</p>
+          <TaskPipelineStrip
+            runs={subAgents}
+            onOpen={() => onOpenSubAgents(task.id)}
+          />
           <div className="flex flex-wrap items-center gap-1.5">
             {role && (
               <span
@@ -308,10 +370,6 @@ function TaskCard({
               </span>
             )}
             <PipelineBadge task={task} reviewerRole={reviewerRole} />
-            <SubAgentBadge
-              runs={subAgents}
-              onOpen={() => onOpenSubAgents(task.id)}
-            />
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex min-w-0 max-w-full items-center gap-1">
@@ -927,55 +985,68 @@ export function KanbanBoard({
         </div>
       </header>
 
-      <main className="space-y-8">
-        {VIEWS.map((v) => (
-          <section key={v.id} aria-label={v.title}>
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {v.title}
-              <span className="tabular-nums">{board[v.id].length}</span>
-            </h2>
-            {board[v.id].length === 0 ? (
-              <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
-                {EMPTY_HINTS[v.id]}
+      <main className="mt-2">
+        {(() => {
+          const allTasks: { task: Task; column: ColumnId }[] = [
+            ...board.in_progress.map((t) => ({
+              task: t,
+              column: 'in_progress' as const,
+            })),
+            ...board.backlog.map((t) => ({
+              task: t,
+              column: 'backlog' as const,
+            })),
+            ...board.done.map((t) => ({
+              task: t,
+              column: 'done' as const,
+            })),
+          ]
+          if (allTasks.length === 0) {
+            return (
+              <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
+                <Bot className="size-8 opacity-50" />
+                <p>尚未建立任何任務</p>
+                <Button
+                  size="sm"
+                  className="rounded-full active:scale-95"
+                  onClick={onNewTask}
+                >
+                  <Plus />
+                  新增任務
+                </Button>
               </div>
-            ) : (
-              <div
-                className={cn(
-                  'grid grid-cols-1 items-start gap-4',
-                  v.id === 'in_progress'
-                    ? 'lg:grid-cols-2 2xl:grid-cols-3'
-                    : 'md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
-                )}
-              >
-                {board[v.id].map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    column={v.id}
-                    role={roleById(task.roleId)}
-                    reviewerRole={roleById(task.reviewerRoleId)}
-                    subAgents={subAgents[task.id] ?? []}
-                    isExpanded={expanded.has(task.id)}
-                    isMounted={mounted.has(task.id)}
-                    launch={launch[task.id]}
-                    reviewerLaunch={reviewerLaunch[task.id]}
-                    onToggleExpanded={toggleExpanded}
-                    onOpenSubAgents={setSubAgentTaskId}
-                    onRun={runTask}
-                    onStart={startTask}
-                    onMoveBack={moveBackTask}
-                    onComplete={completeTask}
-                    onReview={onReview}
-                    onEdit={onEditTask}
-                    onDelete={onDeleteTask}
-                    onReviewerRun={armReviewer}
-                    onOpenReviewPanel={openReviewPanel}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        ))}
+            )
+          }
+          return (
+            <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {allTasks.map(({ task, column }) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  column={column}
+                  role={roleById(task.roleId)}
+                  reviewerRole={roleById(task.reviewerRoleId)}
+                  subAgents={subAgents[task.id] ?? []}
+                  isExpanded={expanded.has(task.id)}
+                  isMounted={mounted.has(task.id)}
+                  launch={launch[task.id]}
+                  reviewerLaunch={reviewerLaunch[task.id]}
+                  onToggleExpanded={toggleExpanded}
+                  onOpenSubAgents={setSubAgentTaskId}
+                  onRun={runTask}
+                  onStart={startTask}
+                  onMoveBack={moveBackTask}
+                  onComplete={completeTask}
+                  onReview={onReview}
+                  onEdit={onEditTask}
+                  onDelete={onDeleteTask}
+                  onReviewerRun={armReviewer}
+                  onOpenReviewPanel={openReviewPanel}
+                />
+              ))}
+            </div>
+          )
+        })()}
       </main>
 
       <SubAgentDrawer
