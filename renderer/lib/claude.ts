@@ -444,7 +444,7 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
  * for tasks created before the model field existed.
  */
 const DEFAULT_MODELS: Record<AgentCliId, string> = {
-  claude: 'haiku',
+  claude: 'sonnet',
   codex: 'gpt-5-codex',
   gemini: 'gemini-2.5-flash',
   copilot: 'gpt-5.1-codex-mini',
