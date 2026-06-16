@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
-import type { AgentCli, AgentCliId, GitInfo, Role } from '@/lib/types'
+import type { AgentCli, AgentCliId, GitInfo, Role, Workspace } from '@/lib/types'
 
 type ProjectMode = 'existing' | 'new'
 
@@ -30,6 +30,8 @@ interface NewTaskDialogProps {
   /** Roles available for assignment ('' = use the default, no role). */
   roles: Role[]
   onManageRoles: () => void
+  /** Workspaces available for context injection ('' = no workspace). */
+  workspaces?: Workspace[]
   onSubmit: (
     title: string,
     description: string,
@@ -39,7 +41,8 @@ interface NewTaskDialogProps {
     agentCli: AgentCliId,
     model: string,
     roleId: string,
-    reviewerRoleId: string
+    reviewerRoleId: string,
+    workspaceId: string
   ) => void
   onClose: () => void
 }
@@ -59,6 +62,7 @@ export function NewTaskDialog({
   detectAgents,
   roles,
   onManageRoles,
+  workspaces = [],
   onSubmit,
   onClose,
 }: NewTaskDialogProps) {
@@ -79,6 +83,8 @@ export function NewTaskDialog({
   const [roleId, setRoleId] = useState('')
   // '' = no reviewer; setting one turns the task into a review pipeline.
   const [reviewerRoleId, setReviewerRoleId] = useState('')
+  // '' = no workspace; setting one injects context.html into the agent.
+  const [workspaceId, setWorkspaceId] = useState('')
 
   // Reset project-related state whenever the dialog opens or mode is switched.
   // Title / description / agent / role are preserved across mode switches so
@@ -98,6 +104,7 @@ export function NewTaskDialog({
     setModel('')
     setRoleId('')
     setReviewerRoleId('')
+    setWorkspaceId('')
     let active = true
     void detectAgents().then((found) => {
       if (!active) return
@@ -183,7 +190,8 @@ export function NewTaskDialog({
       agentCli,
       effectiveModel,
       roleId,
-      reviewerRoleId
+      reviewerRoleId,
+      workspaceId
     )
   }
 
@@ -465,6 +473,33 @@ export function NewTaskDialog({
                   </p>
                 )}
               </div>
+
+              {/* Workspace — optional; injects context.html as background knowledge. */}
+              {workspaces.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <FolderOpen className="size-3.5" />
+                    Workspace（選填）
+                  </span>
+                  <select
+                    value={workspaceId}
+                    onChange={(e) => setWorkspaceId(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="">不使用 Workspace</option>
+                    {workspaces.map((ws) => (
+                      <option key={ws.id} value={ws.id}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                  {workspaceId && (
+                    <p className="text-xs text-muted-foreground">
+                      Agent 將在開始前讀取 context.html，並在完成後更新它。
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
 

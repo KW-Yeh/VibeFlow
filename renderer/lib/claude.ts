@@ -21,6 +21,34 @@ export const DEFAULT_SYSTEM_PROMPT = [
  */
 const PROGRESS_FILE = '.vibeflow-progress.json'
 
+/** Workspace context file name (mirrors main/helpers/workspace.ts CONTEXT_FILE). */
+const WORKSPACE_CONTEXT_FILE = 'context.html'
+
+/**
+ * Build the workspace section appended to executor prompts when a workspace is
+ * attached. The "read" note tells the agent where to find background knowledge;
+ * the "update" instruction tells it to refresh the file after completion.
+ *
+ * Placed in the prompt body (not the system prompt) so it travels with every
+ * session turn and survives --resume / --continue.
+ */
+function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boolean): string {
+  const contextPath = `${workspacePath}/${WORKSPACE_CONTEXT_FILE}`
+  const lines = [
+    '',
+    `背景知識：在開始執行前，請先閱讀 ${contextPath} 作為此任務的額外 context。`,
+  ]
+  if (includeUpdate) {
+    lines.push(
+      '',
+      '完成任務後（所有步驟 done、且非審查退回狀態），請更新 workspace 知識目錄：',
+      `- 讀取並更新 ${contextPath}，把本次任務新增或變更的重要知識、決策、檔案結構摘要寫入，保持 HTML 結構完整。`,
+      '- 這是跨任務共用的長期 context，請以「未來其他任務能快速理解專案」為目標來維護它。'
+    )
+  }
+  return lines.join('\n')
+}
+
 /**
  * Fixed protocol appended after the (editable) system prompt. It makes the
  * agent persist its plan + step states to PROGRESS_FILE, which main watches
@@ -287,12 +315,16 @@ export function buildClaudeCommand(
   task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'worktreePath'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
-  opts?: LaunchOptions
+  opts?: LaunchOptions,
+  workspacePath?: string
 ): string {
   const sys = resolveSystemPrompt(systemPrompt, role)
-  const prompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+  const basePrompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+  const prompt = workspacePath
+    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
+    : basePrompt
   const model = task.model || DEFAULT_MODELS.claude
-  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, executorSessionId(task.id))
+  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, executorSessionId(task.id), workspacePath)
 }
 
 /**
@@ -315,7 +347,8 @@ function assembleCommand(
   model: string,
   opts?: LaunchOptions,
   worktreePath?: string,
-  sessionId?: string
+  sessionId?: string,
+  workspacePath?: string
 ): string {
   if (agent === 'claude') {
     // Install the sub-agent recording hooks via inline --settings (session-only,
@@ -329,7 +362,10 @@ function assembleCommand(
     } else {
       sessionFlag = opts?.resume ? ' --continue' : ''
     }
-    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}`
+    // Grant the agent read/write access to the workspace folder so it can read
+    // context.html and write back the updated knowledge directory.
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
@@ -364,16 +400,22 @@ function assembleCommand(
  */
 export function buildReviewCommand(
   task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'worktreePath'>,
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0],
+  workspacePath?: string
 ): string {
   const agent = taskAgent(task)
   const model = taskModel(task)
   const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
-  const prompt = buildReviewPrompt(task)
+  const basePrompt = buildReviewPrompt(task)
+  // Reviewer only reads the workspace context, never updates it.
+  const prompt = workspacePath
+    ? basePrompt + buildWorkspacePromptSection(workspacePath, false)
+    : basePrompt
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
-    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}`
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${addDir}`
     const sysArg = reviewSysPrompt
       ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
       : ''
@@ -403,12 +445,16 @@ export function buildReviewCommand(
 export function buildReviseCommand(
   task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'model' | 'worktreePath'>,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
-  comments: string[] = []
+  comments: string[] = [],
+  workspacePath?: string
 ): string {
   const agent = taskAgent(task)
   const model = taskModel(task)
   const sys = resolveSystemPrompt(null, executorRole)
-  const prompt = buildRevisePrompt(task, comments, executorRole)
+  const basePrompt = buildRevisePrompt(task, comments, executorRole)
+  const prompt = workspacePath
+    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
+    : basePrompt
 
   if (agent === 'claude') {
     // Resume the executor's pinned session by its exact UUID so the reviewer
@@ -416,7 +462,8 @@ export function buildReviseCommand(
     const settings = task.worktreePath
       ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
       : ''
-    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}`
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini / Copilot: fresh launch, recorded progress folded into the prompt.
@@ -480,14 +527,18 @@ export function buildAgentCommand(
   >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
-  opts?: LaunchOptions
+  opts?: LaunchOptions,
+  workspacePath?: string
 ): string {
   const agent = taskAgent(task)
   const sys = resolveSystemPrompt(systemPrompt, role)
   // Claude can resume a prior session; Codex/Gemini fold the recorded progress
   // into the prompt (soft resume) regardless of opts.resume.
-  const prompt =
+  const basePrompt =
     opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
+  const prompt = workspacePath
+    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
+    : basePrompt
   const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
-  return assembleCommand(agent, sys, prompt, taskModel(task), opts, task.worktreePath, sessionId)
+  return assembleCommand(agent, sys, prompt, taskModel(task), opts, task.worktreePath, sessionId, workspacePath)
 }

@@ -6,21 +6,27 @@ import { createWindow } from './helpers/create-window'
 import {
   addRole,
   addTask,
+  addWorkspace,
   findTask,
   getState,
+  getWorkspaces,
   removeRole,
   removeTask,
+  removeWorkspace,
   setBoard,
   setSettings,
   updateRole,
   updateTask,
+  updateWorkspace,
   DEFAULT_MAX_REVIEW_ROUNDS,
   type AppSettings,
   type BoardState,
   type PipelineRun,
   type Role,
   type Task,
+  type Workspace,
 } from './helpers/store'
+import { scanWorkspace } from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
 import { generateBranchName } from './helpers/branch-name'
 import {
@@ -159,6 +165,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model?: string
         roleId?: string
         reviewerRoleId?: string
+        workspaceId?: string
       }
     ) => {
       if (!payload.projectPath) {
@@ -201,6 +208,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model: payload.model || undefined,
         roleId: payload.roleId || undefined,
         reviewerRoleId: payload.reviewerRoleId || undefined,
+        workspaceId: payload.workspaceId || undefined,
         pipeline,
       }
       addTask(task)
@@ -267,6 +275,43 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('roles:remove', (_event, roleId: string) => {
     removeRole(roleId)
+    return getState()
+  })
+
+  // ── Workspaces ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('workspaces:create', async (_e, input: { name: string; path: string }) => {
+    const scan = await scanWorkspace(input.path)
+    const workspace: Workspace = {
+      id: crypto.randomUUID(),
+      name: input.name,
+      path: input.path,
+      available: scan.folderExists,
+      lastScannedAt: Date.now(),
+    }
+    addWorkspace(workspace)
+    return { state: getState(), workspace, scan }
+  })
+
+  ipcMain.handle('workspaces:update', async (_e, { id, patch }: { id: string; patch: Partial<Workspace> }) => {
+    updateWorkspace(id, patch)
+    return getState()
+  })
+
+  ipcMain.handle('workspaces:remove', (_e, id: string) => {
+    removeWorkspace(id)
+    return getState()
+  })
+
+  ipcMain.handle('workspaces:refresh', async () => {
+    const workspaces = getWorkspaces()
+    for (const ws of workspaces) {
+      const scan = await scanWorkspace(ws.path)
+      updateWorkspace(ws.id, {
+        available: scan.folderExists,
+        lastScannedAt: Date.now(),
+      })
+    }
     return getState()
   })
 
