@@ -85,7 +85,7 @@ export function SideMenu({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-1 flex-col overflow-y-auto py-2">
+      <div className="flex flex-1 flex-col overflow-y-scroll py-2">
         {/* Workspaces section */}
         <div className="px-2 pb-2">
           {collapsed ? (

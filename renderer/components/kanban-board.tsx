@@ -50,10 +50,6 @@ import type {
   Workspace,
 } from '@/lib/types'
 
-// Views in the segmented control. In Progress comes first because it is the
-// page users live in; Backlog and Done are secondary, freely switchable views.
-// All three panels stay mounted — switching only toggles visibility — so the
-// terminals (PTY + scrollback) on In Progress cards survive view changes.
 const VIEWS: { id: ColumnId; title: string }[] = [
   { id: 'in_progress', title: 'In Progress' },
   { id: 'backlog', title: 'Backlog' },
@@ -568,9 +564,6 @@ export function KanbanBoard({
     (id && roles.find((r) => r.id === id)) || null
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
-  // Active view. In Progress is the home view; the other two are reachable via
-  // the segmented control. Hidden views stay mounted (CSS only).
-  const [view, setView] = useState<ColumnId>('in_progress')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // Tasks whose terminal has ever been opened. Once mounted, the `TaskTerminal`
   // stays mounted (just hidden when collapsed) so its PTY + scrollback survive
@@ -865,10 +858,9 @@ export function KanbanBoard({
     if (willLaunch) armLaunch(toInsert, { resume: wasLaunched(task) })
   }
 
-  // ▶ on a Backlog card: pull it into In Progress, switch there, and launch.
+  // ▶ on a Backlog card: pull it into In Progress and launch.
   const startTask = (task: Task) => {
     moveTask(task, 'in_progress', { forceLaunch: true })
-    setView('in_progress')
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
@@ -883,45 +875,6 @@ export function KanbanBoard({
             意圖驅動的本地開發看板 · 可同時管理多個專案
           </p>
         </div>
-
-        {/* Segmented view switcher — pill grammar per DESIGN.md: the full-pill
-            radius is the action signal, with the single blue accent. */}
-        <nav
-          role="tablist"
-          aria-label="看板分頁"
-          className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-card p-1"
-        >
-          {VIEWS.map((v) => {
-            const active = view === v.id
-            return (
-              <button
-                key={v.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setView(v.id)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors active:scale-95',
-                  active
-                    ? 'bg-primary font-semibold text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {v.title}
-                <span
-                  className={cn(
-                    'text-[11px] tabular-nums',
-                    active
-                      ? 'text-primary-foreground/75'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {board[v.id].length}
-                </span>
-              </button>
-            )
-          })}
-        </nav>
 
         <div className="flex items-center gap-3">
           <button
@@ -974,16 +927,13 @@ export function KanbanBoard({
         </div>
       </header>
 
-      {/* All panels stay mounted; only visibility toggles, so In Progress
-          terminals keep running while browsing Backlog / Done. */}
-      <main>
+      <main className="space-y-8">
         {VIEWS.map((v) => (
-          <section
-            key={v.id}
-            role="tabpanel"
-            aria-label={v.title}
-            className={cn(view !== v.id && 'hidden')}
-          >
+          <section key={v.id} aria-label={v.title}>
+            <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {v.title}
+              <span className="tabular-nums">{board[v.id].length}</span>
+            </h2>
             {board[v.id].length === 0 ? (
               <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
                 {EMPTY_HINTS[v.id]}
