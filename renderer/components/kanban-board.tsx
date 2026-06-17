@@ -333,8 +333,8 @@ export function KanbanBoard({
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      {/* Toolbar header — branding is in the side menu; this row holds action controls */}
-      <header className="flex shrink-0 items-center justify-end gap-3 border-b border-border px-6 py-3">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-3">
+        <span className="mr-auto text-sm font-semibold tracking-tight">VibeFlow</span>
         <button
           type="button"
           role="switch"
