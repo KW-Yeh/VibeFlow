@@ -211,6 +211,7 @@ export function KanbanBoard({
     const next = { ...task.pipeline!, stage: 'reviewing' as const }
     patchTask(task.id, { pipeline: next })
     armReviewer(task)
+    setReviewPanelTaskId(task.id)
   }
 
   const advanceToRevise = (task: Task, review: ReviewVerdict) => {
