@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Plus, Settings, Users } from 'lucide-react'
+import { Plus, Settings, Users } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { TaskDetailPanel } from '@/components/task-detail-panel'
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
+import { NewTaskForm } from '@/components/new-task-dialog'
 import {
   buildAgentCommand,
   buildReviewCommand,
@@ -14,8 +15,11 @@ import {
 import { termKill } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
+  AgentCli,
+  AgentCliId,
   BoardState,
   ColumnId,
+  GitInfo,
   ReviewVerdict,
   Role,
   SubAgentRun,
@@ -44,8 +48,29 @@ interface KanbanBoardProps {
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in pipeline view). */
   selectedTaskId?: string | null
+  /** Deselect the current task (shows inline new-task form). */
+  onDeselectTask: () => void
   /** Available workspaces for context injection. */
   workspaces?: Workspace[]
+  /** Props forwarded to the inline NewTaskForm when no task is selected. */
+  creating: boolean
+  createError: string | null
+  pickFolder: () => Promise<string | null>
+  loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
+  initRepository: (projectPath: string) => Promise<GitInfo | null>
+  detectAgents: () => Promise<AgentCli[]>
+  onCreateTask: (
+    title: string,
+    description: string,
+    projectPath: string,
+    baseBranch: string | null,
+    mode: 'existing' | 'new',
+    agentCli: AgentCliId,
+    model: string,
+    roleId: string,
+    reviewerRoleId: string,
+    workspaceId: string
+  ) => void
 }
 
 interface LaunchEntry {
@@ -74,7 +99,15 @@ export function KanbanBoard({
   onManageRoles,
   subAgents,
   selectedTaskId,
+  onDeselectTask,
   workspaces,
+  creating,
+  createError,
+  pickFolder,
+  loadGitInfo,
+  initRepository,
+  detectAgents,
+  onCreateTask,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
@@ -344,7 +377,7 @@ export function KanbanBoard({
         <Button
           size="sm"
           className="rounded-full active:scale-95"
-          onClick={onNewTask}
+          onClick={selectedTaskId ? onDeselectTask : onNewTask}
         >
           <Plus />
           新增任務
@@ -368,32 +401,27 @@ export function KanbanBoard({
             })),
           ]
 
-          if (allTasks.length === 0) {
-            return (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-                <Bot className="size-8 opacity-50" />
-                <p>尚未建立任何任務</p>
-                <Button
-                  size="sm"
-                  className="rounded-full active:scale-95"
-                  onClick={onNewTask}
-                >
-                  <Plus />
-                  新增任務
-                </Button>
-              </div>
-            )
-          }
-
           const selected = selectedTaskId
             ? allTasks.find(({ task }) => task.id === selectedTaskId)
             : null
 
           if (!selected) {
             return (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Bot className="size-8 opacity-30" />
-                <p>請從左側選擇一個任務來查看詳情</p>
+              <div className="flex h-full overflow-y-auto p-6">
+                <div className="mx-auto w-full max-w-md rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
+                  <NewTaskForm
+                    creating={creating}
+                    error={createError}
+                    pickFolder={pickFolder}
+                    loadGitInfo={loadGitInfo}
+                    initRepository={initRepository}
+                    detectAgents={detectAgents}
+                    roles={roles}
+                    onManageRoles={onManageRoles}
+                    workspaces={workspaces}
+                    onSubmit={onCreateTask}
+                  />
+                </div>
               </div>
             )
           }
@@ -416,6 +444,7 @@ export function KanbanBoard({
               onDelete={onDeleteTask}
               onOpenReviewPanel={openReviewPanel}
               onOpenSubAgents={setSubAgentTaskId}
+              onClose={onDeselectTask}
             />
           )
         })()}

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
-import { NewTaskDialog } from '@/components/new-task-dialog'
 import { EditTaskDialog } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
@@ -84,7 +83,6 @@ export default function HomePage() {
   const [savingRole, setSavingRole] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
 
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -178,7 +176,7 @@ export default function HomePage() {
 
   const handleOpenNewTask = () => {
     setCreateError(null)
-    setDialogOpen(true)
+    setSelectedTaskId(null)
   }
 
   const handleToggleAutoMode = () => {
@@ -230,7 +228,7 @@ export default function HomePage() {
       })
       if (result) {
         setBoard(result.state.board)
-        setDialogOpen(false)
+        setSelectedTaskId(result.task.id)
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err))
@@ -483,24 +481,18 @@ export default function HomePage() {
                   onManageRoles={handleOpenRoles}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
+                  onDeselectTask={() => setSelectedTaskId(null)}
                   workspaces={workspaces}
+                  creating={creating}
+                  createError={createError}
+                  pickFolder={pickFolder}
+                  loadGitInfo={getGitInfo}
+                  initRepository={initRepository}
+                  detectAgents={detectAgents}
+                  onCreateTask={handleCreateTask}
                 />
               </div>
             </div>
-            <NewTaskDialog
-              open={dialogOpen}
-              creating={creating}
-              error={createError}
-              pickFolder={pickFolder}
-              loadGitInfo={getGitInfo}
-              initRepository={initRepository}
-              detectAgents={detectAgents}
-              roles={roles}
-              onManageRoles={handleOpenRoles}
-              workspaces={workspaces}
-              onSubmit={handleCreateTask}
-              onClose={() => setDialogOpen(false)}
-            />
             <EditTaskDialog
               task={editTask}
               roles={roles}

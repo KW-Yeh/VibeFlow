@@ -26,7 +26,7 @@ import {
   type Task,
   type Workspace,
 } from './helpers/store'
-import { scanWorkspace } from './helpers/workspace'
+import { generateContextHtml, scanWorkspace } from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
 import { generateBranchName } from './helpers/branch-name'
 import {
@@ -281,7 +281,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Workspaces ──────────────────────────────────────────────────────────────
 
   ipcMain.handle('workspaces:create', async (_e, input: { name: string; path: string }) => {
-    const scan = await scanWorkspace(input.path)
+    let scan = await scanWorkspace(input.path)
+    if (scan.folderExists && !scan.hasContextFile) {
+      await generateContextHtml(input.path)
+      scan = { ...scan, hasContextFile: true }
+    }
     const workspace: Workspace = {
       id: crypto.randomUUID(),
       name: input.name,

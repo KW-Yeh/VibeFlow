@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeft,
   Check,
   CheckCheck,
   CheckCircle,
@@ -255,6 +256,7 @@ export interface TaskDetailPanelProps {
   onDelete: (taskId: string) => void
   onOpenReviewPanel?: (taskId: string) => void
   onOpenSubAgents: (taskId: string) => void
+  onClose: () => void
 }
 
 export function TaskDetailPanel({
@@ -274,6 +276,7 @@ export function TaskDetailPanel({
   onDelete,
   onOpenReviewPanel,
   onOpenSubAgents,
+  onClose,
 }: TaskDetailPanelProps) {
   const [showSteps, setShowSteps] = useState(false)
   const stages = deriveStages(task, column, reviewerRole)
@@ -331,6 +334,14 @@ export function TaskDetailPanel({
 
           {/* 操作按鈕 */}
           <div className="flex shrink-0 flex-wrap items-center gap-1">
+            <button
+              type="button"
+              onClick={onClose}
+              title="返回任務列表"
+              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
             {column === 'backlog' && cwd && (
               <button
                 type="button"
