@@ -426,26 +426,43 @@ export function KanbanBoard({
             )
           }
 
+          // Include the currently selected task even if not yet in `mounted`
+          // (useEffect runs after render, so the first render cycle after
+          // selection hasn't called markMounted yet).
+          const renderIds = new Set(mounted)
+          renderIds.add(selected.task.id)
+
           return (
-            <TaskDetailPanel
-              task={selected.task}
-              column={selected.column}
-              role={roleById(selected.task.roleId)}
-              reviewerRole={roleById(selected.task.reviewerRoleId)}
-              subAgents={subAgents[selected.task.id] ?? []}
-              isMounted={mounted.has(selected.task.id)}
-              launch={launch[selected.task.id]}
-              onRun={runTask}
-              onStart={startTask}
-              onMoveBack={moveBackTask}
-              onComplete={completeTask}
-              onReview={onReview}
-              onEdit={onEditTask}
-              onDelete={onDeleteTask}
-              onOpenReviewPanel={openReviewPanel}
-              onOpenSubAgents={setSubAgentTaskId}
-              onClose={onDeselectTask}
-            />
+            <>
+              {Array.from(renderIds).map((taskId) => {
+                const entry = allTasks.find(({ task }) => task.id === taskId)
+                if (!entry) return null
+                const isSelected = taskId === selectedTaskId
+                return (
+                  <div key={taskId} className={cn('h-full', !isSelected && 'hidden')}>
+                    <TaskDetailPanel
+                      task={entry.task}
+                      column={entry.column}
+                      role={roleById(entry.task.roleId)}
+                      reviewerRole={roleById(entry.task.reviewerRoleId)}
+                      subAgents={subAgents[entry.task.id] ?? []}
+                      isMounted={mounted.has(taskId)}
+                      launch={launch[taskId]}
+                      onRun={runTask}
+                      onStart={startTask}
+                      onMoveBack={moveBackTask}
+                      onComplete={completeTask}
+                      onReview={onReview}
+                      onEdit={onEditTask}
+                      onDelete={onDeleteTask}
+                      onOpenReviewPanel={openReviewPanel}
+                      onOpenSubAgents={setSubAgentTaskId}
+                      onClose={onDeselectTask}
+                    />
+                  </div>
+                )
+              })}
+            </>
           )
         })()}
       </main>
