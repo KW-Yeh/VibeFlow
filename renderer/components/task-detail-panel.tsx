@@ -96,9 +96,12 @@ function deriveStages(
       checkPlanSt = 'done'
       const stage = p?.stage
       const complete = isTaskComplete(task)
-      if (!stage || stage === 'developing' || stage === 'revising') {
+      if (!stage || stage === 'developing') {
         executeSt = complete ? 'done' : 'active'
         reviewSt = 'pending'
+      } else if (stage === 'revising') {
+        executeSt = complete ? 'done' : 'active'
+        reviewSt = 'active'
       } else if (stage === 'reviewing') {
         executeSt = 'done'
         reviewSt = task.progress?.review?.verdict === 'approve' ? 'done' : 'active'
