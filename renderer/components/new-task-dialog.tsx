@@ -99,6 +99,10 @@ export function NewTaskForm({
   }, [step])
 
   useEffect(() => {
+    if (inline) titleRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
     const agent = agents?.find((a) => a.id === agentCli)
     if (agent && agent.models.length > 0) setModel(agent.models[0].id)
   }, [agentCli, agents])
@@ -194,45 +198,45 @@ export function NewTaskForm({
 
       {/* Step indicator */}
       {!inline && (
-      <div className="mb-5 flex items-center gap-2">
-        <div
-          className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-            step === 1
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-primary/20 text-primary'
-          )}
-        >
-          1
+        <div className="mb-5 flex items-center gap-2">
+          <div
+            className={cn(
+              'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+              step === 1
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-primary/20 text-primary'
+            )}
+          >
+            1
+          </div>
+          <span
+            className={cn(
+              'text-xs',
+              step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
+            )}
+          >
+            專案設定
+          </span>
+          <div className="h-px flex-1 bg-border" />
+          <div
+            className={cn(
+              'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+              step === 2
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            2
+          </div>
+          <span
+            className={cn(
+              'text-xs',
+              step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'
+            )}
+          >
+            任務內容
+          </span>
         </div>
-        <span
-          className={cn(
-            'text-xs',
-            step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
-          )}
-        >
-          專案設定
-        </span>
-        <div className="h-px flex-1 bg-border" />
-        <div
-          className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-            step === 2
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground'
-          )}
-        >
-          2
-        </div>
-        <span
-          className={cn(
-            'text-xs',
-            step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'
-          )}
-        >
-          任務內容
-        </span>
-      </div>
       )}
 
       <div className={cn(inline && 'grid grid-cols-2 items-start gap-x-6 gap-y-4')}>
