@@ -2,7 +2,10 @@
 #
 # rebuild.sh — clean rebuild of the VibeFlow packaged app.
 #
-#   ./rebuild.sh             clean stale artifacts, then `npm run build`
+#   ./rebuild.sh             FAST: build only dist/mac-arm64/VibeFlow.app (no dmg/zip),
+#                            and keep renderer/.next so Next.js builds incrementally
+#   ./rebuild.sh --release   FULL: clean everything + build dmg/zip with max compression
+#                            (what CI publishes; only needed when you want the installers)
 #   ./rebuild.sh --check     also launch the packaged .app for ~5s to confirm it boots
 #   ./rebuild.sh --install   also install the new build over the running / installed
 #                            VibeFlow.app (the running app then shows a "立即重啟" banner)
@@ -15,11 +18,13 @@ cd "$(dirname "$0")"
 CHECK=false
 INSTALL=false
 RELAUNCH=false
+RELEASE=false
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK=true ;;
     --install) INSTALL=true ;;
     --relaunch) INSTALL=true; RELAUNCH=true ;;
+    --release) RELEASE=true ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -39,14 +44,26 @@ resolve_install_target() {
   fi
 }
 
-echo "==> Cleaning stale build artifacts (app/ renderer/.next dist/)"
-rm -rf app renderer/.next dist
-
-echo "==> Building (nextron build)"
-npm run build
-
-echo "==> Artifacts:"
-ls -lh dist/*.dmg dist/*.zip 2>/dev/null || true
+if [[ "$RELEASE" == true ]]; then
+  echo "==> Cleaning stale build artifacts (app/ renderer/.next dist/)"
+  rm -rf app renderer/.next dist
+  echo "==> Building installers (nextron build: dmg + zip, max compression)"
+  npm run build
+  echo "==> Artifacts:"
+  ls -lh dist/*.dmg dist/*.zip 2>/dev/null || true
+else
+  # Fast path: only produce the unpacked .app — skip dmg/zip + maximum
+  # compression (the slow part). nextron itself only clears app/ + dist/, so
+  # renderer/.next survives and Next.js rebuilds incrementally.
+  #   1. nextron --no-pack: build renderer + main into app/, no packaging.
+  #   2. electron-builder --mac dir: package app/ into just the .app, no
+  #      compression (store), reading the rest from electron-builder.yml.
+  echo "==> Building renderer + main (nextron --no-pack, keeps renderer/.next)"
+  npx nextron build --no-pack
+  echo "==> Packaging .app only (electron-builder --mac dir, no compression)"
+  npx electron-builder --mac dir --arm64 -c.compression=store
+  echo "==> Built: $BUILT_APP"
+fi
 
 if [[ "$INSTALL" == true ]]; then
   TARGET=$(resolve_install_target)
