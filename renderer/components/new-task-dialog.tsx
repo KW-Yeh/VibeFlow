@@ -41,6 +41,8 @@ export interface NewTaskFormProps {
     workspaceId: string
   ) => void
   onClose?: () => void
+  /** Render as a full-height inline panel instead of a compact modal form. */
+  inline?: boolean
 }
 
 function basename(p: string): string {
@@ -60,6 +62,7 @@ export function NewTaskForm({
   workspaces = [],
   onSubmit,
   onClose,
+  inline = false,
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [mode, setMode] = useState<ProjectMode>('existing')
@@ -145,7 +148,10 @@ export function NewTaskForm({
       : Boolean(projectPath) && isRepo && !loadingInfo
 
   const canGoToStep2 = isProjectReady
-  const canSubmit = title.trim().length > 0 && !creating
+  const canSubmit =
+    title.trim().length > 0 &&
+    !creating &&
+    (inline ? isProjectReady : true)
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
@@ -187,6 +193,7 @@ export function NewTaskForm({
       </div>
 
       {/* Step indicator */}
+      {!inline && (
       <div className="mb-5 flex items-center gap-2">
         <div
           className={cn(
@@ -226,9 +233,11 @@ export function NewTaskForm({
           任務內容
         </span>
       </div>
+      )}
 
+      <div className={cn(inline && 'grid grid-cols-2 items-start gap-x-6 gap-y-4')}>
       {/* Step 1: Project folder, workspace, base branch */}
-      {step === 1 && (
+      {(inline || step === 1) && (
         <div className="space-y-4">
           <div className="space-y-1.5">
             <span className="text-sm font-medium">專案類型</span>
@@ -335,7 +344,7 @@ export function NewTaskForm({
       )}
 
       {/* Step 2: Task details, Agent CLI + Model, roles */}
-      {step === 2 && (
+      {(inline || step === 2) && (
         <div className="space-y-4">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">任務標題</span>
@@ -517,9 +526,27 @@ export function NewTaskForm({
           )}
         </div>
       )}
+      </div>
 
       {/* Footer buttons */}
-      {step === 1 ? (
+      {inline ? (
+        <div className="mt-5 flex justify-end gap-2">
+          {onClose && (
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
+              取消
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={cn(creating && 'opacity-80')}
+          >
+            {creating && <Loader2 className="animate-spin" />}
+            {creating ? '建立 Worktree 中…' : '建立任務'}
+          </Button>
+        </div>
+      ) : step === 1 ? (
         <div className="mt-5 flex justify-end gap-2">
           {onClose && (
             <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
