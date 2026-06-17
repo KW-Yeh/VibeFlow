@@ -311,7 +311,10 @@ export default function HomePage() {
 
   const handleDeleteTask = async (taskId: string) => {
     const state = await deleteTask(taskId)
-    if (state) setBoard(state.board)
+    if (state) {
+      setBoard(state.board)
+      if (taskId === selectedTaskId) setSelectedTaskId(null)
+    }
   }
 
   const handleOpenRoles = () => {
@@ -480,7 +483,6 @@ export default function HomePage() {
                   onManageRoles={handleOpenRoles}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
-                  onSelectTask={setSelectedTaskId}
                   workspaces={workspaces}
                 />
               </div>

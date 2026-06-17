@@ -44,8 +44,6 @@ interface KanbanBoardProps {
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in pipeline view). */
   selectedTaskId?: string | null
-  /** Callback when user selects a task from within the board. */
-  onSelectTask?: (id: string | null) => void
   /** Available workspaces for context injection. */
   workspaces?: Workspace[]
 }
@@ -416,7 +414,6 @@ export function KanbanBoard({
               onReview={onReview}
               onEdit={onEditTask}
               onDelete={onDeleteTask}
-              onReviewerRun={armReviewer}
               onOpenReviewPanel={openReviewPanel}
               onOpenSubAgents={setSubAgentTaskId}
             />

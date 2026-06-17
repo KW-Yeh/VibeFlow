@@ -253,7 +253,6 @@ export interface TaskDetailPanelProps {
   onReview: (taskId: string) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
-  onReviewerRun?: (task: Task) => void
   onOpenReviewPanel?: (taskId: string) => void
   onOpenSubAgents: (taskId: string) => void
 }
