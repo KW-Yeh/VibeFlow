@@ -102,7 +102,7 @@ function RunItem({ run, index }: { run: SubAgentRun; index: number }) {
   // user lands on the most relevant content without extra clicks.
   const promptDefaultOpen = index === 0 || run.status === 'running'
   return (
-    <li className="rounded-lg border border-border/40 bg-card p-3">
+    <li className="rounded-lg border border-border/40 bg-card p-3 text-card-foreground">
       <div className="mb-2 flex items-center gap-2">
         <Icon className={cn('size-4 shrink-0', meta.tone, meta.spin && 'animate-spin')} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">

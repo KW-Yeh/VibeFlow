@@ -58,7 +58,7 @@ export function SideMenu({
   return (
     <aside
       className={cn(
-        'flex flex-shrink-0 flex-col border-r border-border bg-card transition-all duration-200',
+        'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-all duration-200',
         collapsed ? 'w-12' : 'w-64'
       )}
     >
