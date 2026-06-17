@@ -63,17 +63,11 @@ export function SideMenu({
       )}
     >
       {/* Header */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-3">
-        {!collapsed && (
-          <span className="text-sm font-semibold tracking-tight">VibeFlow</span>
-        )}
+      <div className="flex h-12 items-center justify-center border-b border-border px-3">
         <button
           type="button"
           onClick={onToggleCollapse}
-          className={cn(
-            'rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground',
-            collapsed && 'mx-auto'
-          )}
+          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           title={collapsed ? '展開選單' : '收合選單'}
         >
           {collapsed ? (
@@ -85,7 +79,7 @@ export function SideMenu({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-1 flex-col overflow-y-scroll py-2">
+      <div className={cn('flex flex-1 flex-col py-2', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Workspaces section */}
         <div className="px-2 pb-2">
           {collapsed ? (
