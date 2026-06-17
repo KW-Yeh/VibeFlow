@@ -63,7 +63,7 @@ export function SideMenu({
       )}
     >
       {/* Header */}
-      <div className="flex h-12 items-center justify-center border-b border-border px-3">
+      <div className="flex h-12 items-center justify-end border-b border-border px-3">
         <button
           type="button"
           onClick={onToggleCollapse}
