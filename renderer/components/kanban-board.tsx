@@ -408,8 +408,9 @@ export function KanbanBoard({
           if (!selected) {
             return (
               <div className="flex h-full overflow-y-auto p-6">
-                <div className="mx-auto w-full max-w-md rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
+                <div className="mx-auto w-full max-w-3xl rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
                   <NewTaskForm
+                    inline
                     creating={creating}
                     error={createError}
                     pickFolder={pickFolder}
