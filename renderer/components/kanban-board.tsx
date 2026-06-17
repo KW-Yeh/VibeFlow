@@ -405,33 +405,10 @@ export function KanbanBoard({
             ? allTasks.find(({ task }) => task.id === selectedTaskId)
             : null
 
-          if (!selected) {
-            return (
-              <div className="flex h-full overflow-y-auto p-6">
-                <div className="mx-auto w-full max-w-3xl rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-                  <NewTaskForm
-                    inline
-                    creating={creating}
-                    error={createError}
-                    pickFolder={pickFolder}
-                    loadGitInfo={loadGitInfo}
-                    initRepository={initRepository}
-                    detectAgents={detectAgents}
-                    roles={roles}
-                    onManageRoles={onManageRoles}
-                    workspaces={workspaces}
-                    onSubmit={onCreateTask}
-                  />
-                </div>
-              </div>
-            )
-          }
-
-          // Include the currently selected task even if not yet in `mounted`
-          // (useEffect runs after render, so the first render cycle after
-          // selection hasn't called markMounted yet).
+          // Keep all previously mounted panels in the DOM (hidden when not selected)
+          // so PTY sessions survive switching tasks or deselecting to the new-task form.
           const renderIds = new Set(mounted)
-          renderIds.add(selected.task.id)
+          if (selected) renderIds.add(selected.task.id)
 
           return (
             <>
@@ -463,6 +440,26 @@ export function KanbanBoard({
                   </div>
                 )
               })}
+
+              {!selected && (
+                <div className="flex h-full overflow-y-auto p-6">
+                  <div className="mx-auto w-full max-w-3xl rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
+                    <NewTaskForm
+                      inline
+                      creating={creating}
+                      error={createError}
+                      pickFolder={pickFolder}
+                      loadGitInfo={loadGitInfo}
+                      initRepository={initRepository}
+                      detectAgents={detectAgents}
+                      roles={roles}
+                      onManageRoles={onManageRoles}
+                      workspaces={workspaces}
+                      onSubmit={onCreateTask}
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )
         })()}

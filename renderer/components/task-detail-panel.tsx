@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { TaskTerminal } from '@/components/task-terminal'
 import { RoleAvatar } from '@/components/roles-dialog'
-import { AGENT_NAMES, taskAgent } from '@/lib/claude'
+import { AGENT_NAMES, isTaskComplete, taskAgent } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { ColumnId, Role, SubAgentRun, Task } from '@/lib/types'
 
@@ -85,22 +85,31 @@ function deriveStages(
     executeSt = 'done'
     reviewSt = 'done'
   } else if (column === 'in_progress') {
-    planSt = 'done'
-    checkPlanSt = 'done'
-    const stage = p?.stage
-    if (!stage || stage === 'developing' || stage === 'revising') {
-      executeSt = 'active'
+    if (!task.progress) {
+      // No progress file yet — agent is still planning, not yet executing
+      planSt = 'active'
+      checkPlanSt = 'pending'
+      executeSt = 'pending'
       reviewSt = 'pending'
-    } else if (stage === 'reviewing') {
-      executeSt = 'done'
-      reviewSt = 'active'
-    } else if (stage === 'approved') {
-      executeSt = 'done'
-      reviewSt = 'done'
     } else {
-      // blocked
-      executeSt = 'done'
-      reviewSt = 'blocked'
+      planSt = 'done'
+      checkPlanSt = 'done'
+      const stage = p?.stage
+      const complete = isTaskComplete(task)
+      if (!stage || stage === 'developing' || stage === 'revising') {
+        executeSt = complete ? 'done' : 'active'
+        reviewSt = 'pending'
+      } else if (stage === 'reviewing') {
+        executeSt = 'done'
+        reviewSt = task.progress?.review?.verdict === 'approve' ? 'done' : 'active'
+      } else if (stage === 'approved') {
+        executeSt = 'done'
+        reviewSt = 'done'
+      } else {
+        // blocked
+        executeSt = 'done'
+        reviewSt = 'blocked'
+      }
     }
   } else {
     // backlog
