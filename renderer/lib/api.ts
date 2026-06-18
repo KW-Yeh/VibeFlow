@@ -2,7 +2,10 @@ import type {
   AgentCli,
   AgentCliId,
   AppSettings,
+  AttachmentInput,
   BoardState,
+  ChatChunk,
+  Conversation,
   DiffFile,
   FinalizeResult,
   GitInfo,
@@ -215,6 +218,36 @@ export async function deleteTask(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.deleteTask(taskId) : null
+}
+
+// --- Chat API wrappers ---
+
+export async function chatLoad(taskId: string): Promise<Conversation | null> {
+  const b = bridge()
+  return b ? b.chat.load(taskId) : null
+}
+
+export async function chatSend(payload: {
+  taskId: string
+  worktreePath: string
+  text: string
+  attachments?: AttachmentInput[]
+  sessionId: string
+  resume: boolean
+  systemPrompt: string
+  model: string
+  workspacePath?: string
+}): Promise<void> {
+  bridge()?.chat.send(payload)
+}
+
+export async function chatCompact(taskId: string): Promise<void> {
+  bridge()?.chat.compact(taskId)
+}
+
+export function onChatChunk(callback: (chunk: ChatChunk) => void): () => void {
+  const b = bridge()
+  return b ? b.chat.onChunk(callback) : () => {}
 }
 
 // --- Terminal API wrappers (sessionKey-aware) ---

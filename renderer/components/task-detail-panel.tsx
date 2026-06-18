@@ -20,11 +20,10 @@ import {
   Pencil,
   Play,
   Search,
-  Terminal as TerminalIcon,
   Trash2,
   Undo2,
 } from 'lucide-react'
-import { TaskTerminal } from '@/components/task-terminal'
+import { ChatPanel } from '@/components/chat-panel'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AGENT_NAMES, isTaskComplete, taskAgent } from '@/lib/claude'
 import { cn } from '@/lib/utils'
@@ -251,6 +250,12 @@ interface LaunchEntry {
   nonce: number
 }
 
+/** Chat-mode launch: plain prompt text sent to ChatPanel as a pending message. */
+export interface ChatLaunchEntry {
+  text: string
+  nonce: number
+}
+
 export interface TaskDetailPanelProps {
   task: Task
   column: ColumnId
@@ -259,6 +264,9 @@ export interface TaskDetailPanelProps {
   subAgents: SubAgentRun[]
   isMounted: boolean
   launch?: LaunchEntry
+  chatLaunch?: ChatLaunchEntry
+  systemPrompt?: string
+  workspacePath?: string
   onRun: (task: Task) => void
   onStart: (task: Task) => void
   onMoveBack: (task: Task) => void
@@ -278,7 +286,10 @@ export function TaskDetailPanel({
   reviewerRole,
   subAgents,
   isMounted,
-  launch,
+  launch: _launch,
+  chatLaunch,
+  systemPrompt = '',
+  workspacePath,
   onRun,
   onStart,
   onMoveBack,
@@ -553,27 +564,19 @@ export function TaskDetailPanel({
         )}
       </div>
 
-      {/* 終端機區域 — done 任務不顯示 */}
+      {/* 聊天室區域 — done 任務不顯示 */}
       {column !== 'done' && (
         <div className="min-h-0 flex-1 p-4">
-          {isMounted ? (
-            <TaskTerminal
-              taskId={task.id}
-              sessionKey={task.id}
-              cwd={cwd}
-              launchCommand={launch?.command}
-              launchNonce={launch?.nonce ?? 0}
-              launchLabel={`啟動 ${agentName}`}
-              onLaunchRequest={() => onRun(task)}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <TerminalIcon className="size-4 opacity-40" />
-                <span>載入終端中…</span>
-              </div>
-            </div>
-          )}
+          <ChatPanel
+            task={task}
+            systemPrompt={systemPrompt}
+            executorRole={role}
+            workspacePath={workspacePath}
+            pendingMessage={chatLaunch?.text}
+            pendingNonce={chatLaunch?.nonce ?? 0}
+            launchLabel={`啟動 ${agentName}`}
+            onLaunchRequest={() => onRun(task)}
+          />
         </div>
       )}
     </div>

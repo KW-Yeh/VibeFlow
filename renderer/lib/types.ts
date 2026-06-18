@@ -22,3 +22,9 @@ export type {
   SubAgentRun,
   SubAgentStatus,
 } from '../../main/helpers/subagents'
+export type {
+  ChatMessage,
+  ChatAttachment,
+  Conversation,
+} from '../../main/helpers/chat-store'
+export type { AttachmentInput, ChatChunk } from '../../main/helpers/chat-session'
