@@ -168,6 +168,9 @@ export function KanbanBoard({
   // drive the executor → reviewer → (revise → reviewer)* → approve loop.
   // `firedRef` dedupes by a (stage, allDone, verdict, round) signature.
   const firedRef = useRef<Map<string, string>>(new Map())
+  // Tracks the previous board so we can detect allDone transitions within the
+  // current session and skip auto-review advances on app restart.
+  const prevBoardRef = useRef<typeof board | null>(null)
 
   const killReviewerSession = (taskId: string) => {
     termKill(reviewSessionKey(taskId))
@@ -231,6 +234,8 @@ export function KanbanBoard({
 
   useEffect(() => {
     if (!autoMode) return
+    const prevBoard = prevBoardRef.current
+    prevBoardRef.current = board
     for (const task of board.in_progress) {
       const p = task.pipeline
       if (!p || !task.reviewerRoleId) continue
@@ -242,6 +247,11 @@ export function KanbanBoard({
       if (firedRef.current.get(task.id) === sig) continue
 
       if ((p.stage === 'developing' || p.stage === 'revising') && allDone && !review) {
+        // Only advance to review when allDone just became true in this session.
+        // On app restart prevBoard is null/empty, so tasks already done in a prior
+        // session are skipped — preventing a spurious re-review on reopen.
+        const prevTask = prevBoard?.in_progress.find((t) => t.id === task.id)
+        if (!prevTask || isTaskComplete(prevTask)) continue
         firedRef.current.set(task.id, sig)
         advanceToReview(task)
         break
