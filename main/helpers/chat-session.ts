@@ -119,6 +119,7 @@ export function sendChatMessage(
     claudeBin(),
     '--print',
     '--output-format stream-json',
+    '--verbose', // required by claude CLI when --print + stream-json
     `--permission-mode auto`,
     `--model ${shellQuote(model)}`,
     sessionFlag,

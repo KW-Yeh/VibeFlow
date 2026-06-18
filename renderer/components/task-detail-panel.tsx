@@ -559,7 +559,7 @@ export function TaskDetailPanel({
 
       {/* 聊天室區域 — done 任務不顯示 */}
       {column !== 'done' && (
-        <div className="min-h-0 flex-1 p-4">
+        <div className="flex min-h-0 flex-1 flex-col p-4">
           <ChatPanel
             task={task}
             systemPrompt={systemPrompt}
