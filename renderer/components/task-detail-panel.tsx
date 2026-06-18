@@ -304,8 +304,13 @@ export function TaskDetailPanel({
       {/* 頂部 Pipeline 進度條 */}
       <PipelineStagesBar stages={stages} />
 
-      {/* 任務資訊區（固定高度，不隨 terminal 捲動） */}
-      <div className="shrink-0 border-b border-border p-6">
+      {/* 任務資訊區 — 限高可捲動；done 任務則填滿剩餘空間 */}
+      <div className={cn(
+        'p-6',
+        column === 'done'
+          ? 'flex-1 overflow-y-auto'
+          : 'shrink-0 max-h-72 overflow-y-auto border-b border-border'
+      )}>
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
             {/* 小型 meta badges */}
@@ -366,7 +371,7 @@ export function TaskDetailPanel({
             )}
             {column === 'in_progress' && (
               <>
-                {cwd && (
+                {cwd && (isTaskComplete(task) || !task.launchedAt) && (
                   <button
                     type="button"
                     onClick={() => onRun(task)}
@@ -548,28 +553,29 @@ export function TaskDetailPanel({
         )}
       </div>
 
-      {/* 終端機區域 — 佔用剩餘空間 */}
-      <div className="min-h-0 flex-1 p-4">
-        {isMounted ? (
-          <TaskTerminal
-            taskId={task.id}
-            sessionKey={task.id}
-            cwd={cwd}
-            launchCommand={launch?.command}
-            launchNonce={launch?.nonce ?? 0}
-            launchLabel={`啟動 ${agentName}`}
-            onLaunchRequest={() => onRun(task)}
-            readOnly={column === 'done'}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <TerminalIcon className="size-4 opacity-40" />
-              <span>載入終端中…</span>
+      {/* 終端機區域 — done 任務不顯示 */}
+      {column !== 'done' && (
+        <div className="min-h-0 flex-1 p-4">
+          {isMounted ? (
+            <TaskTerminal
+              taskId={task.id}
+              sessionKey={task.id}
+              cwd={cwd}
+              launchCommand={launch?.command}
+              launchNonce={launch?.nonce ?? 0}
+              launchLabel={`啟動 ${agentName}`}
+              onLaunchRequest={() => onRun(task)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/40 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <TerminalIcon className="size-4 opacity-40" />
+                <span>載入終端中…</span>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
