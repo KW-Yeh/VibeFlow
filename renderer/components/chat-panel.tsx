@@ -118,13 +118,27 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   )
 }
 
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 px-1 py-0.5">
+      <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+      <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+      <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
+    </div>
+  )
+}
+
 function StreamingBubble({ text }: { text: string }) {
   return (
     <div className="flex items-start">
       <div className="max-w-[85%] rounded-lg bg-white/[0.06] px-3 py-2 text-sm">
-        <div className="prose prose-invert prose-sm max-w-none break-words">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || '…'}</ReactMarkdown>
-        </div>
+        {text ? (
+          <div className="prose prose-invert prose-sm max-w-none break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+          </div>
+        ) : (
+          <ThinkingDots />
+        )}
       </div>
     </div>
   )
