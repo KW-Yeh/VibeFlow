@@ -22,6 +22,11 @@ export interface Conversation {
   taskId: string
   messages: ChatMessage[]
   updatedAt: number
+  /**
+   * When set, overrides the default executorSessionId for subsequent sends.
+   * Written by the compact handler to force a fresh Claude session.
+   */
+  activeSessionId?: string
 }
 
 interface ChatStoreSchema {
@@ -59,4 +64,15 @@ export function appendMessage(taskId: string, message: ChatMessage): void {
 export function clearConversation(taskId: string): void {
   const store = getChatStore()
   store.delete(`conversations.${taskId}` as keyof ChatStoreSchema)
+}
+
+/** Clear all messages and pin a new session ID so the next send starts fresh. */
+export function clearMessages(taskId: string, newSessionId: string): void {
+  const store = getChatStore()
+  store.set(`conversations.${taskId}`, {
+    taskId,
+    messages: [],
+    updatedAt: Date.now(),
+    activeSessionId: newSessionId,
+  })
 }

@@ -241,8 +241,8 @@ export async function chatSend(payload: {
   bridge()?.chat.send(payload)
 }
 
-export async function chatCompact(taskId: string): Promise<void> {
-  bridge()?.chat.compact(taskId)
+export async function chatCompact(taskId: string): Promise<{ newSessionId: string } | null> {
+  return (await bridge()?.chat.compact(taskId)) ?? null
 }
 
 export function onChatChunk(callback: (chunk: ChatChunk) => void): () => void {

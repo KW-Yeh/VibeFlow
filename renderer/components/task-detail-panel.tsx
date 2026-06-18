@@ -245,11 +245,6 @@ function PipelineStageBadge({
   )
 }
 
-interface LaunchEntry {
-  command: string
-  nonce: number
-}
-
 /** Chat-mode launch: plain prompt text sent to ChatPanel as a pending message. */
 export interface ChatLaunchEntry {
   text: string
@@ -263,7 +258,6 @@ export interface TaskDetailPanelProps {
   reviewerRole: Role | null
   subAgents: SubAgentRun[]
   isMounted: boolean
-  launch?: LaunchEntry
   chatLaunch?: ChatLaunchEntry
   systemPrompt?: string
   workspacePath?: string
@@ -286,7 +280,6 @@ export function TaskDetailPanel({
   reviewerRole,
   subAgents,
   isMounted,
-  launch: _launch,
   chatLaunch,
   systemPrompt = '',
   workspacePath,

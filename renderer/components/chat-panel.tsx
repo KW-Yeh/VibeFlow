@@ -149,16 +149,39 @@ export function ChatPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Mirrors messages state so doSend always sees the current count without a stale closure.
+  const messagesRef = useRef<ChatMessage[]>([])
+  messagesRef.current = messages
+  const loadDoneRef = useRef(false)
+  // When set (after a compact), overrides the default executorSessionId.
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const activeSessionIdRef = useRef<string | null>(null)
+  activeSessionIdRef.current = activeSessionId
+  // Stable ref to the latest doSend so the load-completion callback can call it.
+  const doSendRef = useRef<((text: string, attachments: PendingAttachment[]) => Promise<void>) | null>(null)
 
   // Track the last nonce we acted on so we don't resend on re-render.
   const sentNonceRef = useRef(-1)
   const pendingMessageRef = useRef(pendingMessage)
   pendingMessageRef.current = pendingMessage
+  const pendingNonceRef = useRef(pendingNonce)
+  pendingNonceRef.current = pendingNonce
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
 
   // Load persisted conversation on mount.
   useEffect(() => {
+    loadDoneRef.current = false
     chatLoad(task.id).then((conv: Conversation | null) => {
       if (conv?.messages?.length) setMessages(conv.messages)
+      if (conv?.activeSessionId) setActiveSessionId(conv.activeSessionId)
+      loadDoneRef.current = true
+      // Fire any pending send that was blocked waiting for load to complete.
+      const msg = pendingMessageRef.current
+      if (!readOnlyRef.current && msg && sentNonceRef.current !== pendingNonceRef.current) {
+        sentNonceRef.current = pendingNonceRef.current
+        doSendRef.current?.(msg, [])
+      }
     })
   }, [task.id])
 
@@ -190,9 +213,6 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streaming])
 
-  const sessionId = executorSessionId(task.id)
-  const hasMessages = messages.length > 0
-
   const doSend = useCallback(
     async (text: string, attachments: PendingAttachment[]) => {
       if (!text.trim() && attachments.length === 0) return
@@ -223,6 +243,8 @@ export function ChatPanel({
           }
         : undefined
       const effectiveSystemPrompt = resolveSystemPrompt(systemPrompt, role)
+      // Use activeSessionId (post-compact) if available, otherwise the default session.
+      const effectiveSessionId = activeSessionIdRef.current ?? executorSessionId(task.id)
       await chatSend({
         taskId: task.id,
         worktreePath: task.worktreePath,
@@ -232,19 +254,22 @@ export function ChatPanel({
           mime: a.mime,
           dataBase64: a.dataBase64,
         })),
-        sessionId,
-        resume: hasMessages,
+        sessionId: effectiveSessionId,
+        resume: messagesRef.current.length > 0,
         systemPrompt: effectiveSystemPrompt,
         model: taskModel(task),
         workspacePath,
       })
     },
-    [task, sessionId, hasMessages, executorRole, systemPrompt, workspacePath]
+    [task, executorRole, systemPrompt, workspacePath]
   )
+  doSendRef.current = doSend
 
-  // Auto-send pending message when nonce changes.
+  // Auto-send pending message when nonce changes — but only after chatLoad completes
+  // so that `resume` is decided with the correct message count.
   useEffect(() => {
     if (readOnly) return
+    if (!loadDoneRef.current) return
     const msg = pendingMessageRef.current
     if (!msg || sentNonceRef.current === pendingNonce) return
     sentNonceRef.current = pendingNonce
@@ -281,17 +306,11 @@ export function ChatPanel({
   }
 
   const handleCompact = async () => {
-    await chatCompact(task.id)
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `compact-${Date.now()}`,
-        role: 'system',
-        text: '',
-        ts: Date.now(),
-        isCompactMarker: true,
-      },
-    ])
+    const result = await chatCompact(task.id)
+    if (result) {
+      setMessages([])
+      setActiveSessionId(result.newSessionId)
+    }
   }
 
   // Resize textarea to fit content.
@@ -310,16 +329,16 @@ export function ChatPanel({
           {task.worktreePath ?? '(no worktree)'}
         </span>
         <div className="flex items-center gap-1">
-          {!readOnly && hasMessages && (
+          {!readOnly && messages.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-6 shrink-0 px-2 text-[10px]"
               onClick={handleCompact}
-              title="壓縮 context（Compact）"
+              title="清除對話（開啟新 session）"
             >
               <Scissors className="size-3" />
-              Compact
+              清除對話
             </Button>
           )}
           {readOnly ? (

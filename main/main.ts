@@ -69,7 +69,7 @@ import {
   cancelChatSend,
   startChatSend,
 } from './helpers/chat-session'
-import { appendMessage, clearConversation, loadConversation } from './helpers/chat-store'
+import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/chat-session'
 
 const isProd = process.env.NODE_ENV === 'production'
@@ -450,6 +450,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     teardownSession(taskId)
+    cancelChatSend(taskId)
     if (task?.projectPath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, branch)
@@ -502,13 +503,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   )
 
   ipcMain.handle('chat:compact', (_event, taskId: string) => {
-    appendMessage(taskId, {
-      id: `compact-${Date.now()}`,
-      role: 'system',
-      text: '',
-      ts: Date.now(),
-      isCompactMarker: true,
-    })
+    const newSessionId = randomUUID()
+    clearMessages(taskId, newSessionId)
+    return { newSessionId }
   })
 }
 

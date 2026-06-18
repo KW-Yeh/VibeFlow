@@ -160,7 +160,7 @@ const vibeflow = {
       model: string
       workspacePath?: string
     }): Promise<void> => ipcRenderer.invoke('chat:send', payload),
-    compact: (taskId: string): Promise<void> =>
+    compact: (taskId: string): Promise<{ newSessionId: string }> =>
       ipcRenderer.invoke('chat:compact', taskId),
     onChunk: (callback: (chunk: ChatChunk) => void): (() => void) => {
       const sub = (_event: IpcRendererEvent, chunk: ChatChunk) => callback(chunk)

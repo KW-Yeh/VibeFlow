@@ -115,15 +115,12 @@ export function sendChatMessage(
   }
   if (savedAttachments.length) ensureGitignore()
 
-  // claude --print --output-format stream-json is invoked via the shell so
-  // shell quoting of args is applied correctly. The args are not user-facing
-  // so command injection is not a concern (all values are internal strings).
   const cmd = [
     claudeBin(),
     '--print',
     '--output-format stream-json',
     `--permission-mode auto`,
-    `--model ${model}`,
+    `--model ${shellQuote(model)}`,
     sessionFlag,
     addDirFlag,
     `--append-system-prompt ${shellQuote(systemPrompt)}`,
