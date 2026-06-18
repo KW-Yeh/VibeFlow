@@ -7,12 +7,15 @@ import { TaskDetailPanel } from '@/components/task-detail-panel'
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
-  buildAgentCommand,
+  buildPrompt,
+  buildResumePrompt,
+  buildRevisePrompt,
   buildReviewCommand,
-  buildReviseCommand,
+  buildRolePrompt,
   isTaskComplete,
 } from '@/lib/claude'
 import { termKill } from '@/lib/api'
+import type { ChatLaunchEntry } from '@/components/task-detail-panel'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -114,12 +117,12 @@ export function KanbanBoard({
 
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
-  // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
-  // mounted (just hidden) so its PTY + scrollback survive switching tasks.
+  // Tasks whose chat panel has ever been opened. Once mounted, ChatPanel stays
+  // in the DOM (just hidden) so conversation state survives switching tasks.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
-  // Per-task armed launch command; bumping `nonce` (re-)fires it in the terminal.
-  const [launch, setLaunch] = useState<Record<string, LaunchEntry>>({})
-  // Per-task armed reviewer launch command.
+  // Per-task armed chat pending message; bumping `nonce` (re-)fires it.
+  const [chatLaunch, setChatLaunch] = useState<Record<string, ChatLaunchEntry>>({})
+  // Per-task armed reviewer launch command (PTY-based, unchanged).
   const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
   // Reviewer side panel state.
   const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
@@ -130,23 +133,28 @@ export function KanbanBoard({
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
-  // Expand the card, mount its terminal, and arm a (re-)launch of `command`.
-  const armCommand = (taskId: string, command: string) => {
-    markMounted(taskId)
-    setLaunch((prev) => ({
-      ...prev,
-      [taskId]: { command, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
-    }))
-  }
-
   const resolveWorkspacePath = (workspaceId?: string): string | undefined =>
     workspaceId ? workspaces?.find((w) => w.id === workspaceId)?.path : undefined
 
+  // Arm a chat-mode pending message for the executor (replaces armCommand).
+  const armChatSend = (taskId: string, text: string) => {
+    markMounted(taskId)
+    setChatLaunch((prev) => ({
+      ...prev,
+      [taskId]: { text, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
+    }))
+  }
+
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
-    armCommand(
-      task.id,
-      buildAgentCommand(task, systemPrompt, roleById(task.roleId), opts, resolveWorkspacePath(task.workspaceId))
-    )
+    const role = roleById(task.roleId)
+    const rolePromptText = buildRolePrompt(role ?? undefined)
+    const promptText = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+    const workspacePath = resolveWorkspacePath(task.workspaceId)
+    const fullText = [rolePromptText, promptText].filter(Boolean).join('\n\n') +
+      (workspacePath
+        ? `\n\n背景知識：在開始執行前，請先閱讀 ${workspacePath}/context.html 作為此任務的額外 context。`
+        : '')
+    armChatSend(task.id, fullText)
   }
 
   // Merge a patch into a task across all columns and persist.
@@ -226,10 +234,8 @@ export function KanbanBoard({
     }
     patchTask(task.id, { pipeline: next })
     killReviewerSession(task.id)
-    armCommand(
-      task.id,
-      buildReviseCommand(task, roleById(task.roleId), review.comments, resolveWorkspacePath(task.workspaceId))
-    )
+    const reviseText = buildRevisePrompt(task, review.comments, roleById(task.roleId) ?? undefined)
+    armChatSend(task.id, reviseText)
   }
 
   useEffect(() => {
@@ -276,12 +282,14 @@ export function KanbanBoard({
     }
   }, [board, autoMode, systemPrompt, roles]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-mount terminal for the selected task so TaskDetailPanel renders it immediately.
+  // Auto-mount chat panel for the selected task so TaskDetailPanel renders it immediately.
   useEffect(() => {
     if (!selectedTaskId) return
     markMounted(selectedTaskId)
     // Resume in-progress tasks that were previously launched (app restart recovery).
-    if (!launch[selectedTaskId]) {
+    // Only arm a resume if the chat panel hasn't already received a pending message
+    // in this session — avoids double-sending on re-selection.
+    if (!chatLaunch[selectedTaskId]) {
       const task = board.in_progress.find((t) => t.id === selectedTaskId)
       if (task && wasLaunched(task) && !isTaskComplete(task)) {
         armLaunch(task, { resume: true })
@@ -436,7 +444,9 @@ export function KanbanBoard({
                       reviewerRole={roleById(entry.task.reviewerRoleId)}
                       subAgents={subAgents[entry.task.id] ?? []}
                       isMounted={mounted.has(taskId)}
-                      launch={launch[taskId]}
+                      chatLaunch={chatLaunch[taskId]}
+                      systemPrompt={systemPrompt}
+                      workspacePath={resolveWorkspacePath(entry.task.workspaceId)}
                       onRun={runTask}
                       onStart={startTask}
                       onMoveBack={moveBackTask}

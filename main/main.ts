@@ -64,6 +64,13 @@ import {
   stopUpdateWatcher,
   watchForNewBuild,
 } from './helpers/update'
+import {
+  cancelAllChatSends,
+  cancelChatSend,
+  startChatSend,
+} from './helpers/chat-session'
+import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
+import type { AttachmentInput } from './helpers/chat-session'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -443,6 +450,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:cleanupTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     teardownSession(taskId)
+    cancelChatSend(taskId)
     if (task?.projectPath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, branch)
@@ -457,13 +465,47 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:deleteTask', async (_event, taskId: string) => {
     const task = findTask(taskId)
     teardownSession(taskId)
+    cancelChatSend(taskId)
     if (task?.projectPath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, branch)
       await deleteBranch(task.projectPath, branch)
     }
+    clearConversation(taskId)
     removeTask(taskId)
     return getState()
+  })
+
+  // --- Chat (structured output mode) ---
+
+  ipcMain.handle('chat:load', (_event, taskId: string) => {
+    return loadConversation(taskId)
+  })
+
+  ipcMain.handle(
+    'chat:send',
+    (
+      event,
+      payload: {
+        taskId: string
+        worktreePath: string
+        text: string
+        attachments?: AttachmentInput[]
+        sessionId: string
+        resume: boolean
+        systemPrompt: string
+        model: string
+        workspacePath?: string
+      }
+    ) => {
+      startChatSend(payload, event.sender)
+    }
+  )
+
+  ipcMain.handle('chat:compact', (_event, taskId: string) => {
+    const newSessionId = randomUUID()
+    clearMessages(taskId, newSessionId)
+    return { newSessionId }
   })
 }
 
@@ -499,6 +541,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
 app.on('window-all-closed', () => {
   killAllSessions()
+  cancelAllChatSends()
   unwatchAllProgress()
   unwatchAllSubAgents()
   app.quit()
@@ -506,6 +549,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   killAllSessions()
+  cancelAllChatSends()
   unwatchAllProgress()
   unwatchAllSubAgents()
   stopUpdateWatcher()
