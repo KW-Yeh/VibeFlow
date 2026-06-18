@@ -35,6 +35,60 @@ export interface ChatChunk {
   error?: string
 }
 
+export type PhaseType = 'thinking' | 'tool_use' | 'tool_result'
+
+/** A discrete agent execution step pushed to the renderer during streaming. */
+export interface ChatPhase {
+  taskId: string
+  id: string
+  phaseType: PhaseType
+  phaseSummary: string
+  phaseDetail: string
+  done: boolean
+}
+
+function basename(p: string): string {
+  return p.split('/').pop() ?? p
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+function summarizeToolUse(name: string, input: Record<string, unknown>): { summary: string; detail: string } {
+  const detail = JSON.stringify(input, null, 2)
+  let summary: string
+  switch (name) {
+    case 'Bash': {
+      const cmd = typeof input.command === 'string'
+        ? truncate(input.command.trim().replace(/\n/g, ' '), 60)
+        : name
+      summary = `Running \`${cmd}\``
+      break
+    }
+    case 'Read':
+      summary = `Reading \`${basename(String(input.file_path ?? ''))}\``
+      break
+    case 'Write':
+      summary = `Writing \`${basename(String(input.file_path ?? ''))}\``
+      break
+    case 'Edit':
+    case 'MultiEdit':
+      summary = `Editing \`${basename(String(input.file_path ?? ''))}\``
+      break
+    case 'Glob':
+    case 'Grep':
+      summary = `Searching \`${truncate(String(input.pattern ?? input.query ?? ''), 40)}\``
+      break
+    case 'Task':
+      summary = `Delegating: ${truncate(String(input.description ?? input.prompt ?? ''), 50)}`
+      break
+    default:
+      summary = `Using \`${name}\``
+  }
+  return { summary, detail }
+}
+
 /** Resolve the claude binary from PATH. */
 function claudeBin(): string {
   return 'claude'
@@ -135,9 +189,15 @@ export function sendChatMessage(
 
   let accumulated = ''
   let buffer = ''
+  let seq = 0
+  const toolNames = new Map<string, string>()
 
   const push = (chunk: ChatChunk) => {
     if (!sender.isDestroyed()) sender.send('chat:chunk', chunk)
+  }
+
+  const pushPhase = (p: ChatPhase) => {
+    if (!sender.isDestroyed()) sender.send('chat:phase', p)
   }
 
   proc.stdout.on('data', (raw: Buffer) => {
@@ -152,7 +212,20 @@ export function sendChatMessage(
           type: string
           subtype?: string
           result?: string
-          message?: { role?: string; content?: Array<{ type: string; text?: string }> }
+          message?: {
+            role?: string
+            content?: Array<{
+              type: string
+              text?: string
+              thinking?: string
+              id?: string
+              name?: string
+              input?: Record<string, unknown>
+              tool_use_id?: string
+              content?: string | Array<{ type: string; text?: string }>
+              is_error?: boolean
+            }>
+          }
         }
         if (event.type === 'assistant' && event.message?.content) {
           for (const block of event.message.content) {
@@ -162,6 +235,48 @@ export function sendChatMessage(
                 accumulated = block.text
                 push({ taskId, delta, done: false })
               }
+            } else if (block.type === 'thinking' && block.thinking) {
+              pushPhase({
+                taskId,
+                id: `${taskId}-${seq++}`,
+                phaseType: 'thinking',
+                phaseSummary: 'Thinking…',
+                phaseDetail: block.thinking,
+                done: true,
+              })
+            } else if (block.type === 'tool_use' && block.name) {
+              const toolId = block.id ?? ''
+              toolNames.set(toolId, block.name)
+              const { summary, detail } = summarizeToolUse(block.name, block.input ?? {})
+              pushPhase({
+                taskId,
+                id: `${taskId}-${seq++}`,
+                phaseType: 'tool_use',
+                phaseSummary: summary,
+                phaseDetail: detail,
+                done: true,
+              })
+            }
+          }
+        }
+        if (event.type === 'user' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'tool_result') {
+              const toolName = toolNames.get(block.tool_use_id ?? '') ?? 'Tool'
+              const raw = block.content
+              const detail = typeof raw === 'string'
+                ? raw
+                : Array.isArray(raw)
+                  ? raw.map((c) => c.text ?? '').join('\n')
+                  : ''
+              pushPhase({
+                taskId,
+                id: `${taskId}-${seq++}`,
+                phaseType: 'tool_result',
+                phaseSummary: `Got result from \`${toolName}\``,
+                phaseDetail: detail,
+                done: true,
+              })
             }
           }
         }
