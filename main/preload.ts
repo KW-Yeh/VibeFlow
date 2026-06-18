@@ -12,7 +12,7 @@ import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
 import type { SubAgentRun } from './helpers/subagents'
 import type { Conversation } from './helpers/chat-store'
-import type { AttachmentInput, ChatChunk } from './helpers/chat-session'
+import type { AttachmentInput, ChatChunk, ChatPhase } from './helpers/chat-session'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -166,6 +166,11 @@ const vibeflow = {
       const sub = (_event: IpcRendererEvent, chunk: ChatChunk) => callback(chunk)
       ipcRenderer.on('chat:chunk', sub)
       return () => ipcRenderer.removeListener('chat:chunk', sub)
+    },
+    onPhase: (callback: (phase: ChatPhase) => void): (() => void) => {
+      const sub = (_event: IpcRendererEvent, phase: ChatPhase) => callback(phase)
+      ipcRenderer.on('chat:phase', sub)
+      return () => ipcRenderer.removeListener('chat:phase', sub)
     },
   },
 

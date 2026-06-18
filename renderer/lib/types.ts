@@ -27,4 +27,4 @@ export type {
   ChatAttachment,
   Conversation,
 } from '../../main/helpers/chat-store'
-export type { AttachmentInput, ChatChunk } from '../../main/helpers/chat-session'
+export type { AttachmentInput, ChatChunk, ChatPhase, PhaseType } from '../../main/helpers/chat-session'

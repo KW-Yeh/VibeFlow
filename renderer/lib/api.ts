@@ -5,6 +5,7 @@ import type {
   AttachmentInput,
   BoardState,
   ChatChunk,
+  ChatPhase,
   Conversation,
   DiffFile,
   FinalizeResult,
@@ -248,6 +249,11 @@ export async function chatCompact(taskId: string): Promise<{ newSessionId: strin
 export function onChatChunk(callback: (chunk: ChatChunk) => void): () => void {
   const b = bridge()
   return b ? b.chat.onChunk(callback) : () => {}
+}
+
+export function onChatPhase(callback: (phase: ChatPhase) => void): () => void {
+  const b = bridge()
+  return b ? b.chat.onPhase(callback) : () => {}
 }
 
 // --- Terminal API wrappers (sessionKey-aware) ---
