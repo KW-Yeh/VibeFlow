@@ -295,6 +295,7 @@ export function TaskDetailPanel({
   onClose,
 }: TaskDetailPanelProps) {
   const [showSteps, setShowSteps] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const stages = deriveStages(task, column, reviewerRole)
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const agentName = AGENT_NAMES[taskAgent(task)]
@@ -435,14 +436,33 @@ export function TaskDetailPanel({
                 <Eye className="size-4" />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              title="刪除任務（清理 worktree）"
-              className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-            >
-              <Trash2 className="size-4" />
-            </button>
+            {confirmDelete ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(task.id)}
+                  className="rounded px-1.5 py-1 text-xs text-destructive hover:bg-destructive/15"
+                >
+                  確認刪除
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                title="刪除任務（清理 worktree）"
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 
