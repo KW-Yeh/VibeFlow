@@ -112,6 +112,7 @@ export function RolesDialog({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Reset to the list view whenever the dialog (re-)opens.
@@ -120,6 +121,7 @@ export function RolesDialog({
       setEditingId(null)
       setForm(EMPTY_FORM)
       setAvatarError(null)
+      setConfirmDeleteId(null)
     }
   }, [open])
 
@@ -234,15 +236,35 @@ export function RolesDialog({
                     >
                       <Pencil className="size-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(role.id)}
-                      disabled={saving}
-                      title="刪除角色"
-                      className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive disabled:opacity-50"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {confirmDeleteId === role.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { onDelete(role.id); setConfirmDeleteId(null) }}
+                          disabled={saving}
+                          className="rounded px-1.5 py-1 text-xs text-destructive hover:bg-destructive/15 disabled:opacity-50"
+                        >
+                          確認
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(role.id)}
+                        disabled={saving}
+                        title="刪除角色"
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive disabled:opacity-50"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

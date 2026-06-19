@@ -295,6 +295,7 @@ export function TaskDetailPanel({
   onClose,
 }: TaskDetailPanelProps) {
   const [showSteps, setShowSteps] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const stages = deriveStages(task, column, reviewerRole)
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const agentName = AGENT_NAMES[taskAgent(task)]
@@ -307,6 +308,32 @@ export function TaskDetailPanel({
     <div className="flex h-full flex-col overflow-hidden">
       {/* 頂部 Pipeline 進度條 */}
       <PipelineStagesBar stages={stages} />
+
+      {/* Blocked pipeline banner */}
+      {task.pipeline?.stage === 'blocked' && column !== 'done' && (
+        <div className="flex shrink-0 items-center gap-3 border-b border-amber-500/20 bg-amber-500/10 px-6 py-2.5">
+          <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+          <p className="flex-1 text-sm text-amber-200">
+            Pipeline 已達最大審查輪次，需人工介入。可退回 Backlog 重新規劃，或直接標記完成。
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => onMoveBack(task)}
+              className="rounded px-2 py-1 text-xs text-amber-300 hover:bg-amber-500/20"
+            >
+              退回 Backlog
+            </button>
+            <button
+              type="button"
+              onClick={() => onComplete(task)}
+              className="rounded px-2 py-1 text-xs text-amber-300 hover:bg-amber-500/20"
+            >
+              標記完成
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 任務資訊區 — 限高可捲動；done 任務則填滿剩餘空間 */}
       <div className={cn(
@@ -435,14 +462,33 @@ export function TaskDetailPanel({
                 <Eye className="size-4" />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              title="刪除任務（清理 worktree）"
-              className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-            >
-              <Trash2 className="size-4" />
-            </button>
+            {confirmDelete ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(task.id)}
+                  className="rounded px-1.5 py-1 text-xs text-destructive hover:bg-destructive/15"
+                >
+                  確認刪除
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                title="刪除任務（清理 worktree）"
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 

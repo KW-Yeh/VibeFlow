@@ -133,7 +133,12 @@ export function TaskTerminal({
         if (id === sessionKey) term.write(data)
       })
       offExit = api.term.onExit(({ sessionKey: id, exitCode }) => {
-        if (id === sessionKey) term.writeln(`\r\n[process exited: ${exitCode}]`)
+        if (id !== sessionKey) return
+        if (exitCode === 0) {
+          term.writeln('\r\n✅  Agent 執行完成。')
+        } else {
+          term.writeln(`\r\n⚠️  連線中斷或異常結束（exit code: ${exitCode}）`)
+        }
       })
       // Shift+Enter inserts a newline instead of submitting. xterm sends a plain
       // CR for both Enter and Shift+Enter, so the CLI running in the PTY (e.g.

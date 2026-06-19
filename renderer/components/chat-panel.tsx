@@ -211,6 +211,7 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [sending, setSending] = useState(false)
+  const [confirmCompact, setConfirmCompact] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -425,16 +426,37 @@ export function ChatPanel({
         </span>
         <div className="flex items-center gap-1">
           {!readOnly && messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 shrink-0 px-2 text-[10px]"
-              onClick={handleCompact}
-              title="清除對話（開啟新 session）"
-            >
-              <Scissors className="size-3" />
-              清除對話
-            </Button>
+            confirmCompact ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 shrink-0 px-2 text-[10px]"
+                  onClick={() => setConfirmCompact(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 shrink-0 px-2 text-[10px] text-destructive hover:text-destructive"
+                  onClick={() => { setConfirmCompact(false); handleCompact() }}
+                >
+                  確認清除
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 shrink-0 px-2 text-[10px]"
+                onClick={() => setConfirmCompact(true)}
+                title="清除對話（開啟新 session，此操作無法復原）"
+              >
+                <Scissors className="size-3" />
+                清除對話
+              </Button>
+            )
           )}
           {readOnly ? (
             <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">

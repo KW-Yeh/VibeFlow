@@ -26,11 +26,13 @@ export function WorkspaceDialog({
 }: WorkspaceDialogProps) {
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (open) {
       setName(workspace?.name ?? '')
       setPath(workspace?.path ?? '')
+      setConfirmDelete(false)
     }
   }, [open, workspace])
 
@@ -98,15 +100,36 @@ export function WorkspaceDialog({
           <div className="flex items-center justify-between pt-1">
             <div>
               {workspace && onDelete && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onDelete}
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                >
-                  刪除
-                </Button>
+                confirmDelete ? (
+                  <div className="flex gap-1.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmDelete(false)}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={onDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      確認刪除
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    刪除
+                  </Button>
+                )
               )}
             </div>
             <div className="flex gap-2">
