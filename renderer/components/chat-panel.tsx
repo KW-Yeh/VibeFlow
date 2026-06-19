@@ -14,6 +14,9 @@ import { executorSessionId, resolveSystemPrompt, taskModel } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ChatPhase, Conversation, Role, Task } from '@/lib/types'
 
+// Renderer-only extension: phases are transient and not persisted to store.
+type LocalMessage = ChatMessage & { phases?: ChatPhase[] }
+
 interface ChatPanelProps {
   task: Task
   systemPrompt: string
@@ -65,7 +68,7 @@ function AttachmentBadge({
   )
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function MessageBubble({ msg }: { msg: LocalMessage }) {
   if (msg.isCompactMarker) {
     return (
       <div className="flex items-center gap-2 py-2">
@@ -106,6 +109,9 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             : 'bg-white/[0.06] text-foreground'
         )}
       >
+        {!isUser && msg.phases && msg.phases.length > 0 && (
+          <PhaseList phases={msg.phases} />
+        )}
         {isUser ? (
           <p className="whitespace-pre-wrap break-words">{msg.text}</p>
         ) : (
@@ -158,7 +164,7 @@ function PhaseRow({ phase }: { phase: ChatPhase }) {
 function PhaseList({ phases, active }: { phases: ChatPhase[]; active?: boolean }) {
   if (!phases.length && !active) return null
   return (
-    <div className="mb-2 space-y-0.5 border-l-2 border-white/10 pl-2">
+    <div className="mb-2 max-h-64 space-y-0.5 overflow-y-auto border-l-2 border-white/10 pl-2">
       {phases.map((p) => <PhaseRow key={p.id} phase={p} />)}
       {active && (
         <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground">
@@ -198,9 +204,10 @@ export function ChatPanel({
   launchLabel,
   onLaunchRequest,
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<LocalMessage[]>([])
   const [streaming, setStreaming] = useState<string | null>(null) // null = not streaming
   const [phases, setPhases] = useState<ChatPhase[]>([])
+  const phasesRef = useRef<ChatPhase[]>([])
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [sending, setSending] = useState(false)
@@ -208,7 +215,7 @@ export function ChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Mirrors messages state so doSend always sees the current count without a stale closure.
-  const messagesRef = useRef<ChatMessage[]>([])
+  const messagesRef = useRef<LocalMessage[]>([])
   messagesRef.current = messages
   const loadDoneRef = useRef(false)
   // When set (after a compact), overrides the default executorSessionId.
@@ -248,10 +255,12 @@ export function ChatPanel({
     return onChatChunk((chunk) => {
       if (chunk.taskId !== task.id) return
       if (chunk.done) {
+        const capturedPhases = phasesRef.current
         setStreaming(null)
         setSending(false)
         setPhases([])
-        // Add the final assistant message to the list.
+        phasesRef.current = []
+        // Add the final assistant message with captured phases.
         setMessages((prev) => [
           ...prev,
           {
@@ -259,6 +268,7 @@ export function ChatPanel({
             role: 'assistant',
             text: chunk.delta,
             ts: Date.now(),
+            phases: capturedPhases.length > 0 ? capturedPhases : undefined,
           },
         ])
       } else {
@@ -272,13 +282,22 @@ export function ChatPanel({
     return onChatPhase((phase) => {
       if (phase.taskId !== task.id) return
       setPhases((prev) => {
-        const idx = prev.findIndex((p) => p.id === phase.id)
+        const idx = prev.findIndex((p) => p.phaseType === phase.phaseType)
         if (idx >= 0) {
           const next = [...prev]
-          next[idx] = phase
+          next[idx] = {
+            ...next[idx],
+            phaseSummary: phase.phaseSummary,
+            phaseDetail: next[idx].phaseDetail
+              ? next[idx].phaseDetail + '\n\n' + phase.phaseDetail
+              : phase.phaseDetail,
+          }
+          phasesRef.current = next
           return next
         }
-        return [...prev, phase]
+        const next = [...prev, phase]
+        phasesRef.current = next
+        return next
       })
     })
   }, [task.id])
