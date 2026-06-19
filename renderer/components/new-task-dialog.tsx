@@ -74,6 +74,8 @@ export function NewTaskForm({
   const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
+  const [detectTimedOut, setDetectTimedOut] = useState(false)
+  const [detectKey, setDetectKey] = useState(0)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [roleId, setRoleId] = useState('')
@@ -84,15 +86,21 @@ export function NewTaskForm({
 
   useEffect(() => {
     let active = true
+    setDetectTimedOut(false)
+    setAgents(null)
+    const timeoutId = setTimeout(() => {
+      if (active) setDetectTimedOut(true)
+    }, 6000)
     void detectAgents().then((found) => {
       if (!active) return
+      clearTimeout(timeoutId)
       setAgents(found)
       if (!found.some((a) => a.id === 'claude') && found.length > 0) {
         setAgentCli(found[0].id)
       }
     })
-    return () => { active = false }
-  }, [detectAgents])
+    return () => { active = false; clearTimeout(timeoutId) }
+  }, [detectAgents, detectKey])
 
   useEffect(() => {
     if (step === 2) titleRef.current?.focus()
@@ -411,10 +419,23 @@ export function NewTaskForm({
                     Agent CLI
                   </span>
                   {agents === null ? (
-                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      偵測中…
-                    </p>
+                    detectTimedOut ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
+                        <button
+                          type="button"
+                          onClick={() => setDetectKey((k) => k + 1)}
+                          className="text-xs text-primary underline hover:no-underline"
+                        >
+                          重新偵測
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        偵測中…
+                      </p>
+                    )
                   ) : agents.length === 0 ? (
                     <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
                       未偵測到 Agent CLI（claude / codex / gemini）。
@@ -676,10 +697,23 @@ export function NewTaskForm({
                     Agent CLI
                   </span>
                   {agents === null ? (
-                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      偵測中…
-                    </p>
+                    detectTimedOut ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
+                        <button
+                          type="button"
+                          onClick={() => setDetectKey((k) => k + 1)}
+                          className="text-xs text-primary underline hover:no-underline"
+                        >
+                          重新偵測
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        偵測中…
+                      </p>
+                    )
                   ) : agents.length === 0 ? (
                     <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
                       未偵測到 Agent CLI（claude / codex / gemini）。
@@ -832,21 +866,28 @@ export function NewTaskForm({
 
       {/* Footer buttons */}
       {inline ? (
-        <div className="mt-6 flex justify-end gap-2">
-          {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
-              取消
-            </Button>
+        <div className="mt-6 space-y-2">
+          {inline && !isProjectReady && title.trim().length > 0 && (
+            <p className="text-right text-xs text-muted-foreground">
+              請先在左側選擇專案資料夾
+            </p>
           )}
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={cn(creating && 'opacity-80')}
-          >
-            {creating && <Loader2 className="animate-spin" />}
-            {creating ? '建立 Worktree 中…' : '建立任務'}
-          </Button>
+          <div className="flex justify-end gap-2">
+            {onClose && (
+              <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
+                取消
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={cn(creating && 'opacity-80')}
+            >
+              {creating && <Loader2 className="animate-spin" />}
+              {creating ? '建立 Worktree 中…' : '建立任務'}
+            </Button>
+          </div>
         </div>
       ) : step === 1 ? (
         <div className="mt-5 flex justify-end gap-2">

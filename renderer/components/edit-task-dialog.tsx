@@ -34,6 +34,7 @@ export function EditTaskDialog({
   const [description, setDescription] = useState('')
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
+  const [confirmClose, setConfirmClose] = useState(false)
 
   // Seed the fields from the task whenever a new one is opened.
   useEffect(() => {
@@ -46,6 +47,20 @@ export function EditTaskDialog({
   }, [task])
 
   if (!task) return null
+
+  const isDirty =
+    title !== task.title ||
+    description !== (task.description ?? '') ||
+    roleId !== (task.roleId ?? '') ||
+    reviewerRoleId !== (task.reviewerRoleId ?? '')
+
+  const handleClose = () => {
+    if (isDirty && !saving) {
+      setConfirmClose(true)
+    } else {
+      onClose()
+    }
+  }
 
   const canSubmit = title.trim().length > 0 && !saving
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
@@ -61,20 +76,42 @@ export function EditTaskDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60"
-        onClick={saving ? undefined : onClose}
+        onClick={saving ? undefined : handleClose}
       />
       <div className="relative z-10 w-full max-w-md rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">編輯任務</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={saving}
             className="text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <X className="size-4" />
           </button>
         </div>
+
+        {confirmClose && (
+          <div className="mb-4 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+            <span className="text-amber-200">有未儲存的變更，確定要離開？</span>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setConfirmClose(false)}
+                className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+              >
+                繼續編輯
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded px-2 py-0.5 text-xs text-destructive hover:bg-destructive/15"
+              >
+                放棄離開
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-4">
           <label className="block space-y-1.5">
@@ -158,7 +195,7 @@ export function EditTaskDialog({
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+          <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
             取消
           </Button>
           <Button

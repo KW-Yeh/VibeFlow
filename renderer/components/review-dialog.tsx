@@ -122,22 +122,29 @@ export function ReviewDialog({
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <input
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Commit message"
-                disabled={finalizing}
-                className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              />
-              <Button
-                size="sm"
-                onClick={() => onApprove(message.trim() || `VibeFlow: ${taskTitle}`)}
-                disabled={finalizing || loading}
-              >
-                {finalizing && <Loader2 className="animate-spin" />}
-                {finalizing ? '提交中…' : 'Approve & Push'}
-              </Button>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Commit message"
+                  disabled={finalizing}
+                  className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => onApprove(message.trim() || `VibeFlow: ${taskTitle}`)}
+                  disabled={finalizing || loading}
+                >
+                  {finalizing && <Loader2 className="animate-spin" />}
+                  {finalizing ? '提交中…' : '提交並推送至遠端'}
+                </Button>
+              </div>
+              {!finalizing && (
+                <p className="text-right text-[11px] text-muted-foreground">
+                  將執行 git commit 並 push 至遠端分支
+                </p>
+              )}
             </div>
           )}
           {error && (

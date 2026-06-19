@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Eye,
   FolderOpen,
   Hammer,
   Layers,
@@ -239,6 +240,30 @@ export function SideMenu({
                         ) : (
                           board[group.id].map((task) => {
                             const isSelected = task.id === selectedTaskId
+                            const pipelineStage = task.pipeline?.stage
+                            const statusIcon =
+                              group.id === 'in_progress' ? (
+                                pipelineStage === 'blocked' ? (
+                                  <AlertTriangle className="size-3 shrink-0 text-destructive" />
+                                ) : pipelineStage === 'reviewing' ? (
+                                  <Eye className="size-3 shrink-0 text-amber-400" />
+                                ) : pipelineStage === 'developing' || pipelineStage === 'revising' ? (
+                                  <span className="size-3 shrink-0 flex items-center justify-center">
+                                    <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                  </span>
+                                ) : task.pipeline ? (
+                                  <Hammer className="size-3 shrink-0 opacity-60" />
+                                ) : (
+                                  <span className="size-3 shrink-0 flex items-center justify-center">
+                                    <span className="size-1.5 rounded-full bg-primary/60" />
+                                  </span>
+                                )
+                              ) : task.pipeline ? (
+                                <Hammer className="size-3 shrink-0 opacity-60" />
+                              ) : (
+                                <span className="size-3 shrink-0" />
+                              )
+
                             return (
                               <button
                                 key={task.id}
@@ -252,11 +277,7 @@ export function SideMenu({
                                 )}
                                 title={task.title}
                               >
-                                {task.pipeline ? (
-                                  <Hammer className="size-3 shrink-0 opacity-60" />
-                                ) : (
-                                  <span className="size-3 shrink-0" />
-                                )}
+                                {statusIcon}
                                 <span className="truncate">{task.title}</span>
                               </button>
                             )
