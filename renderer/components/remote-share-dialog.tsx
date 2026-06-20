@@ -3,7 +3,7 @@ import { Smartphone, X, Copy, Check, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // Update this URL once you deploy VibeFlow-remote to Vercel.
-const REMOTE_APP_BASE_URL = 'https://vibeflow-remote.vercel.app'
+const REMOTE_APP_BASE_URL = 'https://vibe-flow-remote.vercel.app'
 
 interface Props {
   roomCode: string
