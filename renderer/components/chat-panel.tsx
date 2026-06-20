@@ -7,15 +7,24 @@ import {
 } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ChevronDown, Paperclip, Send, Square, Sparkles, Scissors, Terminal, Check } from 'lucide-react'
+import { Paperclip, Send, Square, Sparkles, Scissors, Terminal, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { chatCancel, chatCompact, chatLoad, chatSend, onChatChunk, onChatPhase } from '@/lib/api'
 import { executorSessionId, resolveSystemPrompt, taskModel } from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { ChatMessage, ChatPhase, Conversation, Role, Task } from '@/lib/types'
+import type { ChatMessage, PhaseType, Conversation, Role, Task } from '@/lib/types'
 
-// Renderer-only extension: phases are transient and not persisted to store.
-type LocalMessage = ChatMessage & { phases?: ChatPhase[] }
+// Renderer-only phase message — transient, not persisted to chat store.
+type PhaseMessage = {
+  id: string
+  role: 'phase'
+  phaseType: PhaseType
+  phaseSummary: string
+  phaseDetail: string
+  ts: number
+}
+
+type LocalMessage = ChatMessage | PhaseMessage
 
 interface ChatPanelProps {
   task: Task
@@ -70,6 +79,10 @@ function AttachmentBadge({
 }
 
 function MessageBubble({ msg }: { msg: LocalMessage }) {
+  if (msg.role === 'phase') {
+    return <PhaseBubble msg={msg} />
+  }
+
   if (msg.isCompactMarker) {
     return (
       <div className="flex items-center gap-2 py-2">
@@ -110,15 +123,36 @@ function MessageBubble({ msg }: { msg: LocalMessage }) {
             : 'bg-white/[0.06] text-foreground'
         )}
       >
-        {!isUser && msg.phases && msg.phases.length > 0 && (
-          <PhaseList phases={msg.phases} />
-        )}
         {isUser ? (
           <p className="whitespace-pre-wrap break-words">{msg.text}</p>
         ) : (
           <div className="prose prose-invert prose-sm max-w-none break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PhaseBubble({ msg }: { msg: PhaseMessage }) {
+  const icon =
+    msg.phaseType === 'thinking'
+      ? <Sparkles className="size-3 shrink-0 text-violet-400" />
+      : msg.phaseType === 'tool_result'
+        ? <Check className="size-3 shrink-0 text-emerald-400" />
+        : <Terminal className="size-3 shrink-0 text-sky-400" />
+  return (
+    <div className="flex items-start py-0.5">
+      <div className="max-w-[90%] space-y-1 rounded border border-white/[0.06] bg-white/[0.03] px-2 py-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          {icon}
+          <span className="font-medium">{msg.phaseSummary}</span>
+        </div>
+        {msg.phaseDetail && (
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words pl-4 text-[10px] text-muted-foreground/70">
+            {msg.phaseDetail}
+          </pre>
         )}
       </div>
     </div>
@@ -135,59 +169,16 @@ function ThinkingDots() {
   )
 }
 
-function PhaseRow({ phase }: { phase: ChatPhase }) {
-  const [open, setOpen] = useState(false)
-  const icon = phase.phaseType === 'thinking'
-    ? <Sparkles className="size-3 shrink-0" />
-    : phase.phaseType === 'tool_result'
-      ? <Check className="size-3 shrink-0" />
-      : <Terminal className="size-3 shrink-0" />
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-      >
-        {icon}
-        <span className="min-w-0 flex-1 truncate">{phase.phaseSummary}</span>
-        <ChevronDown className={cn('size-3 shrink-0 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && phase.phaseDetail && (
-        <pre className="mt-0.5 max-h-48 overflow-y-auto rounded bg-black/40 px-2 py-1.5 text-[10px] text-muted-foreground whitespace-pre-wrap break-words">
-          {phase.phaseDetail}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-function PhaseList({ phases, active }: { phases: ChatPhase[]; active?: boolean }) {
-  if (!phases.length && !active) return null
-  return (
-    <div className="mb-2 max-h-64 space-y-0.5 overflow-y-auto border-l-2 border-white/10 pl-2">
-      {phases.map((p) => <PhaseRow key={p.id} phase={p} />)}
-      {active && (
-        <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-pulse" />
-          <span>Processing…</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function StreamingBubble({ text, phases, active }: { text: string; phases: ChatPhase[]; active: boolean }) {
+function StreamingBubble({ text, active }: { text: string; active: boolean }) {
   return (
     <div className="flex items-start">
       <div className="max-w-[85%] rounded-lg bg-white/[0.06] px-3 py-2 text-sm">
-        <PhaseList phases={phases} active={active && !text} />
         {text ? (
           <div className="prose prose-invert prose-sm max-w-none break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
           </div>
         ) : (
-          phases.length === 0 && <ThinkingDots />
+          active && <ThinkingDots />
         )}
       </div>
     </div>
@@ -208,8 +199,6 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<LocalMessage[]>([])
   const [streaming, setStreaming] = useState<string | null>(null) // null = not streaming
-  const [phases, setPhases] = useState<ChatPhase[]>([])
-  const phasesRef = useRef<ChatPhase[]>([])
   const [input, setInput] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [sending, setSending] = useState(false)
@@ -259,12 +248,8 @@ export function ChatPanel({
     return onChatChunk((chunk) => {
       if (chunk.taskId !== task.id) return
       if (chunk.done) {
-        const capturedPhases = phasesRef.current
         setStreaming(null)
         setSending(false)
-        setPhases([])
-        phasesRef.current = []
-        // Add the final assistant message with captured phases.
         setMessages((prev) => [
           ...prev,
           {
@@ -272,7 +257,6 @@ export function ChatPanel({
             role: 'assistant',
             text: chunk.delta,
             ts: Date.now(),
-            phases: capturedPhases.length > 0 ? capturedPhases : undefined,
           },
         ])
       } else {
@@ -281,28 +265,21 @@ export function ChatPanel({
     })
   }, [task.id])
 
-  // Subscribe to agent execution phase updates.
+  // Each agent phase (thinking / tool call / result) becomes a direct message.
   useEffect(() => {
     return onChatPhase((phase) => {
       if (phase.taskId !== task.id) return
-      setPhases((prev) => {
-        const idx = prev.findIndex((p) => p.phaseType === phase.phaseType)
-        if (idx >= 0) {
-          const next = [...prev]
-          next[idx] = {
-            ...next[idx],
-            phaseSummary: phase.phaseSummary,
-            phaseDetail: next[idx].phaseDetail
-              ? next[idx].phaseDetail + '\n\n' + phase.phaseDetail
-              : phase.phaseDetail,
-          }
-          phasesRef.current = next
-          return next
-        }
-        const next = [...prev, phase]
-        phasesRef.current = next
-        return next
-      })
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: phase.id,
+          role: 'phase',
+          phaseType: phase.phaseType,
+          phaseSummary: phase.phaseSummary,
+          phaseDetail: phase.phaseDetail,
+          ts: Date.now(),
+        } satisfies PhaseMessage,
+      ])
     })
   }, [task.id])
 
@@ -329,7 +306,6 @@ export function ChatPanel({
       if (!task.worktreePath) return
       setSending(true)
       setStreaming('')
-      setPhases([])
       setMessages((prev) => [
         ...prev,
         {
@@ -519,7 +495,7 @@ export function ChatPanel({
             {messages.map((msg) => (
               <MessageBubble key={msg.id} msg={msg} />
             ))}
-            {streaming !== null && <StreamingBubble text={streaming} phases={phases} active={sending} />}
+            {streaming !== null && <StreamingBubble text={streaming} active={sending} />}
             <div ref={bottomRef} />
           </>
         )}

@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
-import { PROGRESS_FILE } from './progress'
+import { PLAN_FILE, PROGRESS_FILE } from './progress'
 import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
 
@@ -207,6 +207,13 @@ export async function ensureLocalExclude(projectPath: string): Promise<void> {
     path.join(infoDir, 'exclude'),
     `${SUBAGENTS_DIR}/`,
     '# VibeFlow sub-agent event log (runtime-only)',
+    { mkdir: true }
+  )
+  // The planning artifact is temporary — exclude so git add -A can't commit it.
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    PLAN_FILE,
+    '# VibeFlow planning artifact (runtime-only)',
     { mkdir: true }
   )
 }
@@ -546,12 +553,13 @@ export async function getWorktreeDiff(
     }
   }
 
-  // The agent-maintained progress file and sub-agent event log are VibeFlow
-  // metadata, not changes to review — keep them out of the diff viewer.
+  // The agent-maintained progress file, plan file, and sub-agent event log are
+  // VibeFlow metadata, not changes to review — keep them out of the diff viewer.
   const limited = entries
     .filter(
       (e) =>
         e.path !== PROGRESS_FILE &&
+        e.path !== PLAN_FILE &&
         e.path !== SUBAGENTS_DIR &&
         !e.path.startsWith(`${SUBAGENTS_DIR}/`)
     )

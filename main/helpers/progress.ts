@@ -34,6 +34,11 @@ export interface TaskProgress {
   summary?: string
   steps: TaskProgressStep[]
   /**
+   * Set to true by the agent once PLAN.md is finalized and execution is ready
+   * to begin. Absent or false = still in planning stage.
+   */
+  planDone?: boolean
+  /**
    * Present only after the reviewer stage runs: the code-review verdict the
    * reviewer agent wrote into the progress file. The executor stages omit it.
    */
@@ -47,6 +52,12 @@ export interface TaskProgress {
  * Must match the literal in renderer/lib/claude.ts (progress protocol prompt).
  */
 export const PROGRESS_FILE = '.vibeflow-progress.json'
+
+/**
+ * Planning artifact written by the agent at the start of each task.
+ * Runtime-only — excluded from git via .git/info/exclude (see ensureLocalExclude).
+ */
+export const PLAN_FILE = 'PLAN.md'
 
 /** Parse the optional reviewer verdict; undefined when absent or malformed. */
 function parseReview(raw: unknown): ReviewVerdict | undefined {
@@ -70,7 +81,7 @@ function parseProgress(raw: string): TaskProgress | null {
   try {
     const data: unknown = JSON.parse(raw)
     if (!data || typeof data !== 'object') return null
-    const obj = data as { summary?: unknown; steps?: unknown; review?: unknown }
+    const obj = data as { summary?: unknown; steps?: unknown; review?: unknown; planDone?: unknown }
     if (!Array.isArray(obj.steps)) return null
     const steps: TaskProgressStep[] = []
     for (const s of obj.steps) {
@@ -82,6 +93,7 @@ function parseProgress(raw: string): TaskProgress | null {
     return {
       summary: typeof obj.summary === 'string' ? obj.summary : undefined,
       steps,
+      planDone: obj.planDone === true,
       review: parseReview(obj.review),
       updatedAt: Date.now(),
     }
