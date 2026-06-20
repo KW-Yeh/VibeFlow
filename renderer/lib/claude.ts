@@ -81,7 +81,7 @@ export function buildRolePrompt(
 ): string {
   if (!role || !role.name?.trim()) return ''
   const lines = [
-    `你被指派的角色是「${role.name.trim()}」。請完全以此角色的視角來認知、判斷並執行任務。`,
+    `你現在是一位資深的${role.name.trim()}。請根據以下角色定位與邊界限制，來審視並執行接下來的任務：`,
   ]
   const positioning = role.positioning?.trim()
   const responsibilities = role.responsibilities?.trim()

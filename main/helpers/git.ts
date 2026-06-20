@@ -472,7 +472,7 @@ export interface DiffFile {
   truncated: boolean
 }
 
-const MAX_BYTES = 200 * 1024 // per-side content cap for the diff viewer
+const MAX_BYTES = 1024 * 1024 // per-side content cap for the diff viewer
 const MAX_FILES = 80
 
 function clip(content: string): { value: string; truncated: boolean } {

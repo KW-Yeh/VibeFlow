@@ -7,9 +7,9 @@ import {
 } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ChevronDown, Paperclip, Send, Sparkles, Scissors, Terminal, Check } from 'lucide-react'
+import { ChevronDown, Paperclip, Send, Square, Sparkles, Scissors, Terminal, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { chatCompact, chatLoad, chatSend, onChatChunk, onChatPhase } from '@/lib/api'
+import { chatCancel, chatCompact, chatLoad, chatSend, onChatChunk, onChatPhase } from '@/lib/api'
 import { executorSessionId, resolveSystemPrompt, taskModel } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, ChatPhase, Conversation, Role, Task } from '@/lib/types'
@@ -32,6 +32,7 @@ interface ChatPanelProps {
   /** Shown when no messages exist yet and the panel is not read-only. */
   launchLabel?: string
   onLaunchRequest?: () => void
+  isVisible?: boolean
 }
 
 interface PendingAttachment {
@@ -203,6 +204,7 @@ export function ChatPanel({
   readOnly = false,
   launchLabel,
   onLaunchRequest,
+  isVisible,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<LocalMessage[]>([])
   const [streaming, setStreaming] = useState<string | null>(null) // null = not streaming
@@ -213,6 +215,7 @@ export function ChatPanel({
   const [sending, setSending] = useState(false)
   const [confirmCompact, setConfirmCompact] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Mirrors messages state so doSend always sees the current count without a stale closure.
@@ -303,10 +306,22 @@ export function ChatPanel({
     })
   }, [task.id])
 
-  // Scroll to bottom when messages change.
+  // Scroll to bottom when messages change or panel becomes visible.
   useLayoutEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streaming])
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+  }, [messages, streaming, isVisible])
+
+  // Scroll to bottom when DOM content grows (e.g. PhaseRow expand/collapse).
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    const mo = new MutationObserver(() => {
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+      if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+    })
+    mo.observe(container, { childList: true, subtree: true })
+    return () => mo.disconnect()
+  }, [])
 
   const doSend = useCallback(
     async (text: string, attachments: PendingAttachment[]) => {
@@ -380,10 +395,16 @@ export function ChatPanel({
     await doSend(text, pendingAttachments)
   }
 
+  const handleCancel = () => {
+    chatCancel(task.id)
+    setSending(false)
+    setStreaming(null)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      handleSend()
+      if (!sending) handleSend()
     }
   }
 
@@ -416,6 +437,8 @@ export function ChatPanel({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`
   }
+
+  const notStarted = !task.launchedAt && !readOnly
 
   return (
     <div className="mt-2 flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md bg-black/80">
@@ -478,12 +501,28 @@ export function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
-        ))}
-        {streaming !== null && <StreamingBubble text={streaming} phases={phases} active={sending} />}
-        <div ref={bottomRef} />
+      <div ref={messagesContainerRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
+        {notStarted && messages.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Button
+              size="sm"
+              className="gap-1.5 rounded-full px-4"
+              onClick={onLaunchRequest}
+              disabled={!onLaunchRequest}
+            >
+              <Sparkles className="size-3.5" />
+              {launchLabel ?? '啟動 Agent'}
+            </Button>
+          </div>
+        ) : (
+          <>
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} />
+            ))}
+            {streaming !== null && <StreamingBubble text={streaming} phases={phases} active={sending} />}
+            <div ref={bottomRef} />
+          </>
+        )}
       </div>
 
       {/* Input area */}
@@ -506,7 +545,8 @@ export function ChatPanel({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              disabled={notStarted}
+              className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-40"
               title="附加檔案"
             >
               <Paperclip className="size-3.5" />
@@ -524,20 +564,31 @@ export function ChatPanel({
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="輸入訊息… (Enter 送出, Shift+Enter 換行)"
+              placeholder={notStarted ? '請先啟動任務' : '輸入訊息… (Enter 送出, Shift+Enter 換行)'}
               rows={1}
-              disabled={sending}
-              className="min-h-[32px] flex-1 resize-none rounded bg-white/5 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-white/20 disabled:opacity-50"
+              disabled={notStarted}
+              className="min-h-[32px] flex-1 resize-none rounded bg-white/5 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-white/20 disabled:opacity-40"
             />
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={sending || (!input.trim() && pendingAttachments.length === 0)}
-              className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-40"
-              title="送出"
-            >
-              <Send className="size-3.5" />
-            </button>
+            {sending ? (
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="mb-1 shrink-0 rounded p-1 text-destructive hover:bg-white/10"
+                title="中斷"
+              >
+                <Square className="size-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={notStarted || (!input.trim() && pendingAttachments.length === 0)}
+                className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-40"
+                title="送出"
+              >
+                <Send className="size-3.5" />
+              </button>
+            )}
           </div>
         </div>
       )}

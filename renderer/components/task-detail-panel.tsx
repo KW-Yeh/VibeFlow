@@ -258,6 +258,7 @@ export interface TaskDetailPanelProps {
   reviewerRole: Role | null
   subAgents: SubAgentRun[]
   isMounted: boolean
+  isSelected?: boolean
   chatLaunch?: ChatLaunchEntry
   systemPrompt?: string
   workspacePath?: string
@@ -293,6 +294,7 @@ export function TaskDetailPanel({
   onOpenReviewPanel,
   onOpenSubAgents,
   onClose,
+  isSelected,
 }: TaskDetailPanelProps) {
   const [showSteps, setShowSteps] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -615,6 +617,7 @@ export function TaskDetailPanel({
             pendingNonce={chatLaunch?.nonce ?? 0}
             launchLabel={`啟動 ${agentName}`}
             onLaunchRequest={() => onRun(task)}
+            isVisible={isSelected}
           />
         </div>
       )}
