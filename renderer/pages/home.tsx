@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
@@ -92,6 +92,7 @@ export default function HomePage() {
   const [editError, setEditError] = useState<string | null>(null)
 
   // Review dialog state
+  const savedReviewResults = useRef<Map<string, { committed: boolean; pushed: boolean }>>(new Map())
   const [reviewTaskId, setReviewTaskId] = useState<string | null>(null)
   const [reviewTitle, setReviewTitle] = useState('')
   const [reviewFiles, setReviewFiles] = useState<DiffFile[]>([])
@@ -272,7 +273,7 @@ export default function HomePage() {
     const task = findTask(board, taskId)
     setReviewTaskId(taskId)
     setReviewTitle(task?.title ?? taskId)
-    setReviewResult(null)
+    setReviewResult(savedReviewResults.current.get(taskId) ?? null)
     setReviewError(null)
     setReviewFiles([])
     setReviewLoading(true)
@@ -293,6 +294,7 @@ export default function HomePage() {
       const res = await approve(reviewTaskId, message)
       if (res) {
         setReviewResult(res.result)
+        savedReviewResults.current.set(reviewTaskId, res.result)
         setBoard(res.state.board)
       }
     } catch (err) {
