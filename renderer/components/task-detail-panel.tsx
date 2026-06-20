@@ -615,7 +615,7 @@ export function TaskDetailPanel({
             workspacePath={workspacePath}
             pendingMessage={chatLaunch?.text}
             pendingNonce={chatLaunch?.nonce ?? 0}
-            launchLabel={`啟動 ${agentName}`}
+            launchLabel={column === 'backlog' ? '開始任務' : `啟動 ${agentName}`}
             onLaunchRequest={() => column === 'backlog' ? onStart(task) : onRun(task)}
             isVisible={isSelected}
           />
