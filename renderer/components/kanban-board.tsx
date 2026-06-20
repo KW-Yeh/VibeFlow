@@ -444,6 +444,7 @@ export function KanbanBoard({
                       reviewerRole={roleById(entry.task.reviewerRoleId)}
                       subAgents={subAgents[entry.task.id] ?? []}
                       isMounted={mounted.has(taskId)}
+                      isSelected={isSelected}
                       chatLaunch={chatLaunch[taskId]}
                       systemPrompt={systemPrompt}
                       workspacePath={resolveWorkspacePath(entry.task.workspaceId)}

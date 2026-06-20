@@ -482,6 +482,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return loadConversation(taskId)
   })
 
+  ipcMain.handle('chat:cancel', (_event, taskId: string) => {
+    cancelChatSend(taskId)
+  })
+
   ipcMain.handle(
     'chat:send',
     (

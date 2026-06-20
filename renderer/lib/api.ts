@@ -242,6 +242,10 @@ export async function chatSend(payload: {
   bridge()?.chat.send(payload)
 }
 
+export function chatCancel(taskId: string): void {
+  bridge()?.chat.cancel(taskId)
+}
+
 export async function chatCompact(taskId: string): Promise<{ newSessionId: string } | null> {
   return (await bridge()?.chat.compact(taskId)) ?? null
 }
