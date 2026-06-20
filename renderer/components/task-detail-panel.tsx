@@ -19,7 +19,6 @@ import {
   Loader2,
   Pencil,
   Play,
-  Search,
   Trash2,
   Undo2,
 } from 'lucide-react'
@@ -72,27 +71,30 @@ function deriveStages(
 ): PipelineStage[] {
   const hasReviewer = !!reviewerRole
   const p = task.pipeline
+  const planDone = task.progress?.planDone === true
 
   let planSt: StageStatus
-  let checkPlanSt: StageStatus
   let executeSt: StageStatus
   let reviewSt: StageStatus
 
   if (column === 'done') {
     planSt = 'done'
-    checkPlanSt = 'done'
     executeSt = 'done'
     reviewSt = 'done'
   } else if (column === 'in_progress') {
     if (!task.progress) {
-      // No progress file yet — agent is still planning, not yet executing
+      // No progress file yet — agent hasn't started planning
+      planSt = 'pending'
+      executeSt = 'pending'
+      reviewSt = 'pending'
+    } else if (!planDone) {
+      // Progress file exists but planDone not set — PLAN.md is being built
       planSt = 'active'
-      checkPlanSt = 'pending'
       executeSt = 'pending'
       reviewSt = 'pending'
     } else {
+      // planDone = true → plan finished, derive execute/review from pipeline
       planSt = 'done'
-      checkPlanSt = 'done'
       const stage = p?.stage
       const complete = isTaskComplete(task)
       if (!stage || stage === 'developing') {
@@ -114,41 +116,19 @@ function deriveStages(
       }
     }
   } else {
-    // backlog
-    planSt = 'active'
-    checkPlanSt = 'pending'
+    // backlog — nothing started yet
+    planSt = 'pending'
     executeSt = 'pending'
     reviewSt = 'pending'
   }
 
   const stages: PipelineStage[] = [
-    { id: 'plan', label: '規劃任務', icon: ClipboardList, status: planSt },
+    { id: 'plan', label: '完善並建立計劃', icon: ClipboardList, status: planSt },
+    { id: 'execute', label: '執行計劃', icon: Hammer, status: executeSt },
   ]
 
-  // 複雜任務（有 code reviewer）才顯示「檢視並修正計劃」環節
   if (hasReviewer) {
-    stages.push({
-      id: 'check_plan',
-      label: '檢視並修正計劃',
-      icon: Search,
-      status: checkPlanSt,
-    })
-  }
-
-  stages.push({
-    id: 'execute',
-    label: '執行計劃',
-    icon: Hammer,
-    status: executeSt,
-  })
-
-  if (hasReviewer) {
-    stages.push({
-      id: 'review',
-      label: '驗收與修復',
-      icon: CheckCircle,
-      status: reviewSt,
-    })
+    stages.push({ id: 'review', label: '驗證結果', icon: CheckCircle, status: reviewSt })
   }
 
   return stages

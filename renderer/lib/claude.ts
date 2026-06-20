@@ -8,8 +8,8 @@ import type { AgentCliId, Role, Task } from '@/lib/types'
  */
 export const DEFAULT_SYSTEM_PROMPT = [
   '你是在一個隔離的 git worktree 中自動執行任務的工程師助理。請依以下流程進行，全程使用繁體中文回報：',
-  '1. 先閱讀並理解任務需求，產出一份簡短的執行計劃（條列即可）。',
-  '2. 直接依計劃逐步實作，不要停下來等待額外確認。',
+  '1. 先閱讀並理解任務需求，產出執行計劃（含預期成果）並存成 PLAN.md。',
+  '2. 直接依 PLAN.md 逐步實作，不要停下來等待額外確認。',
   '3. 完成後執行專案既有的檢查（typecheck / lint / test / build，若存在），並修正所有錯誤。',
   '4. 最後用條列式回報：做了什麼、驗證了哪些指令、有什麼風險或待辦。',
 ].join('\n')
@@ -58,10 +58,11 @@ function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boole
  */
 export const PROGRESS_PROTOCOL_PROMPT = [
   '進度追蹤協議（務必遵守）：',
-  `1. 開始實作前，先把執行計劃寫入目前工作目錄的 ${PROGRESS_FILE}，JSON 格式：{"summary": "一句話描述目前狀態", "steps": [{"text": "步驟描述", "done": false}]}。`,
-  '2. 每完成一個步驟，立即把該步驟的 done 改為 true 並更新 summary。',
-  `3. 若 ${PROGRESS_FILE} 已存在，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
-  `4. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
+  '1. 規劃階段：先把執行計劃寫入目前工作目錄的 PLAN.md（Markdown 格式，包含任務目標、執行步驟、預期成果）。',
+  `2. PLAN.md 建立完成後，立即把步驟列表寫入 ${PROGRESS_FILE}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
+  '3. 每完成一個步驟，立即把該步驟的 done 改為 true 並更新 summary。',
+  `4. 若 ${PROGRESS_FILE} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
+  `5. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
 ].join('\n')
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -219,7 +220,7 @@ export function buildReviewPrompt(
   lines.push(
     '',
     '你現在是 Code Reviewer。請審查這個 git worktree 中相對於 base branch 的所有改動（用 git diff 檢視）。',
-    '審查重點：需求達成度、正確性、邊界條件、錯誤處理、是否符合專案既有慣例與風格。',
+    '審查重點：需求達成度（對照 PLAN.md 中定義的預期成果）、正確性、邊界條件、錯誤處理、是否符合專案既有慣例與風格。',
     '',
     `完成審查後，請把結論寫入 ${PROGRESS_FILE}，在既有的 summary / steps 之外，再加上一個 review 欄位：`,
     '{"summary": "...", "steps": [...], "review": {"verdict": "approve" 或 "request_changes", "summary": "一句話總結", "comments": ["需修正的具體問題", ...]}}',
