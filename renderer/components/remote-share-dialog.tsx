@@ -8,10 +8,11 @@ const REMOTE_APP_BASE_URL = 'https://vibe-flow-remote.vercel.app'
 interface Props {
   roomCode: string
   peerCount: number
+  onClose: () => void
   onStop: () => void
 }
 
-export function RemoteShareDialog({ roomCode, peerCount, onStop }: Props) {
+export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Props) {
   const url = `${REMOTE_APP_BASE_URL}/?room=${roomCode}`
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [copied, setCopied] = useState(false)
@@ -34,7 +35,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onStop }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onStop} />
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative z-10 w-full max-w-xs rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
@@ -43,7 +44,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onStop }: Props) {
             <h2 className="text-sm font-semibold">遠端控制</h2>
           </div>
           <button
-            onClick={onStop}
+            onClick={onClose}
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="size-4" />
