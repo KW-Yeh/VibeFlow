@@ -149,11 +149,6 @@ function PhaseBubble({ msg }: { msg: PhaseMessage }) {
           {icon}
           <span className="font-medium">{msg.phaseSummary}</span>
         </div>
-        {msg.phaseDetail && (
-          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words pl-4 text-[10px] text-muted-foreground/70">
-            {msg.phaseDetail}
-          </pre>
-        )}
       </div>
     </div>
   )

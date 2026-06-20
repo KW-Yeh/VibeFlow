@@ -83,8 +83,8 @@ function deriveStages(
     reviewSt = 'done'
   } else if (column === 'in_progress') {
     if (!task.progress) {
-      // No progress file yet — agent hasn't started planning
-      planSt = 'pending'
+      // No progress file yet — agent is running but hasn't written progress; planning is active
+      planSt = 'active'
       executeSt = 'pending'
       reviewSt = 'pending'
     } else if (!planDone) {
