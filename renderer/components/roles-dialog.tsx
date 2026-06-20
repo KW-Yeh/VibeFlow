@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { ImagePlus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { PRESET_ROLES } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
 
@@ -113,6 +114,7 @@ export function RolesDialog({
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [avatarError, setAvatarError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [showPresets, setShowPresets] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Reset to the list view whenever the dialog (re-)opens.
@@ -122,14 +124,28 @@ export function RolesDialog({
       setForm(EMPTY_FORM)
       setAvatarError(null)
       setConfirmDeleteId(null)
+      setShowPresets(false)
     }
   }, [open])
+
+  const applyPreset = (preset: Omit<Role, 'id'>) => {
+    setForm({
+      name: preset.name,
+      avatar: preset.avatar ?? '',
+      positioning: preset.positioning ?? '',
+      responsibilities: preset.responsibilities ?? '',
+      boundaries: preset.boundaries ?? '',
+    })
+    setShowPresets(false)
+    setAvatarError(null)
+  }
 
   if (!open) return null
 
   const startCreate = () => {
     setForm(EMPTY_FORM)
     setAvatarError(null)
+    setShowPresets(false)
     setEditingId('new')
   }
 
@@ -142,6 +158,7 @@ export function RolesDialog({
       boundaries: role.boundaries ?? '',
     })
     setAvatarError(null)
+    setShowPresets(false)
     setEditingId(role.id)
   }
 
@@ -277,6 +294,48 @@ export function RolesDialog({
           </div>
         ) : (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            {/* Preset selector */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPresets((v) => !v)}
+                className="flex w-full items-center justify-between rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground hover:border-border hover:text-foreground"
+              >
+                <span>從預設角色選擇</span>
+                <ChevronDown
+                  className={cn(
+                    'size-3.5 transition-transform',
+                    showPresets && 'rotate-180'
+                  )}
+                />
+              </button>
+              {showPresets && (
+                <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-md">
+                  {PRESET_ROLES.map((preset) => (
+                    <li key={preset.name}>
+                      <button
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent"
+                      >
+                        <span className="shrink-0 text-base leading-none">
+                          {preset.avatar ?? preset.name.slice(0, 1)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{preset.name}</p>
+                          {preset.positioning && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {preset.positioning}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <div className="flex items-center gap-3">
               <RoleAvatar
                 role={{ name: form.name || '?', avatar: form.avatar }}
