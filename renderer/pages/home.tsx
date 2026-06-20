@@ -566,6 +566,7 @@ export default function HomePage() {
               <RemoteShareDialog
                 roomCode={remoteHost.roomCode}
                 peerCount={remoteHost.peerCount}
+                onClose={() => setRemoteShareOpen(false)}
                 onStop={() => {
                   remoteHost.stopSharing()
                   setRemoteShareOpen(false)
