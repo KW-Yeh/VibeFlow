@@ -8,6 +8,8 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { WorkspaceDialog } from '@/components/workspace-dialog'
+import { RemoteShareDialog } from '@/components/remote-share-dialog'
+import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   approve,
   cleanupTask,
@@ -108,6 +110,9 @@ export default function HomePage() {
   // offer a one-click restart instead of requiring a manual quit + reopen.
   const [updateReady, setUpdateReady] = useState(false)
   const [relaunching, setRelaunching] = useState(false)
+
+  // Remote share state
+  const [remoteShareOpen, setRemoteShareOpen] = useState(false)
 
   // Workspaces + side menu state
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -441,6 +446,16 @@ export default function HomePage() {
     }
   }
 
+  const remoteHost = useRemoteHost({
+    board,
+    workspaces,
+    autoMode,
+    onStateChange: (next) => {
+      setBoard(next)
+      void persistBoard(next)
+    },
+  })
+
   return (
     <React.Fragment>
       <Head>
@@ -481,6 +496,11 @@ export default function HomePage() {
                   }}
                   roles={roles}
                   onManageRoles={handleOpenRoles}
+                  onRemoteShare={() => {
+                    if (!remoteHost.roomCode) remoteHost.startSharing()
+                    setRemoteShareOpen(true)
+                  }}
+                  remoteActive={!!remoteHost.roomCode}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   onDeselectTask={() => setSelectedTaskId(null)}
@@ -542,6 +562,16 @@ export default function HomePage() {
               onDelete={editingWorkspace ? handleDeleteWorkspace : undefined}
               onClose={() => setWorkspaceDialogOpen(false)}
             />
+            {remoteShareOpen && remoteHost.roomCode && (
+              <RemoteShareDialog
+                roomCode={remoteHost.roomCode}
+                peerCount={remoteHost.peerCount}
+                onStop={() => {
+                  remoteHost.stopSharing()
+                  setRemoteShareOpen(false)
+                }}
+              />
+            )}
             {updateReady && (
               <div
                 role="status"
