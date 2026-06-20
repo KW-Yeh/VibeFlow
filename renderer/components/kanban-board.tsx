@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Settings, Users } from 'lucide-react'
+import { Plus, Settings, Smartphone, Users } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
@@ -47,6 +47,8 @@ interface KanbanBoardProps {
   /** Roles available for assignment / display. */
   roles: Role[]
   onManageRoles: () => void
+  onRemoteShare?: () => void
+  remoteActive?: boolean
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in pipeline view). */
@@ -100,6 +102,8 @@ export function KanbanBoard({
   onOpenSettings,
   roles,
   onManageRoles,
+  onRemoteShare,
+  remoteActive,
   subAgents,
   selectedTaskId,
   onDeselectTask,
@@ -385,6 +389,21 @@ export function KanbanBoard({
         >
           <Users className="size-4" />
         </button>
+        {onRemoteShare && (
+          <button
+            type="button"
+            onClick={onRemoteShare}
+            title="遠端控制"
+            className={cn(
+              'rounded-md p-1.5 hover:bg-accent',
+              remoteActive
+                ? 'text-primary hover:text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Smartphone className="size-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpenSettings}

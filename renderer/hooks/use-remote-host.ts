@@ -1,0 +1,220 @@
+import { useEffect, useRef, useState } from 'react'
+import type { BoardState, ColumnId, Task, Workspace } from '@/lib/types'
+import { createTask, onTermData, persistBoard, termInput } from '@/lib/api'
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function buildRemoteState(board: BoardState, workspaces: Workspace[], autoMode: boolean) {
+  const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
+  return {
+    tasks: cols.flatMap(col =>
+      board[col].map(t => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        projectName: t.projectName,
+        column: col,
+        progress: t.progress
+          ? { summary: t.progress.summary, steps: t.progress.steps }
+          : undefined,
+        pipeline: t.pipeline
+          ? { stage: t.pipeline.stage, round: t.pipeline.round }
+          : undefined,
+        launchedAt: t.launchedAt,
+      }))
+    ),
+    workspaces: workspaces.map(w => ({ id: w.id, name: w.name, available: w.available ?? true })),
+    settings: { autoMode },
+  }
+}
+
+function moveBetweenColumns(board: BoardState, taskId: string, target: ColumnId): BoardState {
+  const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
+  let task: Task | undefined
+  const next = { ...board }
+  for (const col of cols) {
+    const i = next[col].findIndex(t => t.id === taskId)
+    if (i !== -1) {
+      task = next[col][i]
+      next[col] = next[col].filter(t => t.id !== taskId)
+      break
+    }
+  }
+  if (!task) return board
+  next[target] = [task, ...next[target]]
+  return next
+}
+
+// ─── hook ────────────────────────────────────────────────────────────────────
+
+export function useRemoteHost({
+  board,
+  workspaces,
+  autoMode,
+  onStateChange,
+}: {
+  board: BoardState
+  workspaces: Workspace[]
+  autoMode: boolean
+  onStateChange: (board: BoardState) => void
+}) {
+  const [roomCode, setRoomCode] = useState<string | null>(null)
+  const [peerCount, setPeerCount] = useState(0)
+
+  // Use refs so async message handlers always see latest values.
+  const peersRef = useRef<Set<any>>(new Set())
+  const termSubsRef = useRef<Map<string, Set<any>>>(new Map())
+  const boardRef = useRef(board)
+  const workspacesRef = useRef(workspaces)
+  const autoModeRef = useRef(autoMode)
+  const onStateChangeRef = useRef(onStateChange)
+
+  useEffect(() => { boardRef.current = board }, [board])
+  useEffect(() => { workspacesRef.current = workspaces }, [workspaces])
+  useEffect(() => { autoModeRef.current = autoMode }, [autoMode])
+  useEffect(() => { onStateChangeRef.current = onStateChange }, [onStateChange])
+
+  // ── broadcast state on every board/workspace change ──────────────────────
+  useEffect(() => {
+    if (!peersRef.current.size) return
+    const state = buildRemoteState(board, workspaces, autoMode)
+    for (const conn of peersRef.current) {
+      try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
+    }
+  }, [board, workspaces, autoMode])
+
+  // ── handle incoming message from a remote client ──────────────────────────
+  async function handleMessage(raw: unknown, conn: any) {
+    if (!raw || typeof raw !== 'object') return
+    const { type, payload } = raw as { type: string; payload?: any }
+
+    switch (type) {
+      case 'client:get-state':
+        try {
+          conn.send({
+            type: 'vf:state',
+            payload: buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+          })
+        } catch { /* ignored */ }
+        break
+
+      case 'client:create-task': {
+        const { title, description, workspaceId } = payload ?? {}
+        if (!title || !workspaceId) break
+        const ws = workspacesRef.current.find(w => w.id === workspaceId)
+        if (!ws) break
+        const result = await createTask({ title, description, projectPath: ws.path, baseBranch: null })
+        if (result) onStateChangeRef.current(result.state.board)
+        break
+      }
+
+      case 'client:send-command': {
+        const { taskId, text } = payload ?? {}
+        if (!taskId || !text) break
+        termInput(taskId, String(text).slice(0, 1000))
+        break
+      }
+
+      case 'client:subscribe-terminal': {
+        const { taskId } = payload ?? {}
+        if (!taskId) break
+        let set = termSubsRef.current.get(taskId)
+        if (!set) { set = new Set(); termSubsRef.current.set(taskId, set) }
+        set.add(conn)
+        break
+      }
+
+      case 'client:unsubscribe-terminal': {
+        const { taskId } = payload ?? {}
+        if (taskId) termSubsRef.current.get(taskId)?.delete(conn)
+        break
+      }
+
+      case 'client:move-task': {
+        const { taskId, targetColumn } = payload ?? {}
+        if (!taskId || !targetColumn) break
+        const newBoard = moveBetweenColumns(boardRef.current, taskId, targetColumn)
+        onStateChangeRef.current(newBoard)
+        await persistBoard(newBoard)
+        break
+      }
+    }
+  }
+
+  // ── start PeerJS host when roomCode is set ────────────────────────────────
+  useEffect(() => {
+    if (!roomCode) return
+
+    let destroyed = false
+    let peer: any
+
+    async function init() {
+      const { Peer } = await import('peerjs')
+      if (destroyed) return
+
+      peer = new Peer(`vibeflow-${roomCode}`)
+
+      peer.on('connection', (conn: any) => {
+        peersRef.current.add(conn)
+        setPeerCount(c => c + 1)
+
+        conn.on('open', () => {
+          try {
+            conn.send({ type: 'vf:hello', payload: { version: '1.0' } })
+            conn.send({
+              type: 'vf:state',
+              payload: buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+            })
+          } catch { /* ignored */ }
+        })
+
+        conn.on('data', (raw: unknown) => { void handleMessage(raw, conn) })
+
+        conn.on('close', () => {
+          peersRef.current.delete(conn)
+          setPeerCount(c => c - 1)
+          for (const [, set] of termSubsRef.current) set.delete(conn)
+        })
+      })
+
+      peer.on('error', (err: Error) => {
+        console.error('[VibeFlow Remote] PeerJS error:', err)
+      })
+    }
+
+    void init()
+
+    return () => {
+      destroyed = true
+      for (const conn of peersRef.current) { try { conn.close() } catch { /* ignored */ } }
+      peersRef.current.clear()
+      termSubsRef.current.clear()
+      setPeerCount(0)
+      peer?.destroy()
+    }
+  }, [roomCode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── forward terminal output to subscribed remote clients ──────────────────
+  useEffect(() => {
+    if (!roomCode) return
+    return onTermData(({ sessionKey, data }) => {
+      const taskId = sessionKey.split(':')[0]
+      const subs = termSubsRef.current.get(taskId)
+      if (!subs?.size) return
+      const msg = { type: 'vf:terminal-chunk', payload: { taskId, data } }
+      for (const conn of subs) {
+        try { conn.send(msg) } catch { /* conn closed */ }
+      }
+    })
+  }, [roomCode])
+
+  return {
+    roomCode,
+    peerCount,
+    startSharing: () => {
+      const code = String(Math.floor(100000 + Math.random() * 900000))
+      setRoomCode(code)
+    },
+    stopSharing: () => setRoomCode(null),
+  }
+}
