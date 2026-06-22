@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
   ChevronDown,
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
-import type { BoardState, ColumnId, Workspace } from '@/lib/types'
+import type { BoardState, ColumnId, Task, Workspace } from '@/lib/types'
 
 interface SideMenuProps {
   collapsed: boolean
@@ -31,11 +31,179 @@ interface SideMenuProps {
   refreshing: boolean
 }
 
-const TASK_GROUPS: { id: ColumnId; label: string }[] = [
-  { id: 'in_progress', label: 'In Progress' },
-  { id: 'backlog', label: 'Backlog' },
-  { id: 'done', label: 'Done' },
-]
+type TaskEntry = {
+  task: Task
+  column: ColumnId
+}
+
+type ProjectGroup = {
+  key: string
+  name: string
+  path: string | null
+  active: TaskEntry[]
+  done: TaskEntry[]
+  total: number
+  hasSelected: boolean
+}
+
+function basename(path?: string | null): string {
+  if (!path) return ''
+  const parts = path.split(/[/\\]/).filter(Boolean)
+  return parts[parts.length - 1] ?? path
+}
+
+function projectName(task: Task): string {
+  return task.projectName || basename(task.projectPath) || 'Unassigned'
+}
+
+function projectKey(task: Task): string {
+  return task.projectPath || `name:${projectName(task)}`
+}
+
+function taskEntries(board: BoardState): TaskEntry[] {
+  return [
+    ...board.in_progress.map((task) => ({ task, column: 'in_progress' as const })),
+    ...board.backlog.map((task) => ({ task, column: 'backlog' as const })),
+    ...board.done.map((task) => ({ task, column: 'done' as const })),
+  ]
+}
+
+function groupTasksByProject(
+  board: BoardState,
+  selectedTaskId: string | null
+): ProjectGroup[] {
+  const groups = new Map<string, ProjectGroup>()
+
+  for (const entry of taskEntries(board)) {
+    const key = projectKey(entry.task)
+    const group =
+      groups.get(key) ??
+      {
+        key,
+        name: projectName(entry.task),
+        path: entry.task.projectPath ?? null,
+        active: [],
+        done: [],
+        total: 0,
+        hasSelected: false,
+      }
+
+    if (entry.column === 'done') group.done.push(entry)
+    else group.active.push(entry)
+    group.total += 1
+    group.hasSelected ||= entry.task.id === selectedTaskId
+    groups.set(key, group)
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.hasSelected !== b.hasSelected) return a.hasSelected ? -1 : 1
+    const activeDiff = b.active.length - a.active.length
+    if (activeDiff !== 0) return activeDiff
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function projectInitials(name: string): string {
+  return name
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || '?'
+}
+
+function taskStatus(entry: TaskEntry): {
+  label: string
+  className: string
+  icon: ReactNode
+} {
+  const stage = entry.task.pipeline?.stage
+
+  if (entry.column === 'done' || stage === 'approved') {
+    return {
+      label: 'Done',
+      className: 'text-primary',
+      icon: <span className="size-1.5 rounded-full bg-primary" />,
+    }
+  }
+
+  if (stage === 'blocked') {
+    return {
+      label: 'Blocked',
+      className: 'text-destructive',
+      icon: <AlertTriangle className="size-3 shrink-0" />,
+    }
+  }
+
+  if (stage === 'reviewing') {
+    return {
+      label: 'Reviewing',
+      className: 'text-amber-400',
+      icon: <Eye className="size-3 shrink-0" />,
+    }
+  }
+
+  if (stage === 'revising') {
+    return {
+      label: 'Revising',
+      className: 'text-amber-400',
+      icon: <Hammer className="size-3 shrink-0" />,
+    }
+  }
+
+  if (entry.column === 'in_progress') {
+    const planning = entry.task.progress?.planDone !== true
+    return {
+      label: planning ? 'Planning' : 'Running',
+      className: 'text-amber-400',
+      icon: (
+        <span className="flex size-3 shrink-0 items-center justify-center">
+          <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+        </span>
+      ),
+    }
+  }
+
+  return {
+    label: 'Backlog',
+    className: 'text-muted-foreground',
+    icon: <span className="size-1.5 rounded-full bg-muted-foreground/60" />,
+  }
+}
+
+function TaskRow({
+  entry,
+  selected,
+  onSelectTask,
+}: {
+  entry: TaskEntry
+  selected: boolean
+  onSelectTask: (id: string) => void
+}) {
+  const status = taskStatus(entry)
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectTask(entry.task.id)}
+      className={cn(
+        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        selected
+          ? 'bg-primary/15 font-medium text-primary'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      )}
+      title={entry.task.title}
+    >
+      <span className={cn('flex size-3 shrink-0 items-center justify-center', status.className)}>
+        {status.icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
+      <span className={cn('shrink-0 text-[10px]', status.className)}>
+        {status.label}
+      </span>
+    </button>
+  )
+}
 
 export function SideMenu({
   collapsed,
@@ -50,12 +218,10 @@ export function SideMenu({
   onRefreshWorkspaces,
   refreshing,
 }: SideMenuProps) {
-  const [tasksExpanded, setTasksExpanded] = useState<Record<string, boolean>>({
-    in_progress: true,
-    backlog: false,
-    done: false,
-  })
+  const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
+  const [doneExpanded, setDoneExpanded] = useState<Record<string, boolean>>({})
   const [workspacesExpanded, setWorkspacesExpanded] = useState(true)
+  const projects = groupTasksByProject(board, selectedTaskId)
 
   return (
     <aside
@@ -182,22 +348,46 @@ export function SideMenu({
         {/* Divider */}
         {!collapsed && <div className="mx-2 mb-2 border-t border-border" />}
 
-        {/* Tasks section */}
+        {/* Projects section */}
         <div className="px-2">
           {collapsed ? (
-            <button
-              type="button"
-              onClick={onNewTask}
-              title="新增任務"
-              className="mx-auto flex w-8 items-center justify-center rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <Plus className="size-4" />
-            </button>
+            <div className="space-y-1">
+              <IconButton
+                aria-label="新增任務"
+                onClick={onNewTask}
+                title="新增任務"
+                className="mx-auto size-8 p-1.5"
+              >
+                <Plus className="size-4" />
+              </IconButton>
+              {projects.map((project) => {
+                const firstTask = project.active[0]?.task ?? project.done[0]?.task
+                const selected = project.hasSelected
+                return (
+                  <button
+                    key={project.key}
+                    type="button"
+                    aria-label={`開啟 ${project.name}`}
+                    title={project.path ?? project.name}
+                    disabled={!firstTask}
+                    onClick={() => firstTask && onSelectTask(firstTask.id)}
+                    className={cn(
+                      'mx-auto flex size-8 items-center justify-center rounded-md text-[10px] font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
+                      selected
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    )}
+                  >
+                    {projectInitials(project.name)}
+                  </button>
+                )
+              })}
+            </div>
           ) : (
             <>
               <div className="mb-1 flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Tasks
+                  Projects
                 </span>
                 <IconButton
                   aria-label="新增任務"
@@ -209,85 +399,104 @@ export function SideMenu({
                 </IconButton>
               </div>
 
-              <div className="space-y-1">
-                {TASK_GROUPS.map((group) => (
-                  <div key={group.id}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTasksExpanded((prev) => ({
-                          ...prev,
-                          [group.id]: !prev[group.id],
-                        }))
-                      }
-                      className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-                    >
-                      {tasksExpanded[group.id] ? (
-                        <ChevronDown className="size-3 shrink-0" />
-                      ) : (
-                        <ChevronRight className="size-3 shrink-0" />
-                      )}
-                      <span className="flex-1 text-left">{group.label}</span>
-                      <span className="tabular-nums">
-                        {board[group.id].length}
-                      </span>
-                    </button>
-                    {tasksExpanded[group.id] && (
-                      <div className="ml-3 space-y-0.5">
-                        {board[group.id].length === 0 ? (
-                          <p className="px-2 py-0.5 text-[11px] text-muted-foreground/60">
-                            空
-                          </p>
-                        ) : (
-                          board[group.id].map((task) => {
-                            const isSelected = task.id === selectedTaskId
-                            const pipelineStage = task.pipeline?.stage
-                            const statusIcon =
-                              group.id === 'in_progress' ? (
-                                pipelineStage === 'blocked' ? (
-                                  <AlertTriangle className="size-3 shrink-0 text-destructive" />
-                                ) : pipelineStage === 'reviewing' ? (
-                                  <Eye className="size-3 shrink-0 text-amber-400" />
-                                ) : pipelineStage === 'developing' || pipelineStage === 'revising' ? (
-                                  <span className="size-3 shrink-0 flex items-center justify-center">
-                                    <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                  </span>
-                                ) : task.pipeline ? (
-                                  <Hammer className="size-3 shrink-0 opacity-60" />
-                                ) : (
-                                  <span className="size-3 shrink-0 flex items-center justify-center">
-                                    <span className="size-1.5 rounded-full bg-primary/60" />
-                                  </span>
-                                )
-                              ) : task.pipeline ? (
-                                <Hammer className="size-3 shrink-0 opacity-60" />
-                              ) : (
-                                <span className="size-3 shrink-0" />
-                              )
+              <div className="space-y-1.5">
+                {projects.length === 0 ? (
+                  <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                    尚無任務
+                  </p>
+                ) : (
+                  projects.map((project) => {
+                    const expanded =
+                      projectsExpanded[project.key] ?? (project.hasSelected || project.active.length > 0)
+                    const doneOpen = doneExpanded[project.key] ?? false
 
-                            return (
-                              <button
-                                key={task.id}
-                                type="button"
-                                onClick={() => onSelectTask(task.id)}
-                                className={cn(
-                                  'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs',
-                                  isSelected
-                                    ? 'bg-primary/15 font-medium text-primary'
-                                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    return (
+                      <div key={project.key} className="rounded-md">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setProjectsExpanded((prev) => ({
+                              ...prev,
+                              [project.key]: !expanded,
+                            }))
+                          }
+                          className={cn(
+                            'flex w-full items-center gap-1 rounded px-1 py-1 text-[11px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                            project.hasSelected && 'text-foreground'
+                          )}
+                          title={project.path ?? project.name}
+                        >
+                          {expanded ? (
+                            <ChevronDown className="size-3 shrink-0" />
+                          ) : (
+                            <ChevronRight className="size-3 shrink-0" />
+                          )}
+                          <FolderOpen className="size-3 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left font-medium">
+                            {project.name}
+                          </span>
+                          <span className="tabular-nums text-muted-foreground">
+                            {project.total}
+                          </span>
+                        </button>
+
+                        {expanded && (
+                          <div className="ml-3 space-y-0.5">
+                            {project.active.length === 0 ? (
+                              <p className="px-2 py-0.5 text-[11px] text-muted-foreground/60">
+                                無進行中任務
+                              </p>
+                            ) : (
+                              project.active.map((entry) => (
+                                <TaskRow
+                                  key={entry.task.id}
+                                  entry={entry}
+                                  selected={entry.task.id === selectedTaskId}
+                                  onSelectTask={onSelectTask}
+                                />
+                              ))
+                            )}
+
+                            {project.done.length > 0 && (
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDoneExpanded((prev) => ({
+                                      ...prev,
+                                      [project.key]: !doneOpen,
+                                    }))
+                                  }
+                                  className="mt-1 flex w-full items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                >
+                                  {doneOpen ? (
+                                    <ChevronDown className="size-3 shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="size-3 shrink-0" />
+                                  )}
+                                  <span className="flex-1 text-left">Done</span>
+                                  <span className="tabular-nums">{project.done.length}</span>
+                                </button>
+                                {doneOpen && (
+                                  <div className="space-y-0.5">
+                                    {project.done.map((entry) => (
+                                      <TaskRow
+                                        key={entry.task.id}
+                                        entry={entry}
+                                        selected={entry.task.id === selectedTaskId}
+                                        onSelectTask={onSelectTask}
+                                      />
+                                    ))}
+                                  </div>
                                 )}
-                                title={task.title}
-                              >
-                                {statusIcon}
-                                <span className="truncate">{task.title}</span>
-                              </button>
-                            )
-                          })
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                ))}
+                    )
+                  })
+                )}
               </div>
             </>
           )}
