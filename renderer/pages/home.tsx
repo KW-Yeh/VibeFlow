@@ -21,7 +21,6 @@ import {
   generateCommitMessage,
   getDiff,
   getGitInfo,
-  getGithubCompareUrl,
   getPrStatus,
   initRepository,
   loadState,
@@ -36,6 +35,7 @@ import {
   removeRole,
   removeWorkspace,
   setSettings,
+  termInput,
   updateRole,
   updateTask,
   updateWorkspace,
@@ -339,8 +339,10 @@ export default function HomePage() {
     if (prStatus?.url) {
       await openExternal(prStatus.url)
     } else {
-      const url = await getGithubCompareUrl(reviewTaskId)
-      if (url) await openExternal(url)
+      // Invoke the /pr skill in the task's terminal so it drafts and creates
+      // a well-formatted PR, then close the dialog so the user sees it run.
+      termInput(reviewTaskId, '/pr\n')
+      setReviewTaskId(null)
     }
   }
 
