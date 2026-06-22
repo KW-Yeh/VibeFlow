@@ -89,13 +89,8 @@ function deriveStages(
     executeSt = 'done'
     reviewSt = 'done'
   } else if (column === 'in_progress') {
-    if (!task.launchedAt) {
-      // Moved to In Progress but agent not started yet (Auto Mode off, or manual)
-      planSt = 'pending'
-      executeSt = 'pending'
-      reviewSt = 'pending'
-    } else if (!task.progress) {
-      // Agent launched but hasn't written progress file yet — planning is active
+    if (!task.progress) {
+      // No progress file yet — agent is running but hasn't written progress; planning is active
       planSt = 'active'
       executeSt = 'pending'
       reviewSt = 'pending'
@@ -237,89 +232,6 @@ function PipelineStageBadge({
   )
 }
 
-interface AgentStatusBarProps {
-  task: Task
-  column: ColumnId
-  planDone: boolean
-  agentName: string
-  activeModel: string
-  doneSteps: number
-  totalSteps: number
-  reviewerRole: Role | null
-  onOpenReviewPanel?: (taskId: string) => void
-}
-
-function AgentStatusBar({
-  task,
-  column,
-  planDone,
-  agentName,
-  activeModel,
-  doneSteps,
-  totalSteps,
-  reviewerRole,
-  onOpenReviewPanel,
-}: AgentStatusBarProps) {
-  if (column !== 'in_progress' || !task.launchedAt) return null
-
-  const stage = task.pipeline?.stage
-  const isReviewing = stage === 'reviewing'
-  const complete = isTaskComplete(task)
-
-  // Hide once fully approved (or no reviewer and executor done)
-  if (complete && (stage === 'approved' || !task.reviewerRoleId)) return null
-
-  const phaseLabel = !planDone
-    ? '規劃中'
-    : stage === 'revising'
-      ? '修正中'
-      : isReviewing
-        ? 'Code Review'
-        : '執行中'
-
-  return (
-    <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 bg-muted/20 px-4 py-1.5 text-xs text-foreground/70">
-      <Loader2 className="size-3 shrink-0 animate-spin text-amber-500" />
-      <span className="font-medium text-foreground">{phaseLabel}</span>
-      <span className="text-muted-foreground">·</span>
-      {isReviewing && reviewerRole ? (
-        <>
-          <span>{reviewerRole.name}</span>
-          {onOpenReviewPanel && (
-            <button
-              type="button"
-              onClick={() => onOpenReviewPanel(task.id)}
-              className="ml-1 text-primary hover:underline"
-            >
-              查看終端機
-            </button>
-          )}
-        </>
-      ) : (
-        <>
-          <span>{agentName}</span>
-          {activeModel && (
-            <span className="text-muted-foreground/60">({activeModel})</span>
-          )}
-          {totalSteps > 0 && (
-            <>
-              <span className="text-muted-foreground">·</span>
-              <span>
-                步驟 {doneSteps}/{totalSteps}
-              </span>
-            </>
-          )}
-          {task.progress?.summary && (
-            <span className="max-w-[18rem] truncate text-muted-foreground">
-              — {task.progress.summary}
-            </span>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
 /** Chat-mode launch: plain prompt text sent to ChatPanel as a pending message. */
 export interface ChatLaunchEntry {
   text: string
@@ -388,19 +300,6 @@ export function TaskDetailPanel({
     <div className="flex h-full flex-col overflow-hidden">
       {/* 頂部 Pipeline 進度條 */}
       <PipelineStagesBar stages={stages} />
-
-      {/* Agent 狀態列：顯示當前執行 Agent 與步驟 */}
-      <AgentStatusBar
-        task={task}
-        column={column}
-        planDone={planDone}
-        agentName={agentName}
-        activeModel={activeModel}
-        doneSteps={doneSteps}
-        totalSteps={totalSteps}
-        reviewerRole={reviewerRole}
-        onOpenReviewPanel={onOpenReviewPanel}
-      />
 
       {/* Blocked pipeline banner */}
       {task.pipeline?.stage === 'blocked' && column !== 'done' && (

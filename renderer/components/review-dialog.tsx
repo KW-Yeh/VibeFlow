@@ -18,12 +18,7 @@ interface ReviewDialogProps {
   error: string | null
   onApprove: (message: string) => void
   onGenerateMessage: () => Promise<string | null>
-  /** Open existing PR URL in browser. */
   onOpenPr: () => void
-  /** Invoke /pr skill to create a new PR via ChatPanel (when prStatus is null). */
-  onCreatePr: () => void
-  /** Invoke /pr skill to update existing PR description (when prStatus is set). */
-  onUpdatePr?: () => void
   onClose: () => void
 }
 
@@ -48,8 +43,6 @@ export function ReviewDialog({
   onApprove,
   onGenerateMessage,
   onOpenPr,
-  onCreatePr,
-  onUpdatePr,
   onClose,
 }: ReviewDialogProps) {
   const [message, setMessage] = useState('')
@@ -140,30 +133,28 @@ export function ReviewDialog({
                   {result.pushed ? '並已推送至遠端' : '（未推送）'}
                 </span>
                 <div className="flex items-center gap-2">
-                  {result.pushed && prStatus === undefined && (
-                    <Button size="sm" variant="outline" disabled>
-                      <Loader2 className="size-3.5 animate-spin" />
+                  {result.pushed && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onOpenPr}
+                      disabled={prStatus === undefined}
+                    >
+                      {prStatus === undefined ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : prStatus ? (
+                        <>
+                          <ExternalLink className="size-3.5" />
+                          查看 PR
+                        </>
+                      ) : (
+                        <>
+                          <GitPullRequest className="size-3.5" />
+                          建立 PR
+                        </>
+                      )}
                     </Button>
                   )}
-                  {result.pushed && prStatus !== undefined && prStatus ? (
-                    <>
-                      <Button size="sm" variant="outline" onClick={onOpenPr}>
-                        <ExternalLink className="size-3.5" />
-                        查看 PR
-                      </Button>
-                      {onUpdatePr && (
-                        <Button size="sm" variant="outline" onClick={onUpdatePr}>
-                          <GitPullRequest className="size-3.5" />
-                          更新 PR
-                        </Button>
-                      )}
-                    </>
-                  ) : result.pushed && prStatus === null ? (
-                    <Button size="sm" variant="outline" onClick={onCreatePr}>
-                      <GitPullRequest className="size-3.5" />
-                      建立 PR
-                    </Button>
-                  ) : null}
                   <Button size="sm" onClick={onClose}>
                     完成
                   </Button>

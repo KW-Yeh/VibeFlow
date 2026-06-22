@@ -79,8 +79,6 @@ interface KanbanBoardProps {
     reviewerRoleId: string,
     workspaceId: string
   ) => void
-  /** When set, arms the given task's ChatPanel with a /pr command. */
-  prChatRequest?: { taskId: string; nonce: number } | null
 }
 
 interface LaunchEntry {
@@ -120,7 +118,6 @@ export function KanbanBoard({
   initRepository,
   detectAgents,
   onCreateTask,
-  prChatRequest,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
@@ -323,13 +320,6 @@ export function KanbanBoard({
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // When home.tsx requests a /pr run (after commit+push), arm the task's ChatPanel.
-  useEffect(() => {
-    if (!prChatRequest) return
-    markMounted(prChatRequest.taskId)
-    armChatSend(prChatRequest.taskId, '/pr\n')
-  }, [prChatRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runTask = (task: Task) => {
     armLaunch(task, { resume: wasLaunched(task) })
