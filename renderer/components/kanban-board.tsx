@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Settings, Smartphone, Users } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { TaskDetailPanel } from '@/components/task-detail-panel'
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
@@ -401,37 +402,34 @@ export function KanbanBoard({
           </span>
           Auto Mode
         </button>
-        <button
-          type="button"
+        <IconButton
+          aria-label="管理角色"
           onClick={onManageRoles}
           title="管理角色"
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <Users className="size-4" />
-        </button>
+        </IconButton>
         {onRemoteShare && (
-          <button
-            type="button"
+          <IconButton
+            aria-label="遠端控制"
             onClick={onRemoteShare}
             title="遠端控制"
             className={cn(
-              'rounded-md p-1.5 hover:bg-accent',
               remoteActive
                 ? 'text-primary hover:text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
             <Smartphone className="size-4" />
-          </button>
+          </IconButton>
         )}
-        <button
-          type="button"
+        <IconButton
+          aria-label="設定 System Prompt"
           onClick={onOpenSettings}
           title="設定（System Prompt）"
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <Settings className="size-4" />
-        </button>
+        </IconButton>
         <Button
           size="sm"
           className="rounded-full active:scale-95"

@@ -3,6 +3,8 @@ import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
 import { CheckCircle2, ExternalLink, GitPullRequest, Loader2, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import type { DiffFile, PrStatus } from '@/lib/types'
 
 interface ReviewDialogProps {
@@ -59,25 +61,25 @@ export function ReviewDialog({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={finalizing ? undefined : onClose}
-      />
-      <div className="relative z-10 flex max-h-[88vh] w-full max-w-4xl flex-col rounded-lg border bg-card text-card-foreground shadow-lg">
+    <DialogShell
+      title="審查變更"
+      saving={finalizing}
+      onClose={onClose}
+      contentClassName="flex max-h-[88vh] max-w-4xl flex-col"
+    >
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold">審查變更</h2>
             <p className="truncate text-xs text-muted-foreground">{taskTitle}</p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉審查變更"
             onClick={onClose}
             disabled={finalizing}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
@@ -206,7 +208,6 @@ export function ReviewDialog({
             </p>
           )}
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

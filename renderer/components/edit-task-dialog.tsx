@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Loader2, ShieldCheck, UserRound, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
 import type { Role, Task } from '@/lib/types'
@@ -73,22 +75,22 @@ export function EditTaskDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={saving ? undefined : handleClose}
-      />
-      <div className="relative z-10 w-full max-w-md rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+    <DialogShell
+      title="編輯任務"
+      saving={saving}
+      onClose={handleClose}
+      contentClassName="max-w-md p-5"
+    >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">編輯任務</h2>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉編輯任務"
             onClick={handleClose}
             disabled={saving}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         {confirmClose && (
@@ -208,7 +210,6 @@ export function EditTaskDialog({
             {saving ? '儲存中…' : '儲存變更'}
           </Button>
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

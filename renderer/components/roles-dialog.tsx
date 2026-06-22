@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import { PRESET_ROLES } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
@@ -201,24 +203,24 @@ export function RolesDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={saving ? undefined : onClose}
-      />
-      <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+    <DialogShell
+      title={isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
+      saving={saving}
+      onClose={onClose}
+      contentClassName="flex max-h-[85vh] max-w-2xl flex-col p-5"
+    >
         <div className="mb-4 flex shrink-0 items-center justify-between">
           <h2 className="text-lg font-semibold">
             {isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
           </h2>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉角色管理"
             onClick={onClose}
             disabled={saving}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         {!isEditing ? (
@@ -245,14 +247,14 @@ export function RolesDialog({
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
+                    <IconButton
+                      aria-label={`編輯角色 ${role.name}`}
                       onClick={() => startEdit(role)}
                       title="編輯角色"
-                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="p-1"
                     >
                       <Pencil className="size-3.5" />
-                    </button>
+                    </IconButton>
                     {confirmDeleteId === role.id ? (
                       <div className="flex items-center gap-1">
                         <button
@@ -272,15 +274,16 @@ export function RolesDialog({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
+                      <IconButton
+                        aria-label={`刪除角色 ${role.name}`}
                         onClick={() => setConfirmDeleteId(role.id)}
                         disabled={saving}
                         title="刪除角色"
-                        className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive disabled:opacity-50"
+                        className="p-1"
+                        tone="danger"
                       >
                         <Trash2 className="size-3.5" />
-                      </button>
+                      </IconButton>
                     )}
                   </li>
                 ))}
@@ -479,7 +482,6 @@ export function RolesDialog({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

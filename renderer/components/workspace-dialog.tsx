@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
 import type { Workspace } from '@/lib/types'
 
 interface WorkspaceDialogProps {
@@ -55,9 +56,12 @@ export function WorkspaceDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={saving ? undefined : onClose} />
-      <div className="relative z-10 w-full max-w-[480px] rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+    <DialogShell
+      title={workspace ? '編輯 Workspace' : '新增 Workspace'}
+      saving={saving}
+      onClose={onClose}
+      contentClassName="max-w-[480px] p-5"
+    >
         <h2 className="mb-4 text-base font-semibold">
           {workspace ? '編輯 Workspace' : '新增 Workspace'}
         </h2>
@@ -146,7 +150,6 @@ export function WorkspaceDialog({
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

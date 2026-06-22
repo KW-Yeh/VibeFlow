@@ -76,7 +76,7 @@ function ProjectTypeToggle({
           onClick={() => onChange(m)}
           disabled={disabled}
           className={cn(
-            'flex-1 rounded-full px-3 py-1 text-sm transition-all disabled:opacity-50',
+            'flex-1 rounded-full px-3 py-1 text-sm transition-colors disabled:opacity-50',
             mode === m
               ? 'bg-primary font-medium text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'

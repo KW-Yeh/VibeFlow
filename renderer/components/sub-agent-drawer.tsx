@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import type { SubAgentRun, SubAgentStatus } from '@/lib/types'
 
 interface SubAgentDrawerProps {
@@ -140,9 +142,12 @@ export function SubAgentDrawer({
 }: SubAgentDrawerProps) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative z-10 flex h-full w-full max-w-md flex-col border-l bg-card text-card-foreground shadow-lg">
+    <DialogShell
+      title="子代理"
+      onClose={onClose}
+      className="justify-end p-0"
+      contentClassName="flex h-full max-w-md flex-col rounded-none border-l"
+    >
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
             <h2 className="flex items-center gap-1.5 truncate text-lg font-semibold">
@@ -151,14 +156,14 @@ export function SubAgentDrawer({
             </h2>
             <p className="truncate text-xs text-muted-foreground">{taskTitle}</p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉子代理"
             onClick={onClose}
             title="關閉"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {runs.length === 0 ? (
@@ -173,7 +178,6 @@ export function SubAgentDrawer({
             </ul>
           )}
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Loader2, RotateCcw, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 
@@ -49,22 +51,22 @@ export function SettingsDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={saving ? undefined : onClose}
-      />
-      <div className="relative z-10 w-full max-w-2xl rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+    <DialogShell
+      title="設定"
+      saving={saving}
+      onClose={onClose}
+      contentClassName="max-w-2xl p-5"
+    >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">設定</h2>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉設定"
             onClick={onClose}
             disabled={saving}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="space-y-2">
@@ -127,7 +129,6 @@ export function SettingsDialog({
             {saving ? '儲存中…' : '儲存設定'}
           </Button>
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

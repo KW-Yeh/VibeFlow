@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { IconButton } from '@/components/ui/icon-button'
 import type { BoardState, ColumnId, Workspace } from '@/lib/types'
 
 interface SideMenuProps {
@@ -59,24 +60,24 @@ export function SideMenu({
   return (
     <aside
       className={cn(
-        'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-all duration-200',
+        'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-[width] duration-200',
         collapsed ? 'w-12' : 'w-64'
       )}
     >
       {/* Header */}
       <div className="flex h-12 items-center justify-end border-b border-border px-3">
-        <button
-          type="button"
+        <IconButton
+          aria-label={collapsed ? '展開選單' : '收合選單'}
           onClick={onToggleCollapse}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           title={collapsed ? '展開選單' : '收合選單'}
+          className="p-1"
         >
           {collapsed ? (
             <PanelLeftOpen className="size-4" />
           ) : (
             <PanelLeftClose className="size-4" />
           )}
-        </button>
+        </IconButton>
       </div>
 
       {/* Scrollable content */}
@@ -108,25 +109,25 @@ export function SideMenu({
                   Workspaces
                 </button>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
+                  <IconButton
+                    aria-label="重新掃描所有 workspace"
                     onClick={onRefreshWorkspaces}
                     disabled={refreshing}
                     title="重新掃描所有 workspace"
-                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+                    className="p-1"
                   >
                     <RefreshCw
                       className={cn('size-3', refreshing && 'animate-spin')}
                     />
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    aria-label="新增 Workspace"
                     onClick={onAddWorkspace}
                     title="新增 Workspace"
-                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="p-1"
                   >
                     <Plus className="size-3" />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
 
@@ -161,14 +162,14 @@ export function SideMenu({
                             <AlertTriangle className="size-3 shrink-0 text-destructive" />
                           </span>
                         )}
-                        <button
-                          type="button"
+                        <IconButton
+                          aria-label={`編輯 ${ws.name}`}
                           onClick={() => onEditWorkspace(ws)}
-                          className="hidden rounded p-0.5 text-muted-foreground hover:text-foreground group-hover:block"
+                          className="hidden p-0.5 group-hover:inline-flex"
                           title="編輯"
                         >
                           <Pencil className="size-3" />
-                        </button>
+                        </IconButton>
                       </div>
                     ))
                   )}
@@ -198,14 +199,14 @@ export function SideMenu({
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Tasks
                 </span>
-                <button
-                  type="button"
+                <IconButton
+                  aria-label="新增任務"
                   onClick={onNewTask}
                   title="新增任務"
-                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="p-1"
                 >
                   <Plus className="size-3" />
-                </button>
+                </IconButton>
               </div>
 
               <div className="space-y-1">

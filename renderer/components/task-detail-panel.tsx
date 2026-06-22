@@ -23,6 +23,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { ChatPanel } from '@/components/chat-panel'
+import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   AGENT_NAMES,
@@ -374,85 +375,81 @@ export function TaskDetailPanel({
 
           {/* 操作按鈕 */}
           <div className="flex shrink-0 flex-wrap items-center gap-1">
-            <button
-              type="button"
+            <IconButton
+              aria-label="返回任務列表"
               onClick={onClose}
               title="返回任務列表"
-              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <ArrowLeft className="size-4" />
-            </button>
+            </IconButton>
             {column === 'backlog' && cwd && (
-              <button
-                type="button"
+              <IconButton
+                aria-label={`移至 In Progress 並啟動 ${agentName}`}
                 onClick={() => onStart(task)}
                 title={`移至 In Progress 並啟動 ${agentName}`}
-                className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
+                tone="primary"
               >
                 <Play className="size-4" />
-              </button>
+              </IconButton>
             )}
             {column === 'in_progress' && (
               <>
                 {cwd && (isTaskComplete(task) || !task.launchedAt) && (
-                  <button
-                    type="button"
+                  <IconButton
+                    aria-label={task.launchedAt ? `重新執行 ${agentName}` : `開始執行 ${agentName}`}
                     onClick={() => onRun(task)}
                     title={
                       task.launchedAt
                         ? `重新執行（啟動 ${agentName}）`
                         : `開始執行（啟動 ${agentName}）`
                     }
-                    className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
+                    tone="primary"
                   >
                     <Play className="size-4" />
-                  </button>
+                  </IconButton>
                 )}
-                <button
-                  type="button"
+                <IconButton
+                  aria-label="退回 Backlog"
                   onClick={() => onMoveBack(task)}
                   title="退回 Backlog"
-                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <Undo2 className="size-4" />
-                </button>
-                <button
-                  type="button"
+                </IconButton>
+                <IconButton
+                  aria-label="標記完成"
                   onClick={() => onComplete(task)}
                   title="標記完成（清理 PTY 與 worktree）"
-                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
+                  tone="primary"
                 >
                   <Check className="size-4" />
-                </button>
+                </IconButton>
               </>
             )}
-            <button
-              type="button"
+            <IconButton
+              aria-label="編輯任務"
               onClick={() => onEdit(task.id)}
               title="編輯任務"
-              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <Pencil className="size-4" />
-            </button>
+            </IconButton>
             {task.worktreePath && (
-              <button
-                type="button"
+              <IconButton
+                aria-label="審查變更"
                 onClick={() => onReview(task.id)}
                 title="審查變更"
-                className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <GitCompare className="size-4" />
-              </button>
+              </IconButton>
             )}
             {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
-              <button
-                type="button"
+              <IconButton
+                aria-label="查看 Reviewer 終端"
                 onClick={() => onOpenReviewPanel?.(task.id)}
                 title="查看 Reviewer 終端"
                 className="rounded p-1.5 text-amber-500 hover:bg-accent hover:text-amber-400"
               >
                 <Eye className="size-4" />
-              </button>
+              </IconButton>
             )}
             {confirmDelete ? (
               <div className="flex items-center gap-1">
@@ -472,14 +469,14 @@ export function TaskDetailPanel({
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
+              <IconButton
+                aria-label="刪除任務"
                 onClick={() => setConfirmDelete(true)}
                 title="刪除任務（清理 worktree）"
-                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                tone="danger"
               >
                 <Trash2 className="size-4" />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>
