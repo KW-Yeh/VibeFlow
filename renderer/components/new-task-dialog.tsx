@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
+  Check,
   Cpu,
   FolderOpen,
   GitBranch,
@@ -52,6 +53,88 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+// Shared field class — uniform height, subtle border, smooth focus ring
+const F =
+  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
+
+// ── Segmented control for existing vs new project ──────────────────────────
+function ProjectTypeToggle({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: ProjectMode
+  onChange: (m: ProjectMode) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="flex rounded-full bg-muted p-1">
+      {(['existing', 'new'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onChange(m)}
+          disabled={disabled}
+          className={cn(
+            'flex-1 rounded-full px-3 py-1 text-sm transition-all disabled:opacity-50',
+            mode === m
+              ? 'bg-primary font-medium text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {m === 'existing' ? '現有專案' : '新專案'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Folder picker — dashed drop zone (empty) or compact card (selected) ────
+function FolderPickerZone({
+  mode,
+  projectPath,
+  disabled,
+  onPick,
+}: {
+  mode: ProjectMode
+  projectPath: string | null
+  disabled: boolean
+  onPick: () => void
+}) {
+  if (projectPath) {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+        <FolderOpen className="size-4 shrink-0 text-primary" />
+        <span className="flex-1 truncate text-sm" title={projectPath}>
+          {basename(projectPath)}
+        </span>
+        <button
+          type="button"
+          onClick={onPick}
+          disabled={disabled}
+          className="shrink-0 text-xs text-primary hover:underline disabled:opacity-50"
+        >
+          更換
+        </button>
+      </div>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      disabled={disabled}
+      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <FolderOpen className="size-5" />
+      <span className="text-xs">
+        {mode === 'new' ? '選擇空資料夾（自動初始化 Git）' : '選擇專案資料夾'}
+      </span>
+    </button>
+  )
+}
+
+// ── Agent CLI + Model selector pair ────────────────────────────────────────
 interface AgentModelFieldsProps {
   title: string
   agents: AgentCli[] | null
@@ -77,12 +160,14 @@ function AgentModelFields({
   const agentModels = currentAgent?.models ?? []
 
   return (
-    <div className="space-y-2 rounded-md border border-border/70 p-3">
-      <div className="text-xs font-semibold text-muted-foreground">{title}</div>
+    <div className="space-y-3 rounded-lg border border-border/50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            <Bot className="size-3.5" />
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Bot className="size-3" />
             Agent CLI
           </span>
           {agents === null ? (
@@ -98,7 +183,7 @@ function AgentModelFields({
                 </button>
               </div>
             ) : (
-              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
                 偵測中…
               </p>
@@ -111,7 +196,7 @@ function AgentModelFields({
             <select
               value={agentCli}
               onChange={(e) => onAgentChange(e.target.value as AgentCliId)}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className={F}
             >
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -123,15 +208,15 @@ function AgentModelFields({
         </div>
 
         <div className="space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            <Cpu className="size-3.5" />
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Cpu className="size-3" />
             Model
           </span>
           {agentModels.length > 0 ? (
             <select
               value={model}
               onChange={(e) => onModelChange(e.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className={F}
             >
               {agentModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -148,6 +233,7 @@ function AgentModelFields({
   )
 }
 
+// ── Main form ──────────────────────────────────────────────────────────────
 export function NewTaskForm({
   creating,
   error,
@@ -200,7 +286,10 @@ export function NewTaskForm({
         setExecutionAgentCli(found[0].id)
       }
     })
-    return () => { active = false; clearTimeout(timeoutId) }
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+    }
   }, [detectAgents, detectKey])
 
   useEffect(() => {
@@ -267,9 +356,7 @@ export function NewTaskForm({
 
   const canGoToStep2 = isProjectReady
   const canSubmit =
-    title.trim().length > 0 &&
-    !creating &&
-    (inline ? isProjectReady : true)
+    title.trim().length > 0 && !creating && (inline ? isProjectReady : true)
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
@@ -293,53 +380,233 @@ export function NewTaskForm({
   }
 
   const currentAgent = agents?.find((a) => a.id === agentCli) ?? null
-  const currentExecutionAgent =
-    agents?.find((a) => a.id === executionAgentCli) ?? null
+  const currentExecutionAgent = agents?.find((a) => a.id === executionAgentCli) ?? null
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
   const selectedReviewerRole = roles.find((r) => r.id === reviewerRoleId) ?? null
 
+  // ── Shared JSX blocks (closure over local state) ────────────────────────
+
+  const projectSettingsBlock = (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          專案類型
+        </span>
+        <ProjectTypeToggle
+          mode={mode}
+          onChange={handleModeChange}
+          disabled={creating || loadingInfo || initializing}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {mode === 'new' ? '專案位置' : '專案資料夾'}
+        </span>
+        <FolderPickerZone
+          mode={mode}
+          projectPath={projectPath}
+          disabled={creating || initializing || loadingInfo}
+          onPick={handlePick}
+        />
+      </div>
+
+      {(loadingInfo || initializing) && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
+        </p>
+      )}
+
+      {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          這個資料夾不是 Git repository，請改選一個 Git 專案。
+        </p>
+      )}
+
+      {isRepo && hasRemote && (
+        <label className="block space-y-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <GitBranch className="size-3" />
+            基準分支 (Base Branch)
+          </span>
+          <select
+            value={baseBranch}
+            onChange={(e) => setBaseBranch(e.target.value)}
+            className={F}
+          >
+            {(gitInfo?.branches ?? []).map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {isRepo && !hasRemote && (
+        <p className="text-xs text-muted-foreground">
+          此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
+          為基準建立本地 worktree。
+        </p>
+      )}
+    </div>
+  )
+
+  const workspaceBlock = (
+    <div className="space-y-1.5">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Layers className="size-3" />
+        Workspace（選填）
+      </span>
+      {workspaces.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          尚無 Workspace — 可在側邊欄新增後再指派。
+        </p>
+      ) : (
+        <>
+          <select
+            value={workspaceId}
+            onChange={(e) => setWorkspaceId(e.target.value)}
+            className={F}
+          >
+            <option value="">不使用 Workspace</option>
+            {workspaces.map((ws) => (
+              <option key={ws.id} value={ws.id}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+          {workspaceId && (
+            <p className="text-xs text-muted-foreground">
+              Agent 將在開始前讀取 context.html，並在完成後更新它。
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  const rolesCard = (
+    <div className="space-y-3 rounded-lg border border-border/50 p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          角色設定
+        </p>
+        <button
+          type="button"
+          onClick={onManageRoles}
+          className="text-xs text-primary hover:underline"
+        >
+          管理角色
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <UserRound className="size-3" />
+            指派角色
+          </span>
+          <div className="flex items-center gap-2">
+            {selectedRole && (
+              <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
+            )}
+            <select
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+              className={F}
+            >
+              <option value="">不指派角色</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <ShieldCheck className="size-3" />
+            Code Reviewer
+          </span>
+          <div className="flex items-center gap-2">
+            {selectedReviewerRole && (
+              <RoleAvatar role={selectedReviewerRole} className="size-6 shrink-0 text-[10px]" />
+            )}
+            <select
+              value={reviewerRoleId}
+              onChange={(e) => setReviewerRoleId(e.target.value)}
+              className={F}
+            >
+              <option value="">不自動審查</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedReviewerRole && (
+            <p className="text-xs text-muted-foreground">
+              {selectedReviewerRole.name} 會自動審查並來回修正（須開啟 Auto Mode）。
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* Header */}
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">新增任務</h2>
+        <h2 className="text-base font-semibold tracking-tight">新增任務</h2>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
             disabled={creating}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
             <X className="size-4" />
           </button>
         )}
       </div>
 
-      {/* Step indicator */}
+      {/* Step indicator (modal mode only) */}
       {!inline && (
         <div className="mb-5 flex items-center gap-2">
           <div
             className={cn(
-              'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+              'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
               step === 1
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-primary/20 text-primary'
             )}
           >
-            1
+            {step > 1 ? <Check className="size-3.5" strokeWidth={3} /> : '1'}
           </div>
           <span
             className={cn(
-              'text-xs',
+              'text-sm tracking-[-0.224px]',
               step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
             專案設定
           </span>
-          <div className="h-px flex-1 bg-border" />
           <div
             className={cn(
-              'flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+              'h-0.5 flex-1 transition-colors',
+              step > 1 ? 'bg-primary/60' : 'bg-border'
+            )}
+          />
+          <div
+            className={cn(
+              'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
               step === 2
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground'
@@ -349,7 +616,7 @@ export function NewTaskForm({
           </div>
           <span
             className={cn(
-              'text-xs',
+              'text-sm tracking-[-0.224px]',
               step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
@@ -358,7 +625,7 @@ export function NewTaskForm({
         </div>
       )}
 
-      {/* Inline mode: title at top full-width, then 2-col grid */}
+      {/* Inline mode: title at top, then 2-col grid */}
       {inline && (
         <>
           <label className="mb-5 block space-y-1.5">
@@ -368,149 +635,18 @@ export function NewTaskForm({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：實作登入頁面"
-              className="w-full rounded-md border bg-background px-3 py-2.5 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className={cn(F, 'text-base')}
             />
           </label>
 
           <div className="grid grid-cols-2 items-start gap-x-8">
             {/* Left: project settings + workspace */}
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <span className="text-sm font-medium">專案類型</span>
-                <div className="flex overflow-hidden rounded-md border">
-                  <button
-                    type="button"
-                    onClick={() => handleModeChange('existing')}
-                    disabled={creating || loadingInfo || initializing}
-                    className={cn(
-                      'flex-1 px-3 py-1.5 text-sm transition-colors',
-                      mode === 'existing'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    現有專案
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleModeChange('new')}
-                    disabled={creating || loadingInfo || initializing}
-                    className={cn(
-                      'flex-1 px-3 py-1.5 text-sm transition-colors',
-                      mode === 'new'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    新專案
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-sm font-medium">
-                  {mode === 'new' ? '專案位置' : '專案資料夾'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePick}
-                    disabled={creating || initializing || loadingInfo}
-                  >
-                    <FolderOpen />
-                    {projectPath ? '更換資料夾' : '選擇資料夾'}
-                  </Button>
-                  {projectPath && (
-                    <span
-                      className="truncate text-xs text-muted-foreground"
-                      title={projectPath}
-                    >
-                      {basename(projectPath)}
-                    </span>
-                  )}
-                </div>
-                {mode === 'new' && !projectPath && (
-                  <p className="text-xs text-muted-foreground">
-                    選擇一個空的資料夾，系統將自動初始化 Git repository。
-                  </p>
-                )}
-              </div>
-
-              {(loadingInfo || initializing) && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
-                </p>
-              )}
-
-              {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-                  這個資料夾不是 Git repository，請改選一個 Git 專案。
-                </p>
-              )}
-
-              {isRepo && hasRemote && (
-                <label className="block space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <GitBranch className="size-3.5" />
-                    基準分支 (Base Branch)
-                  </span>
-                  <select
-                    value={baseBranch}
-                    onChange={(e) => setBaseBranch(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    {(gitInfo?.branches ?? []).map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {isRepo && !hasRemote && (
-                <p className="text-xs text-muted-foreground">
-                  此 repository 沒有 remote，將以目前分支 (
-                  {gitInfo?.currentBranch ?? 'HEAD'}) 為基準建立本地 worktree。
-                </p>
-              )}
-
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <Layers className="size-3.5" />
-                  Workspace（選填）
-                </span>
-                {workspaces.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    尚無 Workspace — 可在側邊欄新增後再指派。
-                  </p>
-                ) : (
-                  <>
-                    <select
-                      value={workspaceId}
-                      onChange={(e) => setWorkspaceId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <option value="">不使用 Workspace</option>
-                      {workspaces.map((ws) => (
-                        <option key={ws.id} value={ws.id}>
-                          {ws.name}
-                        </option>
-                      ))}
-                    </select>
-                    {workspaceId && (
-                      <p className="text-xs text-muted-foreground">
-                        Agent 將在開始前讀取 context.html，並在完成後更新它。
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+              {projectSettingsBlock}
+              {workspaceBlock}
             </div>
 
-            {/* Right: description + agent/model + roles */}
+            {/* Right: description + agents + roles */}
             <div className="space-y-4">
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">詳細描述（選填）</span>
@@ -519,7 +655,7 @@ export function NewTaskForm({
                   onChange={(e) => setDescription(e.target.value)}
                   rows={5}
                   placeholder="描述這個任務的目標、需求或背景脈絡…"
-                  className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className={cn(F, 'resize-y')}
                 />
               </label>
 
@@ -544,75 +680,10 @@ export function NewTaskForm({
                 onModelChange={setExecutionModel}
               />
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-sm font-medium">
-                      <UserRound className="size-3.5" />
-                      指派角色
-                    </span>
-                    <button
-                      type="button"
-                      onClick={onManageRoles}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      管理
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selectedRole && (
-                      <RoleAvatar role={selectedRole} className="size-7 text-xs" />
-                    )}
-                    <select
-                      value={roleId}
-                      onChange={(e) => setRoleId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <option value="">不指派角色</option>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <ShieldCheck className="size-3.5" />
-                    Code Reviewer
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {selectedReviewerRole && (
-                      <RoleAvatar
-                        role={selectedReviewerRole}
-                        className="size-7 text-xs"
-                      />
-                    )}
-                    <select
-                      value={reviewerRoleId}
-                      onChange={(e) => setReviewerRoleId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <option value="">不自動審查</option>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {selectedReviewerRole && (
-                    <p className="text-xs text-muted-foreground">
-                      {selectedReviewerRole.name} 會自動審查並來回修正（須開啟 Auto Mode）。
-                    </p>
-                  )}
-                </div>
-              </div>
+              {rolesCard}
 
               {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
                   {error}
                 </p>
               )}
@@ -621,117 +692,13 @@ export function NewTaskForm({
         </>
       )}
 
-      {/* Non-inline (modal) mode: step-based layout */}
+      {/* Modal mode: step-based layout */}
       {!inline && (
         <div>
-          {/* Step 1: Project folder, workspace, base branch */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <span className="text-sm font-medium">專案類型</span>
-                <div className="flex overflow-hidden rounded-md border">
-                  <button
-                    type="button"
-                    onClick={() => handleModeChange('existing')}
-                    disabled={creating || loadingInfo || initializing}
-                    className={cn(
-                      'flex-1 px-3 py-1.5 text-sm transition-colors',
-                      mode === 'existing'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    現有專案
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleModeChange('new')}
-                    disabled={creating || loadingInfo || initializing}
-                    className={cn(
-                      'flex-1 px-3 py-1.5 text-sm transition-colors',
-                      mode === 'new'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    新專案
-                  </button>
-                </div>
-              </div>
+          {/* Step 1: project folder + base branch */}
+          {step === 1 && <div className="space-y-4">{projectSettingsBlock}</div>}
 
-              <div className="space-y-1.5">
-                <span className="text-sm font-medium">
-                  {mode === 'new' ? '專案位置' : '專案資料夾'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePick}
-                    disabled={creating || initializing || loadingInfo}
-                  >
-                    <FolderOpen />
-                    {projectPath ? '更換資料夾' : '選擇資料夾'}
-                  </Button>
-                  {projectPath && (
-                    <span
-                      className="truncate text-xs text-muted-foreground"
-                      title={projectPath}
-                    >
-                      {basename(projectPath)}
-                    </span>
-                  )}
-                </div>
-                {mode === 'new' && !projectPath && (
-                  <p className="text-xs text-muted-foreground">
-                    選擇一個空的資料夾，系統將自動初始化 Git repository。
-                  </p>
-                )}
-              </div>
-
-              {(loadingInfo || initializing) && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
-                </p>
-              )}
-
-              {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-                  這個資料夾不是 Git repository，請改選一個 Git 專案。
-                </p>
-              )}
-
-              {isRepo && hasRemote && (
-                <label className="block space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <GitBranch className="size-3.5" />
-                    基準分支 (Base Branch)
-                  </span>
-                  <select
-                    value={baseBranch}
-                    onChange={(e) => setBaseBranch(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    {(gitInfo?.branches ?? []).map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {isRepo && !hasRemote && (
-                <p className="text-xs text-muted-foreground">
-                  此 repository 沒有 remote，將以目前分支 (
-                  {gitInfo?.currentBranch ?? 'HEAD'}) 為基準建立本地 worktree。
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Step 2: Task details, Agent CLI + Model, roles */}
+          {/* Step 2: task details, agents, roles, workspace */}
           {step === 2 && (
             <div className="space-y-4">
               <label className="block space-y-1.5">
@@ -741,7 +708,7 @@ export function NewTaskForm({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例如：實作登入頁面"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className={F}
                 />
               </label>
 
@@ -752,7 +719,7 @@ export function NewTaskForm({
                   onChange={(e) => setDescription(e.target.value)}
                   rows={4}
                   placeholder="描述這個任務的目標、需求或背景脈絡…"
-                  className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className={cn(F, 'resize-y')}
                 />
               </label>
 
@@ -777,106 +744,12 @@ export function NewTaskForm({
                 onModelChange={setExecutionModel}
               />
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <UserRound className="size-3.5" />
-                    指派角色（選填）
-                  </span>
-                  <button
-                    type="button"
-                    onClick={onManageRoles}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    管理角色
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  {selectedRole && (
-                    <RoleAvatar role={selectedRole} className="size-8 text-sm" />
-                  )}
-                  <select
-                    value={roleId}
-                    onChange={(e) => setRoleId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    <option value="">預設（不指派角色）</option>
-                    {roles.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              {rolesCard}
 
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <ShieldCheck className="size-3.5" />
-                  Code Reviewer（選填，啟用自動審查）
-                </span>
-                <div className="flex items-center gap-2">
-                  {selectedReviewerRole && (
-                    <RoleAvatar
-                      role={selectedReviewerRole}
-                      className="size-8 text-sm"
-                    />
-                  )}
-                  <select
-                    value={reviewerRoleId}
-                    onChange={(e) => setReviewerRoleId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    <option value="">不自動審查</option>
-                    {roles.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {selectedReviewerRole && (
-                  <p className="text-xs text-muted-foreground">
-                    執行角色完成後，{selectedReviewerRole.name}{' '}
-                    會自動審查改動並來回修正，直到通過為止（須開啟 Auto Mode）。
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <Layers className="size-3.5" />
-                  Workspace（選填）
-                </span>
-                {workspaces.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    尚無 Workspace — 可在側邊欄新增後再指派。
-                  </p>
-                ) : (
-                  <>
-                    <select
-                      value={workspaceId}
-                      onChange={(e) => setWorkspaceId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <option value="">不使用 Workspace</option>
-                      {workspaces.map((ws) => (
-                        <option key={ws.id} value={ws.id}>
-                          {ws.name}
-                        </option>
-                      ))}
-                    </select>
-                    {workspaceId && (
-                      <p className="text-xs text-muted-foreground">
-                        Agent 將在開始前讀取 context.html，並在完成後更新它。
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+              {workspaceBlock}
 
               {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
                   {error}
                 </p>
               )}
@@ -888,14 +761,20 @@ export function NewTaskForm({
       {/* Footer buttons */}
       {inline ? (
         <div className="mt-6 space-y-2">
-          {inline && !isProjectReady && title.trim().length > 0 && (
+          {!isProjectReady && title.trim().length > 0 && (
             <p className="text-right text-xs text-muted-foreground">
               請先在左側選擇專案資料夾
             </p>
           )}
           <div className="flex justify-end gap-2">
             {onClose && (
-              <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+                disabled={creating}
+                className="rounded-full"
+              >
                 取消
               </Button>
             )}
@@ -903,7 +782,10 @@ export function NewTaskForm({
               size="sm"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className={cn(creating && 'opacity-80')}
+              className={cn(
+                'rounded-full px-5 active:scale-95 transition-transform',
+                creating && 'opacity-80'
+              )}
             >
               {creating && <Loader2 className="animate-spin" />}
               {creating ? '建立 Worktree 中…' : '建立任務'}
@@ -913,7 +795,13 @@ export function NewTaskForm({
       ) : step === 1 ? (
         <div className="mt-5 flex justify-end gap-2">
           {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              disabled={creating}
+              className="rounded-full"
+            >
               取消
             </Button>
           )}
@@ -921,6 +809,7 @@ export function NewTaskForm({
             size="sm"
             onClick={() => setStep(2)}
             disabled={!canGoToStep2}
+            className="rounded-full px-5"
           >
             下一步 →
           </Button>
@@ -932,12 +821,19 @@ export function NewTaskForm({
             size="sm"
             onClick={() => setStep(1)}
             disabled={creating}
+            className="rounded-full"
           >
             ← 上一步
           </Button>
           <div className="flex gap-2">
             {onClose && (
-              <Button variant="ghost" size="sm" onClick={onClose} disabled={creating}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClose}
+                disabled={creating}
+                className="rounded-full"
+              >
                 取消
               </Button>
             )}
@@ -945,7 +841,10 @@ export function NewTaskForm({
               size="sm"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className={cn(creating && 'opacity-80')}
+              className={cn(
+                'rounded-full px-5 active:scale-95 transition-transform',
+                creating && 'opacity-80'
+              )}
             >
               {creating && <Loader2 className="animate-spin" />}
               {creating ? '建立 Worktree 中…' : '建立任務'}
@@ -957,6 +856,7 @@ export function NewTaskForm({
   )
 }
 
+// ── Dialog wrapper ─────────────────────────────────────────────────────────
 interface NewTaskDialogProps extends NewTaskFormProps {
   open: boolean
 }
@@ -974,7 +874,7 @@ export function NewTaskDialog({
         className="absolute inset-0 bg-black/60"
         onClick={creating ? undefined : onClose}
       />
-      <div className="relative z-10 w-full max-w-md rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+      <div className="relative z-10 w-full max-w-md rounded-xl border bg-card p-5 text-card-foreground">
         <NewTaskForm creating={creating} onClose={onClose} {...rest} />
       </div>
     </div>
