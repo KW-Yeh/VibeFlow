@@ -97,9 +97,12 @@ function modelLabel(id: string): string {
 }
 
 function parseModelChoices(output: string): AgentModel[] {
-  const match = output.match(/--model\s+<model>[\s\S]*?\(choices:\s*([^)]+)\)/i)
+  // The choices must belong to the --model option itself: don't let the gap
+  // cross into a later option line (2-space-indented flag), or we'd grab e.g.
+  // --output-format's "text"/"json"/"stream-json" instead.
+  const match = output.match(/--model\s+<model>((?:(?!\n {2}\S)[\s\S])*?)\(choices:\s*([^)]+)\)/i)
   if (!match) return []
-  return Array.from(match[1].matchAll(/"([^"]+)"/g), (m) => m[1])
+  return Array.from(match[2].matchAll(/"([^"]+)"/g), (m) => m[1])
     .map((id) => ({ id, label: modelLabel(id) }))
 }
 
