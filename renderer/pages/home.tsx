@@ -18,13 +18,16 @@ import {
   createWorkspace,
   deleteTask,
   detectAgents,
+  generateCommitMessage,
   getDiff,
   getGitInfo,
+  getPrStatus,
   initRepository,
   loadState,
   onProgressUpdate,
   onSubAgentsUpdate,
   onUpdateAvailable,
+  openExternal,
   persistBoard,
   pickFolder,
   relaunchApp,
@@ -32,6 +35,7 @@ import {
   removeRole,
   removeWorkspace,
   setSettings,
+  termInput,
   updateRole,
   updateTask,
   updateWorkspace,
@@ -41,6 +45,7 @@ import type {
   AgentCliId,
   BoardState,
   DiffFile,
+  PrStatus,
   Role,
   SubAgentRun,
   Task,
@@ -105,6 +110,8 @@ export default function HomePage() {
     pushed: boolean
   } | null>(null)
   const [reviewError, setReviewError] = useState<string | null>(null)
+  const [generatingMessage, setGeneratingMessage] = useState(false)
+  const [prStatus, setPrStatus] = useState<PrStatus | null | undefined>(undefined)
 
   // A newer build has replaced the running bundle (rebuild.sh --install);
   // offer a one-click restart instead of requiring a manual quit + reopen.
@@ -281,6 +288,7 @@ export default function HomePage() {
     setReviewResult(savedReviewResults.current.get(taskId) ?? null)
     setReviewError(null)
     setReviewFiles([])
+    setPrStatus(undefined)
     setReviewLoading(true)
     try {
       setReviewFiles(await getDiff(taskId))
@@ -288,6 +296,19 @@ export default function HomePage() {
       setReviewError(err instanceof Error ? err.message : String(err))
     } finally {
       setReviewLoading(false)
+    }
+  }
+
+  const handleGenerateCommitMessage = async (): Promise<string | null> => {
+    if (!reviewTaskId) return null
+    setGeneratingMessage(true)
+    try {
+      return await generateCommitMessage(reviewTaskId)
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : String(err))
+      return null
+    } finally {
+      setGeneratingMessage(false)
     }
   }
 
@@ -301,11 +322,27 @@ export default function HomePage() {
         setReviewResult(res.result)
         savedReviewResults.current.set(reviewTaskId, res.result)
         setBoard(res.state.board)
+        // After a successful push, asynchronously check for an existing PR.
+        if (res.result.pushed) {
+          getPrStatus(reviewTaskId).then(setPrStatus).catch(() => setPrStatus(null))
+        }
       }
     } catch (err) {
       setReviewError(err instanceof Error ? err.message : String(err))
     } finally {
       setFinalizing(false)
+    }
+  }
+
+  const handleOpenPr = async () => {
+    if (!reviewTaskId) return
+    if (prStatus?.url) {
+      await openExternal(prStatus.url)
+    } else {
+      // Invoke the /pr skill in the task's terminal so it drafts and creates
+      // a well-formatted PR, then close the dialog so the user sees it run.
+      termInput(reviewTaskId, '/pr\n')
+      setReviewTaskId(null)
     }
   }
 
@@ -547,9 +584,13 @@ export default function HomePage() {
               files={reviewFiles}
               loading={reviewLoading}
               finalizing={finalizing}
+              generatingMessage={generatingMessage}
               result={reviewResult}
+              prStatus={prStatus}
               error={reviewError}
               onApprove={handleApprove}
+              onGenerateMessage={handleGenerateCommitMessage}
+              onOpenPr={handleOpenPr}
               onClose={() => setReviewTaskId(null)}
             />
             <WorkspaceDialog

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import { CheckCircle2, Loader2, X } from 'lucide-react'
+import { CheckCircle2, ExternalLink, GitPullRequest, Loader2, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import type { DiffFile } from '@/lib/types'
+import type { DiffFile, PrStatus } from '@/lib/types'
 
 interface ReviewDialogProps {
   open: boolean
@@ -11,9 +11,14 @@ interface ReviewDialogProps {
   files: DiffFile[]
   loading: boolean
   finalizing: boolean
+  generatingMessage: boolean
   result: { committed: boolean; pushed: boolean } | null
+  /** undefined = not yet checked; null = checked, no PR; PrStatus = PR exists */
+  prStatus: PrStatus | null | undefined
   error: string | null
   onApprove: (message: string) => void
+  onGenerateMessage: () => Promise<string | null>
+  onOpenPr: () => void
   onClose: () => void
 }
 
@@ -31,9 +36,13 @@ export function ReviewDialog({
   files,
   loading,
   finalizing,
+  generatingMessage,
   result,
+  prStatus,
   error,
   onApprove,
+  onGenerateMessage,
+  onOpenPr,
   onClose,
 }: ReviewDialogProps) {
   const [message, setMessage] = useState('')
@@ -41,6 +50,11 @@ export function ReviewDialog({
   useEffect(() => {
     if (open) setMessage(`VibeFlow: ${taskTitle}`)
   }, [open, taskTitle])
+
+  const handleGenerate = async () => {
+    const generated = await onGenerateMessage()
+    if (generated) setMessage(generated)
+  }
 
   if (!open) return null
 
@@ -74,7 +88,7 @@ export function ReviewDialog({
             </div>
           ) : files.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
-              與基準分支相比沒有變更。
+              與基準分支相比沒有已提交的變更。
             </p>
           ) : (
             <div className="space-y-5">
@@ -111,15 +125,41 @@ export function ReviewDialog({
 
         <div className="border-t px-5 py-3">
           {result ? (
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 text-sm text-primary">
-                <CheckCircle2 className="size-4" />
-                {result.committed ? '已提交' : '無變更可提交'}
-                {result.pushed ? '並已推送至遠端' : '（未推送）'}
-              </span>
-              <Button size="sm" onClick={onClose}>
-                完成
-              </Button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-2 text-sm text-primary">
+                  <CheckCircle2 className="size-4" />
+                  {result.committed ? '已提交' : '無變更可提交'}
+                  {result.pushed ? '並已推送至遠端' : '（未推送）'}
+                </span>
+                <div className="flex items-center gap-2">
+                  {result.pushed && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onOpenPr}
+                      disabled={prStatus === undefined}
+                    >
+                      {prStatus === undefined ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : prStatus ? (
+                        <>
+                          <ExternalLink className="size-3.5" />
+                          查看 PR
+                        </>
+                      ) : (
+                        <>
+                          <GitPullRequest className="size-3.5" />
+                          建立 PR
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={onClose}>
+                    完成
+                  </Button>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="space-y-2">
@@ -128,9 +168,22 @@ export function ReviewDialog({
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Commit message"
-                  disabled={finalizing}
+                  disabled={finalizing || generatingMessage}
                   className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerate}
+                  disabled={finalizing || generatingMessage || loading}
+                  title="使用 AI 產生 commit message"
+                >
+                  {generatingMessage ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3.5" />
+                  )}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => onApprove(message.trim() || `VibeFlow: ${taskTitle}`)}

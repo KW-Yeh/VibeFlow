@@ -10,6 +10,7 @@ import type {
   DiffFile,
   FinalizeResult,
   GitInfo,
+  PrStatus,
   Role,
   SubAgentRun,
   Task,
@@ -183,6 +184,26 @@ export async function approve(
 ): Promise<{ result: FinalizeResult; state: VibeFlowState } | null> {
   const b = bridge()
   return b ? b.approve(taskId, message) : null
+}
+
+export async function generateCommitMessage(taskId: string): Promise<string | null> {
+  const b = bridge()
+  return b ? b.generateCommitMessage(taskId) : null
+}
+
+export async function getPrStatus(taskId: string): Promise<PrStatus | null> {
+  const b = bridge()
+  return b ? b.getPrStatus(taskId) : null
+}
+
+export async function getGithubCompareUrl(taskId: string): Promise<string | null> {
+  const b = bridge()
+  return b ? b.getGithubCompareUrl(taskId) : null
+}
+
+export async function openExternal(url: string): Promise<void> {
+  const b = bridge()
+  if (b) await b.openExternal(url)
 }
 
 /**

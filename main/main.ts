@@ -33,7 +33,10 @@ import {
   commitAndPush,
   deleteBranch,
   fallbackBranchName,
+  generateCommitMessage,
   getGitInfo,
+  getGithubCompareUrl,
+  getPrStatus,
   getWorktreeDiff,
   initRepository,
   provisionWorktree,
@@ -443,6 +446,46 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return { result, state: getState() }
     }
   )
+
+  // Generate a commit message using the task's agent CLI.
+  ipcMain.handle(
+    'git:generateCommitMessage',
+    async (_event, taskId: string) => {
+      const task = findTask(taskId)
+      if (!task?.worktreePath) throw new Error('找不到此任務的 worktree')
+      return generateCommitMessage(
+        task.worktreePath,
+        task.baseBranch ?? 'main',
+        task.agentCli ?? 'claude'
+      )
+    }
+  )
+
+  // Check whether a PR exists for the current branch.
+  ipcMain.handle(
+    'git:getPrStatus',
+    async (_event, taskId: string) => {
+      const task = findTask(taskId)
+      if (!task?.worktreePath) return null
+      return getPrStatus(task.worktreePath)
+    }
+  )
+
+  // Build the GitHub compare URL for creating a new PR from this branch.
+  ipcMain.handle(
+    'git:getGithubCompareUrl',
+    async (_event, taskId: string) => {
+      const task = findTask(taskId)
+      if (!task?.worktreePath) return null
+      return getGithubCompareUrl(task.worktreePath, task.baseBranch ?? 'main')
+    }
+  )
+
+  // Open a URL in the system default browser.
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    const { shell } = await import('electron')
+    await shell.openExternal(url)
+  })
 
   // Cleanup: finalize a card moved to Done. Tear down the PTY, remove the
   // worktree, delete the local branch, then bring the main working tree back to
