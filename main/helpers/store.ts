@@ -78,10 +78,14 @@ export interface Task {
   baseBranch?: string
   /** Whether the branch was pushed upstream at creation. */
   pushed?: boolean
-  /** Agent CLI used to execute this task. Absent = 'claude' (pre-field tasks). */
+  /** Agent CLI used for planning/review. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
-  /** Model id passed to the agent CLI's --model flag. Absent = agent's default model. */
+  /** Planning/review model id. Absent = agent's default model. */
   model?: string
+  /** Agent CLI used to execute this task. Absent = agentCli (pre-field tasks). */
+  executionAgentCli?: AgentCliId
+  /** Execution model id. Absent = execution agent's default model. */
+  executionModel?: string
   /** Assigned executor role id. Absent = no role (default agent behavior). */
   roleId?: string
   /**

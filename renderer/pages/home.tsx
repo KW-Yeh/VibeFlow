@@ -220,6 +220,8 @@ export default function HomePage() {
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
     model: string,
+    executionAgentCli: AgentCliId,
+    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
@@ -235,6 +237,8 @@ export default function HomePage() {
         mode,
         agentCli,
         model: model || undefined,
+        executionAgentCli,
+        executionModel: executionModel || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
         workspaceId: workspaceId || undefined,

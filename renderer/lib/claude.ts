@@ -241,6 +241,18 @@ export function buildPrompt(
   return lines.join('\n')
 }
 
+export function buildPlanningPrompt(
+  task: Pick<Task, 'title' | 'description'>
+): string {
+  const lines = [buildPrompt(task)]
+  lines.push(
+    '',
+    '本次只執行 planning 階段：建立 PLAN.md，並依進度追蹤協議寫入 planDone=true 與 steps。',
+    '完成 planning 後請停止，不要修改產品程式碼、不要開始執行步驟。'
+  )
+  return lines.join('\n')
+}
+
 /**
  * Build the message sent as a new turn when resuming a prior agent session.
  * The conversation history is restored by the CLI's resume flag, so this only
@@ -505,13 +517,24 @@ export function buildReviewCommand(
  * orchestrator) so only the executor PTY is live during the revise stage.
  */
 export function buildReviseCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'model' | 'worktreePath'>,
+  task: Pick<
+    Task,
+    | 'id'
+    | 'title'
+    | 'description'
+    | 'progress'
+    | 'agentCli'
+    | 'model'
+    | 'executionAgentCli'
+    | 'executionModel'
+    | 'worktreePath'
+  >,
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = [],
   workspacePath?: string
 ): string {
-  const agent = taskAgent(task)
-  const model = taskModel(task)
+  const agent = taskExecutionAgent(task)
+  const model = taskExecutionModel(task)
   const sys = resolveSystemPrompt(null, executorRole)
   const basePrompt = buildRevisePrompt(task, comments, executorRole)
   const prompt = workspacePath
@@ -569,6 +592,21 @@ export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
   return task.model || DEFAULT_MODELS[taskAgent(task)]
 }
 
+/** Resolve the execution agent (old tasks fall back to the planning agent). */
+export function taskExecutionAgent(
+  task: Pick<Task, 'agentCli' | 'executionAgentCli'>
+): AgentCliId {
+  return task.executionAgentCli ?? taskAgent(task)
+}
+
+/** Resolve the execution model (old tasks fall back to the planning model). */
+export function taskExecutionModel(
+  task: Pick<Task, 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel'>
+): string {
+  if (!task.executionAgentCli) return task.model || DEFAULT_MODELS[taskExecutionAgent(task)]
+  return task.executionModel || DEFAULT_MODELS[taskExecutionAgent(task)]
+}
+
 /**
  * Build the launch command for the task's chosen agent CLI. Codex and Gemini
  * have no separate system-prompt flag, so the effective system prompt (incl.
@@ -585,14 +623,22 @@ export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
 export function buildAgentCommand(
   task: Pick<
     Task,
-    'id' | 'title' | 'description' | 'progress' | 'agentCli' | 'model' | 'worktreePath'
+    | 'id'
+    | 'title'
+    | 'description'
+    | 'progress'
+    | 'agentCli'
+    | 'model'
+    | 'executionAgentCli'
+    | 'executionModel'
+    | 'worktreePath'
   >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
-  const agent = taskAgent(task)
+  const agent = taskExecutionAgent(task)
   const sys = resolveSystemPrompt(systemPrompt, role)
   // Claude can resume a prior session; Codex/Gemini fold the recorded progress
   // into the prompt (soft resume) regardless of opts.resume.
@@ -602,5 +648,5 @@ export function buildAgentCommand(
     ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
     : basePrompt
   const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
-  return assembleCommand(agent, sys, prompt, taskModel(task), opts, task.worktreePath, sessionId, workspacePath)
+  return assembleCommand(agent, sys, prompt, taskExecutionModel(task), opts, task.worktreePath, sessionId, workspacePath)
 }

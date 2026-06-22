@@ -100,6 +100,8 @@ export async function createTask(payload: {
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   model?: string
+  executionAgentCli?: AgentCliId
+  executionModel?: string
   roleId?: string
   reviewerRoleId?: string
   workspaceId?: string
@@ -257,6 +259,7 @@ export async function chatSend(payload: {
   sessionId: string
   resume: boolean
   systemPrompt: string
+  agentCli?: AgentCliId
   model: string
   workspacePath?: string
 }): Promise<void> {

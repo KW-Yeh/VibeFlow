@@ -70,6 +70,8 @@ const vibeflow = {
     mode?: 'existing' | 'new'
     agentCli?: AgentCliId
     model?: string
+    executionAgentCli?: AgentCliId
+    executionModel?: string
     roleId?: string
     reviewerRoleId?: string
     workspaceId?: string
@@ -169,6 +171,7 @@ const vibeflow = {
       sessionId: string
       resume: boolean
       systemPrompt: string
+      agentCli?: AgentCliId
       model: string
       workspacePath?: string
     }): Promise<void> => ipcRenderer.invoke('chat:send', payload),

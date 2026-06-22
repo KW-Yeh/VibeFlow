@@ -24,7 +24,14 @@ import {
 } from 'lucide-react'
 import { ChatPanel } from '@/components/chat-panel'
 import { RoleAvatar } from '@/components/roles-dialog'
-import { AGENT_NAMES, isTaskComplete, taskAgent } from '@/lib/claude'
+import {
+  AGENT_NAMES,
+  isTaskComplete,
+  taskAgent,
+  taskExecutionAgent,
+  taskExecutionModel,
+  taskModel,
+} from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { ColumnId, Role, SubAgentRun, Task } from '@/lib/types'
 
@@ -280,7 +287,10 @@ export function TaskDetailPanel({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const stages = deriveStages(task, column, reviewerRole)
   const cwd = task.worktreePath ?? task.projectPath ?? null
-  const agentName = AGENT_NAMES[taskAgent(task)]
+  const planDone = task.progress?.planDone === true
+  const activeAgent = planDone ? taskExecutionAgent(task) : taskAgent(task)
+  const activeModel = planDone ? taskExecutionModel(task) : taskModel(task)
+  const agentName = AGENT_NAMES[activeAgent]
   const progress = task.progress
   const totalSteps = progress?.steps.length ?? 0
   const doneSteps = progress?.steps.filter((s) => s.done).length ?? 0
@@ -595,6 +605,8 @@ export function TaskDetailPanel({
             workspacePath={workspacePath}
             pendingMessage={chatLaunch?.text}
             pendingNonce={chatLaunch?.nonce ?? 0}
+            agentCli={activeAgent}
+            model={activeModel}
             launchLabel={column === 'backlog' ? '開始任務' : `啟動 ${agentName}`}
             onLaunchRequest={() => column === 'backlog' ? onStart(task) : onRun(task)}
             isVisible={isSelected}

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import path from 'path'
 import fs from 'fs'
 import type { WebContents } from 'electron'
+import type { AgentCliId } from './agents'
 import { execEnv } from './env'
 import { appendMessage, type ChatAttachment } from './chat-store'
 
@@ -21,6 +22,7 @@ export interface SendOptions {
   /** true = --resume <sessionId>, false = --session-id <sessionId> (fresh session) */
   resume: boolean
   systemPrompt: string
+  agentCli?: AgentCliId
   model: string
   workspacePath?: string
 }
@@ -94,6 +96,26 @@ function claudeBin(): string {
   return 'claude'
 }
 
+function buildRawAgentCommand(
+  agentCli: Exclude<AgentCliId, 'claude'>,
+  model: string,
+  fullText: string,
+  systemPrompt: string,
+  worktreePath: string,
+  workspacePath?: string
+): string {
+  const combined = `${systemPrompt}\n\n${fullText}`
+  if (agentCli === 'codex') {
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    return `codex exec --model ${shellQuote(model)} --sandbox workspace-write --ask-for-approval never -C ${shellQuote(worktreePath)}${addDir} --color never ${shellQuote(combined)}`
+  }
+  if (agentCli === 'copilot') {
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    return `copilot --allow-all-tools --model ${shellQuote(model)}${addDir} -p ${shellQuote(combined)}`
+  }
+  return `gemini --yolo -i --model ${shellQuote(model)} ${shellQuote(combined)}`
+}
+
 /** Write base64-encoded attachment bytes to a temp dir inside the worktree. */
 function writeAttachment(worktreePath: string, input: AttachmentInput): ChatAttachment {
   const attachDir = path.join(worktreePath, '.vibeflow-attachments')
@@ -129,6 +151,7 @@ export function sendChatMessage(
     sessionId,
     resume,
     systemPrompt,
+    agentCli = 'claude',
     model,
     workspacePath,
   } = opts
@@ -155,7 +178,6 @@ export function sendChatMessage(
     attachments: savedAttachments.length ? savedAttachments : undefined,
   })
 
-  const sessionFlag = resume ? `--resume ${sessionId}` : `--session-id ${sessionId}`
   const addDirFlag = workspacePath ? `--add-dir ${shellQuote(workspacePath)}` : ''
   const ensureGitignore = () => {
     const gi = path.join(worktreePath, '.gitignore')
@@ -169,18 +191,21 @@ export function sendChatMessage(
   }
   if (savedAttachments.length) ensureGitignore()
 
-  const cmd = [
-    claudeBin(),
-    '--print',
-    '--output-format stream-json',
-    '--verbose', // required by claude CLI when --print + stream-json
-    `--permission-mode auto`,
-    `--model ${shellQuote(model)}`,
-    sessionFlag,
-    addDirFlag,
-    `--append-system-prompt ${shellQuote(systemPrompt)}`,
-    shellQuote(fullText),
-  ].filter(Boolean).join(' ')
+  const sessionFlag = resume ? `--resume ${sessionId}` : `--session-id ${sessionId}`
+  const cmd = agentCli === 'claude'
+    ? [
+        claudeBin(),
+        '--print',
+        '--output-format stream-json',
+        '--verbose', // required by claude CLI when --print + stream-json
+        `--permission-mode auto`,
+        `--model ${shellQuote(model)}`,
+        sessionFlag,
+        addDirFlag,
+        `--append-system-prompt ${shellQuote(systemPrompt)}`,
+        shellQuote(fullText),
+      ].filter(Boolean).join(' ')
+    : buildRawAgentCommand(agentCli, model, fullText, systemPrompt, worktreePath, workspacePath)
 
   const proc = spawn('sh', ['-lc', cmd], {
     cwd: worktreePath,
@@ -201,6 +226,12 @@ export function sendChatMessage(
   }
 
   proc.stdout.on('data', (raw: Buffer) => {
+    if (agentCli !== 'claude') {
+      const delta = raw.toString()
+      accumulated += delta
+      push({ taskId, delta, done: false })
+      return
+    }
     buffer += raw.toString()
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''

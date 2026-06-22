@@ -10,9 +10,12 @@ import remarkGfm from 'remark-gfm'
 import { Paperclip, Send, Square, Sparkles, Scissors, Terminal, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { chatCancel, chatCompact, chatLoad, chatSend, onChatChunk, onChatPhase } from '@/lib/api'
-import { executorSessionId, resolveSystemPrompt, taskModel } from '@/lib/claude'
+import {
+  executorSessionId,
+  resolveSystemPrompt,
+} from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { ChatMessage, PhaseType, Conversation, Role, Task } from '@/lib/types'
+import type { AgentCliId, ChatMessage, PhaseType, Conversation, Role, Task } from '@/lib/types'
 
 // Renderer-only phase message — transient, not persisted to chat store.
 type PhaseMessage = {
@@ -37,6 +40,8 @@ interface ChatPanelProps {
    */
   pendingMessage?: string | null
   pendingNonce?: number
+  agentCli?: AgentCliId
+  model?: string
   readOnly?: boolean
   /** Shown when no messages exist yet and the panel is not read-only. */
   launchLabel?: string
@@ -187,6 +192,8 @@ export function ChatPanel({
   workspacePath,
   pendingMessage,
   pendingNonce = 0,
+  agentCli = 'claude',
+  model = 'sonnet',
   readOnly = false,
   launchLabel,
   onLaunchRequest,
@@ -339,11 +346,12 @@ export function ChatPanel({
         sessionId: effectiveSessionId,
         resume: messagesRef.current.length > 0,
         systemPrompt: effectiveSystemPrompt,
-        model: taskModel(task),
+        agentCli,
+        model,
         workspacePath,
       })
     },
-    [task, executorRole, systemPrompt, workspacePath]
+    [task, executorRole, systemPrompt, workspacePath, agentCli, model]
   )
   doSendRef.current = doSend
 

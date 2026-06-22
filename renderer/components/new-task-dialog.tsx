@@ -36,6 +36,8 @@ export interface NewTaskFormProps {
     mode: ProjectMode,
     agentCli: AgentCliId,
     model: string,
+    executionAgentCli: AgentCliId,
+    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
@@ -48,6 +50,102 @@ export interface NewTaskFormProps {
 function basename(p: string): string {
   const parts = p.split(/[/\\]/).filter(Boolean)
   return parts[parts.length - 1] ?? p
+}
+
+interface AgentModelFieldsProps {
+  title: string
+  agents: AgentCli[] | null
+  detectTimedOut: boolean
+  onRetry: () => void
+  agentCli: AgentCliId
+  model: string
+  onAgentChange: (agentCli: AgentCliId) => void
+  onModelChange: (model: string) => void
+}
+
+function AgentModelFields({
+  title,
+  agents,
+  detectTimedOut,
+  onRetry,
+  agentCli,
+  model,
+  onAgentChange,
+  onModelChange,
+}: AgentModelFieldsProps) {
+  const currentAgent = agents?.find((a) => a.id === agentCli) ?? null
+  const agentModels = currentAgent?.models ?? []
+
+  return (
+    <div className="space-y-2 rounded-md border border-border/70 p-3">
+      <div className="text-xs font-semibold text-muted-foreground">{title}</div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <Bot className="size-3.5" />
+            Agent CLI
+          </span>
+          {agents === null ? (
+            detectTimedOut ? (
+              <div className="space-y-1">
+                <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="text-xs text-primary underline hover:no-underline"
+                >
+                  重新偵測
+                </button>
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                偵測中…
+              </p>
+            )
+          ) : agents.length === 0 ? (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+              未偵測到 Agent CLI（claude / codex / gemini / copilot）。
+            </p>
+          ) : (
+            <select
+              value={agentCli}
+              onChange={(e) => onAgentChange(e.target.value as AgentCliId)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <Cpu className="size-3.5" />
+            Model
+          </span>
+          {agentModels.length > 0 ? (
+            <select
+              value={model}
+              onChange={(e) => onModelChange(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {agentModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="py-2 text-xs text-muted-foreground">—</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function NewTaskForm({
@@ -78,6 +176,8 @@ export function NewTaskForm({
   const [detectKey, setDetectKey] = useState(0)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
+  const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
+  const [executionModel, setExecutionModel] = useState('')
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
@@ -97,6 +197,7 @@ export function NewTaskForm({
       setAgents(found)
       if (!found.some((a) => a.id === 'claude') && found.length > 0) {
         setAgentCli(found[0].id)
+        setExecutionAgentCli(found[0].id)
       }
     })
     return () => { active = false; clearTimeout(timeoutId) }
@@ -114,6 +215,11 @@ export function NewTaskForm({
     const agent = agents?.find((a) => a.id === agentCli)
     if (agent && agent.models.length > 0) setModel(agent.models[0].id)
   }, [agentCli, agents])
+
+  useEffect(() => {
+    const agent = agents?.find((a) => a.id === executionAgentCli)
+    if (agent && agent.models.length > 0) setExecutionModel(agent.models[0].id)
+  }, [executionAgentCli, agents])
 
   const handleModeChange = (next: ProjectMode) => {
     if (next === mode) return
@@ -168,6 +274,8 @@ export function NewTaskForm({
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
     const effectiveModel = model || currentAgent?.models[0]?.id || ''
+    const effectiveExecutionModel =
+      executionModel || currentExecutionAgent?.models[0]?.id || ''
     onSubmit(
       title.trim(),
       description.trim(),
@@ -176,6 +284,8 @@ export function NewTaskForm({
       mode,
       agentCli,
       effectiveModel,
+      executionAgentCli,
+      effectiveExecutionModel,
       roleId,
       reviewerRoleId,
       workspaceId
@@ -183,7 +293,8 @@ export function NewTaskForm({
   }
 
   const currentAgent = agents?.find((a) => a.id === agentCli) ?? null
-  const agentModels = currentAgent?.models ?? []
+  const currentExecutionAgent =
+    agents?.find((a) => a.id === executionAgentCli) ?? null
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
   const selectedReviewerRole = roles.find((r) => r.id === reviewerRoleId) ?? null
@@ -412,71 +523,26 @@ export function NewTaskForm({
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <Bot className="size-3.5" />
-                    Agent CLI
-                  </span>
-                  {agents === null ? (
-                    detectTimedOut ? (
-                      <div className="space-y-1">
-                        <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
-                        <button
-                          type="button"
-                          onClick={() => setDetectKey((k) => k + 1)}
-                          className="text-xs text-primary underline hover:no-underline"
-                        >
-                          重新偵測
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="size-3 animate-spin" />
-                        偵測中…
-                      </p>
-                    )
-                  ) : agents.length === 0 ? (
-                    <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
-                      未偵測到 Agent CLI（claude / codex / gemini）。
-                    </p>
-                  ) : (
-                    <select
-                      value={agentCli}
-                      onChange={(e) => setAgentCli(e.target.value as AgentCliId)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <Cpu className="size-3.5" />
-                    Model
-                  </span>
-                  {agentModels.length > 0 ? (
-                    <select
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      {agentModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="py-2 text-xs text-muted-foreground">—</p>
-                  )}
-                </div>
-              </div>
+              <AgentModelFields
+                title="Planning Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={agentCli}
+                model={model}
+                onAgentChange={setAgentCli}
+                onModelChange={setModel}
+              />
+              <AgentModelFields
+                title="Execution Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={executionAgentCli}
+                model={executionModel}
+                onAgentChange={setExecutionAgentCli}
+                onModelChange={setExecutionModel}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -690,71 +756,26 @@ export function NewTaskForm({
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <Bot className="size-3.5" />
-                    Agent CLI
-                  </span>
-                  {agents === null ? (
-                    detectTimedOut ? (
-                      <div className="space-y-1">
-                        <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
-                        <button
-                          type="button"
-                          onClick={() => setDetectKey((k) => k + 1)}
-                          className="text-xs text-primary underline hover:no-underline"
-                        >
-                          重新偵測
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="size-3 animate-spin" />
-                        偵測中…
-                      </p>
-                    )
-                  ) : agents.length === 0 ? (
-                    <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
-                      未偵測到 Agent CLI（claude / codex / gemini）。
-                    </p>
-                  ) : (
-                    <select
-                      value={agentCli}
-                      onChange={(e) => setAgentCli(e.target.value as AgentCliId)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <Cpu className="size-3.5" />
-                    Model
-                  </span>
-                  {agentModels.length > 0 ? (
-                    <select
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      {agentModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="py-2 text-xs text-muted-foreground">—</p>
-                  )}
-                </div>
-              </div>
+              <AgentModelFields
+                title="Planning Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={agentCli}
+                model={model}
+                onAgentChange={setAgentCli}
+                onModelChange={setModel}
+              />
+              <AgentModelFields
+                title="Execution Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={executionAgentCli}
+                model={executionModel}
+                onAgentChange={setExecutionAgentCli}
+                onModelChange={setExecutionModel}
+              />
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">

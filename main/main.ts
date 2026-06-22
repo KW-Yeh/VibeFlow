@@ -173,6 +173,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         mode?: 'existing' | 'new'
         agentCli?: AgentCliId
         model?: string
+        executionAgentCli?: AgentCliId
+        executionModel?: string
         roleId?: string
         reviewerRoleId?: string
         workspaceId?: string
@@ -216,6 +218,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         pushed: result.pushed,
         agentCli: payload.agentCli ?? 'claude',
         model: payload.model || undefined,
+        executionAgentCli: payload.executionAgentCli ?? payload.agentCli ?? 'claude',
+        executionModel:
+          payload.executionModel ||
+          (payload.executionAgentCli ? undefined : payload.model) ||
+          undefined,
         roleId: payload.roleId || undefined,
         reviewerRoleId: payload.reviewerRoleId || undefined,
         workspaceId: payload.workspaceId || undefined,
@@ -541,6 +548,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         sessionId: string
         resume: boolean
         systemPrompt: string
+        agentCli?: AgentCliId
         model: string
         workspacePath?: string
       }

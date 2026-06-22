@@ -7,6 +7,7 @@ import { TaskDetailPanel } from '@/components/task-detail-panel'
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
+  buildPlanningPrompt,
   buildPrompt,
   buildResumePrompt,
   buildRevisePrompt,
@@ -72,6 +73,8 @@ interface KanbanBoardProps {
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
     model: string,
+    executionAgentCli: AgentCliId,
+    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
@@ -131,6 +134,7 @@ export function KanbanBoard({
   // Reviewer side panel state.
   const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
   const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
+  const executionStartedRef = useRef<Set<string>>(new Set())
 
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
@@ -152,7 +156,10 @@ export function KanbanBoard({
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
     const role = roleById(task.roleId)
     const rolePromptText = buildRolePrompt(role ?? undefined)
-    const promptText = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+    const planDone = task.progress?.planDone === true
+    const promptText = planDone
+      ? opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+      : buildPlanningPrompt(task)
     const workspacePath = resolveWorkspacePath(task.workspaceId)
     const fullText = [rolePromptText, promptText].filter(Boolean).join('\n\n') +
       (workspacePath
@@ -296,10 +303,23 @@ export function KanbanBoard({
     if (!chatLaunch[selectedTaskId]) {
       const task = board.in_progress.find((t) => t.id === selectedTaskId)
       if (task && wasLaunched(task) && !isTaskComplete(task)) {
+        if (task.progress?.planDone === true) executionStartedRef.current.add(task.id)
         armLaunch(task, { resume: true })
       }
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    for (const task of board.in_progress) {
+      if (!task.launchedAt) continue
+      if (task.progress?.planDone !== true) continue
+      if (isTaskComplete(task)) continue
+      if (executionStartedRef.current.has(task.id)) continue
+      executionStartedRef.current.add(task.id)
+      armLaunch(task, { resume: wasLaunched(task) })
+      break
+    }
+  }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runTask = (task: Task) => {
     armLaunch(task, { resume: wasLaunched(task) })

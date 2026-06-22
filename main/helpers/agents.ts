@@ -89,6 +89,33 @@ async function which(bin: string): Promise<boolean> {
   }
 }
 
+function modelLabel(id: string): string {
+  const known = AGENT_CLIS.flatMap((agent) => agent.models)
+    .find((model) => model.id === id)
+  if (known) return known.label
+  return id
+}
+
+function parseModelChoices(output: string): AgentModel[] {
+  const match = output.match(/--model\s+<model>[\s\S]*?\(choices:\s*([^)]+)\)/i)
+  if (!match) return []
+  return Array.from(match[1].matchAll(/"([^"]+)"/g), (m) => m[1])
+    .map((id) => ({ id, label: modelLabel(id) }))
+}
+
+async function cliModels(agent: AgentCli): Promise<AgentModel[]> {
+  try {
+    const { stdout, stderr } = await pexec(agent.bin, ['--help'], {
+      env: execEnv(),
+      timeout: 4000,
+      maxBuffer: 1024 * 1024,
+    })
+    return parseModelChoices(`${stdout}\n${stderr}`)
+  } catch {
+    return []
+  }
+}
+
 /**
  * Detect which known agent CLIs are available on PATH. Uses the same
  * PATH-augmented env as spawned PTYs (buildEnv), so what we report as
@@ -98,5 +125,10 @@ export async function detectAgents(): Promise<AgentCli[]> {
   const available = await Promise.all(
     AGENT_CLIS.map((agent) => which(agent.bin))
   )
-  return AGENT_CLIS.filter((_, i) => available[i])
+  const installed = AGENT_CLIS.filter((_, i) => available[i])
+  const detectedModels = await Promise.all(installed.map((agent) => cliModels(agent)))
+  return installed.map((agent, i) => ({
+    ...agent,
+    models: detectedModels[i].length > 0 ? detectedModels[i] : agent.models,
+  }))
 }
