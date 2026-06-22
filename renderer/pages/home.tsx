@@ -35,7 +35,6 @@ import {
   removeRole,
   removeWorkspace,
   setSettings,
-  termInput,
   updateRole,
   updateTask,
   updateWorkspace,
@@ -112,6 +111,7 @@ export default function HomePage() {
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [generatingMessage, setGeneratingMessage] = useState(false)
   const [prStatus, setPrStatus] = useState<PrStatus | null | undefined>(undefined)
+  const [prChatRequest, setPrChatRequest] = useState<{ taskId: string; nonce: number } | null>(null)
 
   // A newer build has replaced the running bundle (rebuild.sh --install);
   // offer a one-click restart instead of requiring a manual quit + reopen.
@@ -339,15 +339,15 @@ export default function HomePage() {
   }
 
   const handleOpenPr = async () => {
+    if (!reviewTaskId || !prStatus?.url) return
+    await openExternal(prStatus.url)
+  }
+
+  const triggerPrSkill = () => {
     if (!reviewTaskId) return
-    if (prStatus?.url) {
-      await openExternal(prStatus.url)
-    } else {
-      // Invoke the /pr skill in the task's terminal so it drafts and creates
-      // a well-formatted PR, then close the dialog so the user sees it run.
-      termInput(reviewTaskId, '/pr\n')
-      setReviewTaskId(null)
-    }
+    setPrChatRequest({ taskId: reviewTaskId, nonce: Date.now() })
+    setSelectedTaskId(reviewTaskId)
+    setReviewTaskId(null)
   }
 
   const handleTaskDone = async (taskId: string) => {
@@ -553,6 +553,7 @@ export default function HomePage() {
                   initRepository={initRepository}
                   detectAgents={detectAgents}
                   onCreateTask={handleCreateTask}
+                  prChatRequest={prChatRequest}
                 />
               </div>
             </div>
@@ -595,6 +596,8 @@ export default function HomePage() {
               onApprove={handleApprove}
               onGenerateMessage={handleGenerateCommitMessage}
               onOpenPr={handleOpenPr}
+              onCreatePr={triggerPrSkill}
+              onUpdatePr={triggerPrSkill}
               onClose={() => setReviewTaskId(null)}
             />
             <WorkspaceDialog

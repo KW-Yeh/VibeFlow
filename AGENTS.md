@@ -148,6 +148,34 @@ There is no unit test harness, so verify behavior directly:
 
 ---
 
+## Worktree session rules
+
+Each VibeFlow task runs Claude inside a **git worktree** at
+`.vibeflow/<branch>/` under the target project. When the session's
+`primary working directory` is a worktree path, these rules are **mandatory**:
+
+- **All file reads and writes must use paths inside the worktree.**
+  The worktree is a full, independent copy of the repo — edit files relative
+  to the session cwd, never via the parent repo's absolute path.
+
+  ```
+  ✅  renderer/components/foo.tsx          (relative to session cwd)
+  ✅  /Users/.../VibeFlow/.vibeflow/vf-abc123/renderer/components/foo.tsx
+  ❌  /Users/.../VibeFlow/renderer/components/foo.tsx  (parent repo — wrong)
+  ```
+
+- **All `git` commands must run inside the worktree directory**, not the
+  parent repo. Running `git` in the parent repo operates on `main`, not the
+  feature branch.
+
+- At session start, confirm the cwd is the worktree before any file op:
+  `pwd` should end with `.vibeflow/<branch>`.
+
+Violating these rules causes commits to land on `main` instead of the
+feature branch — exactly the failure mode this rule is designed to prevent.
+
+---
+
 ## Git / PR
 
 - Commit messages in English; conventional-commit prefixes (`feat:`, `fix:`, `chore:`,
