@@ -103,7 +103,9 @@ export function ReviewDialog({
                     <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
                       {STATUS_LABEL[file.status] ?? file.status}
                     </span>
-                    <span className="font-mono text-xs">{file.path}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
+                      {file.path}
+                    </span>
                     {file.truncated && (
                       <span className="text-[10px] text-muted-foreground">
                         (已截斷)
@@ -164,42 +166,50 @@ export function ReviewDialog({
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Commit message"
-                  disabled={finalizing || generatingMessage}
-                  className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleGenerate}
-                  disabled={finalizing || generatingMessage || loading}
-                  title="使用 AI 產生 commit message"
-                >
-                  {generatingMessage ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-3.5" />
-                  )}
-                </Button>
+            <div className="space-y-3">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Commit message
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    name="commit-message"
+                    autoComplete="off"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Commit message"
+                    disabled={finalizing || generatingMessage}
+                    className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerate}
+                    disabled={finalizing || generatingMessage || loading}
+                    title="使用 AI 產生 commit message"
+                    aria-label="使用 AI 產生 commit message"
+                  >
+                    {generatingMessage ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  Commit the reviewed worktree changes and push them to the remote task branch.
+                </p>
                 <Button
                   size="sm"
                   onClick={() => onApprove(message.trim() || `VibeFlow: ${taskTitle}`)}
                   disabled={finalizing || loading}
                 >
                   {finalizing && <Loader2 className="animate-spin" />}
-                  {finalizing ? '提交中…' : '提交並推送至遠端'}
+                  {finalizing ? '提交中…' : 'Commit & Push'}
                 </Button>
               </div>
-              {!finalizing && (
-                <p className="text-right text-[11px] text-muted-foreground">
-                  將執行 git commit 並 push 至遠端分支
-                </p>
-              )}
             </div>
           )}
           {error && (
