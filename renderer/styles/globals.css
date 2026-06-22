@@ -78,9 +78,15 @@
   * {
     border-color: var(--color-border);
     outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent);
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    background-color: var(--color-background);
   }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    color-scheme: dark;
+    touch-action: manipulation;
   }
 }

@@ -23,6 +23,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { ChatPanel } from '@/components/chat-panel'
+import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   AGENT_NAMES,
@@ -372,88 +373,99 @@ export function TaskDetailPanel({
             </div>
           </div>
 
-          {/* 操作按鈕 */}
-          <div className="flex shrink-0 flex-wrap items-center gap-1">
-            <button
-              type="button"
-              onClick={onClose}
-              title="返回任務列表"
-              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <ArrowLeft className="size-4" />
-            </button>
-            {column === 'backlog' && cwd && (
-              <button
-                type="button"
-                onClick={() => onStart(task)}
-                title={`移至 In Progress 並啟動 ${agentName}`}
-                className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center rounded-md border border-border/60 bg-muted/20 p-0.5">
+              <IconButton
+                aria-label="返回任務列表"
+                onClick={onClose}
+                title="返回任務列表"
               >
-                <Play className="size-4" />
-              </button>
-            )}
-            {column === 'in_progress' && (
-              <>
-                {cwd && (isTaskComplete(task) || !task.launchedAt) && (
+                <ArrowLeft className="size-4" />
+              </IconButton>
+            </div>
+
+            {((column === 'backlog' && cwd) ||
+              (column === 'in_progress' && cwd && (isTaskComplete(task) || !task.launchedAt))) && (
+              <div className="flex items-center rounded-md border border-primary/20 bg-primary/5 p-0.5">
+                {column === 'backlog' && cwd && (
+                  <button
+                    type="button"
+                    onClick={() => onStart(task)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-primary transition-colors outline-none hover:bg-primary/10 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    title={`移至 In Progress 並啟動 ${agentName}`}
+                  >
+                    <Play className="size-3.5" />
+                    開始
+                  </button>
+                )}
+                {column === 'in_progress' && cwd && (isTaskComplete(task) || !task.launchedAt) && (
                   <button
                     type="button"
                     onClick={() => onRun(task)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-primary transition-colors outline-none hover:bg-primary/10 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     title={
                       task.launchedAt
                         ? `重新執行（啟動 ${agentName}）`
                         : `開始執行（啟動 ${agentName}）`
                     }
-                    className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
                   >
-                    <Play className="size-4" />
+                    <Play className="size-3.5" />
+                    {task.launchedAt ? '重跑' : '開始'}
                   </button>
                 )}
-                <button
-                  type="button"
+              </div>
+            )}
+
+            {column === 'in_progress' && (
+              <div className="flex items-center rounded-md border border-border/60 bg-muted/20 p-0.5">
+                <IconButton
+                  aria-label="退回 Backlog"
                   onClick={() => onMoveBack(task)}
                   title="退回 Backlog"
-                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <Undo2 className="size-4" />
-                </button>
+                </IconButton>
                 <button
                   type="button"
                   onClick={() => onComplete(task)}
-                  title="標記完成（清理 PTY 與 worktree）"
-                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-primary"
+                  className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-primary transition-colors outline-none hover:bg-primary/10 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  title="標記完成後會清理 PTY 與 worktree"
                 >
-                  <Check className="size-4" />
+                  <Check className="size-3.5" />
+                  完成
                 </button>
-              </>
+              </div>
             )}
-            <button
-              type="button"
-              onClick={() => onEdit(task.id)}
-              title="編輯任務"
-              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <Pencil className="size-4" />
-            </button>
-            {task.worktreePath && (
-              <button
-                type="button"
-                onClick={() => onReview(task.id)}
-                title="審查變更"
-                className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+
+            <div className="flex items-center rounded-md border border-border/60 bg-muted/20 p-0.5">
+              <IconButton
+                aria-label="編輯任務"
+                onClick={() => onEdit(task.id)}
+                title="編輯任務"
               >
-                <GitCompare className="size-4" />
-              </button>
-            )}
-            {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
-              <button
-                type="button"
-                onClick={() => onOpenReviewPanel?.(task.id)}
-                title="查看 Reviewer 終端"
-                className="rounded p-1.5 text-amber-500 hover:bg-accent hover:text-amber-400"
-              >
-                <Eye className="size-4" />
-              </button>
-            )}
+                <Pencil className="size-4" />
+              </IconButton>
+              {task.worktreePath && (
+                <IconButton
+                  aria-label="審查變更"
+                  onClick={() => onReview(task.id)}
+                  title="審查變更"
+                >
+                  <GitCompare className="size-4" />
+                </IconButton>
+              )}
+              {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
+                <IconButton
+                  aria-label="查看 Reviewer 終端"
+                  onClick={() => onOpenReviewPanel?.(task.id)}
+                  title="查看 Reviewer 終端"
+                  className="text-amber-500 hover:text-amber-400"
+                >
+                  <Eye className="size-4" />
+                </IconButton>
+              )}
+            </div>
+
             {confirmDelete ? (
               <div className="flex items-center gap-1">
                 <button
@@ -472,14 +484,16 @@ export function TaskDetailPanel({
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                title="刪除任務（清理 worktree）"
-                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-              >
-                <Trash2 className="size-4" />
-              </button>
+              <div className="flex items-center rounded-md border border-destructive/20 bg-destructive/5 p-0.5">
+                <IconButton
+                  aria-label="刪除任務"
+                  onClick={() => setConfirmDelete(true)}
+                  title="刪除任務（清理 worktree）"
+                  tone="danger"
+                >
+                  <Trash2 className="size-4" />
+                </IconButton>
+              </div>
             )}
           </div>
         </div>

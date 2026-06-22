@@ -3,6 +3,8 @@ import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
 import { CheckCircle2, ExternalLink, GitPullRequest, Loader2, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import type { DiffFile, PrStatus } from '@/lib/types'
 
 interface ReviewDialogProps {
@@ -59,25 +61,25 @@ export function ReviewDialog({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={finalizing ? undefined : onClose}
-      />
-      <div className="relative z-10 flex max-h-[88vh] w-full max-w-4xl flex-col rounded-lg border bg-card text-card-foreground shadow-lg">
+    <DialogShell
+      title="審查變更"
+      saving={finalizing}
+      onClose={onClose}
+      contentClassName="flex max-h-[88vh] max-w-4xl flex-col"
+    >
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold">審查變更</h2>
             <p className="truncate text-xs text-muted-foreground">{taskTitle}</p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉審查變更"
             onClick={onClose}
             disabled={finalizing}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
@@ -101,7 +103,9 @@ export function ReviewDialog({
                     <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
                       {STATUS_LABEL[file.status] ?? file.status}
                     </span>
-                    <span className="font-mono text-xs">{file.path}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
+                      {file.path}
+                    </span>
                     {file.truncated && (
                       <span className="text-[10px] text-muted-foreground">
                         (已截斷)
@@ -162,42 +166,50 @@ export function ReviewDialog({
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Commit message"
-                  disabled={finalizing || generatingMessage}
-                  className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleGenerate}
-                  disabled={finalizing || generatingMessage || loading}
-                  title="使用 AI 產生 commit message"
-                >
-                  {generatingMessage ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="size-3.5" />
-                  )}
-                </Button>
+            <div className="space-y-3">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Commit message
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    name="commit-message"
+                    autoComplete="off"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Commit message"
+                    disabled={finalizing || generatingMessage}
+                    className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerate}
+                    disabled={finalizing || generatingMessage || loading}
+                    title="使用 AI 產生 commit message"
+                    aria-label="使用 AI 產生 commit message"
+                  >
+                    {generatingMessage ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  Commit the reviewed worktree changes and push them to the remote task branch.
+                </p>
                 <Button
                   size="sm"
                   onClick={() => onApprove(message.trim() || `VibeFlow: ${taskTitle}`)}
                   disabled={finalizing || loading}
                 >
                   {finalizing && <Loader2 className="animate-spin" />}
-                  {finalizing ? '提交中…' : '提交並推送至遠端'}
+                  {finalizing ? '提交中…' : 'Commit & Push'}
                 </Button>
               </div>
-              {!finalizing && (
-                <p className="text-right text-[11px] text-muted-foreground">
-                  將執行 git commit 並 push 至遠端分支
-                </p>
-              )}
             </div>
           )}
           {error && (
@@ -206,7 +218,6 @@ export function ReviewDialog({
             </p>
           )}
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }

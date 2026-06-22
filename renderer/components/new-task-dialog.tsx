@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Bot,
+  ChevronDown,
   Check,
   Cpu,
   FolderOpen,
@@ -13,6 +14,8 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
 import type { AgentCli, AgentCliId, GitInfo, Role, Workspace } from '@/lib/types'
@@ -76,7 +79,7 @@ function ProjectTypeToggle({
           onClick={() => onChange(m)}
           disabled={disabled}
           className={cn(
-            'flex-1 rounded-full px-3 py-1 text-sm transition-all disabled:opacity-50',
+            'flex-1 rounded-full px-3 py-1 text-sm transition-colors disabled:opacity-50',
             mode === m
               ? 'bg-primary font-medium text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -194,6 +197,7 @@ function AgentModelFields({
             </p>
           ) : (
             <select
+              name={`${title.toLowerCase().replace(/\s+/g, '-')}-agent-cli`}
               value={agentCli}
               onChange={(e) => onAgentChange(e.target.value as AgentCliId)}
               className={F}
@@ -214,6 +218,7 @@ function AgentModelFields({
           </span>
           {agentModels.length > 0 ? (
             <select
+              name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
               value={model}
               onChange={(e) => onModelChange(e.target.value)}
               className={F}
@@ -260,6 +265,7 @@ export function NewTaskForm({
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
@@ -432,6 +438,7 @@ export function NewTaskForm({
             基準分支 (Base Branch)
           </span>
           <select
+            name="base-branch"
             value={baseBranch}
             onChange={(e) => setBaseBranch(e.target.value)}
             className={F}
@@ -467,6 +474,7 @@ export function NewTaskForm({
       ) : (
         <>
           <select
+            name="workspace"
             value={workspaceId}
             onChange={(e) => setWorkspaceId(e.target.value)}
             className={F}
@@ -513,6 +521,7 @@ export function NewTaskForm({
               <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
             )}
             <select
+              name="role"
               value={roleId}
               onChange={(e) => setRoleId(e.target.value)}
               className={F}
@@ -537,6 +546,7 @@ export function NewTaskForm({
               <RoleAvatar role={selectedReviewerRole} className="size-6 shrink-0 text-[10px]" />
             )}
             <select
+              name="reviewer-role"
               value={reviewerRoleId}
               onChange={(e) => setReviewerRoleId(e.target.value)}
               className={F}
@@ -559,6 +569,50 @@ export function NewTaskForm({
     </div>
   )
 
+  const advancedSettingsBlock = (
+    <div className="rounded-lg border border-border/50">
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        <span>Advanced</span>
+        <ChevronDown
+          className={cn(
+            'size-4 text-muted-foreground transition-transform',
+            advancedOpen && 'rotate-180'
+          )}
+        />
+      </button>
+      {advancedOpen && (
+        <div className="space-y-4 border-t border-border/50 p-4">
+          <AgentModelFields
+            title="Planning Agent"
+            agents={agents}
+            detectTimedOut={detectTimedOut}
+            onRetry={() => setDetectKey((k) => k + 1)}
+            agentCli={agentCli}
+            model={model}
+            onAgentChange={setAgentCli}
+            onModelChange={setModel}
+          />
+          <AgentModelFields
+            title="Execution Agent"
+            agents={agents}
+            detectTimedOut={detectTimedOut}
+            onRetry={() => setDetectKey((k) => k + 1)}
+            agentCli={executionAgentCli}
+            model={executionModel}
+            onAgentChange={setExecutionAgentCli}
+            onModelChange={setExecutionModel}
+          />
+          {rolesCard}
+          {workspaceBlock}
+        </div>
+      )}
+    </div>
+  )
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
@@ -566,14 +620,14 @@ export function NewTaskForm({
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-base font-semibold tracking-tight">新增任務</h2>
         {onClose && (
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉新增任務"
             onClick={onClose}
             disabled={creating}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         )}
       </div>
 
@@ -632,6 +686,8 @@ export function NewTaskForm({
             <span className="text-sm font-medium">任務標題</span>
             <input
               ref={titleRef}
+              name="task-title"
+              autoComplete="off"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：實作登入頁面"
@@ -639,11 +695,10 @@ export function NewTaskForm({
             />
           </label>
 
-          <div className="grid grid-cols-2 items-start gap-x-8">
+          <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
             {/* Left: project settings + workspace */}
             <div className="space-y-4">
               {projectSettingsBlock}
-              {workspaceBlock}
             </div>
 
             {/* Right: description + agents + roles */}
@@ -651,6 +706,8 @@ export function NewTaskForm({
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">詳細描述（選填）</span>
                 <textarea
+                  name="task-description"
+                  autoComplete="off"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={5}
@@ -659,35 +716,15 @@ export function NewTaskForm({
                 />
               </label>
 
-              <AgentModelFields
-                title="Planning Agent"
-                agents={agents}
-                detectTimedOut={detectTimedOut}
-                onRetry={() => setDetectKey((k) => k + 1)}
-                agentCli={agentCli}
-                model={model}
-                onAgentChange={setAgentCli}
-                onModelChange={setModel}
-              />
-              <AgentModelFields
-                title="Execution Agent"
-                agents={agents}
-                detectTimedOut={detectTimedOut}
-                onRetry={() => setDetectKey((k) => k + 1)}
-                agentCli={executionAgentCli}
-                model={executionModel}
-                onAgentChange={setExecutionAgentCli}
-                onModelChange={setExecutionModel}
-              />
-
-              {rolesCard}
-
               {error && (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
                   {error}
                 </p>
               )}
             </div>
+          </div>
+          <div className="mt-5">
+            {advancedSettingsBlock}
           </div>
         </>
       )}
@@ -705,6 +742,8 @@ export function NewTaskForm({
                 <span className="text-sm font-medium">任務標題</span>
                 <input
                   ref={titleRef}
+                  name="task-title"
+                  autoComplete="off"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="例如：實作登入頁面"
@@ -716,6 +755,8 @@ export function NewTaskForm({
                 <span className="text-sm font-medium">詳細描述（選填）</span>
                 <textarea
                   value={description}
+                  name="task-description"
+                  autoComplete="off"
                   onChange={(e) => setDescription(e.target.value)}
                   rows={4}
                   placeholder="描述這個任務的目標、需求或背景脈絡…"
@@ -723,30 +764,7 @@ export function NewTaskForm({
                 />
               </label>
 
-              <AgentModelFields
-                title="Planning Agent"
-                agents={agents}
-                detectTimedOut={detectTimedOut}
-                onRetry={() => setDetectKey((k) => k + 1)}
-                agentCli={agentCli}
-                model={model}
-                onAgentChange={setAgentCli}
-                onModelChange={setModel}
-              />
-              <AgentModelFields
-                title="Execution Agent"
-                agents={agents}
-                detectTimedOut={detectTimedOut}
-                onRetry={() => setDetectKey((k) => k + 1)}
-                agentCli={executionAgentCli}
-                model={executionModel}
-                onAgentChange={setExecutionAgentCli}
-                onModelChange={setExecutionModel}
-              />
-
-              {rolesCard}
-
-              {workspaceBlock}
+              {advancedSettingsBlock}
 
               {error && (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
@@ -868,15 +886,15 @@ export function NewTaskDialog({
   ...rest
 }: NewTaskDialogProps) {
   if (!open) return null
+  const handleClose = onClose ?? (() => {})
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={creating ? undefined : onClose}
-      />
-      <div className="relative z-10 w-full max-w-md rounded-xl border bg-card p-5 text-card-foreground">
-        <NewTaskForm creating={creating} onClose={onClose} {...rest} />
-      </div>
-    </div>
+    <DialogShell
+      title="新增任務"
+      saving={creating}
+      onClose={handleClose}
+      contentClassName="max-w-md rounded-xl p-5"
+    >
+      <NewTaskForm creating={creating} onClose={onClose} {...rest} />
+    </DialogShell>
   )
 }

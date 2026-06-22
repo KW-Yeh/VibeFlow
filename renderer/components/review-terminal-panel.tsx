@@ -1,6 +1,7 @@
 import { X, Eye } from 'lucide-react'
 
 import { TaskTerminal } from '@/components/task-terminal'
+import { IconButton } from '@/components/ui/icon-button'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/lib/types'
 
@@ -74,14 +75,14 @@ export function ReviewTerminalPanel({
               </p>
             )}
           </div>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉 Reviewer 面板"
             onClick={onClose}
             title="關閉 Reviewer 面板"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         {/* Body: one terminal per active reviewer; only the selected one is shown.

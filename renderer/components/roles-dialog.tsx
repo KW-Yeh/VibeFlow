@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { IconButton } from '@/components/ui/icon-button'
 import { PRESET_ROLES } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
@@ -201,24 +203,24 @@ export function RolesDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={saving ? undefined : onClose}
-      />
-      <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border bg-card p-5 text-card-foreground shadow-lg">
+    <DialogShell
+      title={isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
+      saving={saving}
+      onClose={onClose}
+      contentClassName="flex max-h-[85vh] max-w-2xl flex-col p-5"
+    >
         <div className="mb-4 flex shrink-0 items-center justify-between">
           <h2 className="text-lg font-semibold">
             {isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
           </h2>
-          <button
-            type="button"
+          <IconButton
+            aria-label="關閉角色管理"
             onClick={onClose}
             disabled={saving}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="p-1"
           >
             <X className="size-4" />
-          </button>
+          </IconButton>
         </div>
 
         {!isEditing ? (
@@ -245,14 +247,14 @@ export function RolesDialog({
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
+                    <IconButton
+                      aria-label={`編輯角色 ${role.name}`}
                       onClick={() => startEdit(role)}
                       title="編輯角色"
-                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="p-1"
                     >
                       <Pencil className="size-3.5" />
-                    </button>
+                    </IconButton>
                     {confirmDeleteId === role.id ? (
                       <div className="flex items-center gap-1">
                         <button
@@ -272,15 +274,16 @@ export function RolesDialog({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
+                      <IconButton
+                        aria-label={`刪除角色 ${role.name}`}
                         onClick={() => setConfirmDeleteId(role.id)}
                         disabled={saving}
                         title="刪除角色"
-                        className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive disabled:opacity-50"
+                        className="p-1"
+                        tone="danger"
                       >
                         <Trash2 className="size-3.5" />
-                      </button>
+                      </IconButton>
                     )}
                   </li>
                 ))}
@@ -373,6 +376,8 @@ export function RolesDialog({
                 </div>
                 <input
                   value={isImageAvatar(form.avatar) ? '' : form.avatar}
+                  name="role-avatar"
+                  autoComplete="off"
                   onChange={(e) =>
                     setForm((f) => ({ ...f, avatar: e.target.value }))
                   }
@@ -390,6 +395,8 @@ export function RolesDialog({
               <span className="text-sm font-medium">角色名稱</span>
               <input
                 autoFocus
+                name="role-name"
+                autoComplete="off"
                 value={form.name}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, name: e.target.value }))
@@ -402,6 +409,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">角色定位描述</span>
               <textarea
+                name="role-positioning"
+                autoComplete="off"
                 value={form.positioning}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, positioning: e.target.value }))
@@ -415,6 +424,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">職責內容</span>
               <textarea
+                name="role-responsibilities"
+                autoComplete="off"
                 value={form.responsibilities}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, responsibilities: e.target.value }))
@@ -428,6 +439,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">執行邊界描述</span>
               <textarea
+                name="role-boundaries"
+                autoComplete="off"
                 value={form.boundaries}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, boundaries: e.target.value }))
@@ -479,7 +492,6 @@ export function RolesDialog({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </DialogShell>
   )
 }
