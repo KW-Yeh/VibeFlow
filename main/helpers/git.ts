@@ -524,11 +524,12 @@ export async function getWorktreeDiff(
   }
   const baseRef = await resolveBaseRef(worktreePath, baseBranch)
 
-  // Tracked changes (committed + working tree) vs base.
+  // Committed changes on the feature branch vs base (three-dot: merge-base diff).
+  // Excludes uncommitted working-tree changes so the diff reflects what will be pushed.
   const nameStatus = await git(worktreePath, [
     'diff',
     '--name-status',
-    baseRef,
+    `${baseRef}...HEAD`,
   ]).catch(() => '')
 
   type Entry = { status: string; path: string }
@@ -575,14 +576,12 @@ export async function getWorktreeDiff(
     }
     let newValue = ''
     if (entry.status !== 'D') {
-      try {
-        newValue = await fs.readFile(
-          path.join(worktreePath, entry.path),
-          'utf8'
-        )
-      } catch {
-        newValue = ''
-      }
+      // Read the committed version from HEAD (not the working tree), consistent
+      // with the three-dot diff that only shows committed feature-branch changes.
+      newValue = await git(worktreePath, [
+        'show',
+        `HEAD:${entry.path}`,
+      ]).catch(() => '')
     }
     const oldClip = clip(oldValue)
     const newClip = clip(newValue)
@@ -632,6 +631,136 @@ export async function commitAndPush(
   }
 
   return { committed, pushed, message }
+}
+
+export interface PrStatus {
+  url: string
+  number: number
+  state: string
+}
+
+/**
+ * Check whether a PR already exists for the current branch using the `gh` CLI.
+ * Returns null when there is no PR or `gh` is not available.
+ */
+export async function getPrStatus(worktreePath: string): Promise<PrStatus | null> {
+  try {
+    const { stdout } = await pexec(
+      'gh',
+      ['pr', 'view', '--json', 'url,number,state'],
+      { cwd: worktreePath, env: execEnv() }
+    )
+    const parsed = JSON.parse(stdout.toString().trim()) as PrStatus
+    if (parsed.url) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build the GitHub compare URL for creating a new PR from this branch.
+ * Parses the remote URL to derive the GitHub base URL, then appends
+ * `/compare/<base>...<branch>?expand=1`.
+ */
+export async function getGithubCompareUrl(
+  worktreePath: string,
+  baseBranch: string
+): Promise<string | null> {
+  try {
+    const remoteUrl = await git(worktreePath, ['remote', 'get-url', 'origin'])
+    const branch = await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+
+    // Normalize SSH and HTTPS remote URLs to https://github.com/<owner>/<repo>
+    let webUrl: string
+    const sshMatch = remoteUrl.match(/git@github\.com:(.+?)(?:\.git)?$/)
+    const httpsMatch = remoteUrl.match(/https?:\/\/github\.com\/(.+?)(?:\.git)?$/)
+    if (sshMatch) {
+      webUrl = `https://github.com/${sshMatch[1]}`
+    } else if (httpsMatch) {
+      webUrl = `https://github.com/${httpsMatch[1]}`
+    } else {
+      return null
+    }
+
+    return `${webUrl}/compare/${baseBranch}...${branch}?expand=1`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Commit message guidelines embedded from the internal engineering standard.
+ * Format: [What] one-liner → [Why] motivation → [How] implementation list.
+ */
+const COMMIT_MESSAGE_GUIDELINES = `
+Commit message format:
+
+[What] <imperative, capitalized, concise title — e.g. "Fix project item RWD issue">
+
+[Why] <one sentence explaining why this change was needed>
+
+[How]
+- <implementation detail 1>
+- <implementation detail 2>
+
+Rules:
+- Use imperative tone in the title (Fix, Add, Refactor, Update), never past tense.
+- Never skip [What], [Why], or [How].
+- No vague reasons like "for update" or "just fixing stuff".
+- Keep the [What] title concise and specific.
+`.trim()
+
+/**
+ * Use the specified agent CLI to generate a commit message for the changes on
+ * the feature branch compared to the base. Falls back gracefully when the CLI
+ * is unavailable or non-zero exits.
+ */
+export async function generateCommitMessage(
+  worktreePath: string,
+  baseBranch: string,
+  agentCli: string = 'claude'
+): Promise<string> {
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+
+  const [diffStat, commits] = await Promise.all([
+    git(worktreePath, ['diff', '--stat', `${baseRef}...HEAD`]).catch(() => ''),
+    git(worktreePath, ['log', '--oneline', `${baseRef}...HEAD`]).catch(() => ''),
+  ])
+
+  if (!diffStat.trim() && !commits.trim()) {
+    throw new Error('目前沒有相對於 base branch 的提交變更，無法產生 commit message。')
+  }
+
+  const prompt = [
+    `You are a senior engineer. Generate a commit message following these guidelines:\n\n${COMMIT_MESSAGE_GUIDELINES}`,
+    '',
+    `Changed files summary:\n${diffStat || '(no stat)'}`,
+    '',
+    `Commits on this branch:\n${commits || '(none)'}`,
+    '',
+    'Output ONLY the commit message text, nothing else. Start directly with [What].',
+  ].join('\n')
+
+  const cliFlags: Record<string, string[]> = {
+    claude: ['-p'],
+    codex: ['-p'],
+    copilot: ['-p'],
+    gemini: ['-p'],
+  }
+
+  const flags = cliFlags[agentCli] ?? ['-p']
+  const bin = agentCli
+
+  const { stdout } = await pexec(bin, [...flags, prompt], {
+    cwd: worktreePath,
+    maxBuffer: 1 * 1024 * 1024,
+    env: execEnv(),
+  })
+
+  const result = stdout.toString().trim()
+  if (!result) throw new Error(`${agentCli} 回傳空的 commit message`)
+  return result
 }
 
 export { git as runGit }

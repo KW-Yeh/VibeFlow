@@ -8,7 +8,7 @@ import type {
   Workspace,
 } from './helpers/store'
 import type { AgentCli, AgentCliId } from './helpers/agents'
-import type { DiffFile, FinalizeResult, GitInfo } from './helpers/git'
+import type { DiffFile, FinalizeResult, GitInfo, PrStatus } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
 import type { SubAgentRun } from './helpers/subagents'
 import type { Conversation } from './helpers/chat-store'
@@ -118,6 +118,18 @@ const vibeflow = {
     message: string
   ): Promise<{ result: FinalizeResult; state: VibeFlowState }> =>
     ipcRenderer.invoke('git:approve', { taskId, message }),
+  /** Use the task's agent CLI to generate a commit message for branch changes. */
+  generateCommitMessage: (taskId: string): Promise<string> =>
+    ipcRenderer.invoke('git:generateCommitMessage', taskId),
+  /** Check whether a PR exists for the task's branch. */
+  getPrStatus: (taskId: string): Promise<PrStatus | null> =>
+    ipcRenderer.invoke('git:getPrStatus', taskId),
+  /** Get the GitHub compare URL for creating a new PR. */
+  getGithubCompareUrl: (taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke('git:getGithubCompareUrl', taskId),
+  /** Open a URL in the system default browser. */
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('shell:openExternal', url),
   cleanupTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:cleanupTask', taskId),
   /** Live task-progress updates pushed from main while a session runs. */
