@@ -74,7 +74,6 @@ import {
 } from './helpers/chat-session'
 import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/chat-session'
-import { ensureBuiltInSkills } from './helpers/built-in-skills'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -559,8 +558,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
 ;(async () => {
   await app.whenReady()
-
-  ensureBuiltInSkills()
 
   const mainWindow = createWindow('main', {
     width: 1000,
