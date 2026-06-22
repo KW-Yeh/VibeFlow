@@ -96,6 +96,8 @@ export function SettingsDialog({
             </Button>
           </div>
           <textarea
+            name="system-prompt"
+            autoComplete="off"
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={10}

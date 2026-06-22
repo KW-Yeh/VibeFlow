@@ -376,6 +376,8 @@ export function RolesDialog({
                 </div>
                 <input
                   value={isImageAvatar(form.avatar) ? '' : form.avatar}
+                  name="role-avatar"
+                  autoComplete="off"
                   onChange={(e) =>
                     setForm((f) => ({ ...f, avatar: e.target.value }))
                   }
@@ -393,6 +395,8 @@ export function RolesDialog({
               <span className="text-sm font-medium">角色名稱</span>
               <input
                 autoFocus
+                name="role-name"
+                autoComplete="off"
                 value={form.name}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, name: e.target.value }))
@@ -405,6 +409,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">角色定位描述</span>
               <textarea
+                name="role-positioning"
+                autoComplete="off"
                 value={form.positioning}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, positioning: e.target.value }))
@@ -418,6 +424,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">職責內容</span>
               <textarea
+                name="role-responsibilities"
+                autoComplete="off"
                 value={form.responsibilities}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, responsibilities: e.target.value }))
@@ -431,6 +439,8 @@ export function RolesDialog({
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">執行邊界描述</span>
               <textarea
+                name="role-boundaries"
+                autoComplete="off"
                 value={form.boundaries}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, boundaries: e.target.value }))

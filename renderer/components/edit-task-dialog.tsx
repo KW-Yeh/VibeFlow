@@ -120,6 +120,8 @@ export function EditTaskDialog({
             <span className="text-sm font-medium">任務標題</span>
             <input
               autoFocus
+              name="edit-task-title"
+              autoComplete="off"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：實作登入頁面"
@@ -130,6 +132,8 @@ export function EditTaskDialog({
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">詳細描述（選填）</span>
             <textarea
+              name="edit-task-description"
+              autoComplete="off"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
@@ -148,6 +152,7 @@ export function EditTaskDialog({
                 <RoleAvatar role={selectedRole} className="size-8 text-sm" />
               )}
               <select
+                name="edit-task-role"
                 value={roleId}
                 onChange={(e) => setRoleId(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -175,6 +180,7 @@ export function EditTaskDialog({
                 />
               )}
               <select
+                name="edit-task-reviewer-role"
                 value={reviewerRoleId}
                 onChange={(e) => setReviewerRoleId(e.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"

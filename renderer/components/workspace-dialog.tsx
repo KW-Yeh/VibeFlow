@@ -70,6 +70,8 @@ export function WorkspaceDialog({
             <label className="block text-sm font-medium">名稱</label>
             <input
               type="text"
+              name="workspace-name"
+              autoComplete="off"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例：MyProject Context"
@@ -81,12 +83,20 @@ export function WorkspaceDialog({
             <div className="flex gap-2">
               <input
                 type="text"
+                name="workspace-path"
+                autoComplete="off"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 placeholder="/path/to/workspace"
                 className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
-              <Button type="button" variant="secondary" size="sm" onClick={handlePickFolder}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handlePickFolder}
+                aria-label="選擇 Workspace 資料夾"
+              >
                 <FolderOpen className="size-3.5" />
               </Button>
             </div>

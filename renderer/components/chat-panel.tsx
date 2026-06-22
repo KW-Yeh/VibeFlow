@@ -75,6 +75,7 @@ function AttachmentBadge({
       <button
         type="button"
         onClick={onRemove}
+        aria-label={`移除附件 ${att.name}`}
         className="ml-0.5 text-muted-foreground hover:text-foreground"
       >
         ×
@@ -525,7 +526,8 @@ export function ChatPanel({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={notStarted}
-              className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-40"
+              aria-label="附加檔案"
+              className="mb-1 shrink-0 rounded p-1 text-muted-foreground transition-colors outline-none hover:bg-white/10 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40"
               title="附加檔案"
             >
               <Paperclip className="size-3.5" />
@@ -539,6 +541,8 @@ export function ChatPanel({
             />
             <textarea
               ref={textareaRef}
+              name="chat-message"
+              autoComplete="off"
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -546,13 +550,14 @@ export function ChatPanel({
               placeholder={notStarted ? '請先啟動任務' : '輸入訊息… (Enter 送出, Shift+Enter 換行)'}
               rows={1}
               disabled={notStarted}
-              className="min-h-[32px] flex-1 resize-none rounded bg-white/5 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-white/20 disabled:opacity-40"
+              className="min-h-[32px] flex-1 resize-none rounded bg-white/5 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40"
             />
             {sending ? (
               <button
                 type="button"
                 onClick={handleCancel}
-                className="mb-1 shrink-0 rounded p-1 text-destructive hover:bg-white/10"
+                aria-label="中斷回覆"
+                className="mb-1 shrink-0 rounded p-1 text-destructive transition-colors outline-none hover:bg-white/10 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 title="中斷"
               >
                 <Square className="size-3.5 fill-current" />
@@ -562,7 +567,8 @@ export function ChatPanel({
                 type="button"
                 onClick={handleSend}
                 disabled={notStarted || (!input.trim() && pendingAttachments.length === 0)}
-                className="mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-40"
+                aria-label="送出訊息"
+                className="mb-1 shrink-0 rounded p-1 text-muted-foreground transition-colors outline-none hover:bg-white/10 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40"
                 title="送出"
               >
                 <Send className="size-3.5" />
