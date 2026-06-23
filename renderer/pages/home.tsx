@@ -36,7 +36,6 @@ import {
   removeRole,
   removeWorkspace,
   setSettings,
-  termInput,
   updateRole,
   updateTask,
   updateWorkspace,
@@ -113,6 +112,7 @@ export default function HomePage() {
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [generatingMessage, setGeneratingMessage] = useState(false)
   const [prStatus, setPrStatus] = useState<PrStatus | null | undefined>(undefined)
+  const [prChatSend, setPrChatSend] = useState<{ taskId: string; text: string; nonce: number } | null>(null)
 
   // A newer build has replaced the running bundle (rebuild.sh --install);
   // offer a one-click restart instead of requiring a manual quit + reopen.
@@ -355,9 +355,10 @@ export default function HomePage() {
     if (prStatus?.url) {
       await openExternal(prStatus.url)
     } else {
-      // Invoke the /pr skill in the task's terminal so it drafts and creates
-      // a well-formatted PR, then close the dialog so the user sees it run.
-      termInput(reviewTaskId, '/pr\n')
+      // Route /pr through the chat interface (executor uses chatSend, not PTY).
+      // Close the dialog so the user can see the task's ChatPanel where the
+      // PR creation output will appear.
+      setPrChatSend((prev) => ({ taskId: reviewTaskId, text: '/pr', nonce: (prev?.nonce ?? 0) + 1 }))
       setReviewTaskId(null)
     }
   }
@@ -558,6 +559,7 @@ export default function HomePage() {
                   selectedTaskId={selectedTaskId}
                   onDeselectTask={() => setSelectedTaskId(null)}
                   workspaces={workspaces}
+                  externalChatSend={prChatSend}
                   creating={creating}
                   createError={createError}
                   pickFolder={pickFolder}

@@ -80,6 +80,8 @@ interface KanbanBoardProps {
     reviewerRoleId: string,
     workspaceId: string
   ) => void
+  /** Send an external chat message to a task's ChatPanel (e.g. /pr from review dialog). */
+  externalChatSend?: { taskId: string; text: string; nonce: number } | null
 }
 
 interface LaunchEntry {
@@ -119,6 +121,7 @@ export function KanbanBoard({
   initRepository,
   detectAgents,
   onCreateTask,
+  externalChatSend,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
@@ -325,6 +328,11 @@ export function KanbanBoard({
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!externalChatSend) return
+    armChatSend(externalChatSend.taskId, externalChatSend.text)
+  }, [externalChatSend?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runTask = (task: Task) => {
     armLaunch(task, { resume: wasLaunched(task) })
