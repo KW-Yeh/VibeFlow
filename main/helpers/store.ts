@@ -207,7 +207,7 @@ let _store: Store<VibeFlowState> | null = null
  * ready and `userData` has been finalized (main.ts redirects it in dev) —
  * constructing at import time would bind the store to the wrong userData path.
  */
-function getStore(): Store<VibeFlowState> {
+export function getStore(): Store<VibeFlowState> {
   if (!_store) {
     _store = new Store<VibeFlowState>({ name: 'vibeflow-state', defaults })
     migrateStore(_store)
@@ -412,4 +412,19 @@ export function removeWorkspace(id: string): Workspace[] {
   const workspaces = getWorkspaces().filter((w) => w.id !== id)
   getStore().set('workspaces', workspaces)
   return workspaces
+}
+
+/**
+ * Create a store instance pointing at an explicit directory. Used by the CLI
+ * to target the correct electron-store profile without Electron's app.getPath.
+ */
+export function getStoreAtPath(cwd: string): Store<VibeFlowState> {
+  const store = new Store<VibeFlowState>({ name: 'vibeflow-state', defaults, cwd })
+  migrateStore(store)
+  return store
+}
+
+/** Absolute path of the backing JSON file for the current Electron store. */
+export function getStorePath(): string {
+  return getStore().path
 }

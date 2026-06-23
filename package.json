@@ -11,6 +11,7 @@
     "build": "nextron build",
     "rebuild": "./rebuild.sh",
     "test": "NODE_OPTIONS=\"--experimental-strip-types --import ./test/support/register.mjs\" node --test \"./test/**/*.test.mjs\"",
+    "vibeflow": "node --experimental-strip-types --import ./test/support/register.mjs scripts/vibeflow.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

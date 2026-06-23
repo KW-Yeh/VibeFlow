@@ -209,6 +209,17 @@ export async function openExternal(url: string): Promise<void> {
 }
 
 /**
+ * Subscribe to store changes triggered by external writes (e.g. CLI).
+ * Returns an unsubscribe function (no-op when the bridge is absent).
+ */
+export function onStateChanged(
+  callback: (state: VibeFlowState) => void
+): () => void {
+  const b = bridge()
+  return b ? b.onStateChanged(callback) : () => {}
+}
+
+/**
  * Subscribe to live task-progress updates pushed from the main process.
  * Returns an unsubscribe function (no-op when the bridge is absent).
  */
