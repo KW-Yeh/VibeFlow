@@ -524,35 +524,43 @@ export async function getWorktreeDiff(
   }
   const baseRef = await resolveBaseRef(worktreePath, baseBranch)
 
-  // Committed changes on the feature branch vs base (three-dot: merge-base diff).
-  // Excludes uncommitted working-tree changes so the diff reflects what will be pushed.
-  const nameStatus = await git(worktreePath, [
-    'diff',
-    '--name-status',
-    `${baseRef}...HEAD`,
-  ]).catch(() => '')
-
   type Entry = { status: string; path: string }
-  const entries: Entry[] = []
-  for (const line of nameStatus.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const parts = line.split('\t')
-    const code = parts[0]?.[0] ?? 'M'
-    // For renames (R100\told\tnew) use the new path.
-    const filePath = parts[parts.length - 1]
-    entries.push({ status: code, path: filePath })
+  // Use a Map so dirty-status entries (working tree) override committed entries
+  // for the same file — giving priority to the most up-to-date state.
+  const entryMap = new Map<string, Entry>()
+
+  function parseNameStatus(output: string): void {
+    for (const line of output.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      const parts = line.split('\t')
+      const code = parts[0]?.[0] ?? 'M'
+      // For renames (R100\told\tnew) use the new path.
+      const filePath = parts[parts.length - 1]
+      entryMap.set(filePath, { status: code, path: filePath })
+    }
   }
 
-  // Untracked files (not yet added).
+  // 1. Committed changes on the feature branch vs base (merge-base diff).
+  parseNameStatus(
+    await git(worktreePath, ['diff', '--name-status', `${baseRef}...HEAD`]).catch(() => '')
+  )
+
+  // 2. Working-tree changes not yet committed (staged + unstaged).
+  //    These override committed entries so the viewer shows the latest content.
+  parseNameStatus(
+    await git(worktreePath, ['diff', '--name-status', 'HEAD']).catch(() => '')
+  )
+
+  // 3. Untracked files (not yet added).
   const untracked = await git(worktreePath, [
     'ls-files',
     '--others',
     '--exclude-standard',
   ]).catch(() => '')
   for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    if (!entries.some((e) => e.path === p)) {
-      entries.push({ status: '?', path: p })
-    }
+    if (!entryMap.has(p)) entryMap.set(p, { status: '?', path: p })
   }
+
+  const entries = Array.from(entryMap.values())
 
   // The agent-maintained progress file, plan file, and sub-agent event log are
   // VibeFlow metadata, not changes to review — keep them out of the diff viewer.
@@ -576,12 +584,13 @@ export async function getWorktreeDiff(
     }
     let newValue = ''
     if (entry.status !== 'D') {
-      // Read the committed version from HEAD (not the working tree), consistent
-      // with the three-dot diff that only shows committed feature-branch changes.
-      newValue = await git(worktreePath, [
-        'show',
-        `HEAD:${entry.path}`,
-      ]).catch(() => '')
+      // Prefer working-tree content so uncommitted modifications are visible.
+      // Fall back to HEAD for files that exist in git but are absent on disk.
+      try {
+        newValue = await fs.readFile(path.join(worktreePath, entry.path), 'utf8')
+      } catch {
+        newValue = await git(worktreePath, ['show', `HEAD:${entry.path}`]).catch(() => '')
+      }
     }
     const oldClip = clip(oldValue)
     const newClip = clip(newValue)
