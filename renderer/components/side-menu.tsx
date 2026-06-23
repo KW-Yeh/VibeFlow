@@ -95,12 +95,7 @@ function groupTasksByProject(
     groups.set(key, group)
   }
 
-  return Array.from(groups.values()).sort((a, b) => {
-    if (a.hasSelected !== b.hasSelected) return a.hasSelected ? -1 : 1
-    const activeDiff = b.active.length - a.active.length
-    if (activeDiff !== 0) return activeDiff
-    return a.name.localeCompare(b.name)
-  })
+  return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function projectInitials(name: string): string {
