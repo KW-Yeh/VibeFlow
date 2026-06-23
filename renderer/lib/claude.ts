@@ -248,9 +248,8 @@ export function buildPlanningPrompt(
   const lines = [buildPrompt(task)]
   lines.push(
     '',
-    '本次只執行 planning 階段：若需求足夠明確，建立 PLAN.md，並依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps。',
-    '若需求仍缺少必要資訊，請先提出具體問題，並依進度追蹤協議寫入 planDone=false、needsUserInput=true。',
-    '完成 planning 後請停止，不要修改產品程式碼、不要開始執行步驟。'
+    '若需求足夠明確，建立 PLAN.md，依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps，然後直接進入執行階段，依序完成所有步驟。',
+    '若需求仍缺少必要資訊，請先提出具體問題，並依進度追蹤協議寫入 planDone=false、needsUserInput=true，然後停止等待使用者回覆。'
   )
   return lines.join('\n')
 }
