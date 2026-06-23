@@ -47,6 +47,16 @@ const vibeflow = {
     ipcRenderer.on('update:available', sub)
     return () => ipcRenderer.removeListener('update:available', sub)
   },
+  /**
+   * Fired when an external write (e.g. CLI) changes the store backing file.
+   * The main process debounces and emits the fresh state so the board can
+   * refresh without restarting the app.
+   */
+  onStateChanged: (callback: (state: VibeFlowState) => void): (() => void) => {
+    const sub = (_event: IpcRendererEvent, state: VibeFlowState) => callback(state)
+    ipcRenderer.on('state:changed', sub)
+    return () => ipcRenderer.removeListener('state:changed', sub)
+  },
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:setBoard', board),
   setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>

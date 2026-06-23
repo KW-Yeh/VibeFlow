@@ -25,6 +25,7 @@ import {
   initRepository,
   loadState,
   onProgressUpdate,
+  onStateChanged,
   onSubAgentsUpdate,
   onUpdateAvailable,
   openExternal,
@@ -175,6 +176,17 @@ export default function HomePage() {
 
   useEffect(() => {
     return onUpdateAvailable(() => setUpdateReady(true))
+  }, [])
+
+  // Refresh board when the CLI (or any external writer) changes the store file.
+  useEffect(() => {
+    return onStateChanged((state) => {
+      setBoard(state.board)
+      setAutoMode(state.settings.autoMode)
+      setSystemPrompt(state.settings.systemPrompt ?? '')
+      setRoles(state.roles ?? [])
+      setWorkspaces(state.workspaces ?? [])
+    })
   }, [])
 
   const handleRelaunch = () => {

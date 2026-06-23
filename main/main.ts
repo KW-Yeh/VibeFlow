@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
@@ -5,10 +6,10 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
   addRole,
-  addTask,
   addWorkspace,
   findTask,
   getState,
+  getStorePath,
   getWorkspaces,
   removeRole,
   removeTask,
@@ -23,12 +24,10 @@ import {
   type BoardState,
   type PipelineRun,
   type Role,
-  type Task,
   type Workspace,
 } from './helpers/store'
 import { generateContextHtml, scanWorkspace } from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
-import { generateBranchName } from './helpers/branch-name'
 import {
   commitAndPush,
   deleteBranch,
@@ -39,11 +38,11 @@ import {
   getPrStatus,
   getWorktreeDiff,
   initRepository,
-  provisionWorktree,
   refreshWorktreeBase,
   removeWorktree,
   syncBaseBranch,
 } from './helpers/git'
+import { createTaskFromInput } from './helpers/tasks'
 import {
   killAllSessions,
   killSession,
@@ -76,6 +75,8 @@ import { clearConversation, clearMessages, loadConversation } from './helpers/ch
 import type { AttachmentInput } from './helpers/chat-session'
 
 const isProd = process.env.NODE_ENV === 'production'
+
+let storeWatcher: fs.FSWatcher | null = null
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -183,52 +184,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       if (!payload.projectPath) {
         throw new Error('尚未選擇專案資料夾')
       }
-      // For new projects the UI already called initRepository, but we call it
-      // again here as a safety net (it is idempotent).
-      if (payload.mode === 'new') {
-        await initRepository(payload.projectPath)
-      }
-      const taskId = generateShortId()
-      // Meaningful branch name from the card (Jira/eBug code, or an English
-      // slug of the title); null falls back to the legacy vf-<id> naming.
-      const preferredBranch = await generateBranchName(
-        payload.title,
-        payload.description
-      )
-      const result = await provisionWorktree(
-        payload.projectPath,
-        taskId,
-        payload.baseBranch,
-        preferredBranch
-      )
-      // A reviewer role turns the task into a pipeline: seed its review-loop
-      // state so the orchestrator can drive executor → reviewer hand-offs.
-      const pipeline: PipelineRun | undefined = payload.reviewerRoleId
-        ? { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
-        : undefined
-      const task: Task = {
-        id: taskId,
-        title: payload.title.trim() || `Task ${taskId}`,
-        description: payload.description?.trim() || undefined,
-        branch: result.branch,
-        projectPath: payload.projectPath,
-        projectName: path.basename(payload.projectPath),
-        worktreePath: result.worktreePath,
-        baseBranch: result.baseBranch,
-        pushed: result.pushed,
-        agentCli: payload.agentCli ?? 'claude',
-        model: payload.model || undefined,
-        executionAgentCli: payload.executionAgentCli ?? payload.agentCli ?? 'claude',
-        executionModel:
-          payload.executionModel ||
-          (payload.executionAgentCli ? undefined : payload.model) ||
-          undefined,
-        roleId: payload.roleId || undefined,
-        reviewerRoleId: payload.reviewerRoleId || undefined,
-        workspaceId: payload.workspaceId || undefined,
-        pipeline,
-      }
-      addTask(task)
+      const { task } = await createTaskFromInput(payload)
       return { state: getState(), task }
     }
   )
@@ -577,6 +533,18 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   registerIpcHandlers(mainWindow)
 
+  // Watch the electron-store backing file for external writes (e.g. CLI) and
+  // push fresh state to the renderer so the board refreshes automatically.
+  let storeWatchDebounce: ReturnType<typeof setTimeout> | null = null
+  storeWatcher = fs.watch(getStorePath(), () => {
+    if (storeWatchDebounce) clearTimeout(storeWatchDebounce)
+    storeWatchDebounce = setTimeout(() => {
+      if (!mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('state:changed', getState())
+      }
+    }, 200)
+  })
+
   // Notify the renderer when a newer build replaces the running bundle
   // (e.g. `./rebuild.sh --install`), so it can offer a one-click restart.
   watchForNewBuild(() => {
@@ -599,6 +567,7 @@ app.on('window-all-closed', () => {
   cancelAllChatSends()
   unwatchAllProgress()
   unwatchAllSubAgents()
+  storeWatcher?.close()
   app.quit()
 })
 
@@ -607,6 +576,7 @@ app.on('before-quit', () => {
   cancelAllChatSends()
   unwatchAllProgress()
   unwatchAllSubAgents()
+  storeWatcher?.close()
   stopUpdateWatcher()
 })
 
