@@ -9,7 +9,7 @@ import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
   buildPlanningPrompt,
-  buildPrompt,
+  buildExecutionPrompt,
   buildResumePrompt,
   buildRevisePrompt,
   buildReviewCommand,
@@ -159,7 +159,7 @@ export function KanbanBoard({
     const rolePromptText = buildRolePrompt(role ?? undefined)
     const planDone = task.progress?.planDone === true
     const promptText = planDone
-      ? opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+      ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
       : buildPlanningPrompt(task)
     const workspacePath = resolveWorkspacePath(task.workspaceId)
     const fullText = [rolePromptText, promptText].filter(Boolean).join('\n\n') +
@@ -304,7 +304,10 @@ export function KanbanBoard({
     if (!chatLaunch[selectedTaskId]) {
       const task = board.in_progress.find((t) => t.id === selectedTaskId)
       if (task && wasLaunched(task) && !isTaskComplete(task)) {
-        if (task.progress?.planDone === true) executionStartedRef.current.add(task.id)
+        if (task.progress?.needsUserInput) return
+        if (task.progress?.planDone === true && !task.progress?.needsUserInput) {
+          executionStartedRef.current.add(task.id)
+        }
         armLaunch(task, { resume: true })
       }
     }
@@ -314,10 +317,11 @@ export function KanbanBoard({
     for (const task of board.in_progress) {
       if (!task.launchedAt) continue
       if (task.progress?.planDone !== true) continue
+      if (task.progress?.needsUserInput) continue
       if (isTaskComplete(task)) continue
       if (executionStartedRef.current.has(task.id)) continue
       executionStartedRef.current.add(task.id)
-      armLaunch(task, { resume: wasLaunched(task) })
+      armLaunch(task)
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps

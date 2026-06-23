@@ -39,6 +39,11 @@ export interface TaskProgress {
    */
   planDone?: boolean
   /**
+   * Set when planning cannot produce an executable plan without a human answer.
+   * The renderer uses this to avoid auto-continuing into execution.
+   */
+  needsUserInput?: boolean
+  /**
    * Present only after the reviewer stage runs: the code-review verdict the
    * reviewer agent wrote into the progress file. The executor stages omit it.
    */
@@ -81,7 +86,13 @@ function parseProgress(raw: string): TaskProgress | null {
   try {
     const data: unknown = JSON.parse(raw)
     if (!data || typeof data !== 'object') return null
-    const obj = data as { summary?: unknown; steps?: unknown; review?: unknown; planDone?: unknown }
+    const obj = data as {
+      summary?: unknown
+      steps?: unknown
+      review?: unknown
+      planDone?: unknown
+      needsUserInput?: unknown
+    }
     if (!Array.isArray(obj.steps)) return null
     const steps: TaskProgressStep[] = []
     for (const s of obj.steps) {
@@ -94,6 +105,7 @@ function parseProgress(raw: string): TaskProgress | null {
       summary: typeof obj.summary === 'string' ? obj.summary : undefined,
       steps,
       planDone: obj.planDone === true,
+      needsUserInput: obj.needsUserInput === true,
       review: parseReview(obj.review),
       updatedAt: Date.now(),
     }

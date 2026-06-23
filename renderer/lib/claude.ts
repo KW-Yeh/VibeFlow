@@ -120,10 +120,11 @@ function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boole
 export const PROGRESS_PROTOCOL_PROMPT = [
   '進度追蹤協議（務必遵守）：',
   '1. 規劃階段：先把執行計劃寫入目前工作目錄的 PLAN.md（Markdown 格式，包含任務目標、執行步驟、預期成果）。',
-  `2. PLAN.md 建立完成後，立即把步驟列表寫入 ${PROGRESS_FILE}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
-  '3. 每完成一個步驟，立即把該步驟的 done 改為 true 並更新 summary。',
-  `4. 若 ${PROGRESS_FILE} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
-  `5. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
+  `2. 若需求足夠明確，可形成可執行計劃，PLAN.md 建立完成後立即把步驟列表寫入 ${PROGRESS_FILE}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "needsUserInput": false, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
+  `3. 若 planning 發現必須先詢問使用者才能完善計劃，請先向使用者提出具體問題，並把 ${PROGRESS_FILE} 寫成 {"summary": "需要使用者補充的問題摘要", "planDone": false, "needsUserInput": true, "steps": []}；不要開始執行。`,
+  '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
+  `5. 若 ${PROGRESS_FILE} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
+  `6. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
 ].join('\n')
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -247,7 +248,8 @@ export function buildPlanningPrompt(
   const lines = [buildPrompt(task)]
   lines.push(
     '',
-    '本次只執行 planning 階段：建立 PLAN.md，並依進度追蹤協議寫入 planDone=true 與 steps。',
+    '本次只執行 planning 階段：若需求足夠明確，建立 PLAN.md，並依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps。',
+    '若需求仍缺少必要資訊，請先提出具體問題，並依進度追蹤協議寫入 planDone=false、needsUserInput=true。',
     '完成 planning 後請停止，不要修改產品程式碼、不要開始執行步驟。'
   )
   return lines.join('\n')
@@ -268,6 +270,25 @@ export function buildResumePrompt(
   const progress = task.progress
   if (progress && progress.steps.length > 0) {
     lines.push('', '最後記錄的進度：')
+    if (progress.summary) lines.push(`摘要：${progress.summary}`)
+    for (const step of progress.steps) {
+      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+export function buildExecutionPrompt(
+  task: Pick<Task, 'progress'>
+): string {
+  const lines = [
+    'Planning 已完成，請直接進入執行階段。',
+    '依照 PLAN.md 與下列進度，從第一個未完成的步驟開始實作；已完成的步驟請勿重做。',
+    '只有在執行前發現計劃仍缺少必要使用者資訊時，才停止並提出具體問題，同時把進度檔標記為 needsUserInput=true。',
+  ]
+  const progress = task.progress
+  if (progress && progress.steps.length > 0) {
+    lines.push('', '目前記錄的步驟：')
     if (progress.summary) lines.push(`摘要：${progress.summary}`)
     for (const step of progress.steps) {
       lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)

@@ -95,6 +95,10 @@ function deriveStages(
       planSt = 'active'
       executeSt = 'pending'
       reviewSt = 'pending'
+    } else if (task.progress.needsUserInput) {
+      planSt = 'blocked'
+      executeSt = 'pending'
+      reviewSt = 'pending'
     } else if (!planDone) {
       // Progress file exists but planDone not set — PLAN.md is being built
       planSt = 'active'
