@@ -36,12 +36,38 @@ the project folder is chosen **per task** at creation time (there is no global
 | Package app (raw) | `npm run build` | `nextron build` → `dist/` (`.app`, `.dmg`, `.zip`, macOS arm64). Same as `--release` without the clean; prefer `./rebuild.sh`. |
 | Rebuild + hot update | `./rebuild.sh --install` | Fast build, then swap the new `.app` over the running/installed copy — the live app shows a「立即重啟」banner (see `main/helpers/update.ts`) |
 | Rebuild + auto relaunch | `./rebuild.sh --relaunch` | `--install`, then quit + reopen VibeFlow automatically |
+| Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev app store and omit it for the packaged app store |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
 | Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app` |
 
 There is **no lint or test runner configured** (no ESLint/Jest/Vitest). Do not invent
 one unless asked. "Lint" in the global playbook maps to **typecheck** here.
+
+### CLI task creation
+
+Create a VibeFlow task without opening the UI:
+
+```sh
+npm run vibeflow -- task create \
+  --project /path/to/project \
+  --title "Fix login bug" \
+  --prompt "Investigate and fix the login failure" \
+  --status backlog \
+  --profile dev
+```
+
+- Required flags: `--project`, `--title`, and `--prompt`.
+- `--status` accepts `backlog`, `in_progress`, or `done`; it defaults to `backlog`.
+- `--profile dev` writes to
+  `~/Library/Application Support/VibeFlow (development)/vibeflow-state.json`, which is
+  what `npm run dev` uses. Omitting `--profile` writes to the packaged app store at
+  `~/Library/Application Support/VibeFlow/vibeflow-state.json`.
+- `--store-path <dir>` can override the Electron store directory explicitly.
+- The command provisions the same git isolation as the UI: it creates a task card,
+  branch, and worktree under the target project's `.vibeflow/` directory.
+- Verify a CLI-created task with `git worktree list --porcelain` and, when needed, by
+  reading the selected store JSON.
 
 ---
 
