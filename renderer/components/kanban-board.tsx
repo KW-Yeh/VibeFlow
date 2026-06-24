@@ -4,20 +4,18 @@ import { Plus, Settings, Smartphone, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
-import { TaskDetailPanel } from '@/components/task-detail-panel'
+import {
+  TaskWorkspacePanel,
+  buildWorkspaceLaunchCommand,
+} from '@/components/task-workspace-panel'
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
-  buildPlanningPrompt,
-  buildExecutionPrompt,
-  buildResumePrompt,
-  buildRevisePrompt,
+  buildReviseCommand,
   buildReviewCommand,
-  buildRolePrompt,
   isTaskComplete,
 } from '@/lib/claude'
 import { termKill } from '@/lib/api'
-import type { ChatLaunchEntry } from '@/components/task-detail-panel'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -80,7 +78,7 @@ interface KanbanBoardProps {
     reviewerRoleId: string,
     workspaceId: string
   ) => void
-  /** Send an external chat message to a task's ChatPanel (e.g. /pr from review dialog). */
+  /** Send an external command/text to a task terminal (e.g. /pr from review dialog). */
   externalChatSend?: { taskId: string; text: string; nonce: number } | null
 }
 
@@ -128,11 +126,11 @@ export function KanbanBoard({
 
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
-  // Tasks whose chat panel has ever been opened. Once mounted, ChatPanel stays
-  // in the DOM (just hidden) so conversation state survives switching tasks.
+  // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
+  // in the DOM (just hidden) so PTY state survives switching tasks.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
-  // Per-task armed chat pending message; bumping `nonce` (re-)fires it.
-  const [chatLaunch, setChatLaunch] = useState<Record<string, ChatLaunchEntry>>({})
+  // Per-task armed terminal launch command; bumping `nonce` (re-)fires it.
+  const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
   // Per-task armed reviewer launch command (PTY-based, unchanged).
   const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
   // Reviewer side panel state.
@@ -148,28 +146,26 @@ export function KanbanBoard({
   const resolveWorkspacePath = (workspaceId?: string): string | undefined =>
     workspaceId ? workspaces?.find((w) => w.id === workspaceId)?.path : undefined
 
-  // Arm a chat-mode pending message for the executor (replaces armCommand).
-  const armChatSend = (taskId: string, text: string) => {
+  const armTerminalCommand = (taskId: string, command: string) => {
     markMounted(taskId)
-    setChatLaunch((prev) => ({
+    setTerminalLaunch((prev) => ({
       ...prev,
-      [taskId]: { text, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
+      [taskId]: { command, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
     }))
   }
 
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
     const role = roleById(task.roleId)
-    const rolePromptText = buildRolePrompt(role ?? undefined)
-    const planDone = task.progress?.planDone === true
-    const promptText = planDone
-      ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
-      : buildPlanningPrompt(task)
-    const workspacePath = resolveWorkspacePath(task.workspaceId)
-    const fullText = [rolePromptText, promptText].filter(Boolean).join('\n\n') +
-      (workspacePath
-        ? `\n\n背景知識：在開始執行前，請先閱讀 ${workspacePath}/context.html 作為此任務的額外 context。`
-        : '')
-    armChatSend(task.id, fullText)
+    armTerminalCommand(
+      task.id,
+      buildWorkspaceLaunchCommand({
+        task,
+        role,
+        systemPrompt,
+        workspacePath: resolveWorkspacePath(task.workspaceId),
+        resume: opts?.resume,
+      })
+    )
   }
 
   // Merge a patch into a task across all columns and persist.
@@ -249,8 +245,15 @@ export function KanbanBoard({
     }
     patchTask(task.id, { pipeline: next })
     killReviewerSession(task.id)
-    const reviseText = buildRevisePrompt(task, review.comments, roleById(task.roleId) ?? undefined)
-    armChatSend(task.id, reviseText)
+    armTerminalCommand(
+      task.id,
+      buildReviseCommand(
+        task,
+        roleById(task.roleId) ?? undefined,
+        review.comments,
+        resolveWorkspacePath(task.workspaceId)
+      )
+    )
   }
 
   useEffect(() => {
@@ -297,14 +300,14 @@ export function KanbanBoard({
     }
   }, [board, autoMode, systemPrompt, roles]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-mount chat panel for the selected task so TaskDetailPanel renders it immediately.
+  // Auto-mount the selected task terminal so TaskWorkspacePanel renders it immediately.
   useEffect(() => {
     if (!selectedTaskId) return
     markMounted(selectedTaskId)
     // Resume in-progress tasks that were previously launched (app restart recovery).
-    // Only arm a resume if the chat panel hasn't already received a pending message
+    // Only arm a resume if the terminal hasn't already received a pending command
     // in this session — avoids double-sending on re-selection.
-    if (!chatLaunch[selectedTaskId]) {
+    if (!terminalLaunch[selectedTaskId]) {
       const task = board.in_progress.find((t) => t.id === selectedTaskId)
       if (task && wasLaunched(task) && !isTaskComplete(task)) {
         if (task.progress?.needsUserInput) return
@@ -331,7 +334,7 @@ export function KanbanBoard({
 
   useEffect(() => {
     if (!externalChatSend) return
-    armChatSend(externalChatSend.taskId, externalChatSend.text)
+    armTerminalCommand(externalChatSend.taskId, `${externalChatSend.text}\r`)
   }, [externalChatSend?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runTask = (task: Task) => {
@@ -486,17 +489,13 @@ export function KanbanBoard({
                 const isSelected = taskId === selectedTaskId
                 return (
                   <div key={taskId} className={cn('h-full', !isSelected && 'hidden')}>
-                    <TaskDetailPanel
+                    <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
                       role={roleById(entry.task.roleId)}
                       reviewerRole={roleById(entry.task.reviewerRoleId)}
                       subAgents={subAgents[entry.task.id] ?? []}
-                      isMounted={mounted.has(taskId)}
-                      isSelected={isSelected}
-                      chatLaunch={chatLaunch[taskId]}
-                      systemPrompt={systemPrompt}
-                      workspacePath={resolveWorkspacePath(entry.task.workspaceId)}
+                      launch={terminalLaunch[taskId]}
                       onRun={runTask}
                       onStart={startTask}
                       onMoveBack={moveBackTask}
@@ -506,7 +505,6 @@ export function KanbanBoard({
                       onDelete={onDeleteTask}
                       onOpenReviewPanel={openReviewPanel}
                       onOpenSubAgents={setSubAgentTaskId}
-                      onClose={onDeselectTask}
                     />
                   </div>
                 )

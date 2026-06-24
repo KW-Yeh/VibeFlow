@@ -132,6 +132,9 @@ const vibeflow = {
   // Review & finalize (Phase 4).
   getDiff: (taskId: string): Promise<DiffFile[]> =>
     ipcRenderer.invoke('git:getDiff', taskId),
+  /** Read the task's runtime PLAN.md artifact, when present. */
+  getPlan: (taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke('task:getPlan', taskId),
   approve: (
     taskId: string,
     message: string
