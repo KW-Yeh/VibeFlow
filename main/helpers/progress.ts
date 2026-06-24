@@ -156,6 +156,8 @@ export function watchProgress(
       summary: progress.summary,
       steps: progress.steps,
       review: progress.review,
+      planDone: progress.planDone,
+      needsUserInput: progress.needsUserInput,
     })
     if (json === entry.lastJson) return
     entry.lastJson = json

@@ -1,5 +1,6 @@
 import {
   screen,
+  shell,
   BrowserWindow,
   BrowserWindowConstructorOptions,
   Rectangle,
@@ -81,6 +82,21 @@ export const createWindow = (
   })
 
   win.on('close', saveState)
+
+  // Intercept all navigations that leave the app origin and open them in the
+  // default browser instead. Covers <a href> clicks and form submits.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('app://') && !url.startsWith('http://localhost:')) {
+      event.preventDefault()
+      shell.openExternal(url)
+    }
+  })
+
+  // Handle window.open() and target="_blank" links.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
 
   return win
 }
