@@ -54,6 +54,7 @@ import {
   writeSession,
 } from './helpers/pty'
 import {
+  PLAN_FILE,
   unwatchAllProgress,
   unwatchProgress,
   watchProgress,
@@ -464,6 +465,16 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     if (!task?.worktreePath) return []
     return getWorktreeDiff(task.worktreePath, task.baseBranch ?? 'HEAD')
+  })
+
+  ipcMain.handle('task:getPlan', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) return null
+    try {
+      return await fs.promises.readFile(path.join(task.worktreePath, PLAN_FILE), 'utf8')
+    } catch {
+      return null
+    }
   })
 
   // Approve: commit everything in the worktree and push the branch upstream.

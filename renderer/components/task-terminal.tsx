@@ -202,7 +202,7 @@ export function TaskTerminal({
   return (
     // Height is owned by the card (fixed expanded height per column): the
     // terminal fills whatever space is left after the steps/description block.
-    <div className="mt-2 flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md bg-black">
+    <div className="flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md bg-black">
       <div className="flex shrink-0 items-center justify-between bg-white/[0.06] px-2 py-1">
         <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}

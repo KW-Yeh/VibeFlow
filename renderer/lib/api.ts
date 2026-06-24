@@ -187,6 +187,11 @@ export async function getDiff(taskId: string): Promise<DiffFile[]> {
   return b ? b.getDiff(taskId) : []
 }
 
+export async function getPlan(taskId: string): Promise<string | null> {
+  const b = bridge()
+  return b ? b.getPlan(taskId) : null
+}
+
 export async function approve(
   taskId: string,
   message: string
