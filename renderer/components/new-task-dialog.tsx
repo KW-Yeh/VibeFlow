@@ -57,7 +57,7 @@ function basename(p: string): string {
 }
 
 // Shared field class — uniform height, subtle border, smooth focus ring
-const F =
+export const F =
   'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
 
 // ── Segmented control for existing vs new project ──────────────────────────
@@ -93,7 +93,7 @@ function ProjectTypeToggle({
 }
 
 // ── Folder picker — dashed drop zone (empty) or compact card (selected) ────
-function FolderPickerZone({
+export function FolderPickerZone({
   mode,
   projectPath,
   disabled,
@@ -138,7 +138,7 @@ function FolderPickerZone({
 }
 
 // ── Agent CLI + Model selector pair ────────────────────────────────────────
-interface AgentModelFieldsProps {
+export interface AgentModelFieldsProps {
   title: string
   agents: AgentCli[] | null
   detectTimedOut: boolean
@@ -149,7 +149,7 @@ interface AgentModelFieldsProps {
   onModelChange: (model: string) => void
 }
 
-function AgentModelFields({
+export function AgentModelFields({
   title,
   agents,
   detectTimedOut,

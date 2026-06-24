@@ -1,32 +1,68 @@
 import { useEffect, useState } from 'react'
-import { Loader2, ShieldCheck, UserRound, X } from 'lucide-react'
+import {
+  ChevronDown,
+  FolderOpen,
+  GitBranch,
+  Layers,
+  Loader2,
+  Lock,
+  ShieldCheck,
+  UserRound,
+  X,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
+import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import { cn } from '@/lib/utils'
-import type { Role, Task } from '@/lib/types'
+import type { AgentCli, AgentCliId, GitInfo, Role, Task, Workspace } from '@/lib/types'
+
+export interface EditTaskPayload {
+  title: string
+  description: string
+  roleId: string
+  reviewerRoleId: string
+  agentCli: AgentCliId
+  model: string
+  executionAgentCli: AgentCliId
+  executionModel: string
+  workspaceId: string
+  /** Present only when the project folder may change (not-yet-launched tasks). */
+  projectPath?: string
+  baseBranch?: string | null
+}
 
 interface EditTaskDialogProps {
   /** The task being edited, or null when the dialog is closed. */
   task: Task | null
   /** Roles available for assignment ('' = use the default, no role). */
   roles: Role[]
+  workspaces?: Workspace[]
+  detectAgents: () => Promise<AgentCli[]>
+  pickFolder: () => Promise<string | null>
+  loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
+  onManageRoles?: () => void
   saving: boolean
   error: string | null
-  onSubmit: (
-    title: string,
-    description: string,
-    roleId: string,
-    reviewerRoleId: string
-  ) => void
+  onSubmit: (payload: EditTaskPayload) => void
   onClose: () => void
+}
+
+function basename(p: string): string {
+  const parts = p.split(/[/\\]/).filter(Boolean)
+  return parts[parts.length - 1] ?? p
 }
 
 export function EditTaskDialog({
   task,
   roles,
+  workspaces = [],
+  detectAgents,
+  pickFolder,
+  loadGitInfo,
+  onManageRoles,
   saving,
   error,
   onSubmit,
@@ -36,25 +72,81 @@ export function EditTaskDialog({
   const [description, setDescription] = useState('')
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
+  const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
+  const [model, setModel] = useState('')
+  const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
+  const [executionModel, setExecutionModel] = useState('')
+  const [workspaceId, setWorkspaceId] = useState('')
+  const [projectPath, setProjectPath] = useState<string | null>(null)
+  const [baseBranch, setBaseBranch] = useState('')
+  const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
+  const [loadingInfo, setLoadingInfo] = useState(false)
+  const [projectChanged, setProjectChanged] = useState(false)
+
+  const [agents, setAgents] = useState<AgentCli[] | null>(null)
+  const [detectTimedOut, setDetectTimedOut] = useState(false)
+  const [detectKey, setDetectKey] = useState(0)
+  const [advancedOpen, setAdvancedOpen] = useState(true)
   const [confirmClose, setConfirmClose] = useState(false)
 
   // Seed the fields from the task whenever a new one is opened.
   useEffect(() => {
-    if (task) {
-      setTitle(task.title)
-      setDescription(task.description ?? '')
-      setRoleId(task.roleId ?? '')
-      setReviewerRoleId(task.reviewerRoleId ?? '')
-    }
+    if (!task) return
+    setTitle(task.title)
+    setDescription(task.description ?? '')
+    setRoleId(task.roleId ?? '')
+    setReviewerRoleId(task.reviewerRoleId ?? '')
+    setAgentCli(task.agentCli ?? 'claude')
+    setModel(task.model ?? '')
+    setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
+    setExecutionModel(task.executionModel ?? '')
+    setWorkspaceId(task.workspaceId ?? '')
+    setProjectPath(task.projectPath ?? null)
+    setBaseBranch(task.baseBranch ?? '')
+    setGitInfo(null)
+    setLoadingInfo(false)
+    setProjectChanged(false)
+    setConfirmClose(false)
   }, [task])
 
+  // Detect installed agent CLIs when the dialog opens (and on retry).
+  useEffect(() => {
+    if (!task) return
+    let active = true
+    setDetectTimedOut(false)
+    setAgents(null)
+    const timeoutId = setTimeout(() => {
+      if (active) setDetectTimedOut(true)
+    }, 6000)
+    void detectAgents().then((found) => {
+      if (!active) return
+      clearTimeout(timeoutId)
+      setAgents(found)
+    })
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+    }
+  }, [task, detectAgents, detectKey])
+
   if (!task) return null
+
+  // A worktree exists from creation; re-selecting the project rebuilds it, so it
+  // is only offered while the task has never been launched (no work to lose).
+  const canEditProject = !task.launchedAt
 
   const isDirty =
     title !== task.title ||
     description !== (task.description ?? '') ||
     roleId !== (task.roleId ?? '') ||
-    reviewerRoleId !== (task.reviewerRoleId ?? '')
+    reviewerRoleId !== (task.reviewerRoleId ?? '') ||
+    agentCli !== (task.agentCli ?? 'claude') ||
+    model !== (task.model ?? '') ||
+    executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
+    executionModel !== (task.executionModel ?? '') ||
+    workspaceId !== (task.workspaceId ?? '') ||
+    projectChanged ||
+    baseBranch !== (task.baseBranch ?? '')
 
   const handleClose = () => {
     if (isDirty && !saving) {
@@ -64,14 +156,64 @@ export function EditTaskDialog({
     }
   }
 
-  const canSubmit = title.trim().length > 0 && !saving
+  // Switching the agent invalidates the previous model — fall back to the new
+  // agent's first model. Done in the handler (not an effect) so seeding a task
+  // that uses the agent default never spuriously rewrites its model.
+  const handleAgentChange = (next: AgentCliId) => {
+    setAgentCli(next)
+    const agent = agents?.find((a) => a.id === next)
+    setModel(agent?.models[0]?.id ?? '')
+  }
+  const handleExecutionAgentChange = (next: AgentCliId) => {
+    setExecutionAgentCli(next)
+    const agent = agents?.find((a) => a.id === next)
+    setExecutionModel(agent?.models[0]?.id ?? '')
+  }
+
+  const handlePickFolder = async () => {
+    const picked = await pickFolder()
+    if (!picked) return
+    setProjectPath(picked)
+    setProjectChanged(picked !== task.projectPath)
+    setGitInfo(null)
+    setLoadingInfo(true)
+    try {
+      const info = await loadGitInfo(picked)
+      setGitInfo(info)
+      setBaseBranch(info?.defaultBase ?? '')
+    } finally {
+      setLoadingInfo(false)
+    }
+  }
+
+  const isRepo = gitInfo?.isRepo ?? true
+  const hasRemote = gitInfo?.hasRemote ?? false
+
+  const canSubmit =
+    title.trim().length > 0 &&
+    !saving &&
+    !loadingInfo &&
+    (!projectChanged || isRepo)
+
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
-  const selectedReviewerRole =
-    roles.find((r) => r.id === reviewerRoleId) ?? null
+  const selectedReviewerRole = roles.find((r) => r.id === reviewerRoleId) ?? null
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSubmit(title.trim(), description.trim(), roleId, reviewerRoleId)
+    onSubmit({
+      title: title.trim(),
+      description: description.trim(),
+      roleId,
+      reviewerRoleId,
+      agentCli,
+      model,
+      executionAgentCli,
+      executionModel,
+      workspaceId,
+      ...(canEditProject && projectPath
+        ? { projectPath, baseBranch: baseBranch || null }
+        : {}),
+    })
   }
 
   return (
@@ -81,141 +223,300 @@ export function EditTaskDialog({
       onClose={handleClose}
       contentClassName="max-w-md p-5"
     >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">編輯任務</h2>
-          <IconButton
-            aria-label="關閉編輯任務"
-            onClick={handleClose}
-            disabled={saving}
-            className="p-1"
-          >
-            <X className="size-4" />
-          </IconButton>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">編輯任務</h2>
+        <IconButton
+          aria-label="關閉編輯任務"
+          onClick={handleClose}
+          disabled={saving}
+          className="p-1"
+        >
+          <X className="size-4" />
+        </IconButton>
+      </div>
+
+      {confirmClose && (
+        <div className="mb-4 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
+          <span className="text-amber-200">有未儲存的變更，確定要離開？</span>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => setConfirmClose(false)}
+              className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              繼續編輯
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded px-2 py-0.5 text-xs text-destructive hover:bg-destructive/15"
+            >
+              放棄離開
+            </button>
+          </div>
         </div>
+      )}
 
-        {confirmClose && (
-          <div className="mb-4 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
-            <span className="text-amber-200">有未儲存的變更，確定要離開？</span>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setConfirmClose(false)}
-                className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
-              >
-                繼續編輯
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded px-2 py-0.5 text-xs text-destructive hover:bg-destructive/15"
-              >
-                放棄離開
-              </button>
-            </div>
-          </div>
-        )}
+      <div className="space-y-4">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">任務標題</span>
+          <input
+            autoFocus
+            name="edit-task-title"
+            autoComplete="off"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="例如：實作登入頁面"
+            className={F}
+          />
+        </label>
 
-        <div className="space-y-4">
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium">任務標題</span>
-            <input
-              autoFocus
-              name="edit-task-title"
-              autoComplete="off"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：實作登入頁面"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            />
-          </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">詳細描述（選填）</span>
+          <textarea
+            name="edit-task-description"
+            autoComplete="off"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            placeholder="描述這個任務的目標、需求或背景脈絡…"
+            className={cn(F, 'resize-y')}
+          />
+        </label>
 
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium">詳細描述（選填）</span>
-            <textarea
-              name="edit-task-description"
-              autoComplete="off"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-              placeholder="描述這個任務的目標、需求或背景脈絡…"
-              className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            />
-          </label>
-
-          <div className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <UserRound className="size-3.5" />
-              指派角色（選填）
-            </span>
-            <div className="flex items-center gap-2">
-              {selectedRole && (
-                <RoleAvatar role={selectedRole} className="size-8 text-sm" />
+        {/* Project folder — editable only before the task has launched. */}
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <FolderOpen className="size-3" />
+            專案資料夾
+          </span>
+          {canEditProject ? (
+            <>
+              <FolderPickerZone
+                mode="existing"
+                projectPath={projectPath}
+                disabled={saving || loadingInfo}
+                onPick={handlePickFolder}
+              />
+              {loadingInfo && (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  偵測 Git 狀態中…
+                </p>
               )}
-              <select
-                name="edit-task-role"
-                value={roleId}
-                onChange={(e) => setRoleId(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <option value="">預設（不指派角色）</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <ShieldCheck className="size-3.5" />
-              Code Reviewer（選填，啟用自動審查）
-            </span>
-            <div className="flex items-center gap-2">
-              {selectedReviewerRole && (
-                <RoleAvatar
-                  role={selectedReviewerRole}
-                  className="size-8 text-sm"
-                />
+              {projectChanged && !loadingInfo && !isRepo && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+                  這個資料夾不是 Git repository，請改選一個 Git 專案。
+                </p>
               )}
-              <select
-                name="edit-task-reviewer-role"
-                value={reviewerRoleId}
-                onChange={(e) => setReviewerRoleId(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <option value="">不自動審查</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
+              {projectChanged && (
+                <p className="text-xs text-muted-foreground">
+                  更換專案會在新專案重建 worktree（此任務尚未開始，無變更會遺失）。
+                </p>
+              )}
+              {projectChanged && isRepo && hasRemote && (
+                <label className="block space-y-1.5 pt-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <GitBranch className="size-3" />
+                    基準分支 (Base Branch)
+                  </span>
+                  <select
+                    name="edit-base-branch"
+                    value={baseBranch}
+                    onChange={(e) => setBaseBranch(e.target.value)}
+                    className={F}
+                  >
+                    {(gitInfo?.branches ?? []).map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+              <Lock className="size-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 truncate text-sm" title={task.projectPath}>
+                {task.projectName ?? (task.projectPath ? basename(task.projectPath) : '—')}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">任務已開始，鎖定</span>
             </div>
-          </div>
-
-          {error && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-              {error}
-            </p>
           )}
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
-            取消
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={cn(saving && 'opacity-80')}
+        {/* Advanced — agents, roles, workspace (mirrors the new-task dialog). */}
+        <div className="rounded-lg border border-border/50">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            {saving && <Loader2 className="animate-spin" />}
-            {saving ? '儲存中…' : '儲存變更'}
-          </Button>
+            <span>Advanced</span>
+            <ChevronDown
+              className={cn(
+                'size-4 text-muted-foreground transition-transform',
+                advancedOpen && 'rotate-180'
+              )}
+            />
+          </button>
+          {advancedOpen && (
+            <div className="space-y-4 border-t border-border/50 p-4">
+              <AgentModelFields
+                title="Planning Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={agentCli}
+                model={model}
+                onAgentChange={handleAgentChange}
+                onModelChange={setModel}
+              />
+              <AgentModelFields
+                title="Execution Agent"
+                agents={agents}
+                detectTimedOut={detectTimedOut}
+                onRetry={() => setDetectKey((k) => k + 1)}
+                agentCli={executionAgentCli}
+                model={executionModel}
+                onAgentChange={handleExecutionAgentChange}
+                onModelChange={setExecutionModel}
+              />
+
+              <div className="space-y-3 rounded-lg border border-border/50 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    角色設定
+                  </p>
+                  {onManageRoles && (
+                    <button
+                      type="button"
+                      onClick={onManageRoles}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      管理角色
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <UserRound className="size-3" />
+                      指派角色
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedRole && (
+                        <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
+                      )}
+                      <select
+                        name="edit-task-role"
+                        value={roleId}
+                        onChange={(e) => setRoleId(e.target.value)}
+                        className={F}
+                      >
+                        <option value="">不指派角色</option>
+                        {roles.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <ShieldCheck className="size-3" />
+                      Code Reviewer
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedReviewerRole && (
+                        <RoleAvatar
+                          role={selectedReviewerRole}
+                          className="size-6 shrink-0 text-[10px]"
+                        />
+                      )}
+                      <select
+                        name="edit-task-reviewer-role"
+                        value={reviewerRoleId}
+                        onChange={(e) => setReviewerRoleId(e.target.value)}
+                        className={F}
+                      >
+                        <option value="">不自動審查</option>
+                        {roles.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedReviewerRole && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedReviewerRole.name} 會自動審查並來回修正（須開啟 Auto Mode）。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Layers className="size-3" />
+                  Workspace（選填）
+                </span>
+                {workspaces.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    尚無 Workspace — 可在側邊欄新增後再指派。
+                  </p>
+                ) : (
+                  <>
+                    <select
+                      name="edit-task-workspace"
+                      value={workspaceId}
+                      onChange={(e) => setWorkspaceId(e.target.value)}
+                      className={F}
+                    >
+                      <option value="">不使用 Workspace</option>
+                      {workspaces.map((ws) => (
+                        <option key={ws.id} value={ws.id}>
+                          {ws.name}
+                        </option>
+                      ))}
+                    </select>
+                    {workspaceId && (
+                      <p className="text-xs text-muted-foreground">
+                        Agent 將在開始前讀取 context.html，並在完成後更新它。
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
+
+        {error && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
+          取消
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          className={cn(saving && 'opacity-80')}
+        >
+          {saving && <Loader2 className="animate-spin" />}
+          {saving ? '儲存中…' : '儲存變更'}
+        </Button>
+      </div>
     </DialogShell>
   )
 }

@@ -116,6 +116,13 @@ export async function updateTask(payload: {
   description?: string
   roleId?: string
   reviewerRoleId?: string
+  agentCli?: AgentCliId
+  model?: string
+  executionAgentCli?: AgentCliId
+  executionModel?: string
+  workspaceId?: string
+  projectPath?: string
+  baseBranch?: string | null
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

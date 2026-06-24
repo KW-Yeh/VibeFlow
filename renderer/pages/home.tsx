@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
-import { EditTaskDialog } from '@/components/edit-task-dialog'
+import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { ReviewDialog } from '@/components/review-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
@@ -271,22 +271,24 @@ export default function HomePage() {
     setEditTask(findTask(board, taskId))
   }
 
-  const handleSaveEdit = async (
-    title: string,
-    description: string,
-    roleId: string,
-    reviewerRoleId: string
-  ) => {
+  const handleSaveEdit = async (payload: EditTaskPayload) => {
     if (!editTask) return
     setSavingEdit(true)
     setEditError(null)
     try {
       const state = await updateTask({
         taskId: editTask.id,
-        title,
-        description,
-        roleId: roleId || undefined,
-        reviewerRoleId: reviewerRoleId || undefined,
+        title: payload.title,
+        description: payload.description,
+        roleId: payload.roleId || undefined,
+        reviewerRoleId: payload.reviewerRoleId || undefined,
+        agentCli: payload.agentCli,
+        model: payload.model || undefined,
+        executionAgentCli: payload.executionAgentCli,
+        executionModel: payload.executionModel || undefined,
+        workspaceId: payload.workspaceId || undefined,
+        projectPath: payload.projectPath,
+        baseBranch: payload.baseBranch,
       })
       if (state) setBoard(state.board)
       setEditTask(null)
@@ -573,6 +575,11 @@ export default function HomePage() {
             <EditTaskDialog
               task={editTask}
               roles={roles}
+              workspaces={workspaces}
+              detectAgents={detectAgents}
+              pickFolder={pickFolder}
+              loadGitInfo={getGitInfo}
+              onManageRoles={handleOpenRoles}
               saving={savingEdit}
               error={editError}
               onSubmit={handleSaveEdit}
