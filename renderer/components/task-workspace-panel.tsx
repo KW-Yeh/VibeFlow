@@ -6,15 +6,16 @@ import {
   Circle,
   FileDiff,
   GitBranch,
-  GitCommit,
   GitCompare,
   Hammer,
   Layers,
   Loader2,
+  Maximize2,
   Pencil,
   Play,
   Trash2,
   Undo2,
+  X,
 } from 'lucide-react'
 
 import { TaskTerminal } from '@/components/task-terminal'
@@ -258,10 +259,63 @@ function PlanContent({ taskId }: { taskId: string }) {
   )
 }
 
+function DiffFileViewer({ file }: { file: DiffFile }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-border/70">
+      <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
+        <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+          {STATUS_LABEL[file.status] ?? file.status}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={file.path}>
+          {file.path}
+        </span>
+        {file.truncated && (
+          <span className="shrink-0 text-[10px] text-muted-foreground">
+            已截斷
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 overflow-x-hidden text-[11px]">
+        <ReactDiffViewer
+          oldValue={file.oldValue}
+          newValue={file.newValue}
+          splitView={false}
+          useDarkTheme
+          compareMethod={DiffMethod.LINES}
+          renderContent={(source) => (
+            <span className="whitespace-pre-wrap break-words">{source}</span>
+          )}
+          styles={{
+            diffContainer: {
+              width: '100%',
+              overflowX: 'hidden',
+            },
+            contentText: {
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            },
+            lineContent: {
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            },
+            gutter: {
+              minWidth: '2.5rem',
+              width: '2.5rem',
+            },
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function DiffContent({ taskId }: { taskId: string }) {
   const [files, setFiles] = useState<DiffFile[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -308,52 +362,48 @@ function DiffContent({ taskId }: { taskId: string }) {
   }
 
   return (
-    <div className="space-y-3">
-      {files.map((file) => (
-        <div key={file.path} className="overflow-hidden rounded-md border border-border/70">
-          <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
-            <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-              {STATUS_LABEL[file.status] ?? file.status}
-            </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={file.path}>
-              {file.path}
-            </span>
-          </div>
-          <div className="text-[11px]">
-            <ReactDiffViewer
-              oldValue={file.oldValue}
-              newValue={file.newValue}
-              splitView={false}
-              useDarkTheme
-              compareMethod={DiffMethod.LINES}
-            />
-          </div>
+    <>
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setExpanded(true)}>
+            <Maximize2 className="size-3.5" />
+            放大檢視
+          </Button>
         </div>
-      ))}
-    </div>
-  )
-}
-
-function GitGraphContent({ task }: { task: Task }) {
-  return (
-    <div className="space-y-3 text-xs text-muted-foreground">
-      <div className="space-y-2 rounded-md bg-muted/30 p-3">
-        {task.baseBranch && (
-          <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-muted-foreground/60" />
-            <span className="min-w-0 break-all">{task.baseBranch}</span>
-          </div>
-        )}
-        <div className="ml-1 h-5 border-l border-border" />
-        <div className="flex items-center gap-2 text-foreground">
-          <span className="size-2 rounded-full bg-primary" />
-          <span className="min-w-0 break-all">{task.branch}</span>
-        </div>
+        {files.map((file) => (
+          <DiffFileViewer key={file.path} file={file} />
+        ))}
       </div>
-      <p>
-        Git graph 真實提交 DAG 尚未接入資料來源；目前顯示任務分支與 base branch 摘要。
-      </p>
-    </div>
+
+      {expanded && (
+        <div className="fixed inset-0 z-50 flex bg-background/95 text-foreground">
+          <div className="flex min-h-0 w-full flex-col">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-5">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold">Git diff</h2>
+                <p className="text-xs text-muted-foreground">
+                  {files.length} changed {files.length === 1 ? 'file' : 'files'}
+                </p>
+              </div>
+              <IconButton
+                aria-label="關閉 diff 放大檢視"
+                title="關閉"
+                onClick={() => setExpanded(false)}
+              >
+                <X className="size-4" />
+              </IconButton>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="mx-auto w-full max-w-6xl space-y-4">
+                {files.map((file) => (
+                  <DiffFileViewer key={file.path} file={file} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -520,9 +570,6 @@ export function TaskWorkspacePanel({
             <DiffContent taskId={task.id} />
           </InfoSection>
 
-          <InfoSection title="Git graph" icon={<GitCommit className="size-3.5" />}>
-            <GitGraphContent task={task} />
-          </InfoSection>
         </aside>
       </main>
     </div>
