@@ -24,6 +24,7 @@ import {
   type BoardState,
   type PipelineRun,
   type Role,
+  type Task,
   type Workspace,
 } from './helpers/store'
 import { generateContextHtml, scanWorkspace } from './helpers/workspace'
@@ -38,6 +39,7 @@ import {
   getPrStatus,
   getWorktreeDiff,
   initRepository,
+  provisionWorktree,
   refreshWorktreeBase,
   removeWorktree,
   syncBaseBranch,
@@ -194,8 +196,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getState()
   })
 
-  // Edit an existing card's user-facing fields (title / description). Git-bound
-  // fields (branch, projectPath, worktreePath) are intentionally not editable.
+  // Edit an existing card's fields. Most are plain metadata read at launch time
+  // (title / description / agent / model / workspace / roles). The project folder
+  // and base branch are git-bound: re-selecting them rebuilds the worktree, which
+  // is only allowed for not-yet-launched tasks (no work to lose).
   ipcMain.handle(
     'vibeflow:updateTask',
     async (
@@ -206,6 +210,13 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description?: string
         roleId?: string
         reviewerRoleId?: string
+        agentCli?: AgentCliId
+        model?: string
+        executionAgentCli?: AgentCliId
+        executionModel?: string
+        workspaceId?: string
+        projectPath?: string
+        baseBranch?: string | null
       }
     ) => {
       const reviewerRoleId = payload.reviewerRoleId || undefined
@@ -219,12 +230,71 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       } else if (!pipeline) {
         pipeline = { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
       }
+
+      // Re-provision the worktree only when the project folder or base branch
+      // actually changed. Guarded so a started task's work can never be lost.
+      let gitPatch: Partial<Task> = {}
+      const nextProject = payload.projectPath || existing?.projectPath
+      const projectChanged = Boolean(
+        existing && payload.projectPath && payload.projectPath !== existing.projectPath
+      )
+      const baseChanged = Boolean(
+        existing &&
+          payload.baseBranch != null &&
+          payload.baseBranch !== (existing.baseBranch ?? null)
+      )
+      if (existing && nextProject && (projectChanged || baseChanged)) {
+        if (existing.launchedAt) {
+          throw new Error('任務已開始執行，無法更換專案資料夾或基準分支')
+        }
+        if (existing.worktreePath) {
+          const diff = await getWorktreeDiff(
+            existing.worktreePath,
+            existing.baseBranch ?? 'HEAD'
+          )
+          if (diff.length > 0) {
+            throw new Error('目前 worktree 已有變更，無法更換專案資料夾或基準分支')
+          }
+        }
+        const info = await getGitInfo(nextProject)
+        if (!info.isRepo) {
+          throw new Error('目標資料夾不是 git repository')
+        }
+        // Tear down the old (empty) worktree before rebuilding on the target.
+        teardownSession(payload.taskId)
+        if (existing.projectPath) {
+          const oldBranch = existing.branch || fallbackBranchName(payload.taskId)
+          await removeWorktree(existing.projectPath, oldBranch)
+          await deleteBranch(existing.projectPath, oldBranch)
+        }
+        const result = await provisionWorktree(
+          nextProject,
+          payload.taskId,
+          payload.baseBranch ?? existing.baseBranch ?? null,
+          existing.branch
+        )
+        gitPatch = {
+          projectPath: nextProject,
+          projectName: path.basename(nextProject),
+          branch: result.branch,
+          worktreePath: result.worktreePath,
+          baseBranch: result.baseBranch,
+          pushed: result.pushed,
+        }
+      }
+
       updateTask(payload.taskId, {
         title: payload.title.trim() || `Task ${payload.taskId}`,
         description: payload.description?.trim() || undefined,
         roleId: payload.roleId || undefined,
         reviewerRoleId,
+        agentCli: payload.agentCli,
+        model: payload.model || undefined,
+        executionAgentCli: payload.executionAgentCli,
+        executionModel: payload.executionModel || undefined,
+        workspaceId: payload.workspaceId || undefined,
         pipeline,
+        ...gitPatch,
       })
       return getState()
     }
