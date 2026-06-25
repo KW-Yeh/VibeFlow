@@ -13,7 +13,6 @@ import {
   Eye,
   FolderGit2,
   GitBranch,
-  GitCompare,
   Hammer,
   ListChecks,
   Loader2,
@@ -258,7 +257,6 @@ export interface TaskDetailPanelProps {
   onStart: (task: Task) => void
   onMoveBack: (task: Task) => void
   onComplete: (task: Task) => void
-  onReview: (taskId: string) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
   onOpenReviewPanel?: (taskId: string) => void
@@ -280,7 +278,6 @@ export function TaskDetailPanel({
   onStart,
   onMoveBack,
   onComplete,
-  onReview,
   onEdit,
   onDelete,
   onOpenReviewPanel,
@@ -449,15 +446,6 @@ export function TaskDetailPanel({
               >
                 <Pencil className="size-4" />
               </IconButton>
-              {task.worktreePath && (
-                <IconButton
-                  aria-label="審查變更"
-                  onClick={() => onReview(task.id)}
-                  title="審查變更"
-                >
-                  <GitCompare className="size-4" />
-                </IconButton>
-              )}
               {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
                 <IconButton
                   aria-label="查看 Reviewer 終端"

@@ -59,7 +59,6 @@ interface TaskWorkspacePanelProps {
   onStart: (task: Task) => void
   onMoveBack: (task: Task) => void
   onComplete: (task: Task) => void
-  onReview: (taskId: string) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
   onOpenReviewPanel?: (taskId: string) => void
@@ -500,7 +499,6 @@ export function TaskWorkspacePanel({
   onStart,
   onMoveBack,
   onComplete,
-  onReview,
   onEdit,
   onDelete,
   onOpenReviewPanel,
@@ -550,11 +548,6 @@ export function TaskWorkspacePanel({
         <IconButton aria-label="編輯任務" title="編輯任務" onClick={() => onEdit(task.id)}>
           <Pencil className="size-4" />
         </IconButton>
-        {task.worktreePath && (
-          <IconButton aria-label="審查變更" title="審查變更" onClick={() => onReview(task.id)}>
-            <GitCompare className="size-4" />
-          </IconButton>
-        )}
         {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
           <IconButton
             aria-label="查看 Reviewer 終端"

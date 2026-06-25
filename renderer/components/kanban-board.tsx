@@ -96,7 +96,6 @@ export function KanbanBoard({
   board,
   onBoardChange,
   onNewTask,
-  onReview,
   onEditTask,
   onTaskDone,
   onDeleteTask,
@@ -500,7 +499,6 @@ export function KanbanBoard({
                       onStart={startTask}
                       onMoveBack={moveBackTask}
                       onComplete={completeTask}
-                      onReview={onReview}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}
                       onOpenReviewPanel={openReviewPanel}
