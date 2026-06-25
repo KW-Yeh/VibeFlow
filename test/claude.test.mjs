@@ -8,6 +8,7 @@ import {
   buildRolePrompt,
   buildReviewerSystemPrompt,
   executorSessionId,
+  planningSessionId,
   DEFAULT_SYSTEM_PROMPT,
   PROGRESS_PROTOCOL_PROMPT,
   DEFAULT_PERMISSION_MODE,
@@ -90,6 +91,30 @@ test('buildAgentCommand — normalizes legacy Codex models to an available model
   const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must replace unavailable legacy Codex model')
   assert.ok(!cmd.includes('gpt-5-codex'), 'must not launch unavailable gpt-5-codex')
+})
+
+test('buildAgentCommand — Claude planning and execution use separate session ids', () => {
+  const planningId = planningSessionId(TASK.id)
+  const executionId = executorSessionId(TASK.id)
+  assert.notEqual(planningId, executionId)
+
+  const planningCmd = buildAgentCommand(TASK, '', EXECUTOR_ROLE)
+  assert.ok(planningCmd.includes(`--session-id ${planningId}`), 'planning must use planning session id')
+  assert.ok(!planningCmd.includes(executionId), 'planning must not reserve executor session id')
+
+  const executionTask = {
+    ...TASK,
+    progress: {
+      summary: 'PLAN.md 完成',
+      planDone: true,
+      needsUserInput: false,
+      steps: [{ text: '實作修正', done: false }],
+      updatedAt: Date.now(),
+    },
+  }
+  const executionCmd = buildAgentCommand(executionTask, '', EXECUTOR_ROLE)
+  assert.ok(executionCmd.includes(`--session-id ${executionId}`), 'execution must use executor session id')
+  assert.ok(!executionCmd.includes(planningId), 'execution must not reuse planning session id')
 })
 
 // ─── buildReviewCommand (fresh-launch) ──────────────────────────────────────
@@ -180,6 +205,11 @@ test('executorSessionId — is deterministic (same input → same output)', () =
 
 test('executorSessionId — different task ids produce different UUIDs', () => {
   assert.notEqual(executorSessionId('abcd1234'), executorSessionId('ef567890'))
+})
+
+test('planningSessionId — is deterministic and distinct from executorSessionId', () => {
+  assert.equal(planningSessionId('abcd1234'), planningSessionId('abcd1234'))
+  assert.notEqual(planningSessionId('abcd1234'), executorSessionId('abcd1234'))
 })
 
 // ─── buildReviseCommand (fresh-launch + --resume <uuid>) ─────────────────────

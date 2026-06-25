@@ -368,6 +368,22 @@ export function executorSessionId(taskId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
+function namespaceHash(namespace: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < namespace.length; i += 1) {
+    hash ^= namespace.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+/** Stable Claude session UUID for the planning conversation. */
+export function planningSessionId(taskId: string): string {
+  const taskHex = taskId.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(24, '0').slice(0, 24)
+  const hex = `${taskHex}${namespaceHash('planning')}`
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
   /**
@@ -399,11 +415,9 @@ export function buildReviewerSystemPrompt(
  * launches Claude in auto mode with the card's prompt and the effective
  * system prompt. Written verbatim into the card's PTY.
  *
- * The executor session is pinned to a deterministic UUID derived from the
- * task id (`executorSessionId`):
- *   - First launch: `--session-id <uuid>` creates and pins the session.
- *   - Resume: `--resume <uuid>` restores that exact session, unaffected by any
- *     other session (e.g. the reviewer) that ran in the same worktree cwd.
+ * Planning and execution use separate deterministic Claude sessions. This
+ * prevents the execution phase from trying to create a fresh session with the
+ * same id that the planning phase already used.
  */
 export function buildClaudeCommand(
   task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'worktreePath'>,
@@ -421,7 +435,8 @@ export function buildClaudeCommand(
     ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
     : basePrompt
   const model = task.model || DEFAULT_MODELS.claude
-  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, executorSessionId(task.id), workspacePath)
+  const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
+  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
 }
 
 /**
@@ -654,10 +669,11 @@ export function taskExecutionModel(
  * Codex and Gemini have no separate system-prompt flag, so the effective
  * system prompt (incl. the progress protocol) is folded into the prompt text.
  *
- * For Claude the executor session is pinned to `executorSessionId(task.id)`:
- *   - First launch: `--session-id <uuid>` creates and pins the session.
- *   - Resume: `--resume <uuid>` restores that exact session regardless of what
- *     other sessions (e.g. the reviewer) ran in the same worktree cwd.
+ * For Claude, planning and execution use separate deterministic session ids:
+ *   - Planning: `planningSessionId(task.id)` for plan-only context.
+ *   - Execution: `executorSessionId(task.id)` for implementation context.
+ * This lets execution start as a fresh session after planning without colliding
+ * with the already-created planning session.
  * Codex/Gemini fall back to a fresh launch whose prompt already folds in the
  * recorded progress (via buildPrompt), giving a soft resume regardless of
  * `opts.resume`.
@@ -692,6 +708,8 @@ export function buildAgentCommand(
   const prompt = workspacePath
     ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
     : basePrompt
-  const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
+  const sessionId = agent === 'claude'
+    ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
+    : undefined
   return assembleCommand(agent, sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
 }
