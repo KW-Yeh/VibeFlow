@@ -45,6 +45,7 @@ import {
   syncBaseBranch,
 } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
+import { generatePlanHtml } from './helpers/plan-html'
 import {
   killAllSessions,
   killSession,
@@ -475,6 +476,13 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch {
       return null
     }
+  })
+
+  /** Convert PLAN.md → plan.html (written to disk) and return the HTML string. */
+  ipcMain.handle('task:getPlanHtml', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) return null
+    return generatePlanHtml(task.worktreePath)
   })
 
   // Approve: commit everything in the worktree and push the branch upstream.

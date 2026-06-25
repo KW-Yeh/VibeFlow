@@ -135,6 +135,9 @@ const vibeflow = {
   /** Read the task's runtime PLAN.md artifact, when present. */
   getPlan: (taskId: string): Promise<string | null> =>
     ipcRenderer.invoke('task:getPlan', taskId),
+  /** Convert PLAN.md to plan.html and return the HTML string. */
+  getPlanHtml: (taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke('task:getPlanHtml', taskId),
   approve: (
     taskId: string,
     message: string
