@@ -599,9 +599,20 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
  */
 const DEFAULT_MODELS: Record<AgentCliId, string> = {
   claude: 'sonnet',
-  codex: 'gpt-5-codex',
+  codex: 'gpt-5.5',
   gemini: 'gemini-2.5-flash',
   copilot: 'gpt-5.1-codex-mini',
+}
+
+const LEGACY_MODEL_FALLBACKS: Partial<Record<AgentCliId, Record<string, string>>> = {
+  codex: {
+    'gpt-5-codex': 'gpt-5.5',
+    'gpt-5': 'gpt-5.5',
+  },
+}
+
+function normalizeModel(agent: AgentCliId, model: string): string {
+  return LEGACY_MODEL_FALLBACKS[agent]?.[model] ?? model
 }
 
 /** Resolve a task's agent (tasks created before the field existed = claude). */
@@ -611,7 +622,8 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
 
 /** Resolve the model passed to the agent CLI (task.model, else agent default). */
 export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
-  return task.model || DEFAULT_MODELS[taskAgent(task)]
+  const agent = taskAgent(task)
+  return normalizeModel(agent, task.model || DEFAULT_MODELS[agent])
 }
 
 /** Resolve the execution agent (old tasks fall back to the planning agent). */
@@ -625,8 +637,11 @@ export function taskExecutionAgent(
 export function taskExecutionModel(
   task: Pick<Task, 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel'>
 ): string {
-  if (!task.executionAgentCli) return task.model || DEFAULT_MODELS[taskExecutionAgent(task)]
-  return task.executionModel || DEFAULT_MODELS[taskExecutionAgent(task)]
+  const agent = taskExecutionAgent(task)
+  const model = !task.executionAgentCli
+    ? task.model || DEFAULT_MODELS[agent]
+    : task.executionModel || DEFAULT_MODELS[agent]
+  return normalizeModel(agent, model)
 }
 
 /**

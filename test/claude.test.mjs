@@ -40,16 +40,16 @@ const TASK = {
 const CODEX_TASK = {
   ...TASK,
   agentCli: /** @type {'codex'} */ ('codex'),
-  model: 'gpt-5-codex',
+  model: 'gpt-5.5',
   executionAgentCli: /** @type {'codex'} */ ('codex'),
-  executionModel: 'gpt-5-codex',
+  executionModel: 'gpt-5.5',
 }
 
 // ─── buildAgentCommand (planning vs execution) ──────────────────────────────
 
 test('buildAgentCommand — planning uses planning agent and does not inject executor role', () => {
   const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE)
-  assert.ok(cmd.startsWith('codex --model gpt-5-codex '), 'must use planning agent command')
+  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use planning agent command')
   assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
   assert.ok(!cmd.includes('資深前端工程師'), 'planning must not inject executor role prompt')
   assert.ok(cmd.includes(DEFAULT_SYSTEM_PROMPT), 'planning must include PM system prompt')
@@ -68,10 +68,28 @@ test('buildAgentCommand — execution uses execution role after PLAN is done', (
     },
   }
   const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
-  assert.ok(cmd.startsWith('codex --model gpt-5-codex '), 'must use execution agent command')
+  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use execution agent command')
   assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
   assert.ok(cmd.includes('資深前端工程師'), 'execution must inject executor role prompt')
   assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
+})
+
+test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {
+  const task = {
+    ...CODEX_TASK,
+    model: 'gpt-5-codex',
+    executionModel: 'gpt-5',
+    progress: {
+      summary: 'PLAN.md 完成',
+      planDone: true,
+      needsUserInput: false,
+      steps: [{ text: '實作修正', done: false }],
+      updatedAt: Date.now(),
+    },
+  }
+  const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
+  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must replace unavailable legacy Codex model')
+  assert.ok(!cmd.includes('gpt-5-codex'), 'must not launch unavailable gpt-5-codex')
 })
 
 // ─── buildReviewCommand (fresh-launch) ──────────────────────────────────────

@@ -73,9 +73,9 @@ export function TaskTerminal({
     const nonce = launchNonceRef.current
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
-    // nonce > 1 means this is a re-launch (e.g. revise after review).
-    // Send Ctrl+C first to exit any interactive session (Claude waiting for input),
-    // so the shell is at a clean prompt before the new command arrives.
+    // Some callers keep the same component instance across launches. In that
+    // case, interrupt any interactive CLI before sending the next command.
+    // Executor reruns remount this component so they get a fresh PTY instead.
     if (nonce > 1) window.vibeflow?.term.input(sessionKey, '\x03')
     window.vibeflow?.term.input(sessionKey, cmd)
   }, [sessionKey])

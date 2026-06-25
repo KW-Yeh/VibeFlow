@@ -1,8 +1,11 @@
 import { execFile } from 'child_process'
+import os from 'os'
+import * as nodePty from 'node-pty'
 import { promisify } from 'util'
-import { execEnv } from './env'
+import { buildEnv, execEnv } from './env'
 
 const pexec = promisify(execFile)
+const SLASH_MODEL_TIMEOUT_MS = 7000
 
 /** Agent CLIs VibeFlow knows how to launch inside a task's PTY. */
 export type AgentCliId = 'claude' | 'codex' | 'gemini' | 'copilot'
@@ -45,8 +48,9 @@ export const AGENT_CLIS: AgentCli[] = [
     bin: 'codex',
     name: 'Codex CLI',
     models: [
-      { id: 'gpt-5-codex', label: 'GPT-5 Codex（預設）' },
-      { id: 'gpt-5', label: 'GPT-5' },
+      { id: 'gpt-5.5', label: 'GPT-5.5（預設）' },
+      { id: 'gpt-5.4', label: 'GPT-5.4' },
+      { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
     ],
   },
   {
@@ -96,6 +100,122 @@ function modelLabel(id: string): string {
   return id
 }
 
+function isLikelyTextModel(id: string): boolean {
+  if (/embedding|audio|tts|whisper|dall-e|image|moderation|realtime|transcribe/i.test(id)) {
+    return false
+  }
+  return /^(gpt|o\d|o-|codex)/i.test(id)
+}
+
+function sortCodexModels(ids: string[]): string[] {
+  const preferred = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']
+  const unique = Array.from(new Set(ids))
+  return [
+    ...preferred.filter((id) => unique.includes(id)),
+    ...unique.filter((id) => !preferred.includes(id)).sort(),
+  ]
+}
+
+function uniqueInOrder(ids: string[]): string[] {
+  return Array.from(new Set(ids))
+}
+
+function stripAnsi(input: string): string {
+  return input
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
+function normalizeModelId(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+}
+
+export function parseCodexModelChoices(output: string): AgentModel[] {
+  const text = stripAnsi(output)
+  const ids = Array.from(
+    text.matchAll(/\b(?:gpt[-\s]?\d+(?:\.\d+)?(?:[-\s](?:codex|mini))?|gpt[-\s]?\d+(?:\.\d+)?[-\s][a-z0-9.-]+|o\d(?:[-\w.]+)?|o-[\w.-]+|codex[-\w.]*)\b/gi),
+    (match) => normalizeModelId(match[0])
+  ).filter(isLikelyTextModel)
+
+  return sortCodexModels(ids).map((id) => ({ id, label: modelLabel(id) }))
+}
+
+function isLikelyClaudeModel(id: string): boolean {
+  if (id === 'claude' || id === 'claude-code') return false
+  return /^(claude-|sonnet|haiku|opus)/i.test(id)
+}
+
+export function parseClaudeModelChoices(output: string): AgentModel[] {
+  const text = stripAnsi(output)
+  const ids = Array.from(
+    text.matchAll(/\b(?:claude(?:[-\s][a-z0-9.]+){1,5}|sonnet(?:[-\s]?\d+(?:\.\d+)?)?|haiku(?:[-\s]?\d+(?:\.\d+)?)?|opus(?:[-\s]?\d+(?:\.\d+)?)?)\b/gi),
+    (match) => normalizeModelId(match[0])
+  ).filter(isLikelyClaudeModel)
+
+  return uniqueInOrder(ids).map((id) => ({ id, label: modelLabel(id) }))
+}
+
+function parseSlashModelChoices(agent: AgentCli, output: string): AgentModel[] {
+  if (agent.id === 'claude') return parseClaudeModelChoices(output)
+  if (agent.id === 'codex') return parseCodexModelChoices(output)
+  return []
+}
+
+async function slashModelChoices(agent: AgentCli): Promise<AgentModel[]> {
+  if (agent.id !== 'claude' && agent.id !== 'codex') return []
+
+  return new Promise((resolve) => {
+    let output = ''
+    let settled = false
+    const env = { ...buildEnv(), TERM: 'xterm-256color' }
+    let proc: nodePty.IPty | null = null
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      try {
+        proc?.kill()
+      } catch {
+        // already exited
+      }
+      resolve(parseSlashModelChoices(agent, output))
+    }
+
+    const timeout = setTimeout(finish, SLASH_MODEL_TIMEOUT_MS)
+
+    try {
+      proc = nodePty.spawn(agent.bin, [], {
+        name: 'xterm-256color',
+        cwd: os.homedir(),
+        env,
+        cols: 100,
+        rows: 30,
+      })
+    } catch {
+      finish()
+      return
+    }
+
+    proc.onData((data) => {
+      output += data
+    })
+    proc.onExit(finish)
+
+    setTimeout(() => {
+      try {
+        proc?.write('/model\r')
+      } catch {
+        finish()
+      }
+    }, 900)
+  })
+}
+
 function parseModelChoices(output: string): AgentModel[] {
   // The choices must belong to the --model option itself: don't let the gap
   // cross into a later option line (2-space-indented flag), or we'd grab e.g.
@@ -106,7 +226,7 @@ function parseModelChoices(output: string): AgentModel[] {
     .map((id) => ({ id, label: modelLabel(id) }))
 }
 
-async function cliModels(agent: AgentCli): Promise<AgentModel[]> {
+async function helpModels(agent: AgentCli): Promise<AgentModel[]> {
   try {
     const { stdout, stderr } = await pexec(agent.bin, ['--help'], {
       env: execEnv(),
@@ -117,6 +237,15 @@ async function cliModels(agent: AgentCli): Promise<AgentModel[]> {
   } catch {
     return []
   }
+}
+
+async function cliModels(agent: AgentCli): Promise<AgentModel[]> {
+  if (agent.id === 'claude' || agent.id === 'codex') {
+    const models = await slashModelChoices(agent)
+    if (models.length > 0) return models
+  }
+
+  return helpModels(agent)
 }
 
 /**
