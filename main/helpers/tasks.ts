@@ -11,6 +11,7 @@ import {
 } from './store'
 import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
+import { defaultWorkspacePath, ensureContextFiles } from './workspace'
 import type { AgentCliId } from './agents'
 
 export interface CreateTaskInput {
@@ -58,10 +59,21 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   const taskId = randomUUID().slice(0, 8)
   const preferredBranch = await generateBranchName(input.title, input.description)
 
+  const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
+
+  // Resolve the workspace folder: an assigned workspace's path, else a sibling
+  // `<slug>-workspace` folder next to the project. The worktree lives inside it.
+  const assignedWorkspace = input.workspaceId
+    ? (store.get('workspaces') ?? []).find((w) => w.id === input.workspaceId)
+    : undefined
+  const workspacePath = assignedWorkspace?.path ?? defaultWorkspacePath(projectPath)
+  await ensureContextFiles(workspacePath)
+
   let provisionResult
   try {
     provisionResult = await provisionWorktree(
       projectPath,
+      workspacePath,
       taskId,
       input.baseBranch ?? null,
       preferredBranch
@@ -85,6 +97,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     projectPath,
     projectName: path.basename(projectPath),
     worktreePath: provisionResult.worktreePath,
+    workspacePath,
     baseBranch: provisionResult.baseBranch,
     pushed: provisionResult.pushed,
     agentCli: input.agentCli ?? 'claude',
@@ -99,8 +112,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     workspaceId: input.workspaceId || undefined,
     pipeline,
   }
-
-  const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
 
   try {
     const board = store.get('board')

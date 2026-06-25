@@ -138,8 +138,12 @@ export function KanbanBoard({
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
-  const resolveWorkspacePath = (workspaceId?: string): string | undefined =>
-    workspaceId ? workspaces?.find((w) => w.id === workspaceId)?.path : undefined
+  // Prefer the workspace folder recorded on the task (now always set at creation,
+  // including the auto-created sibling); fall back to the assigned workspace's
+  // path for legacy tasks predating task.workspacePath.
+  const resolveWorkspacePath = (task: Task): string | undefined =>
+    task.workspacePath ??
+    (task.workspaceId ? workspaces?.find((w) => w.id === task.workspaceId)?.path : undefined)
 
   const armTerminalCommand = (taskId: string, command: string) => {
     markMounted(taskId)
@@ -157,7 +161,7 @@ export function KanbanBoard({
         task,
         role,
         systemPrompt,
-        workspacePath: resolveWorkspacePath(task.workspaceId),
+        workspacePath: resolveWorkspacePath(task),
         resume: opts?.resume,
       })
     )
@@ -208,7 +212,7 @@ export function KanbanBoard({
     setReviewerLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildReviewCommand(task, roleById(task.reviewerRoleId), resolveWorkspacePath(task.workspaceId)),
+        command: buildReviewCommand(task, roleById(task.reviewerRoleId), resolveWorkspacePath(task)),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -246,7 +250,7 @@ export function KanbanBoard({
         task,
         roleById(task.roleId) ?? undefined,
         review.comments,
-        resolveWorkspacePath(task.workspaceId)
+        resolveWorkspacePath(task)
       )
     )
   }
