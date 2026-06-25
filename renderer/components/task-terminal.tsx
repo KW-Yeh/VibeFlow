@@ -23,7 +23,7 @@ interface TaskTerminalProps {
   launchNonce?: number
   /** Fired when the user clicks the in-terminal launch button. */
   onLaunchRequest?: () => void
-  /** Launch-button label (e.g. 「啟動 Claude Code」); defaults to 啟動 Agent. */
+  /** Launch-button label; defaults to 啟動 Agent when a launch action is available. */
   launchLabel?: string
   /**
    * When true (card is Done), the terminal is view-only: no PTY is started,
@@ -211,18 +211,17 @@ export function TaskTerminal({
           <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
             唯讀
           </span>
-        ) : (
+        ) : onLaunchRequest ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 shrink-0 px-2 text-[10px]"
             onClick={onLaunchRequest}
-            disabled={!onLaunchRequest}
           >
             <Sparkles className="size-3" />
             {launchLabel ?? '啟動 Agent'}
           </Button>
-        )}
+        ) : null}
       </div>
       <div
         ref={containerRef}

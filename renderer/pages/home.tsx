@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
 
 import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
-import { ReviewDialog } from '@/components/review-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
@@ -11,24 +10,19 @@ import { WorkspaceDialog } from '@/components/workspace-dialog'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
-  approve,
   cleanupTask,
   createRole,
   createTask,
   createWorkspace,
   deleteTask,
   detectAgents,
-  generateCommitMessage,
-  getDiff,
   getGitInfo,
-  getPrStatus,
   initRepository,
   loadState,
   onProgressUpdate,
   onStateChanged,
   onSubAgentsUpdate,
   onUpdateAvailable,
-  openExternal,
   persistBoard,
   pickFolder,
   relaunchApp,
@@ -44,8 +38,6 @@ import { Button } from '@/components/ui/button'
 import type {
   AgentCliId,
   BoardState,
-  DiffFile,
-  PrStatus,
   Role,
   SubAgentRun,
   Task,
@@ -97,22 +89,6 @@ export default function HomePage() {
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
-
-  // Review dialog state
-  const savedReviewResults = useRef<Map<string, { committed: boolean; pushed: boolean }>>(new Map())
-  const [reviewTaskId, setReviewTaskId] = useState<string | null>(null)
-  const [reviewTitle, setReviewTitle] = useState('')
-  const [reviewFiles, setReviewFiles] = useState<DiffFile[]>([])
-  const [reviewLoading, setReviewLoading] = useState(false)
-  const [finalizing, setFinalizing] = useState(false)
-  const [reviewResult, setReviewResult] = useState<{
-    committed: boolean
-    pushed: boolean
-  } | null>(null)
-  const [reviewError, setReviewError] = useState<string | null>(null)
-  const [generatingMessage, setGeneratingMessage] = useState(false)
-  const [prStatus, setPrStatus] = useState<PrStatus | null | undefined>(undefined)
-  const [prChatSend, setPrChatSend] = useState<{ taskId: string; text: string; nonce: number } | null>(null)
 
   // A newer build has replaced the running bundle (rebuild.sh --install);
   // offer a one-click restart instead of requiring a manual quit + reopen.
@@ -299,72 +275,6 @@ export default function HomePage() {
     }
   }
 
-  const handleReview = async (taskId: string) => {
-    const task = findTask(board, taskId)
-    setReviewTaskId(taskId)
-    setReviewTitle(task?.title ?? taskId)
-    setReviewResult(savedReviewResults.current.get(taskId) ?? null)
-    setReviewError(null)
-    setReviewFiles([])
-    setPrStatus(undefined)
-    setReviewLoading(true)
-    try {
-      setReviewFiles(await getDiff(taskId))
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setReviewLoading(false)
-    }
-  }
-
-  const handleGenerateCommitMessage = async (): Promise<string | null> => {
-    if (!reviewTaskId) return null
-    setGeneratingMessage(true)
-    try {
-      return await generateCommitMessage(reviewTaskId)
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : String(err))
-      return null
-    } finally {
-      setGeneratingMessage(false)
-    }
-  }
-
-  const handleApprove = async (message: string) => {
-    if (!reviewTaskId) return
-    setFinalizing(true)
-    setReviewError(null)
-    try {
-      const res = await approve(reviewTaskId, message)
-      if (res) {
-        setReviewResult(res.result)
-        savedReviewResults.current.set(reviewTaskId, res.result)
-        setBoard(res.state.board)
-        // After a successful push, asynchronously check for an existing PR.
-        if (res.result.pushed) {
-          getPrStatus(reviewTaskId).then(setPrStatus).catch(() => setPrStatus(null))
-        }
-      }
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setFinalizing(false)
-    }
-  }
-
-  const handleOpenPr = async () => {
-    if (!reviewTaskId) return
-    if (prStatus?.url) {
-      await openExternal(prStatus.url)
-    } else {
-      // Route /pr through the chat interface (executor uses chatSend, not PTY).
-      // Close the dialog so the user can see the task's ChatPanel where the
-      // PR creation output will appear.
-      setPrChatSend((prev) => ({ taskId: reviewTaskId, text: '/pr', nonce: (prev?.nonce ?? 0) + 1 }))
-      setReviewTaskId(null)
-    }
-  }
-
   const handleTaskDone = async (taskId: string) => {
     const state = await cleanupTask(taskId)
     if (state) setBoard(state.board)
@@ -539,7 +449,6 @@ export default function HomePage() {
                   board={board}
                   onBoardChange={handleBoardChange}
                   onNewTask={handleOpenNewTask}
-                  onReview={handleReview}
                   onEditTask={handleOpenEditTask}
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
@@ -561,7 +470,6 @@ export default function HomePage() {
                   selectedTaskId={selectedTaskId}
                   onDeselectTask={() => setSelectedTaskId(null)}
                   workspaces={workspaces}
-                  externalChatSend={prChatSend}
                   creating={creating}
                   createError={createError}
                   pickFolder={pickFolder}
@@ -602,21 +510,6 @@ export default function HomePage() {
               onUpdate={handleUpdateRole}
               onDelete={handleDeleteRole}
               onClose={() => setRolesOpen(false)}
-            />
-            <ReviewDialog
-              open={reviewTaskId !== null}
-              taskTitle={reviewTitle}
-              files={reviewFiles}
-              loading={reviewLoading}
-              finalizing={finalizing}
-              generatingMessage={generatingMessage}
-              result={reviewResult}
-              prStatus={prStatus}
-              error={reviewError}
-              onApprove={handleApprove}
-              onGenerateMessage={handleGenerateCommitMessage}
-              onOpenPr={handleOpenPr}
-              onClose={() => setReviewTaskId(null)}
             />
             <WorkspaceDialog
               open={workspaceDialogOpen}

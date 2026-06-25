@@ -92,7 +92,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
 │   ├── new-task-dialog.tsx per-task folder picker + git detect + create
-│   ├── review-dialog.tsx  diff viewer + Approve & Push
+│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/plan + diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM main (single source of truth)

@@ -25,10 +25,8 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
-  AGENT_NAMES,
   buildAgentCommand,
   isTaskComplete,
-  taskExecutionAgent,
 } from '@/lib/claude'
 import { getDiff, getPlanHtml } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -504,9 +502,7 @@ export function TaskWorkspacePanel({
   const [activeTaskTab, setActiveTaskTab] = useState<'task' | 'plan'>('task')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const cwd = task.worktreePath ?? task.projectPath ?? null
-  const canLaunch = column === 'backlog' || column === 'in_progress'
-  const activeAgent = taskExecutionAgent(task)
-  const agentName = AGENT_NAMES[activeAgent]
+  const canLaunch = column === 'backlog' || (column === 'in_progress' && !!task.launchedAt)
   const launchCommand = launch?.command
   const launchNonce = launch?.nonce ?? 0
 
@@ -528,7 +524,7 @@ export function TaskWorkspacePanel({
         {canLaunch && (
           <Button size="sm" variant="outline" onClick={requestLaunch} disabled={!cwd}>
             <Play className="size-3.5" />
-            {task.launchedAt ? '重跑' : column === 'backlog' ? '開始' : `啟動 ${agentName}`}
+            {task.launchedAt ? '重跑' : '開始'}
           </Button>
         )}
         {column === 'in_progress' && (
@@ -588,7 +584,7 @@ export function TaskWorkspacePanel({
             cwd={cwd}
             launchCommand={launchCommand}
             launchNonce={launchNonce}
-            launchLabel={column === 'backlog' ? '開始任務' : `啟動 ${agentName}`}
+            launchLabel={task.launchedAt ? '重跑' : '開始任務'}
             onLaunchRequest={canLaunch ? requestLaunch : undefined}
             readOnly={column === 'done'}
           />

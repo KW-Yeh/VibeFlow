@@ -34,7 +34,6 @@ interface KanbanBoardProps {
   board: BoardState
   onBoardChange: (board: BoardState) => void
   onNewTask: () => void
-  onReview: (taskId: string) => void
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
@@ -78,8 +77,6 @@ interface KanbanBoardProps {
     reviewerRoleId: string,
     workspaceId: string
   ) => void
-  /** Send an external command/text to a task terminal (e.g. /pr from review dialog). */
-  externalChatSend?: { taskId: string; text: string; nonce: number } | null
 }
 
 interface LaunchEntry {
@@ -118,7 +115,6 @@ export function KanbanBoard({
   initRepository,
   detectAgents,
   onCreateTask,
-  externalChatSend,
 }: KanbanBoardProps) {
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
@@ -330,11 +326,6 @@ export function KanbanBoard({
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!externalChatSend) return
-    armTerminalCommand(externalChatSend.taskId, `${externalChatSend.text}\r`)
-  }, [externalChatSend?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runTask = (task: Task) => {
     armLaunch(task, { resume: wasLaunched(task) })
