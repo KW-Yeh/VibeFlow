@@ -23,9 +23,7 @@ export interface EditTaskPayload {
   roleId: string
   reviewerRoleId: string
   agentCli: AgentCliId
-  model: string
   executionAgentCli: AgentCliId
-  executionModel: string
   workspaceId: string
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
@@ -71,9 +69,7 @@ export function EditTaskDialog({
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
-  const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
-  const [executionModel, setExecutionModel] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
@@ -95,9 +91,7 @@ export function EditTaskDialog({
     setRoleId(task.roleId ?? '')
     setReviewerRoleId(task.reviewerRoleId ?? '')
     setAgentCli(task.agentCli ?? 'claude')
-    setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
-    setExecutionModel(task.executionModel ?? '')
     setWorkspaceId(task.workspaceId ?? '')
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
@@ -139,9 +133,7 @@ export function EditTaskDialog({
     roleId !== (task.roleId ?? '') ||
     reviewerRoleId !== (task.reviewerRoleId ?? '') ||
     agentCli !== (task.agentCli ?? 'claude') ||
-    model !== (task.model ?? '') ||
     executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
-    executionModel !== (task.executionModel ?? '') ||
     workspaceId !== (task.workspaceId ?? '') ||
     projectChanged ||
     baseBranch !== (task.baseBranch ?? '')
@@ -154,19 +146,8 @@ export function EditTaskDialog({
     }
   }
 
-  // Switching the agent invalidates the previous model — fall back to the new
-  // agent's first model. Done in the handler (not an effect) so seeding a task
-  // that uses the agent default never spuriously rewrites its model.
-  const handleAgentChange = (next: AgentCliId) => {
-    setAgentCli(next)
-    const agent = agents?.find((a) => a.id === next)
-    setModel(agent?.models[0]?.id ?? '')
-  }
-  const handleExecutionAgentChange = (next: AgentCliId) => {
-    setExecutionAgentCli(next)
-    const agent = agents?.find((a) => a.id === next)
-    setExecutionModel(agent?.models[0]?.id ?? '')
-  }
+  const handleAgentChange = (next: AgentCliId) => setAgentCli(next)
+  const handleExecutionAgentChange = (next: AgentCliId) => setExecutionAgentCli(next)
 
   const handlePickFolder = async () => {
     const picked = await pickFolder()
@@ -204,9 +185,7 @@ export function EditTaskDialog({
       roleId,
       reviewerRoleId,
       agentCli,
-      model,
       executionAgentCli,
-      executionModel,
       workspaceId,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
@@ -376,9 +355,7 @@ export function EditTaskDialog({
                 detectTimedOut={detectTimedOut}
                 onRetry={() => setDetectKey((k) => k + 1)}
                 agentCli={agentCli}
-                model={model}
                 onAgentChange={handleAgentChange}
-                onModelChange={setModel}
               />
               <AgentModelFields
                 title="Execution Agent"
@@ -386,9 +363,7 @@ export function EditTaskDialog({
                 detectTimedOut={detectTimedOut}
                 onRetry={() => setDetectKey((k) => k + 1)}
                 agentCli={executionAgentCli}
-                model={executionModel}
                 onAgentChange={handleExecutionAgentChange}
-                onModelChange={setExecutionModel}
               />
 
               <div className="space-y-3 rounded-lg border border-border/50 p-4">

@@ -511,12 +511,12 @@ function assembleCommand(
  * the prompt body so the orchestrator can read the review field.
  */
 export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'worktreePath'>,
+  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel' | 'worktreePath'>,
   reviewerRole?: Parameters<typeof buildRolePrompt>[0],
   workspacePath?: string
 ): string {
-  const agent = taskAgent(task)
-  const model = taskModel(task)
+  const agent = taskExecutionAgent(task)
+  const model = taskExecutionModel(task)
   const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
   const basePrompt = buildReviewPrompt(task)
   // Reviewer only reads the workspace context, never updates it.

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Settings, Smartphone, Users } from 'lucide-react'
+import { Bot, Loader2, Plus, Settings, Smartphone, Users } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import {
@@ -70,13 +71,99 @@ interface KanbanBoardProps {
     baseBranch: string | null,
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
-    model: string,
     executionAgentCli: AgentCliId,
-    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
   ) => void
+}
+
+interface PendingModelPick {
+  task: Task
+  phase: 'planning' | 'execution'
+  moveToInProgress: boolean
+  resume: boolean
+}
+
+function ModelPickerDialog({
+  pick,
+  agents,
+  onConfirm,
+  onCancel,
+}: {
+  pick: PendingModelPick
+  agents: AgentCli[] | null
+  onConfirm: (model: string) => void
+  onCancel: () => void
+}) {
+  const agentId = pick.phase === 'execution'
+    ? (pick.task.executionAgentCli ?? pick.task.agentCli ?? 'claude')
+    : (pick.task.agentCli ?? 'claude')
+  const agent = agents?.find((a) => a.id === agentId) ?? null
+  const models = agent?.models ?? []
+  const [selected, setSelected] = useState(models[0]?.id ?? '')
+
+  useEffect(() => {
+    if (models.length > 0 && !selected) setSelected(models[0].id)
+  }, [models, selected])
+
+  const isPlanning = pick.phase === 'planning'
+
+  return (
+    <DialogShell
+      title={isPlanning ? '選擇規劃 Model' : '選擇執行 Model'}
+      onClose={onCancel}
+      showHeader
+      contentClassName="max-w-sm"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            取消
+          </Button>
+          <Button size="sm" onClick={() => onConfirm(selected)} disabled={!selected || agents === null}>
+            {isPlanning ? '開始規劃' : '開始執行'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Bot className="size-3.5" />
+          <span>{agent?.name ?? agentId}</span>
+          <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px]">
+            {pick.task.title}
+          </span>
+        </div>
+        {agents === null ? (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            偵測 Agent CLI 中…
+          </p>
+        ) : models.length === 0 ? (
+          <p className="text-xs text-muted-foreground">無可用 model。</p>
+        ) : (
+          <div className="space-y-1.5">
+            {models.map((m) => (
+              <label
+                key={m.id}
+                className="flex cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent"
+              >
+                <input
+                  type="radio"
+                  name="model-pick"
+                  value={m.id}
+                  checked={selected === m.id}
+                  onChange={() => setSelected(m.id)}
+                  className="accent-primary"
+                />
+                <span>{m.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </DialogShell>
+  )
 }
 
 interface LaunchEntry {
@@ -132,6 +219,15 @@ export function KanbanBoard({
   const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
   const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
   const executionStartedRef = useRef<Set<string>>(new Set())
+  // Model picker: shown before planning or execution launches.
+  const [pendingModelPick, setPendingModelPick] = useState<PendingModelPick | null>(null)
+  // Detected agents for the model picker (loaded once on mount).
+  const [pickerAgents, setPickerAgents] = useState<AgentCli[] | null>(null)
+
+  // Load agents once so the model picker has models ready.
+  useEffect(() => {
+    void detectAgents().then(setPickerAgents)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
@@ -326,27 +422,40 @@ export function KanbanBoard({
       if (isTaskComplete(task)) continue
       if (executionStartedRef.current.has(task.id)) continue
       executionStartedRef.current.add(task.id)
-      armLaunch(task)
+      setPendingModelPick({ task, phase: 'execution', moveToInProgress: false, resume: false })
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const runTask = (task: Task) => {
-    armLaunch(task, { resume: wasLaunched(task) })
-    if (!task.launchedAt) {
-      const stamp = Date.now()
+  const onConfirmModelPick = (pickedModel: string) => {
+    if (!pendingModelPick) return
+    const { task, phase, moveToInProgress, resume } = pendingModelPick
+    setPendingModelPick(null)
+
+    const modelPatch = phase === 'planning'
+      ? { model: pickedModel }
+      : { executionModel: pickedModel }
+    const withModel = { ...task, ...modelPatch }
+
+    if (moveToInProgress) {
+      const withStamp = { ...withModel, launchedAt: Date.now() }
       onBoardChange({
-        backlog: board.backlog.map((t) =>
-          t.id === task.id ? { ...t, launchedAt: stamp } : t
-        ),
-        in_progress: board.in_progress.map((t) =>
-          t.id === task.id ? { ...t, launchedAt: stamp } : t
-        ),
-        done: board.done.map((t) =>
-          t.id === task.id ? { ...t, launchedAt: stamp } : t
-        ),
+        backlog: board.backlog.filter((t) => t.id !== task.id),
+        in_progress: [withStamp, ...board.in_progress.filter((t) => t.id !== task.id)],
+        done: board.done.filter((t) => t.id !== task.id),
       })
+      markMounted(task.id)
+      armLaunch(withStamp)
+    } else {
+      const fullPatch = { ...modelPatch, ...(!task.launchedAt ? { launchedAt: Date.now() } : {}) }
+      patchTask(task.id, fullPatch)
+      armLaunch({ ...withModel, ...fullPatch }, { resume })
     }
+  }
+
+  const runTask = (task: Task) => {
+    const phase = task.progress?.planDone === true ? 'execution' : 'planning'
+    setPendingModelPick({ task, phase, moveToInProgress: false, resume: wasLaunched(task) })
   }
 
   const moveTask = (
@@ -374,15 +483,29 @@ export function KanbanBoard({
     if (to === 'done') {
       onTaskDone(task.id)
     }
-    if (willLaunch) armLaunch(toInsert, { resume: wasLaunched(task) })
+    if (willLaunch) {
+      // moveToInProgress=false: task is already in the board at this point.
+      const phase = toInsert.progress?.planDone === true ? 'execution' : 'planning'
+      setPendingModelPick({ task: toInsert, phase, moveToInProgress: false, resume: wasLaunched(task) })
+    }
   }
 
   const startTask = (task: Task) => {
-    moveTask(task, 'in_progress', { forceLaunch: true })
+    // Show model picker before moving the task; confirm handler does the move + launch.
+    setPendingModelPick({ task, phase: 'planning', moveToInProgress: true, resume: false })
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
   return (
+    <>
+    {pendingModelPick && (
+      <ModelPickerDialog
+        pick={pendingModelPick}
+        agents={pickerAgents}
+        onConfirm={onConfirmModelPick}
+        onCancel={() => setPendingModelPick(null)}
+      />
+    )}
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-3">
         <span className="mr-auto text-sm font-semibold tracking-tight">VibeFlow</span>
@@ -568,5 +691,6 @@ export function KanbanBoard({
         )
       })()}
     </div>
+    </>
   )
 }
