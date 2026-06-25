@@ -326,7 +326,7 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
           </span>
         )}
       </div>
-      <div className="min-w-0 max-w-full overflow-x-hidden text-[11px] [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:w-full [&_table]:max-w-full [&_table]:table-fixed [&_td]:max-w-0 [&_td]:align-top">
+      <div className="min-w-0 max-w-full overflow-x-auto text-[11px] [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:min-w-full [&_table]:table-fixed [&_td]:min-w-0 [&_td]:align-top">
         <ReactDiffViewer
           oldValue={file.oldValue}
           newValue={file.newValue}
@@ -342,7 +342,7 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
             diffContainer: {
               width: '100%',
               maxWidth: '100%',
-              overflowX: 'hidden',
+              overflowX: 'visible',
             },
             line: {
               width: '100%',
@@ -350,7 +350,7 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
             content: {
               width: '100%',
               maxWidth: '100%',
-              overflowX: 'hidden',
+              overflowX: 'visible',
             },
             contentText: {
               display: 'block',
