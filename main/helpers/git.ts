@@ -310,13 +310,19 @@ export async function provisionWorktree(
   const base = baseBranch || info.defaultBase || info.currentBranch || 'HEAD'
 
   // Prefer origin/<base> as the start point when it exists on the remote.
-  // Fetch first so the worktree starts from the truly latest remote commit.
+  // Pull the local base branch first so history is up-to-date before branching.
   let startPoint = base
   if (info.hasRemote) {
     try {
-      await git(projectPath, ['fetch', 'origin', base])
+      // `<base>:<base>` fast-forwards the local branch too; fails safely if it's
+      // currently checked out or has diverged — plain fetch covers that case.
+      await git(projectPath, ['fetch', 'origin', `${base}:${base}`])
     } catch {
-      // fetch failure (e.g. offline) is non-fatal — fall back to local cache
+      try {
+        await git(projectPath, ['fetch', 'origin', base])
+      } catch {
+        // offline — fall back to local cache
+      }
     }
     try {
       await git(projectPath, ['rev-parse', '--verify', `origin/${base}`])

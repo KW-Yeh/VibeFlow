@@ -13,6 +13,7 @@ import {
   Layers,
   Loader2,
   Maximize2,
+  RefreshCw,
   Pencil,
   Play,
   Trash2,
@@ -30,7 +31,7 @@ import {
   isTaskComplete,
   taskExecutionAgent,
 } from '@/lib/claude'
-import { getDiff, getPlan } from '@/lib/api'
+import { getDiff, getPlanHtml } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { ColumnId, DiffFile, Role, SubAgentRun, Task } from '@/lib/types'
 
@@ -265,24 +266,24 @@ function MarkdownContent({
 }
 
 function PlanContent({ taskId }: { taskId: string }) {
-  const [plan, setPlan] = useState<string | null | undefined>(undefined)
+  const [html, setHtml] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
     let active = true
-    setPlan(undefined)
-    getPlan(taskId)
+    setHtml(undefined)
+    getPlanHtml(taskId)
       .then((next) => {
-        if (active) setPlan(next)
+        if (active) setHtml(next)
       })
       .catch(() => {
-        if (active) setPlan(null)
+        if (active) setHtml(null)
       })
     return () => {
       active = false
     }
   }, [taskId])
 
-  if (plan === undefined) {
+  if (html === undefined) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" />
@@ -291,7 +292,7 @@ function PlanContent({ taskId }: { taskId: string }) {
     )
   }
 
-  if (!plan?.trim()) {
+  if (!html) {
     return (
       <p className="py-10 text-center text-xs text-muted-foreground">
         尚未找到 agent 產出的 PLAN.md。
@@ -299,7 +300,14 @@ function PlanContent({ taskId }: { taskId: string }) {
     )
   }
 
-  return <MarkdownContent source={plan} compact />
+  return (
+    <iframe
+      srcDoc={html}
+      className="-m-3 block border-0"
+      style={{ width: 'calc(100% + 1.5rem)', height: 'calc(100% + 1.5rem)' }}
+      title="Plan"
+    />
+  )
 }
 
 function DiffFileViewer({ file }: { file: DiffFile }) {
@@ -380,6 +388,7 @@ function DiffSection({ taskId }: { taskId: string }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [refreshNonce, setRefreshNonce] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -398,23 +407,34 @@ function DiffSection({ taskId }: { taskId: string }) {
     return () => {
       active = false
     }
-  }, [taskId])
+  }, [taskId, refreshNonce])
 
   return (
     <InfoSection
       title="Git diff"
       icon={<GitCompare className="size-3.5" />}
       actions={
-        files.length > 0 ? (
+        <div className="flex items-center gap-1">
           <IconButton
-            aria-label="放大檢視 Git diff"
-            title="放大檢視"
+            aria-label="重新整理 Git diff"
+            title="重新整理"
             className="p-1"
-            onClick={() => setExpanded(true)}
+            disabled={loading}
+            onClick={() => setRefreshNonce((n) => n + 1)}
           >
-            <Maximize2 className="size-3.5" />
+            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
           </IconButton>
-        ) : null
+          {files.length > 0 && (
+            <IconButton
+              aria-label="放大檢視 Git diff"
+              title="放大檢視"
+              className="p-1"
+              onClick={() => setExpanded(true)}
+            >
+              <Maximize2 className="size-3.5" />
+            </IconButton>
+          )}
+        </div>
       }
     >
       {loading ? (
@@ -428,7 +448,7 @@ function DiffSection({ taskId }: { taskId: string }) {
         </div>
       ) : files.length === 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">
-          與基準分支相比沒有已提交的變更。
+          與基準分支相比沒有變更。
         </p>
       ) : (
         <div className="space-y-3">
