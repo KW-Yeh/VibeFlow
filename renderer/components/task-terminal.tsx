@@ -21,7 +21,20 @@ interface TaskTerminalProps {
   launchCommand?: string | null
   /** Bump to request a (re-)launch of `launchCommand`. */
   launchNonce?: number
-  /** Fired when the user clicks the in-terminal launch button. */
+  /**
+   * Text sent to the PTY `autoSendDelay` ms after `launchCommand` is dispatched.
+   * Used to trigger the native /model picker after the agent REPL is ready.
+   */
+  autoSend?: string | null
+  /** Milliseconds to wait after launch before sending `autoSend`. Default 1500. */
+  autoSendDelay?: number
+  /**
+   * When set, clicking the launch button sends this text directly to the PTY
+   * instead of calling `onLaunchRequest`. Used to inject a prompt after the user
+   * has picked a model via the native /model TUI.
+   */
+  injectCommand?: string | null
+  /** Fired when the user clicks the in-terminal launch button (unless `injectCommand` is set). */
   onLaunchRequest?: () => void
   /** Launch-button label; defaults to 啟動 Agent when a launch action is available. */
   launchLabel?: string
@@ -39,6 +52,9 @@ export function TaskTerminal({
   cwd,
   launchCommand,
   launchNonce = 0,
+  autoSend,
+  autoSendDelay = 1500,
+  injectCommand,
   onLaunchRequest,
   launchLabel,
   readOnly = false,
@@ -59,6 +75,11 @@ export function TaskTerminal({
   const launchNonceRef = useRef(launchNonce)
   launchCmdRef.current = launchCommand
   launchNonceRef.current = launchNonce
+  const autoSendRef = useRef<string | null | undefined>(autoSend)
+  const autoSendDelayRef = useRef(autoSendDelay)
+  autoSendRef.current = autoSend
+  autoSendDelayRef.current = autoSendDelay
+  const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // cwd / readOnly via refs so the init effect can depend on [sessionKey] only —
   // when a card moves to Done its cwd changes (worktree → project root); we must
   // NOT re-run init (which would dispose the buffer and spawn a fresh shell).
@@ -78,6 +99,13 @@ export function TaskTerminal({
     // Executor reruns remount this component so they get a fresh PTY instead.
     if (nonce > 1) window.vibeflow?.term.input(sessionKey, '\x03')
     window.vibeflow?.term.input(sessionKey, cmd)
+    // Schedule the auto-send (e.g. /model\r) after the agent REPL is ready.
+    if (autoSendRef.current) {
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current)
+      autoSendTimerRef.current = setTimeout(() => {
+        if (autoSendRef.current) window.vibeflow?.term.input(sessionKey, autoSendRef.current)
+      }, autoSendDelayRef.current)
+    }
   }, [sessionKey])
 
   // Keep the read-only flag (and xterm's stdin gate) in sync without remounting.
@@ -186,6 +214,7 @@ export function TaskTerminal({
       offData?.()
       offExit?.()
       resizeObs?.disconnect()
+      if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current)
       // Kill only this session's PTY (pass the composite key so the reviewer pane
       // doesn't accidentally tear down the executor session when it unmounts).
       window.vibeflow?.term.kill(sessionKey)
@@ -211,6 +240,16 @@ export function TaskTerminal({
           <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
             唯讀
           </span>
+        ) : injectCommand ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-[10px]"
+            onClick={() => window.vibeflow?.term.input(sessionKey, injectCommand)}
+          >
+            <Sparkles className="size-3" />
+            {launchLabel ?? '注入 Prompt'}
+          </Button>
         ) : onLaunchRequest ? (
           <Button
             variant="ghost"

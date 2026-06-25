@@ -43,6 +43,9 @@ const STATUS_LABEL: Record<string, string> = {
 interface LaunchEntry {
   command: string
   nonce: number
+  autoSend?: string | null
+  autoSendDelay?: number
+  injectCommand?: string | null
 }
 
 interface TaskWorkspacePanelProps {
@@ -585,8 +588,11 @@ export function TaskWorkspacePanel({
             cwd={cwd}
             launchCommand={launchCommand}
             launchNonce={launchNonce}
-            launchLabel={task.launchedAt ? '重跑' : '開始任務'}
-            onLaunchRequest={canLaunch ? requestLaunch : undefined}
+            autoSend={launch?.autoSend}
+            autoSendDelay={launch?.autoSendDelay}
+            injectCommand={launch?.injectCommand}
+            launchLabel={launch?.injectCommand ? '注入 Prompt' : (task.launchedAt ? '重跑' : '開始任務')}
+            onLaunchRequest={canLaunch && !launch?.injectCommand ? requestLaunch : undefined}
             readOnly={column === 'done'}
           />
         </div>
