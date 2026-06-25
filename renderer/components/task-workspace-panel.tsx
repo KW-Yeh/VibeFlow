@@ -215,9 +215,20 @@ function TaskInfo({
   )
 }
 
-function MarkdownContent({ source }: { source: string }) {
+function MarkdownContent({
+  source,
+  compact = false,
+}: {
+  source: string
+  compact?: boolean
+}) {
   return (
-    <div className="prose prose-invert prose-sm max-w-none break-words rounded-md bg-muted/30 p-3 text-muted-foreground">
+    <div
+      className={cn(
+        'prose prose-invert max-w-none break-words rounded-md bg-muted/30 p-3 text-muted-foreground',
+        compact ? 'prose-xs text-[11px] leading-snug' : 'prose-sm'
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -229,10 +240,7 @@ function MarkdownContent({ source }: { source: string }) {
           code: ({ children, className, ...props }) => (
             <code
               {...props}
-              className={cn(
-                'break-words rounded bg-background/70 px-1 py-0.5 text-[0.85em]',
-                className
-              )}
+              className={cn('break-words rounded bg-background/70 px-1 py-0.5', className)}
             >
               {children}
             </code>
@@ -240,7 +248,10 @@ function MarkdownContent({ source }: { source: string }) {
           pre: ({ children, ...props }) => (
             <pre
               {...props}
-              className="max-w-full overflow-x-auto rounded-md bg-background/70 p-3 text-xs"
+              className={cn(
+                'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
+                compact ? 'text-[10px] leading-snug' : 'text-xs'
+              )}
             >
               {children}
             </pre>
@@ -288,7 +299,7 @@ function PlanContent({ taskId }: { taskId: string }) {
     )
   }
 
-  return <MarkdownContent source={plan} />
+  return <MarkdownContent source={plan} compact />
 }
 
 function DiffFileViewer({ file }: { file: DiffFile }) {
