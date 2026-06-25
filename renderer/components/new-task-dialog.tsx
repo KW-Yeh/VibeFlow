@@ -488,7 +488,7 @@ export function NewTaskForm({
           </select>
           {workspaceId && (
             <p className="text-xs text-muted-foreground">
-              Agent 將在開始前讀取 context.html，並在完成後更新它。
+              Agent 將在開始前讀取 context.md，並在完成後更新它。
             </p>
           )}
         </>

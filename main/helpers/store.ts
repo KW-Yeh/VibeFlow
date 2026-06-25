@@ -74,6 +74,8 @@ export interface Task {
   projectName?: string
   /** Absolute path of this task's git worktree, once provisioned. */
   worktreePath?: string
+  /** Absolute path of the workspace folder housing the worktree (= dirname(worktreePath)). */
+  workspacePath?: string
   /** Base branch the worktree was created from. */
   baseBranch?: string
   /** Whether the branch was pushed upstream at creation. */

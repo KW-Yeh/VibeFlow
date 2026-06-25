@@ -58,7 +58,7 @@ export function WorkspaceDialog({
   return (
     <DialogShell
       title={workspace ? '編輯 Workspace' : '新增 Workspace'}
-      description="設定可注入任務的 context.html 知識來源。"
+      description="設定可注入任務的 context.md 知識來源。"
       saving={saving}
       onClose={onClose}
       showHeader
@@ -152,8 +152,8 @@ export function WorkspaceDialog({
             </div>
             <p className="text-xs text-muted-foreground">
               資料夾中應包含{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">context.html</code>{' '}
-              作為知識目錄
+              <code className="rounded bg-muted px-1 py-0.5 font-mono">context.md</code>{' '}
+              作為知識目錄（缺少時會自動建立）
             </p>
           </div>
           {error && (

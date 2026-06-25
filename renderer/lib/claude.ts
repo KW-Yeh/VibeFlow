@@ -82,8 +82,8 @@ export const PRESET_ROLES: Omit<Role, 'id'>[] = [
  */
 const PROGRESS_FILE = '.vibeflow-progress.json'
 
-/** Workspace context file name (mirrors main/helpers/workspace.ts CONTEXT_FILE). */
-const WORKSPACE_CONTEXT_FILE = 'context.html'
+/** Workspace context file name (mirrors main/helpers/workspace.ts CONTEXT_MD). */
+const WORKSPACE_CONTEXT_FILE = 'context.md'
 
 /**
  * Build the workspace section appended to executor prompts when a workspace is
@@ -103,8 +103,9 @@ function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boole
     lines.push(
       '',
       '完成任務後（所有步驟 done、且非審查退回狀態），請更新 workspace 知識目錄：',
-      `- 讀取並更新 ${contextPath}，把本次任務新增或變更的重要知識、決策、檔案結構摘要寫入，保持 HTML 結構完整。`,
-      '- 這是跨任務共用的長期 context，請以「未來其他任務能快速理解專案」為目標來維護它。'
+      `- 讀取並更新 ${contextPath}（Markdown），把本次任務新增或變更的重要知識、決策、檔案結構摘要寫入。`,
+      '- 這是跨任務共用的長期 context，請以「未來其他任務能快速理解專案」為目標來維護它。',
+      '- 同目錄的 context.html 是系統自動產生的渲染檢視，請勿手動編輯。'
     )
   }
   return lines.join('\n')
@@ -475,7 +476,7 @@ function assembleCommand(
       sessionFlag = opts?.resume ? ' --continue' : ''
     }
     // Grant the agent read/write access to the workspace folder so it can read
-    // context.html and write back the updated knowledge directory.
+    // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
     const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE} --model ${model}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`

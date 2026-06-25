@@ -153,9 +153,6 @@ export async function initRepository(projectPath: string): Promise<void> {
     }
   }
 
-  // Write .vibeflow/ into .gitignore regardless (ensureGitignore is idempotent).
-  await ensureGitignore(projectPath)
-
   // If there is already at least one commit, we are done.
   try {
     await git(projectPath, ['rev-parse', '--verify', 'HEAD'])
@@ -164,27 +161,17 @@ export async function initRepository(projectPath: string): Promise<void> {
     // no commits yet — create the initial one
   }
 
-  // Stage the .gitignore we just wrote and make the first commit.  Use inline
-  // -c overrides so the commit succeeds even when the user's git identity is
-  // not configured, without touching their global git config.
-  await git(projectPath, ['add', '.gitignore'])
+  // An empty initial commit is enough for `worktree add` to branch from. Use
+  // inline -c overrides so the commit succeeds even when the user's git identity
+  // is not configured, without touching their global git config.
   await git(projectPath, [
     '-c', 'user.name=VibeFlow',
     '-c', 'user.email=vibeflow@local',
     '-c', 'commit.gpgsign=false',
     'commit',
+    '--allow-empty',
     '-m', 'chore: initialize repository',
   ])
-}
-
-/** Ensure `.vibeflow/` is present in the project's .gitignore. */
-export async function ensureGitignore(projectPath: string): Promise<void> {
-  await appendLineIfMissing(
-    path.join(projectPath, '.gitignore'),
-    '.vibeflow/',
-    '# VibeFlow worktrees',
-    { aliases: ['.vibeflow'] }
-  )
 }
 
 /**
@@ -222,14 +209,12 @@ export interface ProvisionResult {
   branch: string
   /** Absolute path of the created worktree. */
   worktreePath: string
-  /** Relative path from the project root (e.g. .vibeflow/feature-WR-4832). */
-  relativePath: string
   pushed: boolean
   baseBranch: string
 }
 
 /** Worktree directory name for a branch — `/` flattened so the directory
- *  always sits directly under `.vibeflow/` (e.g. feature/WR-4832 → feature-WR-4832). */
+ *  sits directly under the workspace folder (e.g. feature/WR-4832 → feature-WR-4832). */
 function worktreeDirName(branch: string): string {
   return branch.replace(/\//g, '-')
 }
@@ -267,6 +252,7 @@ export function fallbackBranchName(taskId: string): string {
  */
 async function resolveBranchName(
   projectPath: string,
+  workspacePath: string,
   taskId: string,
   preferredBranch: string | null | undefined
 ): Promise<string> {
@@ -278,7 +264,7 @@ async function resolveBranchName(
     return fallback
   }
   const dirTaken = await fs
-    .access(path.join(projectPath, '.vibeflow', worktreeDirName(preferredBranch)))
+    .access(path.join(workspacePath, worktreeDirName(preferredBranch)))
     .then(() => true)
     .catch(() => false)
   if (dirTaken || (await branchExists(projectPath, preferredBranch))) {
@@ -288,23 +274,24 @@ async function resolveBranchName(
 }
 
 /**
- * Create an isolated worktree for a task under `.vibeflow/<branch-dir>` on a
- * new branch, and (when a remote exists) push the branch upstream. The branch
+ * Create an isolated worktree for a task under `<workspacePath>/<branch-dir>` on
+ * a new branch, and (when a remote exists) push the branch upstream. The branch
  * is named from `preferredBranch` (e.g. feature/WR-4832, fix/WCL260522-0002,
- * feature/<title-slug>) when given, otherwise the legacy `vf-<taskId>`.
+ * feature/<title-slug>) when given, otherwise the legacy `vf-<taskId>`. The
+ * worktree lives outside the project tree, so the project's .gitignore is left
+ * untouched.
  */
 export async function provisionWorktree(
   projectPath: string,
+  workspacePath: string,
   taskId: string,
   baseBranch: string | null,
   preferredBranch?: string | null
 ): Promise<ProvisionResult> {
-  await ensureGitignore(projectPath)
   await ensureLocalExclude(projectPath)
 
-  const branch = await resolveBranchName(projectPath, taskId, preferredBranch)
-  const relativePath = path.join('.vibeflow', worktreeDirName(branch))
-  const worktreePath = path.join(projectPath, relativePath)
+  const branch = await resolveBranchName(projectPath, workspacePath, taskId, preferredBranch)
+  const worktreePath = path.join(workspacePath, worktreeDirName(branch))
 
   const info = await getGitInfo(projectPath)
   const base = baseBranch || info.defaultBase || info.currentBranch || 'HEAD'
@@ -338,14 +325,14 @@ export async function provisionWorktree(
       'add',
       '-b',
       branch,
-      relativePath,
+      worktreePath,
       startPoint,
     ])
   } catch (err) {
     // `worktree add` can fail AFTER creating the dir + branch (e.g. a failing
     // post-checkout hook), leaving orphans that clutter the repo. Roll back the
     // partial state before surfacing the error.
-    await removeWorktree(projectPath, branch)
+    await removeWorktree(projectPath, worktreePath)
     await deleteBranch(projectPath, branch)
     throw err
   }
@@ -360,17 +347,20 @@ export async function provisionWorktree(
     }
   }
 
-  return { branch, worktreePath, relativePath, pushed, baseBranch: base }
+  return { branch, worktreePath, pushed, baseBranch: base }
 }
 
-/** Remove a task branch's worktree directory and prune stale worktree metadata. */
+/**
+ * Remove a task's worktree directory and prune stale worktree metadata.
+ * `worktreePath` is the absolute path recorded on the task (now a sibling
+ * workspace folder; legacy tasks pass their old `.vibeflow/<dir>` path).
+ */
 export async function removeWorktree(
   projectPath: string,
-  branch: string
+  worktreePath: string
 ): Promise<void> {
-  const relativePath = path.join('.vibeflow', worktreeDirName(branch))
   try {
-    await git(projectPath, ['worktree', 'remove', '--force', relativePath])
+    await git(projectPath, ['worktree', 'remove', '--force', worktreePath])
   } catch {
     // ignore — may already be gone
   }

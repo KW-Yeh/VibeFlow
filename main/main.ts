@@ -27,7 +27,12 @@ import {
   type Task,
   type Workspace,
 } from './helpers/store'
-import { generateContextHtml, scanWorkspace } from './helpers/workspace'
+import {
+  defaultWorkspacePath,
+  ensureContextFiles,
+  regenerateContextHtml,
+  scanWorkspace,
+} from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
 import {
   commitAndPush,
@@ -264,13 +269,19 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         }
         // Tear down the old (empty) worktree before rebuilding on the target.
         teardownSession(payload.taskId)
-        if (existing.projectPath) {
+        if (existing.projectPath && existing.worktreePath) {
           const oldBranch = existing.branch || fallbackBranchName(payload.taskId)
-          await removeWorktree(existing.projectPath, oldBranch)
+          await removeWorktree(existing.projectPath, existing.worktreePath)
           await deleteBranch(existing.projectPath, oldBranch)
         }
+        const assignedWorkspace = payload.workspaceId
+          ? getWorkspaces().find((w) => w.id === payload.workspaceId)
+          : undefined
+        const workspacePath = assignedWorkspace?.path ?? defaultWorkspacePath(nextProject)
+        await ensureContextFiles(workspacePath)
         const result = await provisionWorktree(
           nextProject,
+          workspacePath,
           payload.taskId,
           payload.baseBranch ?? existing.baseBranch ?? null,
           existing.branch
@@ -280,6 +291,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
           projectName: path.basename(nextProject),
           branch: result.branch,
           worktreePath: result.worktreePath,
+          workspacePath,
           baseBranch: result.baseBranch,
           pushed: result.pushed,
         }
@@ -328,7 +340,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('workspaces:create', async (_e, input: { name: string; path: string }) => {
     let scan = await scanWorkspace(input.path)
     if (scan.folderExists && !scan.hasContextFile) {
-      await generateContextHtml(input.path)
+      await ensureContextFiles(input.path)
       scan = { ...scan, hasContextFile: true }
     }
     const workspace: Workspace = {
@@ -546,12 +558,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
-    if (task?.projectPath) {
+    if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
-      await removeWorktree(task.projectPath, branch)
+      await removeWorktree(task.projectPath, task.worktreePath)
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
+    // The agent updated context.md during the run — refresh its rendered view.
+    if (task?.workspacePath) await regenerateContextHtml(task.workspacePath)
     updateTask(taskId, { worktreePath: undefined })
     return getState()
   })
@@ -561,9 +575,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
-    if (task?.projectPath) {
+    if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
-      await removeWorktree(task.projectPath, branch)
+      await removeWorktree(task.projectPath, task.worktreePath)
       await deleteBranch(task.projectPath, branch)
     }
     clearConversation(taskId)
