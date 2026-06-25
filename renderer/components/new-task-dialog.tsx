@@ -53,6 +53,15 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+// Mirror of main's defaultWorkspacePath (helpers/workspace.ts): a project's
+// sibling workspace is `<parent>/<slug>-workspace`. Used to auto-pick the
+// matching workspace once a project folder is chosen.
+function defaultWorkspacePath(projectPath: string): string {
+  const slug = basename(projectPath).trim().toLowerCase().replace(/\s+/g, '_')
+  const parent = projectPath.replace(/[/\\][^/\\]+[/\\]?$/, '')
+  return `${parent}/${slug}-workspace`
+}
+
 // Shared field class — uniform height, subtle border, smooth focus ring
 export const F =
   'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
@@ -277,6 +286,7 @@ export function NewTaskForm({
     setLoadingInfo(false)
     setInitializing(false)
     setBaseBranch('')
+    setWorkspaceId('')
   }
 
   const handlePick = async () => {
@@ -284,6 +294,11 @@ export function NewTaskForm({
     if (!path) return
     setProjectPath(path)
     setGitInfo(null)
+
+    const wsPath = defaultWorkspacePath(path)
+    const matched = workspaces.find((ws) => ws.path === wsPath)
+    setWorkspaceId(matched?.id ?? '')
+    if (matched) setAdvancedOpen(true)
 
     if (mode === 'new') {
       setInitializing(true)
