@@ -58,14 +58,64 @@ export function WorkspaceDialog({
   return (
     <DialogShell
       title={workspace ? '編輯 Workspace' : '新增 Workspace'}
+      description="設定可注入任務的 context.html 知識來源。"
       saving={saving}
       onClose={onClose}
-      contentClassName="max-w-[480px] p-5"
+      showHeader
+      contentClassName="max-w-[480px]"
+      footer={
+        <>
+          <div>
+            {workspace && onDelete && (
+              confirmDelete ? (
+                <div className="flex gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onDelete}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    確認刪除
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  刪除
+                </Button>
+              )
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+              取消
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              form="workspace-form"
+              disabled={saving || !name.trim() || !path.trim()}
+            >
+              {saving ? '儲存中…' : workspace ? '儲存' : '新增'}
+            </Button>
+          </div>
+        </>
+      }
     >
-        <h2 className="mb-4 text-base font-semibold">
-          {workspace ? '編輯 Workspace' : '新增 Workspace'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="workspace-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label className="block text-sm font-medium">名稱</label>
             <input
@@ -111,54 +161,6 @@ export function WorkspaceDialog({
               {error}
             </p>
           )}
-          <div className="flex items-center justify-between pt-1">
-            <div>
-              {workspace && onDelete && (
-                confirmDelete ? (
-                  <div className="flex gap-1.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfirmDelete(false)}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={onDelete}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      確認刪除
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setConfirmDelete(true)}
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    刪除
-                  </Button>
-                )
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-                取消
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={saving || !name.trim() || !path.trim()}
-              >
-                {saving ? '儲存中…' : workspace ? '儲存' : '新增'}
-              </Button>
-            </div>
-          </div>
         </form>
     </DialogShell>
   )

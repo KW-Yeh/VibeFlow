@@ -387,8 +387,6 @@ export function KanbanBoard({
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
-  const moveBackTask = (task: Task) => moveTask(task, 'backlog')
-
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-3">
@@ -497,7 +495,6 @@ export function KanbanBoard({
                       launch={terminalLaunch[taskId]}
                       onRun={runTask}
                       onStart={startTask}
-                      onMoveBack={moveBackTask}
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}

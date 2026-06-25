@@ -8,12 +8,10 @@ import {
   Lock,
   ShieldCheck,
   UserRound,
-  X,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import { cn } from '@/lib/utils'
@@ -219,22 +217,31 @@ export function EditTaskDialog({
   return (
     <DialogShell
       title="編輯任務"
+      description="更新任務內容、agent、角色與 workspace 指派。"
       saving={saving}
       onClose={handleClose}
-      contentClassName="max-w-md p-5"
+      showHeader
+      contentClassName="max-w-2xl"
+      footer={
+        <>
+          <div />
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={cn(saving && 'opacity-80')}
+            >
+              {saving && <Loader2 className="animate-spin" />}
+              {saving ? '儲存中…' : '儲存變更'}
+            </Button>
+          </div>
+        </>
+      }
     >
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">編輯任務</h2>
-        <IconButton
-          aria-label="關閉編輯任務"
-          onClick={handleClose}
-          disabled={saving}
-          className="p-1"
-        >
-          <X className="size-4" />
-        </IconButton>
-      </div>
-
       {confirmClose && (
         <div className="mb-4 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">
           <span className="text-amber-200">有未儲存的變更，確定要離開？</span>
@@ -501,21 +508,6 @@ export function EditTaskDialog({
             {error}
           </p>
         )}
-      </div>
-
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
-          取消
-        </Button>
-        <Button
-          size="sm"
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-          className={cn(saving && 'opacity-80')}
-        >
-          {saving && <Loader2 className="animate-spin" />}
-          {saving ? '儲存中…' : '儲存變更'}
-        </Button>
       </div>
     </DialogShell>
   )

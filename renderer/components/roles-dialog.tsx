@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -205,26 +205,47 @@ export function RolesDialog({
   return (
     <DialogShell
       title={isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
+      description={isEditing ? '定義 agent 執行任務時的角色定位、職責與邊界。' : '管理新增任務與編輯任務可指派的角色。'}
       saving={saving}
       onClose={onClose}
-      contentClassName="flex max-h-[85vh] max-w-2xl flex-col p-5"
+      showHeader
+      contentClassName="max-w-2xl"
+      footer={
+        !isEditing ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              關閉
+            </Button>
+            <Button size="sm" onClick={startCreate} className="active:scale-95">
+              <Plus />
+              新增角色
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditingId(null)}
+              disabled={saving}
+            >
+              返回
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={cn(saving && 'opacity-80')}
+            >
+              {saving && <Loader2 className="animate-spin" />}
+              {saving ? '儲存中…' : '儲存角色'}
+            </Button>
+          </>
+        )
+      }
     >
-        <div className="mb-4 flex shrink-0 items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
-          </h2>
-          <IconButton
-            aria-label="關閉角色管理"
-            onClick={onClose}
-            disabled={saving}
-            className="p-1"
-          >
-            <X className="size-4" />
-          </IconButton>
-        </div>
-
         {!isEditing ? (
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+          <div className="space-y-3">
             {roles.length === 0 ? (
               <p className="rounded-md border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
                 還沒有任何角色 — 建立角色後即可在新增任務時指派。
@@ -296,7 +317,7 @@ export function RolesDialog({
             )}
           </div>
         ) : (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          <div className="space-y-4">
             {/* Preset selector */}
             <div className="relative">
               <button
@@ -459,39 +480,6 @@ export function RolesDialog({
           </div>
         )}
 
-        <div className="mt-5 flex shrink-0 justify-between gap-2">
-          {!isEditing ? (
-            <>
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                關閉
-              </Button>
-              <Button size="sm" onClick={startCreate} className="active:scale-95">
-                <Plus />
-                新增角色
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditingId(null)}
-                disabled={saving}
-              >
-                返回
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSubmit}
-                disabled={!canSubmit}
-                className={cn(saving && 'opacity-80')}
-              >
-                {saving && <Loader2 className="animate-spin" />}
-                {saving ? '儲存中…' : '儲存角色'}
-              </Button>
-            </>
-          )}
-        </div>
     </DialogShell>
   )
 }

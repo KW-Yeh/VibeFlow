@@ -17,7 +17,6 @@ import {
   Pencil,
   Play,
   Trash2,
-  Undo2,
   X,
 } from 'lucide-react'
 
@@ -57,7 +56,6 @@ interface TaskWorkspacePanelProps {
   launch?: LaunchEntry
   onRun: (task: Task) => void
   onStart: (task: Task) => void
-  onMoveBack: (task: Task) => void
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
@@ -497,7 +495,6 @@ export function TaskWorkspacePanel({
   launch,
   onRun,
   onStart,
-  onMoveBack,
   onComplete,
   onEdit,
   onDelete,
@@ -536,9 +533,6 @@ export function TaskWorkspacePanel({
         )}
         {column === 'in_progress' && (
           <>
-            <IconButton aria-label="退回 Backlog" title="退回 Backlog" onClick={() => onMoveBack(task)}>
-              <Undo2 className="size-4" />
-            </IconButton>
             <Button size="sm" onClick={() => onComplete(task)} title="標記完成後會清理 PTY 與 worktree">
               <Check className="size-3.5" />
               完成

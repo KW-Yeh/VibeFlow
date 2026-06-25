@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Loader2, RotateCcw, X } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { IconButton } from '@/components/ui/icon-button'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 
@@ -52,23 +51,29 @@ export function SettingsDialog({
 
   return (
     <DialogShell
-      title="設定"
+      title="設定 System Prompt"
+      description="調整啟動 agent 時使用的全域 system prompt。"
       saving={saving}
       onClose={onClose}
-      contentClassName="max-w-2xl p-5"
-    >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">設定</h2>
-          <IconButton
-            aria-label="關閉設定"
-            onClick={onClose}
-            disabled={saving}
-            className="p-1"
+      showHeader
+      contentClassName="max-w-2xl"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={cn(saving && 'opacity-80')}
           >
-            <X className="size-4" />
-          </IconButton>
-        </div>
-
+            {saving && <Loader2 className="animate-spin" />}
+            {saving ? '儲存中…' : '儲存設定'}
+          </Button>
+        </>
+      }
+    >
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">
@@ -115,21 +120,6 @@ export function SettingsDialog({
               {error}
             </p>
           )}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-            取消
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={cn(saving && 'opacity-80')}
-          >
-            {saving && <Loader2 className="animate-spin" />}
-            {saving ? '儲存中…' : '儲存設定'}
-          </Button>
         </div>
     </DialogShell>
   )

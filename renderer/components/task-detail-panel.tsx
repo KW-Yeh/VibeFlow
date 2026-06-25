@@ -19,7 +19,6 @@ import {
   Pencil,
   Play,
   Trash2,
-  Undo2,
 } from 'lucide-react'
 import { ChatPanel } from '@/components/chat-panel'
 import { IconButton } from '@/components/ui/icon-button'
@@ -255,7 +254,6 @@ export interface TaskDetailPanelProps {
   workspacePath?: string
   onRun: (task: Task) => void
   onStart: (task: Task) => void
-  onMoveBack: (task: Task) => void
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
@@ -276,7 +274,6 @@ export function TaskDetailPanel({
   workspacePath,
   onRun,
   onStart,
-  onMoveBack,
   onComplete,
   onEdit,
   onDelete,
@@ -308,16 +305,9 @@ export function TaskDetailPanel({
         <div className="flex shrink-0 items-center gap-3 border-b border-amber-500/20 bg-amber-500/10 px-6 py-2.5">
           <AlertTriangle className="size-4 shrink-0 text-amber-500" />
           <p className="flex-1 text-sm text-amber-200">
-            Pipeline 已達最大審查輪次，需人工介入。可退回 Backlog 重新規劃，或直接標記完成。
+            Pipeline 已達最大審查輪次，需人工介入。可直接標記完成，或編輯任務後重新啟動。
           </p>
           <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              onClick={() => onMoveBack(task)}
-              className="rounded px-2 py-1 text-xs text-amber-300 hover:bg-amber-500/20"
-            >
-              退回 Backlog
-            </button>
             <button
               type="button"
               onClick={() => onComplete(task)}
@@ -419,13 +409,6 @@ export function TaskDetailPanel({
 
             {column === 'in_progress' && (
               <div className="flex items-center rounded-md border border-border/60 bg-muted/20 p-0.5">
-                <IconButton
-                  aria-label="退回 Backlog"
-                  onClick={() => onMoveBack(task)}
-                  title="退回 Backlog"
-                >
-                  <Undo2 className="size-4" />
-                </IconButton>
                 <button
                   type="button"
                   onClick={() => onComplete(task)}
