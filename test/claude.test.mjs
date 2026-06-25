@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildAgentCommand,
   buildReviewCommand,
   buildReviseCommand,
   buildReviewPrompt,
@@ -35,6 +36,43 @@ const TASK = {
   worktreePath: '/tmp/vibeflow/vf-abc123',
   progress: undefined,
 }
+
+const CODEX_TASK = {
+  ...TASK,
+  agentCli: /** @type {'codex'} */ ('codex'),
+  model: 'gpt-5-codex',
+  executionAgentCli: /** @type {'codex'} */ ('codex'),
+  executionModel: 'gpt-5-codex',
+}
+
+// ─── buildAgentCommand (planning vs execution) ──────────────────────────────
+
+test('buildAgentCommand — planning uses planning agent and does not inject executor role', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE)
+  assert.ok(cmd.startsWith('codex --model gpt-5-codex '), 'must use planning agent command')
+  assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
+  assert.ok(!cmd.includes('資深前端工程師'), 'planning must not inject executor role prompt')
+  assert.ok(cmd.includes(DEFAULT_SYSTEM_PROMPT), 'planning must include PM system prompt')
+  assert.ok(cmd.includes('若需求足夠明確'), 'planning must include planning instructions')
+})
+
+test('buildAgentCommand — execution uses execution role after PLAN is done', () => {
+  const task = {
+    ...CODEX_TASK,
+    progress: {
+      summary: 'PLAN.md 完成',
+      planDone: true,
+      needsUserInput: false,
+      steps: [{ text: '實作修正', done: false }],
+      updatedAt: Date.now(),
+    },
+  }
+  const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
+  assert.ok(cmd.startsWith('codex --model gpt-5-codex '), 'must use execution agent command')
+  assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
+  assert.ok(cmd.includes('資深前端工程師'), 'execution must inject executor role prompt')
+  assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
+})
 
 // ─── buildReviewCommand (fresh-launch) ──────────────────────────────────────
 
@@ -98,7 +136,7 @@ test('buildReviewPrompt — prompt body contains task title, verdict JSON struct
 test('buildReviewerSystemPrompt — returns role prompt when role is provided', () => {
   const sys = buildReviewerSystemPrompt(REVIEWER_ROLE)
   assert.equal(sys, buildRolePrompt(REVIEWER_ROLE))
-  assert.ok(sys.startsWith('你被指派的角色是「超夢」'))
+  assert.ok(sys.startsWith('你現在是一位資深的超夢。'))
 })
 
 test('buildReviewerSystemPrompt — returns non-empty fallback when no role', () => {

@@ -412,8 +412,11 @@ export function buildClaudeCommand(
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
-  const sys = resolveSystemPrompt(systemPrompt, role)
-  const basePrompt = opts?.resume ? buildResumePrompt(task) : buildPrompt(task)
+  const isExecution = task.progress?.planDone === true
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
+  const basePrompt = isExecution
+    ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
+    : buildPlanningPrompt(task)
   const prompt = workspacePath
     ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
     : basePrompt
@@ -465,8 +468,7 @@ function assembleCommand(
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
   const combined = `${systemPrompt}\n\n${prompt}`
   if (agent === 'codex') {
-    // --full-auto: workspace-write sandbox with automatic command approval.
-    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
+    return `codex --model ${model} ${shellQuote(combined)}\r`
   }
   if (agent === 'copilot') {
     // --allow-all-tools: required for non-interactive runs (auto-approve);
@@ -518,7 +520,7 @@ export function buildReviewCommand(
   // Codex / Gemini / Copilot: fold system prompt into the body (no separate flag).
   const combined = `${reviewSysPrompt}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
+    return `codex --model ${model} ${shellQuote(combined)}\r`
   }
   if (agent === 'copilot') {
     return `copilot --allow-all-tools --model ${model} -p ${shellQuote(combined)}\r`
@@ -574,7 +576,7 @@ export function buildReviseCommand(
   // Codex / Gemini / Copilot: fresh launch, recorded progress folded into the prompt.
   const combined = `${sys}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --full-auto --model ${model} ${shellQuote(combined)}\r`
+    return `codex --model ${model} ${shellQuote(combined)}\r`
   }
   if (agent === 'copilot') {
     return `copilot --allow-all-tools --model ${model} -p ${shellQuote(combined)}\r`
@@ -628,9 +630,14 @@ export function taskExecutionModel(
 }
 
 /**
- * Build the launch command for the task's chosen agent CLI. Codex and Gemini
- * have no separate system-prompt flag, so the effective system prompt (incl.
- * the progress protocol) is folded into the prompt text instead.
+ * Build the launch command for the task's current lifecycle phase.
+ *
+ * Planning (`planDone !== true`) uses the planning agent/model and only the PM
+ * system prompt. Execution (`planDone === true`) switches to the execution
+ * agent/model and injects the executor role.
+ *
+ * Codex and Gemini have no separate system-prompt flag, so the effective
+ * system prompt (incl. the progress protocol) is folded into the prompt text.
  *
  * For Claude the executor session is pinned to `executorSessionId(task.id)`:
  *   - First launch: `--session-id <uuid>` creates and pins the session.
@@ -658,15 +665,18 @@ export function buildAgentCommand(
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
-  const agent = taskExecutionAgent(task)
-  const sys = resolveSystemPrompt(systemPrompt, role)
-  // Claude can resume a prior session; Codex/Gemini fold the recorded progress
-  // into the prompt (soft resume) regardless of opts.resume.
-  const basePrompt =
-    opts?.resume && agent === 'claude' ? buildResumePrompt(task) : buildPrompt(task)
+  const isExecution = task.progress?.planDone === true
+  const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
+  const model = isExecution ? taskExecutionModel(task) : taskModel(task)
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
+  const basePrompt = isExecution
+    ? opts?.resume && agent === 'claude'
+      ? buildResumePrompt(task)
+      : buildExecutionPrompt(task)
+    : buildPlanningPrompt(task)
   const prompt = workspacePath
     ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
     : basePrompt
   const sessionId = agent === 'claude' ? executorSessionId(task.id) : undefined
-  return assembleCommand(agent, sys, prompt, taskExecutionModel(task), opts, task.worktreePath, sessionId, workspacePath)
+  return assembleCommand(agent, sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
 }
