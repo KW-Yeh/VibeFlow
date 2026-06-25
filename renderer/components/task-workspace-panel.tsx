@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   Check,
   CheckCircle2,
@@ -163,11 +165,7 @@ function TaskInfo({
         </div>
       )}
 
-      {task.description && (
-        <p className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-2.5 text-xs leading-relaxed text-muted-foreground">
-          {task.description}
-        </p>
-      )}
+      {task.description && <MarkdownContent source={task.description} />}
 
       {steps.length > 0 && (
         <div className="space-y-2">
@@ -217,6 +215,44 @@ function TaskInfo({
   )
 }
 
+function MarkdownContent({ source }: { source: string }) {
+  return (
+    <div className="prose prose-invert prose-sm max-w-none break-words rounded-md bg-muted/30 p-3 text-muted-foreground">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ children, ...props }) => (
+            <a {...props} className="break-words text-primary underline underline-offset-2">
+              {children}
+            </a>
+          ),
+          code: ({ children, className, ...props }) => (
+            <code
+              {...props}
+              className={cn(
+                'break-words rounded bg-background/70 px-1 py-0.5 text-[0.85em]',
+                className
+              )}
+            >
+              {children}
+            </code>
+          ),
+          pre: ({ children, ...props }) => (
+            <pre
+              {...props}
+              className="max-w-full overflow-x-auto rounded-md bg-background/70 p-3 text-xs"
+            >
+              {children}
+            </pre>
+          ),
+        }}
+      >
+        {source}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function PlanContent({ taskId }: { taskId: string }) {
   const [plan, setPlan] = useState<string | null | undefined>(undefined)
 
@@ -252,11 +288,7 @@ function PlanContent({ taskId }: { taskId: string }) {
     )
   }
 
-  return (
-    <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs leading-relaxed text-muted-foreground">
-      {plan}
-    </pre>
-  )
+  return <MarkdownContent source={plan} />
 }
 
 function DiffFileViewer({ file }: { file: DiffFile }) {
@@ -275,7 +307,7 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
           </span>
         )}
       </div>
-      <div className="min-w-0 overflow-x-hidden text-[11px]">
+      <div className="min-w-0 max-w-full overflow-x-hidden text-[11px] [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:w-full [&_table]:max-w-full [&_table]:table-fixed [&_td]:max-w-0 [&_td]:align-top">
         <ReactDiffViewer
           oldValue={file.oldValue}
           newValue={file.newValue}
@@ -283,26 +315,47 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
           useDarkTheme
           compareMethod={DiffMethod.LINES}
           renderContent={(source) => (
-            <span className="whitespace-pre-wrap break-words">{source}</span>
+            <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words">
+              {source}
+            </span>
           )}
           styles={{
             diffContainer: {
               width: '100%',
+              maxWidth: '100%',
+              overflowX: 'hidden',
+            },
+            line: {
+              width: '100%',
+            },
+            content: {
+              width: '100%',
+              maxWidth: '100%',
               overflowX: 'hidden',
             },
             contentText: {
+              display: 'block',
+              width: '100%',
+              maxWidth: '100%',
               whiteSpace: 'pre-wrap',
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
             },
             lineContent: {
+              display: 'block',
+              width: '100%',
+              maxWidth: '100%',
               whiteSpace: 'pre-wrap',
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
             },
             gutter: {
+              maxWidth: '2.5rem',
               minWidth: '2.5rem',
               width: '2.5rem',
+              paddingLeft: '0.25rem',
+              paddingRight: '0.25rem',
+              whiteSpace: 'nowrap',
             },
           }}
         />
@@ -311,7 +364,7 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
   )
 }
 
-function DiffContent({ taskId }: { taskId: string }) {
+function DiffSection({ taskId }: { taskId: string }) {
   const [files, setFiles] = useState<DiffFile[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -336,45 +389,43 @@ function DiffContent({ taskId }: { taskId: string }) {
     }
   }, [taskId])
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
-        讀取 diff 中…
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
-        {error}
-      </div>
-    )
-  }
-
-  if (files.length === 0) {
-    return (
-      <p className="py-10 text-center text-xs text-muted-foreground">
-        與基準分支相比沒有已提交的變更。
-      </p>
-    )
-  }
-
   return (
-    <>
-      <div className="space-y-3">
-        <div className="flex justify-end">
-          <Button size="sm" variant="outline" onClick={() => setExpanded(true)}>
+    <InfoSection
+      title="Git diff"
+      icon={<GitCompare className="size-3.5" />}
+      actions={
+        files.length > 0 ? (
+          <IconButton
+            aria-label="放大檢視 Git diff"
+            title="放大檢視"
+            className="p-1"
+            onClick={() => setExpanded(true)}
+          >
             <Maximize2 className="size-3.5" />
-            放大檢視
-          </Button>
+          </IconButton>
+        ) : null
+      }
+    >
+      {loading ? (
+        <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          讀取 diff 中…
         </div>
-        {files.map((file) => (
-          <DiffFileViewer key={file.path} file={file} />
-        ))}
-      </div>
-
+      ) : error ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+          {error}
+        </div>
+      ) : files.length === 0 ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">
+          與基準分支相比沒有已提交的變更。
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {files.map((file) => (
+            <DiffFileViewer key={file.path} file={file} />
+          ))}
+        </div>
+      )}
       {expanded && (
         <div className="fixed inset-0 z-50 flex bg-background/95 text-foreground">
           <div className="flex min-h-0 w-full flex-col">
@@ -403,7 +454,7 @@ function DiffContent({ taskId }: { taskId: string }) {
           </div>
         </div>
       )}
-    </>
+    </InfoSection>
   )
 }
 
@@ -566,10 +617,7 @@ export function TaskWorkspacePanel({
             )}
           </InfoSection>
 
-          <InfoSection title="Git diff" icon={<GitCompare className="size-3.5" />}>
-            <DiffContent taskId={task.id} />
-          </InfoSection>
-
+          <DiffSection taskId={task.id} />
         </aside>
       </main>
     </div>
