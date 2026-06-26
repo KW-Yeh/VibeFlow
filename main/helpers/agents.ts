@@ -67,10 +67,13 @@ export function defaultModelFor(id: AgentCliId): string {
   return agent.models[0].id
 }
 
-async function which(bin: string): Promise<boolean> {
+async function commandExists(bin: string): Promise<boolean> {
   try {
-    await pexec('which', [bin], {
+    const command = process.platform === 'win32' ? 'where.exe' : 'which'
+    await pexec(command, [bin], {
       env: execEnv(),
+      timeout: 2500,
+      windowsHide: true,
     })
     return true
   } catch {
@@ -88,7 +91,7 @@ async function which(bin: string): Promise<boolean> {
  */
 export async function detectAgents(): Promise<AgentCli[]> {
   const available = await Promise.all(
-    AGENT_CLIS.map((agent) => which(agent.bin))
+    AGENT_CLIS.map((agent) => commandExists(agent.bin))
   )
   return AGENT_CLIS.filter((_, i) => available[i])
 }

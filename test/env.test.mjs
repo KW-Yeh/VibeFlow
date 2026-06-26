@@ -1,40 +1,76 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import os from 'node:os'
+import path from 'node:path'
 
-// Control PATH BEFORE the first buildEnv() call so the memoised result is
-// deterministic. buildEnv reads process.env lazily (inside the function), not
-// at import time, so setting it here governs what the first call sees.
-process.env.PATH = '/opt/homebrew/bin:/custom/tool/bin'
+const delimiter = path.delimiter
+const envPathKey =
+  Object.keys(process.env).find((k) => k.toLowerCase() === 'path') ??
+  (process.platform === 'win32' ? 'Path' : 'PATH')
+const duplicateEntry = process.platform === 'win32'
+  ? process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'npm')
+    : path.join(os.homedir(), '.local', 'bin')
+  : '/opt/homebrew/bin'
+const customEntry = process.platform === 'win32'
+  ? path.join(os.homedir(), 'custom-tool-bin')
+  : '/custom/tool/bin'
+
+// Control PATH and a probe variable BEFORE the first buildEnv() call so the
+// memoised result is deterministic. buildEnv reads process.env lazily.
+process.env[envPathKey] = [duplicateEntry, customEntry].join(delimiter)
+process.env.VF_ENV_TEST_EXISTING = 'present'
 
 const { buildEnv } = await import('../main/helpers/env.ts')
 
-test('buildEnv — preserves existing PATH entries in order', () => {
-  const parts = buildEnv().PATH.split(':')
-  assert.equal(parts[0], '/opt/homebrew/bin')
-  assert.equal(parts[1], '/custom/tool/bin')
+function pathParts() {
+  const env = buildEnv()
+  const key = Object.keys(env).find((k) => k.toLowerCase() === 'path')
+  assert.ok(key, 'expected a PATH-like env key')
+  return env[key].split(delimiter)
+}
+
+test('buildEnv preserves existing PATH entries in order', () => {
+  const parts = pathParts()
+  assert.equal(parts[0], duplicateEntry)
+  assert.equal(parts[1], customEntry)
 })
 
-test('buildEnv — appends the standard CLI bin locations', () => {
-  const parts = buildEnv().PATH.split(':')
-  assert.ok(parts.includes('/usr/local/bin'))
-  assert.ok(parts.includes('/usr/bin'))
-  assert.ok(parts.includes('/opt/homebrew/sbin'))
+test('buildEnv appends the standard CLI bin locations', () => {
+  const parts = pathParts()
+  if (process.platform === 'win32') {
+    if (process.env.APPDATA) {
+      assert.ok(parts.includes(path.join(process.env.APPDATA, 'npm')))
+    }
+    if (process.env.LOCALAPPDATA) {
+      assert.ok(
+        parts.includes(
+          path.join(process.env.LOCALAPPDATA, 'Programs', 'OpenAI', 'Codex', 'bin')
+        )
+      )
+    }
+    assert.ok(parts.includes(path.join(os.homedir(), '.local', 'bin')))
+  } else {
+    assert.ok(parts.includes('/usr/local/bin'))
+    assert.ok(parts.includes('/usr/bin'))
+    assert.ok(parts.includes('/opt/homebrew/sbin'))
+  }
 })
 
-test('buildEnv — never duplicates an entry already on PATH', () => {
-  const parts = buildEnv().PATH.split(':')
-  const homebrew = parts.filter((p) => p === '/opt/homebrew/bin')
-  assert.equal(homebrew.length, 1, '/opt/homebrew/bin must appear exactly once')
+test('buildEnv never duplicates an entry already on PATH', () => {
+  const parts = pathParts()
+  const matches = parts.filter((p) => {
+    return process.platform === 'win32'
+      ? p.toLowerCase() === duplicateEntry.toLowerCase()
+      : p === duplicateEntry
+  })
+  assert.equal(matches.length, 1, `${duplicateEntry} must appear exactly once`)
 })
 
-test('buildEnv — copies through other env vars', () => {
-  process.env.VF_PROBE_VAR = 'present'
-  // Cached: the value captured at first call. We set PATH before first call,
-  // but VF_PROBE_VAR may post-date the cache — assert on PATH-independent keys
-  // that existed at import: HOME is always present in the copied env.
-  assert.equal(typeof buildEnv().HOME, 'string')
+test('buildEnv copies through other env vars', () => {
+  assert.equal(buildEnv().VF_ENV_TEST_EXISTING, 'present')
 })
 
-test('buildEnv — is memoised (returns the same reference)', () => {
+test('buildEnv is memoised (returns the same reference)', () => {
   assert.equal(buildEnv(), buildEnv())
 })
