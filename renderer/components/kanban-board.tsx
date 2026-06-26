@@ -11,15 +11,13 @@ import {
 import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
-  buildClaudeBootCommand,
-  buildClaudeInjectText,
   buildReviseCommand,
   buildReviewCommand,
   isTaskComplete,
   taskAgent,
   taskExecutionAgent,
 } from '@/lib/claude'
-import { termKill } from '@/lib/api'
+import { onTermData, termInput, termKill } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -84,14 +82,58 @@ interface KanbanBoardProps {
 interface LaunchEntry {
   command: string
   nonce: number
-  autoSend?: string | null
-  autoSendDelay?: number
-  injectCommand?: string | null
+  modelSelection?: boolean
+}
+
+interface ModelStatusProbe {
+  buffer: string
+}
+
+interface ModelSelectionLaunch {
+  resume: boolean
 }
 
 /** Derive the reviewer session key from a task id (mirrors main/helpers/pty.ts). */
 function reviewSessionKey(taskId: string): string {
   return `${taskId}:review`
+}
+
+function stripAnsi(input: string): string {
+  return input
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
+function normalizeClaudeModel(raw: string): string | null {
+  const value = raw
+    .trim()
+    .replace(/[│┃║|].*$/, '')
+    .replace(/[()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+  if (!value) return null
+  const id = value
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+  if (id.startsWith('claude-')) return id
+  if (/opus/.test(value)) return 'opus'
+  if (/haiku/.test(value)) return 'haiku'
+  if (/sonnet/.test(value)) return 'sonnet'
+  return id || null
+}
+
+function parseClaudeStatusModel(output: string): string | null {
+  const text = stripAnsi(output)
+  const patterns = [
+    /(?:current\s+)?model\s*[:：]\s*([^\r\n]+)/i,
+    /(?:^|\n)\s*model\s+([^\r\n]+)/i,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) return normalizeClaudeModel(match[1])
+  }
+  return null
 }
 
 export function KanbanBoard({
@@ -137,6 +179,15 @@ export function KanbanBoard({
   const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
   const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
   const executionStartedRef = useRef<Set<string>>(new Set())
+  const modelStatusProbeRef = useRef<Record<string, ModelStatusProbe>>({})
+  const modelSelectionLaunchRef = useRef<Record<string, ModelSelectionLaunch>>({})
+
+  useEffect(() => {
+    return onTermData(({ sessionKey, data }) => {
+      const probe = modelStatusProbeRef.current[sessionKey]
+      if (probe) probe.buffer += data
+    })
+  }, [])
 
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
@@ -159,35 +210,83 @@ export function KanbanBoard({
     }))
   }
 
-  // For Claude: boot the REPL without a model, auto-send /model so the user picks
-  // via the native TUI, then show a "注入 Prompt" button to inject the task prompt.
-  // For other agents: send the full command directly (they use --model in the CLI).
-  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
-    const workspacePath = resolveWorkspacePath(task)
-    const isExecution = task.progress?.planDone === true
-    const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
-    const role = roleById(task.roleId)
+  const currentPhaseAgent = (task: Task): AgentCliId =>
+    task.progress?.planDone === true ? taskExecutionAgent(task) : taskAgent(task)
 
-    if (agent === 'claude') {
-      const bootCmd = buildClaudeBootCommand(task, systemPrompt, role ?? undefined, opts, workspacePath)
-      const injectText = buildClaudeInjectText(task, opts, workspacePath)
-      markMounted(task.id)
-      setTerminalLaunch((prev) => ({
-        ...prev,
-        [task.id]: {
-          command: bootCmd,
-          nonce: (prev[task.id]?.nonce ?? 0) + 1,
-          autoSend: '/model\r',
-          autoSendDelay: 1500,
-          injectCommand: injectText,
-        },
-      }))
-    } else {
-      armTerminalCommand(
-        task.id,
-        buildWorkspaceLaunchCommand({ task, role, systemPrompt, workspacePath, resume: opts?.resume })
-      )
+  const currentPhaseModel = (task: Task): string | undefined =>
+    task.progress?.planDone === true
+      ? task.executionModel
+      : task.model
+
+  const shouldSelectClaudeModel = (task: Task): boolean =>
+    currentPhaseAgent(task) === 'claude' && !currentPhaseModel(task)
+
+  const armModelSelection = (task: Task, opts?: { resume?: boolean }) => {
+    modelSelectionLaunchRef.current[task.id] = { resume: opts?.resume === true }
+    markMounted(task.id)
+    setTerminalLaunch((prev) => ({
+      ...prev,
+      [task.id]: {
+        command: 'claude --permission-mode auto\r/model\r',
+        nonce: (prev[task.id]?.nonce ?? 0) + 1,
+        modelSelection: true,
+      },
+    }))
+  }
+
+  // Send one complete launch command. Splitting Claude into boot + `/model` +
+  // prompt injection can race with long shell-quoted system prompts and leave
+  // the shell stuck at `quote>`.
+  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
+    if (shouldSelectClaudeModel(task)) {
+      armModelSelection(task, opts)
+      return
     }
+    const workspacePath = resolveWorkspacePath(task)
+    const role = roleById(task.roleId)
+    armTerminalCommand(
+      task.id,
+      buildWorkspaceLaunchCommand({ task, role, systemPrompt, workspacePath, resume: opts?.resume })
+    )
+  }
+
+  const armFormalLaunch = (
+    task: Task,
+    opts?: { resume?: boolean; omitModel?: boolean }
+  ) => {
+    const workspacePath = resolveWorkspacePath(task)
+    const role = roleById(task.roleId)
+    armTerminalCommand(
+      task.id,
+      buildWorkspaceLaunchCommand({
+        task,
+        role,
+        systemPrompt,
+        workspacePath,
+        resume: opts?.resume,
+        omitModel: opts?.omitModel,
+      })
+    )
+  }
+
+  const handleConfirmModelSelection = (task: Task) => {
+    modelStatusProbeRef.current[task.id] = { buffer: '' }
+    termInput(task.id, '/status\r')
+    setTimeout(() => {
+      const probe = modelStatusProbeRef.current[task.id]
+      delete modelStatusProbeRef.current[task.id]
+      const selectionLaunch = modelSelectionLaunchRef.current[task.id]
+      delete modelSelectionLaunchRef.current[task.id]
+      const model = parseClaudeStatusModel(probe?.buffer ?? '')
+      termKill(task.id)
+      const nextTask = model ? patchClaudeModel(task, model) : task
+      setTimeout(() => {
+        armFormalLaunch(nextTask, {
+          resume: selectionLaunch?.resume === true,
+          omitModel: !model,
+        })
+      }, 150)
+    }, 900)
   }
 
   // Merge a patch into a task across all columns and persist.
@@ -201,6 +300,19 @@ export function KanbanBoard({
       ),
       done: board.done.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
     })
+  }
+
+  const patchClaudeModel = (task: Task, model: string): Task => {
+    const patch: Partial<Task> = task.progress?.planDone === true
+      ? { executionModel: model }
+      : {
+          model,
+          ...(taskExecutionAgent(task) === 'claude' && !task.executionModel
+            ? { executionModel: model }
+            : {}),
+        }
+    patchTask(task.id, patch)
+    return { ...task, ...patch }
   }
 
   // --- Auto-assign pipeline orchestration ---
@@ -508,6 +620,7 @@ export function KanbanBoard({
                       launch={terminalLaunch[taskId]}
                       onRun={runTask}
                       onStart={startTask}
+                      onConfirmModelSelection={handleConfirmModelSelection}
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}

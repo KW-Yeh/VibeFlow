@@ -394,6 +394,8 @@ export interface LaunchOptions {
    * have run in the same worktree.
    */
   resume?: boolean
+  /** Omit --model for Claude so the CLI uses the user's persisted default. */
+  omitModel?: boolean
 }
 
 /**
@@ -478,7 +480,7 @@ function assembleCommand(
     // Grant the agent read/write access to the workspace folder so it can read
     // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    const modelFlag = model ? ` --model ${model}` : ''
+    const modelFlag = model && !opts?.omitModel ? ` --model ${model}` : ''
     const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
@@ -496,59 +498,6 @@ function assembleCommand(
   // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
   // interactive (mirrors how the claude launch keeps the session open).
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
-}
-
-/**
- * Replace newlines with ESC+CR so the string can be typed into Claude's
- * interactive REPL without prematurely submitting mid-prompt. ESC+CR (the
- * same sequence Shift+Enter produces) inserts a newline in the input buffer.
- */
-function sanitizeForInject(text: string): string {
-  return text.replace(/\n/g, '\x1b\r')
-}
-
-/**
- * Start command for the boot+inject flow (Claude only). Launches Claude in
- * interactive REPL mode without specifying a model or prompt, so the user can
- * pick the model via the native /model TUI before we inject the task prompt.
- * System prompt is installed via --append-system-prompt at launch time.
- */
-export function buildClaudeBootCommand(
-  task: Pick<Task, 'id' | 'progress' | 'worktreePath'>,
-  systemPrompt?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0],
-  opts?: LaunchOptions,
-  workspacePath?: string
-): string {
-  const isExecution = task.progress?.planDone === true
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
-  const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
-  const settings = task.worktreePath
-    ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
-    : ''
-  const sessionFlag = opts?.resume ? ` --resume ${sessionId}` : ` --session-id ${sessionId}`
-  const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-  return `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}${addDir} --append-system-prompt ${shellQuote(sys)}\r`
-}
-
-/**
- * Prompt text to type into the already-running Claude REPL after the user
- * has selected a model. Newlines are replaced with ESC+CR so the whole prompt
- * arrives as a single user turn rather than triggering multiple submits.
- */
-export function buildClaudeInjectText(
-  task: Pick<Task, 'title' | 'description' | 'progress'>,
-  opts?: LaunchOptions,
-  workspacePath?: string
-): string {
-  const isExecution = task.progress?.planDone === true
-  const basePrompt = isExecution
-    ? (opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task))
-    : buildPlanningPrompt(task)
-  const prompt = workspacePath
-    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
-    : basePrompt
-  return sanitizeForInject(prompt) + '\r'
 }
 
 /**
@@ -580,9 +529,9 @@ export function buildReviewCommand(
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
-    // Omit --model so Claude inherits the globally-selected model (user picked via /model at boot).
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${addDir}`
+    const modelFlag = model ? ` --model ${model}` : ''
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${addDir}`
     const sysArg = reviewSysPrompt
       ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
       : ''
@@ -641,8 +590,8 @@ export function buildReviseCommand(
       ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
       : ''
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    // Omit --model so Claude inherits the globally-selected model (user picked via /model at boot).
-    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${settings}${addDir}`
+    const modelFlag = model ? ` --model ${model}` : ''
+    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
   }
   // Codex / Gemini / Copilot: fresh launch, recorded progress folded into the prompt.
@@ -755,7 +704,7 @@ export function buildAgentCommand(
 ): string {
   const isExecution = task.progress?.planDone === true
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
-  const model = isExecution ? taskExecutionModel(task) : taskModel(task)
+  const model = opts?.omitModel ? '' : isExecution ? taskExecutionModel(task) : taskModel(task)
   const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'

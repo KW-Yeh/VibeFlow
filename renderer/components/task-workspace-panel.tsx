@@ -43,9 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
 interface LaunchEntry {
   command: string
   nonce: number
-  autoSend?: string | null
-  autoSendDelay?: number
-  injectCommand?: string | null
+  modelSelection?: boolean
 }
 
 interface TaskWorkspacePanelProps {
@@ -57,6 +55,7 @@ interface TaskWorkspacePanelProps {
   launch?: LaunchEntry
   onRun: (task: Task) => void
   onStart: (task: Task) => void
+  onConfirmModelSelection: (task: Task) => void
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
@@ -496,6 +495,7 @@ export function TaskWorkspacePanel({
   launch,
   onRun,
   onStart,
+  onConfirmModelSelection,
   onComplete,
   onEdit,
   onDelete,
@@ -588,11 +588,18 @@ export function TaskWorkspacePanel({
             cwd={cwd}
             launchCommand={launchCommand}
             launchNonce={launchNonce}
-            autoSend={launch?.autoSend}
-            autoSendDelay={launch?.autoSendDelay}
-            injectCommand={launch?.injectCommand}
-            launchLabel={launch?.injectCommand ? '注入 Prompt' : (task.launchedAt ? '重跑' : '開始任務')}
-            onLaunchRequest={canLaunch && !launch?.injectCommand ? requestLaunch : undefined}
+            launchLabel={
+              launch?.modelSelection
+                ? '確認模型並開始'
+                : task.launchedAt ? '重跑' : '開始任務'
+            }
+            onLaunchRequest={
+              canLaunch
+                ? launch?.modelSelection
+                  ? () => onConfirmModelSelection(task)
+                  : requestLaunch
+                : undefined
+            }
             readOnly={column === 'done'}
           />
         </div>
@@ -651,12 +658,14 @@ export function buildWorkspaceLaunchCommand({
   systemPrompt,
   workspacePath,
   resume,
+  omitModel,
 }: {
   task: Task
   role: Role | null
   systemPrompt: string
   workspacePath?: string
   resume?: boolean
+  omitModel?: boolean
 }): string {
-  return buildAgentCommand(task, systemPrompt, role ?? undefined, { resume }, workspacePath)
+  return buildAgentCommand(task, systemPrompt, role ?? undefined, { resume, omitModel }, workspacePath)
 }
