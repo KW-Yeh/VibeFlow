@@ -7,7 +7,6 @@ test('AGENT_CLIS — keeps the supported agent registry lightweight and static',
     'claude',
     'codex',
     'gemini',
-    'copilot',
   ])
 
   const claudeModels = AGENT_CLIS.find((agent) => agent.id === 'claude')
@@ -23,5 +22,4 @@ test('defaultModelFor — returns the first model for each agent', () => {
   assert.equal(defaultModelFor('claude'), 'sonnet')
   assert.equal(defaultModelFor('codex'), 'gpt-5.5')
   assert.equal(defaultModelFor('gemini'), 'gemini-2.5-flash')
-  assert.equal(defaultModelFor('copilot'), 'gpt-5.1-codex-mini')
 })

@@ -109,10 +109,6 @@ function buildRawAgentCommand(
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
     return `codex exec --model ${shellQuote(model)} --sandbox workspace-write --ask-for-approval never -C ${shellQuote(worktreePath)}${addDir} --color never ${shellQuote(combined)}`
   }
-  if (agentCli === 'copilot') {
-    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    return `copilot --allow-all-tools --model ${shellQuote(model)}${addDir} -p ${shellQuote(combined)}`
-  }
   return `gemini --yolo -i --model ${shellQuote(model)} ${shellQuote(combined)}`
 }
 

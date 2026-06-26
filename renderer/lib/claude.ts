@@ -487,12 +487,6 @@ function assembleCommand(
   if (agent === 'codex') {
     return `codex --model ${model} ${shellQuote(combined)}\r`
   }
-  if (agent === 'copilot') {
-    // --allow-all-tools: required for non-interactive runs (auto-approve);
-    // -p executes the prompt directly. copilot has no separate system-prompt
-    // flag, so the system prompt is folded into the body like codex/gemini.
-    return `copilot --allow-all-tools --model ${model} -p ${shellQuote(combined)}\r`
-  }
   // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
   // interactive (mirrors how the claude launch keeps the session open).
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
@@ -535,13 +529,10 @@ export function buildReviewCommand(
       : ''
     return `${head}${sysArg} ${shellQuote(prompt)}\r`
   }
-  // Codex / Gemini / Copilot: fold system prompt into the body (no separate flag).
+  // Codex / Gemini: fold system prompt into the body (no separate flag).
   const combined = `${reviewSysPrompt}\n\n${prompt}`
   if (agent === 'codex') {
     return `codex --model ${model} ${shellQuote(combined)}\r`
-  }
-  if (agent === 'copilot') {
-    return `copilot --allow-all-tools --model ${model} -p ${shellQuote(combined)}\r`
   }
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
@@ -592,13 +583,10 @@ export function buildReviseCommand(
     const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
   }
-  // Codex / Gemini / Copilot: fresh launch, recorded progress folded into the prompt.
+  // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
   const combined = `${sys}\n\n${prompt}`
   if (agent === 'codex') {
     return `codex --model ${model} ${shellQuote(combined)}\r`
-  }
-  if (agent === 'copilot') {
-    return `copilot --allow-all-tools --model ${model} -p ${shellQuote(combined)}\r`
   }
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
@@ -608,7 +596,6 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
   gemini: 'Gemini CLI',
-  copilot: 'GitHub Copilot CLI',
 }
 
 /**
@@ -620,7 +607,6 @@ const DEFAULT_MODELS: Record<AgentCliId, string> = {
   claude: 'sonnet',
   codex: 'gpt-5.5',
   gemini: 'gemini-2.5-flash',
-  copilot: 'gpt-5.1-codex-mini',
 }
 
 const LEGACY_MODEL_FALLBACKS: Partial<Record<AgentCliId, Record<string, string>>> = {

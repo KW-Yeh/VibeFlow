@@ -750,7 +750,6 @@ export async function generateCommitMessage(
   const cliFlags: Record<string, string[]> = {
     claude: ['-p'],
     codex: ['-p'],
-    copilot: ['-p'],
     gemini: ['-p'],
   }
 
