@@ -162,6 +162,32 @@ function shellQuote(s: string): string {
 }
 
 /**
+ * Build a Claude launch that resumes the pinned session when it exists, else
+ * starts it fresh. `claude --resume <id>` hard-fails ("No conversation found")
+ * when the session was never persisted — e.g. a prior launch that died before
+ * writing history — leaving a task that records `launchedAt` permanently
+ * unrunnable. The session lives at `~/.claude/projects/<cwd→dashes>/<id>.jsonl`
+ * (every non-alphanumeric in the cwd becomes a dash); a shell `-f` test at
+ * launch time picks `--resume` or `--session-id` accordingly. `tail` is every
+ * argument after the session flag (flags + system prompt + prompt), identical
+ * for both branches. Falls back to a plain resume when the cwd is unknown.
+ */
+function claudeResumeOrFresh(
+  sessionId: string,
+  worktreePath: string | undefined,
+  tail: string
+): string {
+  if (!worktreePath) return `claude --resume ${sessionId} ${tail}\r`
+  const munged = worktreePath.replace(/[^a-zA-Z0-9]/g, '-')
+  const sessionFile = `"$HOME/.claude/projects/${munged}/${sessionId}.jsonl"`
+  return (
+    `if [ -f ${sessionFile} ]; then ` +
+    `claude --resume ${sessionId} ${tail}; else ` +
+    `claude --session-id ${sessionId} ${tail}; fi\r`
+  )
+}
+
+/**
  * Directory the Claude hooks append one JSON file per Task-tool event into,
  * relative to the session cwd. Must match SUBAGENTS_DIR in
  * main/helpers/subagents.ts (the watcher reading these files).
@@ -469,18 +495,19 @@ function assembleCommand(
     const settings = worktreePath
       ? ` --settings ${shellQuote(buildSubAgentSettings(worktreePath))}`
       : ''
-    let sessionFlag: string
-    if (sessionId) {
-      sessionFlag = opts?.resume ? ` --resume ${sessionId}` : ` --session-id ${sessionId}`
-    } else {
-      sessionFlag = opts?.resume ? ' --continue' : ''
-    }
     // Grant the agent read/write access to the workspace folder so it can read
     // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
-    const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
-    return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
+    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
+    const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
+    if (sessionId && opts?.resume) {
+      return claudeResumeOrFresh(sessionId, worktreePath, tail)
+    }
+    const sessionFlag = sessionId
+      ? `--session-id ${sessionId} `
+      : opts?.resume ? '--continue ' : ''
+    return `claude ${sessionFlag}${tail}\r`
   }
   // Codex / Gemini have no separate system-prompt flag — fold it into the body.
   const combined = `${systemPrompt}\n\n${prompt}`
@@ -580,8 +607,9 @@ export function buildReviseCommand(
       : ''
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
-    const head = `claude --resume ${executorSessionId(task.id)} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
-    return `${head} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}\r`
+    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
+    const tail = `${flags} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}`
+    return claudeResumeOrFresh(executorSessionId(task.id), task.worktreePath, tail)
   }
   // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
   const combined = `${sys}\n\n${prompt}`
