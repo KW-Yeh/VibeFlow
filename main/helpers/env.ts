@@ -89,5 +89,7 @@ export function buildEnv(): Record<string, string> {
  * the platform's canonical PATH key (`Path` on Windows, `PATH` elsewhere).
  */
 export function execEnv(): NodeJS.ProcessEnv {
-  return { ...buildEnv() }
+  // buildEnv() copies all of process.env, so NODE_ENV is present at runtime;
+  // the index-signature type just doesn't prove it to the stricter ProcessEnv.
+  return { ...buildEnv() } as NodeJS.ProcessEnv
 }
