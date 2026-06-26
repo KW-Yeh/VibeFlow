@@ -32,14 +32,18 @@ the project folder is chosen **per task** at creation time (there is no global
 |---|---|---|
 | Dev (hot reload) | `npm run dev` | Launches Next dev (port 8888) + Electron with `--remote-debugging-port=5858` |
 | Rebuild (fast, default) | `./rebuild.sh` | Builds **only** `dist/mac-arm64/VibeFlow.app` — no dmg/zip, no compression, keeps `renderer/.next` for incremental Next builds (~10s). Use for all local iteration. |
+| Rebuild (restricted runner) | `./rebuild.sh --webpack` | Same fast rebuild, but renderer uses `next build --webpack` instead of Turbopack. Use in Docker, sandbox, CI-like runners where IPC / local port binding is blocked. |
 | Build installers (slow) | `./rebuild.sh --release` | Full clean + `nextron build` → `.app` **+ `.dmg` + `.zip`** with max compression (what CI publishes). Only when you actually need the installers. |
+| Build installers (restricted runner) | `./rebuild.sh --release --webpack` | Full installer build using Next's webpack compiler. |
 | Package app (raw) | `npm run build` | `nextron build` → `dist/` (`.app`, `.dmg`, `.zip`, macOS arm64). Same as `--release` without the clean; prefer `./rebuild.sh`. |
+| Package app (webpack) | `npm run build:webpack -- <electron-builder args>` | CI/Docker/sandbox-safe package path: `next build --webpack`, nextron main-process webpack, then `electron-builder`. |
 | Rebuild + hot update | `./rebuild.sh --install` | Fast build, then swap the new `.app` over the running/installed copy — the live app shows a「立即重啟」banner (see `main/helpers/update.ts`) |
 | Rebuild + auto relaunch | `./rebuild.sh --relaunch` | `--install`, then quit + reopen VibeFlow automatically |
 | Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev app store and omit it for the packaged app store |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
-| Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app` |
+| Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app`. Uses the default Turbopack compiler for local development. |
+| Renderer build only (restricted runner) | `npm run build:renderer:webpack` | Same renderer build but forces `next build --webpack`; use this in Codex sandbox, Docker, or CI when Turbopack IPC / port binding is blocked. |
 
 There is **no lint or test runner configured** (no ESLint/Jest/Vitest). Do not invent
 one unless asked. "Lint" in the global playbook maps to **typecheck** here.
@@ -137,7 +141,7 @@ A change is done only when, on the affected scope:
 
 1. `npx tsc --noEmit -p tsconfig.json` — clean (if `main/` touched).
 2. `npx tsc --noEmit -p renderer/tsconfig.json` — clean (if `renderer/` touched).
-3. `cd renderer && NODE_ENV=production npx next build` — succeeds (renderer changes).
+3. `cd renderer && NODE_ENV=production npx next build` — succeeds for local renderer changes. In Docker, sandbox, or CI-like restricted runners, use `npm run build:renderer:webpack` instead.
 4. For behavioral changes, a **runtime check** in the live app (see below).
 
 If you packaged (`npm run build`), confirm the `.app` boots without a crash loop.

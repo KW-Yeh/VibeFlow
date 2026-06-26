@@ -6,6 +6,8 @@
 #                            and keep renderer/.next so Next.js builds incrementally
 #   ./rebuild.sh --release   FULL: clean everything + build dmg/zip with max compression
 #                            (what CI publishes; only needed when you want the installers)
+#   ./rebuild.sh --webpack   use Next's webpack compiler instead of Turbopack
+#                            (for Docker / sandbox / CI-like restricted runners)
 #   ./rebuild.sh --check     also launch the packaged .app for ~5s to confirm it boots
 #   ./rebuild.sh --install   also install the new build over the running / installed
 #                            VibeFlow.app (the running app then shows a "立即重啟" banner)
@@ -19,12 +21,14 @@ CHECK=false
 INSTALL=false
 RELAUNCH=false
 RELEASE=false
+WEBPACK=false
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK=true ;;
     --install) INSTALL=true ;;
     --relaunch) INSTALL=true; RELAUNCH=true ;;
     --release) RELEASE=true ;;
+    --webpack) WEBPACK=true ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -47,8 +51,13 @@ resolve_install_target() {
 if [[ "$RELEASE" == true ]]; then
   echo "==> Cleaning stale build artifacts (app/ renderer/.next dist/)"
   rm -rf app renderer/.next dist
-  echo "==> Building installers (nextron build: dmg + zip, max compression)"
-  npm run build
+  if [[ "$WEBPACK" == true ]]; then
+    echo "==> Building installers (next build --webpack + electron-builder)"
+    npm run build:webpack
+  else
+    echo "==> Building installers (nextron build: dmg + zip, max compression)"
+    npm run build
+  fi
   echo "==> Artifacts:"
   ls -lh dist/*.dmg dist/*.zip 2>/dev/null || true
 else
@@ -58,8 +67,13 @@ else
   #   1. nextron --no-pack: build renderer + main into app/, no packaging.
   #   2. electron-builder --mac dir: package app/ into just the .app, no
   #      compression (store), reading the rest from electron-builder.yml.
-  echo "==> Building renderer + main (nextron --no-pack, keeps renderer/.next)"
-  npx nextron build --no-pack
+  if [[ "$WEBPACK" == true ]]; then
+    echo "==> Building renderer + main (next build --webpack, no packaging)"
+    npm run build:webpack -- --no-pack
+  else
+    echo "==> Building renderer + main (nextron --no-pack, keeps renderer/.next)"
+    npx nextron build --no-pack
+  fi
   echo "==> Packaging .app only (electron-builder --mac dir, no compression)"
   npx electron-builder --mac dir --arm64 -c.compression=store
   echo "==> Built: $BUILT_APP"

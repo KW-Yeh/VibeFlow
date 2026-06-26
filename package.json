@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "nextron",
     "build": "nextron build",
+    "build:webpack": "node scripts/build-webpack.mjs",
+    "build:renderer:webpack": "cd renderer && NODE_ENV=production npx next build --webpack",
     "rebuild": "./rebuild.sh",
     "test": "NODE_OPTIONS=\"--experimental-strip-types --import ./test/support/register.mjs\" node --test \"./test/**/*.test.mjs\"",
     "vibeflow": "node --experimental-strip-types --import ./test/support/register.mjs scripts/vibeflow.mjs",

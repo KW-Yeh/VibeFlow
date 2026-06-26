@@ -47,7 +47,7 @@ jobs:
 
       - name: Build and publish
         # On workflow_dispatch (no tag) skip uploading — just verify the build packages.
-        run: npm run build -- ${{ matrix.build_args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+        run: npm run build:webpack -- ${{ matrix.build_args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
