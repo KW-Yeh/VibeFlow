@@ -9,6 +9,21 @@ import { buildEnv } from './env'
  */
 const sessions = new Map<string, nodePty.IPty>()
 
+// ---------------------------------------------------------------------------
+// Scrollback ring buffer — survives `killSession` so a remounting terminal
+// can replay what happened before it unmounted. Cleared when a new *command*
+// is given to `startSession` (phase switch = fresh terminal).
+// ---------------------------------------------------------------------------
+
+const MAX_SCROLLBACK = 512 * 1024  // 512 KB per session
+const scrollbacks = new Map<string, string>()
+
+function appendScrollback(key: string, data: string): void {
+  const cur = (scrollbacks.get(key) ?? '') + data
+  // ponytail: slice from the end to keep the most-recent output
+  scrollbacks.set(key, cur.length > MAX_SCROLLBACK ? cur.slice(-MAX_SCROLLBACK) : cur)
+}
+
 /** Shared augmented env (sane PATH) plus the terminal-specific TERM. */
 function buildPtyEnv(): Record<string, string> {
   return { ...buildEnv(), TERM: 'xterm-256color' }
@@ -23,6 +38,8 @@ function defaultShell(): string {
 
 export interface StartResult {
   pid: number
+  /** Previous session's buffered output, replayed by the renderer on remount. */
+  scrollback: string | null
 }
 
 /**
@@ -38,8 +55,16 @@ export function startSession(
   cwd: string,
   sender: WebContents,
   command?: string,
-  onExit?: () => void
+  onExit?: () => void,
+  cols = 80,
+  rows = 24
 ): StartResult {
+  // Capture scrollback before the old PTY is killed. A new command means a new
+  // phase (planning → execution), so clear the buffer; otherwise preserve it so
+  // a remounting terminal can replay what it missed while unmounted.
+  const scrollback = command ? null : (scrollbacks.get(sessionKey) ?? null)
+  if (command) scrollbacks.delete(sessionKey)
+
   killSession(sessionKey)
 
   const shell = defaultShell()
@@ -54,12 +79,13 @@ export function startSession(
     name: 'xterm-256color',
     cwd,
     env: buildPtyEnv(),
-    cols: 80,
-    rows: 24,
+    cols,
+    rows,
   })
   sessions.set(sessionKey, proc)
 
   proc.onData((data) => {
+    appendScrollback(sessionKey, data)
     if (!sender.isDestroyed()) sender.send('pty:data', { sessionKey, data })
   })
   proc.onExit(({ exitCode }) => {
@@ -73,7 +99,7 @@ export function startSession(
     }
   })
 
-  return { pid: proc.pid }
+  return { pid: proc.pid, scrollback }
 }
 
 export function writeSession(sessionKey: string, data: string): void {
