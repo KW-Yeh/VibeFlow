@@ -11,6 +11,7 @@ import {
   getState,
   getStorePath,
   getWorkspaces,
+  reconcileWorkspacesFromTasks,
   removeRole,
   removeTask,
   removeWorkspace,
@@ -730,6 +731,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   mainWindow.maximize()
+
+  // Backfill workspace records for tasks whose sibling workspace predates
+  // workspace registration, so they show in the sidebar and auto-select.
+  reconcileWorkspacesFromTasks()
 
   registerIpcHandlers(mainWindow)
 

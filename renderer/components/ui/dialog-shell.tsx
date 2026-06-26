@@ -32,7 +32,14 @@ export function DialogShell({
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const savingRef = useRef(saving)
   const structured = showHeader || description !== undefined || footer !== undefined || bodyClassName !== undefined
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+    savingRef.current = saving
+  }, [onClose, saving])
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
@@ -41,7 +48,7 @@ export function DialogShell({
     panelRef.current?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose()
+      if (event.key === 'Escape' && !savingRef.current) onCloseRef.current()
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -49,7 +56,7 @@ export function DialogShell({
       document.removeEventListener('keydown', handleKeyDown)
       previouslyFocused?.focus()
     }
-  }, [onClose, saving])
+  }, [])
 
   return (
     <div className={cn('fixed inset-0 z-50 flex items-center justify-center p-4', className)}>

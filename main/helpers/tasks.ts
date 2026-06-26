@@ -8,6 +8,7 @@ import {
   type ColumnId,
   type PipelineRun,
   type Task,
+  type Workspace,
 } from './store'
 import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
@@ -69,6 +70,28 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   const workspacePath = assignedWorkspace?.path ?? defaultWorkspacePath(projectPath)
   await ensureContextFiles(workspacePath)
 
+  // Register the auto-created sibling workspace as a first-class record (once per
+  // path) so it appears in the sidebar and is auto-selected for the next task in
+  // the same project. Tasks with an explicitly assigned workspace keep its id.
+  let workspaceId = input.workspaceId || undefined
+  if (!assignedWorkspace) {
+    const workspaces = store.get('workspaces') ?? []
+    const existing = workspaces.find((w) => w.path === workspacePath)
+    if (existing) {
+      workspaceId = existing.id
+    } else {
+      const ws: Workspace = {
+        id: randomUUID(),
+        name: path.basename(workspacePath),
+        path: workspacePath,
+        available: true,
+        lastScannedAt: Date.now(),
+      }
+      store.set('workspaces', [...workspaces, ws])
+      workspaceId = ws.id
+    }
+  }
+
   let provisionResult
   try {
     provisionResult = await provisionWorktree(
@@ -109,7 +132,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       undefined,
     roleId: input.roleId || undefined,
     reviewerRoleId: input.reviewerRoleId || undefined,
-    workspaceId: input.workspaceId || undefined,
+    workspaceId,
     pipeline,
   }
 

@@ -1,4 +1,6 @@
 import Store from 'electron-store'
+import { randomUUID } from 'crypto'
+import { basename } from 'path'
 import type { AgentCliId } from './agents'
 import type { ReviewVerdict, TaskProgress } from './progress'
 
@@ -428,6 +430,32 @@ export function removeWorkspace(id: string): Workspace[] {
   const workspaces = getWorkspaces().filter((w) => w.id !== id)
   getStore().set('workspaces', workspaces)
   return workspaces
+}
+
+/**
+ * Backfill workspace records for tasks created before sibling workspaces were
+ * registered (their `<project>-workspace` folder exists on disk but has no
+ * Workspace record). Without this they never show in the sidebar and the new-task
+ * dialog can't auto-select them. Idempotent: only adds paths not already present.
+ */
+export function reconcileWorkspacesFromTasks(): Workspace[] {
+  const store = getStore()
+  const board = store.get('board')
+  const workspaces = store.get('workspaces') ?? []
+  const known = new Set(workspaces.map((w) => w.path))
+  const added: Workspace[] = []
+  for (const col of ['backlog', 'in_progress', 'done'] as const) {
+    for (const task of board[col]) {
+      const p = task.workspacePath
+      if (!p || known.has(p)) continue
+      known.add(p)
+      added.push({ id: randomUUID(), name: basename(p), path: p, available: true })
+    }
+  }
+  if (added.length === 0) return workspaces
+  const merged = [...workspaces, ...added]
+  store.set('workspaces', merged)
+  return merged
 }
 
 /**
