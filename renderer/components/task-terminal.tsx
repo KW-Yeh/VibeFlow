@@ -65,20 +65,40 @@ export function TaskTerminal({
   const cwdRef = useRef<string | null>(cwd)
   cwdRef.current = cwd
   const readOnlyRef = useRef(readOnly)
+  // Set before an intentional PTY restart (relaunch on a live component) so the
+  // exit event from killing the prior process doesn't print a spurious warning.
+  const suppressExitRef = useRef(false)
+
+  // Run the launch command AS the login shell's argument (`zsh -lic <cmd>`)
+  // rather than typing it into the interactive line editor. The command is often
+  // multi-KB (full system prompt + task prompt); pasting that into ZLE stalls
+  // under the user's .zshrc plugins (syntax-highlighting / autosuggestions /
+  // bracketed-paste-magic) and the trailing CR never submits. -c skips ZLE
+  // entirely. The trailing CR (a "submit" key for typing) must be stripped — as
+  // a -c argument it corrupts the final shell word.
+  const launchWithCommand = useCallback(
+    (cmd: string) => {
+      const startCwd = cwdRef.current
+      if (!startCwd) return
+      void window.vibeflow?.term.start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey)
+    },
+    [taskId, sessionKey]
+  )
 
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
     const cmd = launchCmdRef.current
     if (!cmd) return
     const nonce = launchNonceRef.current
+    // The initial command is spawned by the init effect, which marks its nonce —
+    // so this no-ops at mount. A new nonce on a still-mounted component (e.g. a
+    // reviewer re-run, whose key carries no nonce) restarts the PTY; suppress the
+    // exit blip from killing the prior process.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
-    // Some callers keep the same component instance across launches. In that
-    // case, interrupt any interactive CLI before sending the next command.
-    // Executor reruns remount this component so they get a fresh PTY instead.
-    if (nonce > 1) window.vibeflow?.term.input(sessionKey, '\x03')
-    window.vibeflow?.term.input(sessionKey, cmd)
-  }, [sessionKey])
+    suppressExitRef.current = true
+    launchWithCommand(cmd)
+  }, [launchWithCommand])
 
   // Keep the read-only flag (and xterm's stdin gate) in sync without remounting.
   useEffect(() => {
@@ -127,13 +147,26 @@ export function TaskTerminal({
         return
       }
 
-      // Pass taskId + sessionKey so main knows the task and the session slot.
-      await api.term.start(taskId, startCwd, undefined, sessionKey)
+      // Start the PTY with the launch command when one is already armed (it runs
+      // as `zsh -lic <cmd>`); otherwise start an interactive shell the user can
+      // drive. Marking the nonce here stops maybeLaunch from re-spawning it.
+      const armedCmd = !readOnlyRef.current ? launchCmdRef.current : null
+      if (armedCmd) sentNonceRef.current = launchNonceRef.current
+      await api.term.start(
+        taskId,
+        startCwd,
+        armedCmd ? armedCmd.replace(/\r$/, '') : undefined,
+        sessionKey
+      )
       offData = api.term.onData(({ sessionKey: id, data }) => {
         if (id === sessionKey) term.write(data)
       })
       offExit = api.term.onExit(({ sessionKey: id, exitCode }) => {
         if (id !== sessionKey) return
+        if (suppressExitRef.current) {
+          suppressExitRef.current = false
+          return
+        }
         if (exitCode === 0) {
           term.writeln('\r\n✅  Agent 執行完成。')
         } else {
