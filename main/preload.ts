@@ -233,9 +233,11 @@ const vibeflow = {
       taskId: string,
       cwd: string,
       command?: string,
-      sessionKey?: string
-    ): Promise<{ pid: number }> =>
-      ipcRenderer.invoke('pty:start', { taskId, cwd, command, sessionKey }),
+      sessionKey?: string,
+      cols?: number,
+      rows?: number
+    ): Promise<{ pid: number; scrollback: string | null }> =>
+      ipcRenderer.invoke('pty:start', { taskId, cwd, command, sessionKey, cols, rows }),
     /** Send keystrokes to the session identified by `sessionKey`. */
     input: (sessionKey: string, data: string): void =>
       ipcRenderer.send('pty:input', { sessionKey, data }),

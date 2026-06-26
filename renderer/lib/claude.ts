@@ -82,6 +82,12 @@ export const PRESET_ROLES: Omit<Role, 'id'>[] = [
  */
 const PROGRESS_FILE = '.vibeflow-progress.json'
 
+/**
+ * Separate file the reviewer writes its verdict to (not the executor's progress
+ * file). Must match REVIEW_FILE in main/helpers/progress.ts.
+ */
+const REVIEW_FILE = '.vibeflow-review.json'
+
 /** Workspace context file name (mirrors main/helpers/workspace.ts CONTEXT_MD). */
 const WORKSPACE_CONTEXT_FILE = 'context.md'
 
@@ -342,8 +348,8 @@ export function buildReviewPrompt(
     '你現在是 Code Reviewer。請審查這個 git worktree 中相對於 base branch 的所有改動（用 git diff 檢視）。',
     '審查重點：需求達成度（對照 PLAN.md 中定義的預期成果）、正確性、邊界條件、錯誤處理、是否符合專案既有慣例與風格。',
     '',
-    `完成審查後，請把結論寫入 ${PROGRESS_FILE}，在既有的 summary / steps 之外，再加上一個 review 欄位：`,
-    '{"summary": "...", "steps": [...], "review": {"verdict": "approve" 或 "request_changes", "summary": "一句話總結", "comments": ["需修正的具體問題", ...]}}',
+    `完成審查後，請把結論寫入 ${REVIEW_FILE}（不要動 ${PROGRESS_FILE}），格式如下（只包含 review 物件本身）：`,
+    '{"verdict": "approve" 或 "request_changes", "summary": "一句話總結", "comments": ["需修正的具體問題", ...]}',
     '- 沒有需要修正的問題 → verdict 設為 "approve"，comments 用空陣列。',
     '- 有必須修正的問題 → verdict 設為 "request_changes"，comments 逐條列出每個必須修正的點。',
     '',
@@ -489,6 +495,7 @@ function assembleCommand(
   sessionId?: string,
   workspacePath?: string
 ): string {
+  let cmd: string
   if (agent === 'claude') {
     // Install the sub-agent recording hooks via inline --settings (session-only,
     // never touches the user's repo). Only when the worktree path is known.
@@ -501,22 +508,20 @@ function assembleCommand(
     const modelFlag = model ? ` --model ${model}` : ''
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
-    if (sessionId && opts?.resume) {
-      return claudeResumeOrFresh(sessionId, worktreePath, tail)
-    }
-    const sessionFlag = sessionId
-      ? `--session-id ${sessionId} `
-      : opts?.resume ? '--continue ' : ''
-    return `claude ${sessionFlag}${tail}\r`
+    cmd = (sessionId && opts?.resume)
+      ? claudeResumeOrFresh(sessionId, worktreePath, tail)
+      : `claude ${sessionId ? `--session-id ${sessionId} ` : opts?.resume ? '--continue ' : ''}${tail}\r`
+  } else {
+    // Codex / Gemini have no separate system-prompt flag — fold it into the body.
+    const combined = `${systemPrompt}\n\n${prompt}`
+    cmd = agent === 'codex'
+      ? `codex --model ${model} ${shellQuote(combined)}\r`
+      // gemini: --yolo auto-approves tool calls; -i stays interactive
+      : `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
   }
-  // Codex / Gemini have no separate system-prompt flag — fold it into the body.
-  const combined = `${systemPrompt}\n\n${prompt}`
-  if (agent === 'codex') {
-    return `codex --model ${model} ${shellQuote(combined)}\r`
-  }
-  // gemini: --yolo auto-approves tool calls; -i runs the prompt then stays
-  // interactive (mirrors how the claude launch keeps the session open).
-  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
+  // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
+  if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
+  return cmd
 }
 
 /**

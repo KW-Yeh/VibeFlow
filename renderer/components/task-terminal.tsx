@@ -65,9 +65,10 @@ export function TaskTerminal({
   const cwdRef = useRef<string | null>(cwd)
   cwdRef.current = cwd
   const readOnlyRef = useRef(readOnly)
-  // Set before an intentional PTY restart (relaunch on a live component) so the
-  // exit event from killing the prior process doesn't print a spurious warning.
-  const suppressExitRef = useRef(false)
+  // Counts pending intentional PTY kills. Each armLaunch increments; each
+  // suppressed exit decrements. A counter (not boolean) handles rapid double-kills
+  // (e.g. planning→execution switch racing with the selectedTaskId resume).
+  const suppressExitRef = useRef(0)
 
   // Run the launch command AS the login shell's argument (`zsh -lic <cmd>`)
   // rather than typing it into the interactive line editor. The command is often
@@ -80,6 +81,8 @@ export function TaskTerminal({
     (cmd: string) => {
       const startCwd = cwdRef.current
       if (!startCwd) return
+      // scrollback is intentionally ignored here: maybeLaunch() restarts an
+      // already-mounted terminal (new command = new phase = fresh buffer).
       void window.vibeflow?.term.start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey)
     },
     [taskId, sessionKey]
@@ -96,7 +99,7 @@ export function TaskTerminal({
     // exit blip from killing the prior process.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
-    suppressExitRef.current = true
+    suppressExitRef.current += 1
     launchWithCommand(cmd)
   }, [launchWithCommand])
 
@@ -152,19 +155,25 @@ export function TaskTerminal({
       // drive. Marking the nonce here stops maybeLaunch from re-spawning it.
       const armedCmd = !readOnlyRef.current ? launchCmdRef.current : null
       if (armedCmd) sentNonceRef.current = launchNonceRef.current
-      await api.term.start(
+      const { scrollback } = await api.term.start(
         taskId,
         startCwd,
         armedCmd ? armedCmd.replace(/\r$/, '') : undefined,
-        sessionKey
+        sessionKey,
+        term.cols,
+        term.rows
       )
+      // Replay buffered output from before this terminal instance was mounted
+      // (e.g. after the component unmounted while the agent was still running).
+      if (scrollback) term.write(scrollback)
       offData = api.term.onData(({ sessionKey: id, data }) => {
         if (id === sessionKey) term.write(data)
       })
       offExit = api.term.onExit(({ sessionKey: id, exitCode }) => {
         if (id !== sessionKey) return
-        if (suppressExitRef.current) {
-          suppressExitRef.current = false
+        if (suppressExitRef.current > 0) {
+          suppressExitRef.current -= 1
+          term.writeln('\r\n⏳  切換至下一階段...')
           return
         }
         if (exitCode === 0) {

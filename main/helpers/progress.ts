@@ -64,6 +64,13 @@ export const PROGRESS_FILE = '.vibeflow-progress.json'
  */
 export const PLAN_FILE = 'PLAN.md'
 
+/**
+ * Separate file the reviewer agent writes its verdict to, distinct from the
+ * executor's progress file so a careless reviewer model cannot clobber the
+ * executor's `steps` / `planDone` fields.
+ */
+export const REVIEW_FILE = '.vibeflow-review.json'
+
 /** Parse the optional reviewer verdict; undefined when absent or malformed. */
 function parseReview(raw: unknown): ReviewVerdict | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -128,6 +135,8 @@ interface WatchEntry {
   lastJson: string | null
   /** Re-read the file and emit when its (valid) content changed. */
   sync: () => void
+  /** fs.watch handle when event-based watching is active; absent when poll fallback is used. */
+  fsWatcher?: fs.FSWatcher
 }
 
 /**
@@ -138,9 +147,10 @@ interface WatchEntry {
 const watchers = new Map<string, WatchEntry>()
 
 /**
- * Poll-watch a session's progress file and invoke `onUpdate` whenever its
- * (valid) content changes. `fs.watchFile` is used because it tolerates the
- * file not existing yet. Re-watching the same session key replaces the old watcher.
+ * Watch a session's progress file and invoke `onUpdate` whenever its (valid)
+ * content changes. Prefers `fs.watch` (event-based, <10ms on local disks) and
+ * falls back to `fs.watchFile` polling (800ms) for network/exotic filesystems.
+ * Re-watching the same session key replaces the old watcher.
  */
 export function watchProgress(
   sessionKey: string,
@@ -166,7 +176,23 @@ export function watchProgress(
   const entry: WatchEntry = { file, lastJson: null, sync }
   watchers.set(sessionKey, entry)
 
-  fs.watchFile(file, { interval: 800 }, sync)
+  // Try event-based watching on the worktree directory (stable on macOS/Linux).
+  // Fall back to poll if the platform doesn't support it (network drives, etc.).
+  try {
+    const fsWatcher = fs.watch(cwd, (_event: string, filename: string | null) => {
+      if (filename === PROGRESS_FILE) sync()
+    })
+    fsWatcher.on('error', () => {
+      // Watcher died mid-session — activate poll fallback for the remainder.
+      fsWatcher.close()
+      entry.fsWatcher = undefined
+      fs.watchFile(file, { interval: 800 }, sync)
+    })
+    entry.fsWatcher = fsWatcher
+  } catch {
+    fs.watchFile(file, { interval: 800 }, sync)
+  }
+
   sync() // pick up pre-existing content immediately (e.g. on re-run)
 }
 
@@ -179,7 +205,12 @@ export function unwatchProgress(sessionKey: string): void {
   const entry = watchers.get(sessionKey)
   if (entry) {
     entry.sync()
-    fs.unwatchFile(entry.file)
+    if (entry.fsWatcher) {
+      entry.fsWatcher.close()
+    } else {
+      // Poll fallback was active — stop the watchFile listener.
+      fs.unwatchFile(entry.file)
+    }
     watchers.delete(sessionKey)
   }
 }
@@ -187,5 +218,81 @@ export function unwatchProgress(sessionKey: string): void {
 export function unwatchAllProgress(): void {
   for (const key of Array.from(watchers.keys())) {
     unwatchProgress(key)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer verdict file (`.vibeflow-review.json`) — separate watcher map so
+// reviewer writes never clobber the executor's progress fields.
+// ---------------------------------------------------------------------------
+
+/** Read + parse the reviewer verdict file; null when absent or invalid. */
+export function readReviewFile(cwd: string): ReviewVerdict | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(cwd, REVIEW_FILE), 'utf8'))
+    return parseReview(raw) ?? null
+  } catch {
+    return null
+  }
+}
+
+const reviewWatchers = new Map<string, WatchEntry>()
+
+/**
+ * Watch a reviewer session's verdict file; calls `onUpdate` whenever the file
+ * changes to a valid `ReviewVerdict`. Uses the same fs.watch → watchFile
+ * fallback pattern as `watchProgress`.
+ */
+export function watchReview(
+  sessionKey: string,
+  cwd: string,
+  onUpdate: (review: ReviewVerdict) => void
+): void {
+  unwatchReview(sessionKey)
+  const file = path.join(cwd, REVIEW_FILE)
+  const sync = () => {
+    const review = readReviewFile(cwd)
+    if (!review) return
+    const json = JSON.stringify(review)
+    if (json === entry.lastJson) return
+    entry.lastJson = json
+    onUpdate(review)
+  }
+  const entry: WatchEntry = { file, lastJson: null, sync }
+  reviewWatchers.set(sessionKey, entry)
+
+  try {
+    const fsWatcher = fs.watch(cwd, (_event: string, filename: string | null) => {
+      if (filename === REVIEW_FILE) sync()
+    })
+    fsWatcher.on('error', () => {
+      fsWatcher.close()
+      entry.fsWatcher = undefined
+      fs.watchFile(file, { interval: 800 }, sync)
+    })
+    entry.fsWatcher = fsWatcher
+  } catch {
+    fs.watchFile(file, { interval: 800 }, sync)
+  }
+
+  sync()
+}
+
+export function unwatchReview(sessionKey: string): void {
+  const entry = reviewWatchers.get(sessionKey)
+  if (entry) {
+    entry.sync()
+    if (entry.fsWatcher) {
+      entry.fsWatcher.close()
+    } else {
+      fs.unwatchFile(entry.file)
+    }
+    reviewWatchers.delete(sessionKey)
+  }
+}
+
+export function unwatchAllReview(): void {
+  for (const key of Array.from(reviewWatchers.keys())) {
+    unwatchReview(key)
   }
 }

@@ -131,6 +131,10 @@ export function KanbanBoard({
   const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed terminal launch command; bumping `nonce` (re-)fires it.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
+  // Always-current ref so async callbacks (termSessionExists .then) read the
+  // latest terminalLaunch without depending on a stale closure.
+  const terminalLaunchRef = useRef(terminalLaunch)
+  terminalLaunchRef.current = terminalLaunch
   // Per-task armed reviewer launch command (PTY-based, unchanged).
   const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
   // Reviewer side panel state.
@@ -326,7 +330,7 @@ export function KanbanBoard({
       : planningSessionId(task.id)
     let cancelled = false
     void termSessionExists(cwd, sessionId).then((exists) => {
-      if (cancelled || !exists || terminalLaunch[task.id]) return
+      if (cancelled || !exists || terminalLaunchRef.current[task.id]) return
       if (isExecution) executionStartedRef.current.add(task.id)
       armLaunch(task, { resume: true })
     })
