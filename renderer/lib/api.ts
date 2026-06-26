@@ -7,6 +7,7 @@ import type {
   ChatChunk,
   ChatPhase,
   Conversation,
+  ConnectableAgentId,
   DiffFile,
   FinalizeResult,
   GitInfo,
@@ -67,6 +68,21 @@ export async function setSettings(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.setSettings(patch) : null
+}
+
+export async function connectAgent(
+  agentId: ConnectableAgentId,
+  apiKey: string
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.connectAgent(agentId, apiKey) : null
+}
+
+export async function refreshAgentModels(
+  agentId: ConnectableAgentId
+): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.refreshAgentModels(agentId) : null
 }
 
 export async function pickFolder(): Promise<string | null> {

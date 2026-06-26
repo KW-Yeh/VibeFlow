@@ -62,6 +62,18 @@ export interface Role {
   boundaries?: string
 }
 
+export type ConnectableAgentId = 'claude' | 'codex'
+
+export interface AgentConnection {
+  connected: boolean
+  apiKey?: string
+  models?: string[]
+  error?: string
+  updatedAt?: number
+}
+
+export type AgentConnections = Partial<Record<ConnectableAgentId, AgentConnection>>
+
 export interface Task {
   id: string
   title: string
@@ -129,6 +141,8 @@ export interface AppSettings {
    * blank = use the renderer's built-in default (DEFAULT_SYSTEM_PROMPT).
    */
   systemPrompt?: string
+  /** Local-only API keys + model lists for providers that expose model APIs. */
+  agentConnections?: AgentConnections
 }
 
 export interface VibeFlowState {

@@ -22,6 +22,7 @@ import {
   DEFAULT_MAX_REVIEW_ROUNDS,
   type AppSettings,
   type BoardState,
+  type ConnectableAgentId,
   type PipelineRun,
   type Role,
   type Task,
@@ -34,6 +35,7 @@ import {
   scanWorkspace,
 } from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
+import { fetchAgentModels } from './helpers/agent-connections'
 import {
   commitAndPush,
   deleteBranch,
@@ -136,6 +138,80 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'vibeflow:setSettings',
     (_event, patch: Partial<AppSettings>) => {
       setSettings(patch)
+      return getState()
+    }
+  )
+
+  ipcMain.handle(
+    'settings:connectAgent',
+    async (_event, payload: { agentId: ConnectableAgentId; apiKey: string }) => {
+      const models = await fetchAgentModels(payload.agentId, payload.apiKey)
+      const state = getState()
+      setSettings({
+        agentConnections: {
+          ...(state.settings.agentConnections ?? {}),
+          [payload.agentId]: {
+            connected: true,
+            apiKey: payload.apiKey.trim(),
+            models,
+            error: undefined,
+            updatedAt: Date.now(),
+          },
+        },
+      })
+      return getState()
+    }
+  )
+
+  ipcMain.handle(
+    'settings:refreshAgentModels',
+    async (_event, agentId: ConnectableAgentId) => {
+      const state = getState()
+      const connections = state.settings.agentConnections ?? {}
+      const existing = connections[agentId]
+      if (!existing?.apiKey) {
+        setSettings({
+          agentConnections: {
+            ...connections,
+            [agentId]: {
+              connected: false,
+              models: [],
+              error: '尚未綁定 API key。',
+              updatedAt: Date.now(),
+            },
+          },
+        })
+        return getState()
+      }
+
+      try {
+        const models = await fetchAgentModels(agentId, existing.apiKey)
+        setSettings({
+          agentConnections: {
+            ...connections,
+            [agentId]: {
+              ...existing,
+              connected: true,
+              models,
+              error: undefined,
+              updatedAt: Date.now(),
+            },
+          },
+        })
+      } catch (err) {
+        setSettings({
+          agentConnections: {
+            ...connections,
+            [agentId]: {
+              ...existing,
+              connected: false,
+              models: [],
+              error: err instanceof Error ? err.message : String(err),
+              updatedAt: Date.now(),
+            },
+          },
+        })
+      }
       return getState()
     }
   )

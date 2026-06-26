@@ -17,7 +17,14 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
-import type { AgentCli, AgentCliId, GitInfo, Role, Workspace } from '@/lib/types'
+import type {
+  AgentCli,
+  AgentCliId,
+  AgentConnections,
+  GitInfo,
+  Role,
+  Workspace,
+} from '@/lib/types'
 
 type ProjectMode = 'existing' | 'new'
 
@@ -28,6 +35,7 @@ export interface NewTaskFormProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
+  agentConnections?: AgentConnections
   roles: Role[]
   onManageRoles: () => void
   workspaces?: Workspace[]
@@ -39,6 +47,8 @@ export interface NewTaskFormProps {
     mode: ProjectMode,
     agentCli: AgentCliId,
     executionAgentCli: AgentCliId,
+    model: string,
+    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
@@ -151,6 +161,9 @@ export interface AgentModelFieldsProps {
   onRetry: () => void
   agentCli: AgentCliId
   onAgentChange: (agentCli: AgentCliId) => void
+  model: string
+  onModelChange: (model: string) => void
+  agentConnections?: AgentConnections
 }
 
 export function AgentModelFields({
@@ -160,7 +173,18 @@ export function AgentModelFields({
   onRetry,
   agentCli,
   onAgentChange,
+  model,
+  onModelChange,
+  agentConnections,
 }: AgentModelFieldsProps) {
+  const connectableAgent = agentCli === 'claude' || agentCli === 'codex' ? agentCli : null
+  const fetchedModels = connectableAgent
+    ? agentConnections?.[connectableAgent]?.models ?? []
+    : []
+  const modelOptions = model && !fetchedModels.includes(model)
+    ? [model, ...fetchedModels]
+    : fetchedModels
+  const canSelectModel = modelOptions.length > 0
   return (
     <div className="space-y-3 rounded-lg border border-border/50 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -208,6 +232,28 @@ export function AgentModelFields({
           </select>
         )}
       </div>
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Model</span>
+        {canSelectModel ? (
+          <select
+            name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            className={F}
+          >
+            <option value="">使用預設 model</option>
+            {modelOptions.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="rounded-md border border-border/50 bg-muted/20 p-2 text-xs text-muted-foreground">
+            尚未連線或無法取得 model list，將使用預設 model。
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -220,6 +266,7 @@ export function NewTaskForm({
   loadGitInfo,
   initRepository,
   detectAgents,
+  agentConnections,
   roles,
   onManageRoles,
   workspaces = [],
@@ -242,6 +289,8 @@ export function NewTaskForm({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
+  const [model, setModel] = useState('')
+  const [executionModel, setExecutionModel] = useState('')
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
@@ -342,6 +391,8 @@ export function NewTaskForm({
       mode,
       agentCli,
       executionAgentCli,
+      model,
+      executionModel,
       roleId,
       reviewerRoleId,
       workspaceId
@@ -552,7 +603,13 @@ export function NewTaskForm({
             detectTimedOut={detectTimedOut}
             onRetry={() => setDetectKey((k) => k + 1)}
             agentCli={agentCli}
-            onAgentChange={setAgentCli}
+            onAgentChange={(next) => {
+              setAgentCli(next)
+              setModel('')
+            }}
+            model={model}
+            onModelChange={setModel}
+            agentConnections={agentConnections}
           />
           <AgentModelFields
             title="Execution Agent"
@@ -560,7 +617,13 @@ export function NewTaskForm({
             detectTimedOut={detectTimedOut}
             onRetry={() => setDetectKey((k) => k + 1)}
             agentCli={executionAgentCli}
-            onAgentChange={setExecutionAgentCli}
+            onAgentChange={(next) => {
+              setExecutionAgentCli(next)
+              setExecutionModel('')
+            }}
+            model={executionModel}
+            onModelChange={setExecutionModel}
+            agentConnections={agentConnections}
           />
           {rolesCard}
           {workspaceBlock}

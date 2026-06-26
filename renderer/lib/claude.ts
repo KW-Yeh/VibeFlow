@@ -394,8 +394,6 @@ export interface LaunchOptions {
    * have run in the same worktree.
    */
   resume?: boolean
-  /** Omit --model for Claude so the CLI uses the user's persisted default. */
-  omitModel?: boolean
 }
 
 /**
@@ -480,7 +478,7 @@ function assembleCommand(
     // Grant the agent read/write access to the workspace folder so it can read
     // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    const modelFlag = model && !opts?.omitModel ? ` --model ${model}` : ''
+    const modelFlag = model ? ` --model ${model}` : ''
     const head = `claude${sessionFlag} --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     return `${head} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}\r`
   }
@@ -704,7 +702,7 @@ export function buildAgentCommand(
 ): string {
   const isExecution = task.progress?.planDone === true
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
-  const model = opts?.omitModel ? '' : isExecution ? taskExecutionModel(task) : taskModel(task)
+  const model = isExecution ? taskExecutionModel(task) : taskModel(task)
   const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'

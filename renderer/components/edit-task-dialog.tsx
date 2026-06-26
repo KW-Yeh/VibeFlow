@@ -15,7 +15,15 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import { cn } from '@/lib/utils'
-import type { AgentCli, AgentCliId, GitInfo, Role, Task, Workspace } from '@/lib/types'
+import type {
+  AgentCli,
+  AgentCliId,
+  AgentConnections,
+  GitInfo,
+  Role,
+  Task,
+  Workspace,
+} from '@/lib/types'
 
 export interface EditTaskPayload {
   title: string
@@ -23,7 +31,9 @@ export interface EditTaskPayload {
   roleId: string
   reviewerRoleId: string
   agentCli: AgentCliId
+  model: string
   executionAgentCli: AgentCliId
+  executionModel: string
   workspaceId: string
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
@@ -37,6 +47,7 @@ interface EditTaskDialogProps {
   roles: Role[]
   workspaces?: Workspace[]
   detectAgents: () => Promise<AgentCli[]>
+  agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   onManageRoles?: () => void
@@ -56,6 +67,7 @@ export function EditTaskDialog({
   roles,
   workspaces = [],
   detectAgents,
+  agentConnections,
   pickFolder,
   loadGitInfo,
   onManageRoles,
@@ -69,7 +81,9 @@ export function EditTaskDialog({
   const [roleId, setRoleId] = useState('')
   const [reviewerRoleId, setReviewerRoleId] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
+  const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
+  const [executionModel, setExecutionModel] = useState('')
   const [workspaceId, setWorkspaceId] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
@@ -91,7 +105,9 @@ export function EditTaskDialog({
     setRoleId(task.roleId ?? '')
     setReviewerRoleId(task.reviewerRoleId ?? '')
     setAgentCli(task.agentCli ?? 'claude')
+    setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
+    setExecutionModel(task.executionModel ?? '')
     setWorkspaceId(task.workspaceId ?? '')
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
@@ -133,7 +149,9 @@ export function EditTaskDialog({
     roleId !== (task.roleId ?? '') ||
     reviewerRoleId !== (task.reviewerRoleId ?? '') ||
     agentCli !== (task.agentCli ?? 'claude') ||
+    model !== (task.model ?? '') ||
     executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
+    executionModel !== (task.executionModel ?? '') ||
     workspaceId !== (task.workspaceId ?? '') ||
     projectChanged ||
     baseBranch !== (task.baseBranch ?? '')
@@ -146,8 +164,14 @@ export function EditTaskDialog({
     }
   }
 
-  const handleAgentChange = (next: AgentCliId) => setAgentCli(next)
-  const handleExecutionAgentChange = (next: AgentCliId) => setExecutionAgentCli(next)
+  const handleAgentChange = (next: AgentCliId) => {
+    setAgentCli(next)
+    setModel('')
+  }
+  const handleExecutionAgentChange = (next: AgentCliId) => {
+    setExecutionAgentCli(next)
+    setExecutionModel('')
+  }
 
   const handlePickFolder = async () => {
     const picked = await pickFolder()
@@ -185,7 +209,9 @@ export function EditTaskDialog({
       roleId,
       reviewerRoleId,
       agentCli,
+      model,
       executionAgentCli,
+      executionModel,
       workspaceId,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
@@ -356,6 +382,9 @@ export function EditTaskDialog({
                 onRetry={() => setDetectKey((k) => k + 1)}
                 agentCli={agentCli}
                 onAgentChange={handleAgentChange}
+                model={model}
+                onModelChange={setModel}
+                agentConnections={agentConnections}
               />
               <AgentModelFields
                 title="Execution Agent"
@@ -364,6 +393,9 @@ export function EditTaskDialog({
                 onRetry={() => setDetectKey((k) => k + 1)}
                 agentCli={executionAgentCli}
                 onAgentChange={handleExecutionAgentChange}
+                model={executionModel}
+                onModelChange={setExecutionModel}
+                agentConnections={agentConnections}
               />
 
               <div className="space-y-3 rounded-lg border border-border/50 p-4">

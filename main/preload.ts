@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   AppSettings,
   BoardState,
+  ConnectableAgentId,
   Role,
   Task,
   VibeFlowState,
@@ -59,8 +60,15 @@ const vibeflow = {
   },
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:setBoard', board),
-  setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('vibeflow:setSettings', patch),
+    setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
+      ipcRenderer.invoke('vibeflow:setSettings', patch),
+    connectAgent: (
+      agentId: ConnectableAgentId,
+      apiKey: string
+    ): Promise<VibeFlowState> =>
+      ipcRenderer.invoke('settings:connectAgent', { agentId, apiKey }),
+    refreshAgentModels: (agentId: ConnectableAgentId): Promise<VibeFlowState> =>
+      ipcRenderer.invoke('settings:refreshAgentModels', agentId),
   /** Native folder picker — returns the chosen absolute path, or null. */
   pickFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickFolder'),

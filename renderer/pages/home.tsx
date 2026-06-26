@@ -11,6 +11,7 @@ import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
+  connectAgent,
   createRole,
   createTask,
   createWorkspace,
@@ -37,7 +38,9 @@ import {
 import { Button } from '@/components/ui/button'
 import type {
   AgentCliId,
+  AgentConnections,
   BoardState,
+  ConnectableAgentId,
   Role,
   SubAgentRun,
   Task,
@@ -69,6 +72,7 @@ export default function HomePage() {
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = the built-in default is in effect).
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [agentConnections, setAgentConnections] = useState<AgentConnections>({})
   const [loaded, setLoaded] = useState(false)
 
   // Settings dialog state
@@ -116,6 +120,7 @@ export default function HomePage() {
         setBoard(state.board)
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
+        setAgentConnections(state.settings.agentConnections ?? {})
         setRoles(state.roles ?? [])
         setWorkspaces(state.workspaces ?? [])
       }
@@ -160,6 +165,7 @@ export default function HomePage() {
       setBoard(state.board)
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
+      setAgentConnections(state.settings.agentConnections ?? {})
       setRoles(state.roles ?? [])
       setWorkspaces(state.workspaces ?? [])
     })
@@ -200,6 +206,27 @@ export default function HomePage() {
     }
   }
 
+  const handleConnectAgent = async (
+    agentId: ConnectableAgentId,
+    apiKey: string
+  ): Promise<string | null> => {
+    setSavingSettings(true)
+    setSettingsError(null)
+    try {
+      const state = await connectAgent(agentId, apiKey)
+      if (state) {
+        setAgentConnections(state.settings.agentConnections ?? {})
+      }
+      return null
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setSettingsError(message)
+      return message
+    } finally {
+      setSavingSettings(false)
+    }
+  }
+
   const handleCreateTask = async (
     title: string,
     description: string,
@@ -208,6 +235,8 @@ export default function HomePage() {
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
     executionAgentCli: AgentCliId,
+    model: string,
+    executionModel: string,
     roleId: string,
     reviewerRoleId: string,
     workspaceId: string
@@ -222,7 +251,9 @@ export default function HomePage() {
         baseBranch,
         mode,
         agentCli,
+        model: model || undefined,
         executionAgentCli,
+        executionModel: executionModel || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
         workspaceId: workspaceId || undefined,
@@ -255,7 +286,9 @@ export default function HomePage() {
         roleId: payload.roleId || undefined,
         reviewerRoleId: payload.reviewerRoleId || undefined,
         agentCli: payload.agentCli,
+        model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
+        executionModel: payload.executionModel || undefined,
         workspaceId: payload.workspaceId || undefined,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
@@ -470,6 +503,7 @@ export default function HomePage() {
                   loadGitInfo={getGitInfo}
                   initRepository={initRepository}
                   detectAgents={detectAgents}
+                  agentConnections={agentConnections}
                   onCreateTask={handleCreateTask}
                 />
               </div>
@@ -479,6 +513,7 @@ export default function HomePage() {
               roles={roles}
               workspaces={workspaces}
               detectAgents={detectAgents}
+              agentConnections={agentConnections}
               pickFolder={pickFolder}
               loadGitInfo={getGitInfo}
               onManageRoles={handleOpenRoles}
@@ -490,9 +525,11 @@ export default function HomePage() {
             <SettingsDialog
               open={settingsOpen}
               systemPrompt={systemPrompt}
+              agentConnections={agentConnections}
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}
+              onConnectAgent={handleConnectAgent}
               onClose={() => setSettingsOpen(false)}
             />
             <RolesDialog

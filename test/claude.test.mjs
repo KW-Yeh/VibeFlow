@@ -117,12 +117,6 @@ test('buildAgentCommand — Claude planning and execution use separate session i
   assert.ok(!executionCmd.includes(planningId), 'execution must not reuse planning session id')
 })
 
-test('buildAgentCommand — can omit Claude --model for persisted CLI default fallback', () => {
-  const cmd = buildAgentCommand(TASK, '', EXECUTOR_ROLE, { omitModel: true })
-  assert.ok(cmd.startsWith('claude --session-id '), 'must still launch Claude normally')
-  assert.ok(!cmd.includes(' --model '), 'must omit --model when requested')
-})
-
 // ─── buildReviewCommand (fresh-launch) ──────────────────────────────────────
 
 test('buildReviewCommand — is a fresh claude launch, not a REPL keystroke sequence', () => {
