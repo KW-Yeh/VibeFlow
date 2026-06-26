@@ -362,6 +362,15 @@ export function termKill(sessionKey: string): void {
   bridge()?.term.kill(sessionKey)
 }
 
+/** Whether a pinned Claude conversation already exists on disk for `cwd`. */
+export async function termSessionExists(
+  cwd: string,
+  sessionId: string
+): Promise<boolean> {
+  const b = bridge()
+  return b ? b.term.sessionExists(cwd, sessionId) : false
+}
+
 /**
  * Subscribe to PTY data. The payload carries `sessionKey` to identify which
  * terminal pane the data belongs to.

@@ -529,6 +529,25 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   )
 
+  // Does a pinned Claude conversation already exist on disk? Claude stores each
+  // session at ~/.claude/projects/<cwd-with-non-alphanumerics-as-dashes>/<id>.jsonl.
+  // Used to decide whether selecting a task may auto-resume (session present) or
+  // must wait for the user to press 重跑 (no session yet).
+  ipcMain.handle(
+    'claude:sessionExists',
+    (_event, payload: { cwd: string; sessionId: string }) => {
+      const munged = payload.cwd.replace(/[^a-zA-Z0-9]/g, '-')
+      const file = path.join(
+        app.getPath('home'),
+        '.claude',
+        'projects',
+        munged,
+        `${payload.sessionId}.jsonl`
+      )
+      return fs.existsSync(file)
+    }
+  )
+
   ipcMain.on('pty:kill', (_event, sessionKey: string) => {
     // If this is a taskId (executor session), teardown both executor + reviewer.
     // If this is a composite reviewer key, only kill that reviewer session.

@@ -13,9 +13,11 @@ import { NewTaskForm } from '@/components/new-task-dialog'
 import {
   buildReviseCommand,
   buildReviewCommand,
+  executorSessionId,
   isTaskComplete,
+  planningSessionId,
 } from '@/lib/claude'
-import { termKill } from '@/lib/api'
+import { termKill, termSessionExists } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -189,6 +191,9 @@ export function KanbanBoard({
   // Tracks the previous board so we can detect allDone transitions within the
   // current session and skip auto-review advances on app restart.
   const prevBoardRef = useRef<typeof board | null>(null)
+  // Same idea for the planning→execution handoff: only auto-start execution when
+  // planDone flips within this session, never on app reopen.
+  const prevExecBoardRef = useRef<typeof board | null>(null)
 
   const killReviewerSession = (taskId: string) => {
     termKill(reviewSessionKey(taskId))
@@ -306,25 +311,44 @@ export function KanbanBoard({
     // Resume in-progress tasks that were previously launched (app restart recovery).
     // Only arm a resume if the terminal hasn't already received a pending command
     // in this session — avoids double-sending on re-selection.
-    if (!terminalLaunch[selectedTaskId]) {
-      const task = board.in_progress.find((t) => t.id === selectedTaskId)
-      if (task && wasLaunched(task) && !isTaskComplete(task)) {
-        if (task.progress?.needsUserInput) return
-        if (task.progress?.planDone === true && !task.progress?.needsUserInput) {
-          executionStartedRef.current.add(task.id)
-        }
-        armLaunch(task, { resume: true })
-      }
+    if (terminalLaunch[selectedTaskId]) return
+    const task = board.in_progress.find((t) => t.id === selectedTaskId)
+    if (!task || !wasLaunched(task) || isTaskComplete(task)) return
+    if (task.progress?.needsUserInput) return
+    const cwd = task.worktreePath
+    if (!cwd) return
+    // Selecting a task must not start a fresh run. Auto-resume only when the
+    // pinned conversation actually exists on disk; otherwise leave it for the
+    // user to press 重跑.
+    const isExecution = task.progress?.planDone === true
+    const sessionId = isExecution
+      ? executorSessionId(task.id)
+      : planningSessionId(task.id)
+    let cancelled = false
+    void termSessionExists(cwd, sessionId).then((exists) => {
+      if (cancelled || !exists || terminalLaunch[task.id]) return
+      if (isExecution) executionStartedRef.current.add(task.id)
+      armLaunch(task, { resume: true })
+    })
+    return () => {
+      cancelled = true
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    const prev = prevExecBoardRef.current
+    prevExecBoardRef.current = board
     for (const task of board.in_progress) {
       if (!task.launchedAt) continue
       if (task.progress?.planDone !== true) continue
       if (task.progress?.needsUserInput) continue
       if (isTaskComplete(task)) continue
       if (executionStartedRef.current.has(task.id)) continue
+      // Only auto-start execution when planning JUST completed in this session
+      // (planDone flipped false→true). On app reopen there is no prior board, so
+      // an already-planDone task is left for the user to press 重跑.
+      const prevTask = prev?.in_progress.find((t) => t.id === task.id)
+      if (!prevTask || prevTask.progress?.planDone === true) continue
       executionStartedRef.current.add(task.id)
       armLaunch(task)
       break

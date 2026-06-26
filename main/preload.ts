@@ -247,6 +247,9 @@ const vibeflow = {
      * sessions; pass `${taskId}:review` to kill only the reviewer session.
      */
     kill: (sessionKey: string): void => ipcRenderer.send('pty:kill', sessionKey),
+    /** Whether a pinned Claude conversation already exists on disk for `cwd`. */
+    sessionExists: (cwd: string, sessionId: string): Promise<boolean> =>
+      ipcRenderer.invoke('claude:sessionExists', { cwd, sessionId }),
     /**
      * Data pushed from the PTY. The payload carries `sessionKey` to let the
      * renderer route output to the correct terminal pane.
