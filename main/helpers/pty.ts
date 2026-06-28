@@ -1,5 +1,7 @@
 import * as nodePty from 'node-pty'
 import type { WebContents } from 'electron'
+import { existsSync } from 'fs'
+import path from 'path'
 import { buildEnv } from './env'
 
 /**
@@ -29,9 +31,25 @@ function buildPtyEnv(): Record<string, string> {
   return { ...buildEnv(), TERM: 'xterm-256color' }
 }
 
+function findGitBash(): string | undefined {
+  const candidates = [
+    process.env['ProgramFiles']
+      ? path.join(process.env['ProgramFiles'], 'Git', 'bin', 'bash.exe')
+      : undefined,
+    process.env['ProgramFiles(x86)']
+      ? path.join(process.env['ProgramFiles(x86)'] as string, 'Git', 'bin', 'bash.exe')
+      : undefined,
+    process.env['LOCALAPPDATA']
+      ? path.join(process.env['LOCALAPPDATA'], 'Programs', 'Git', 'bin', 'bash.exe')
+      : undefined,
+  ]
+  return candidates.filter((p): p is string => !!p).find(existsSync)
+}
+
 function defaultShell(): string {
   if (process.platform === 'win32') {
-    return process.env.COMSPEC || 'powershell.exe'
+    // Launch commands are written in POSIX sh syntax; Git Bash is required to run them.
+    return findGitBash() ?? 'powershell.exe'
   }
   return process.env.SHELL || '/bin/zsh'
 }
@@ -69,10 +87,15 @@ export function startSession(
 
   const shell = defaultShell()
   let args: string[]
-  if (process.platform === 'win32') {
-    args = command ? ['-Command', command] : []
-  } else {
+  // Git Bash (bash.exe) on Windows uses the same POSIX login-shell flags as macOS/Linux.
+  // Fall back to PowerShell args only when Git Bash is unavailable (launch commands
+  // containing POSIX syntax will not work in that case).
+  const isPosixShell =
+    process.platform !== 'win32' || shell.toLowerCase().endsWith('bash.exe')
+  if (isPosixShell) {
     args = command ? ['-lic', command] : ['-l']
+  } else {
+    args = command ? ['-NoProfile', '-NonInteractive', '-Command', command] : ['-NoProfile']
   }
 
   const proc = nodePty.spawn(shell, args, {

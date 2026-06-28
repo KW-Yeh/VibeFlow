@@ -100,7 +100,7 @@ const WORKSPACE_CONTEXT_FILE = 'context.md'
  * session turn and survives --resume / --continue.
  */
 function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boolean): string {
-  const contextPath = `${workspacePath}/${WORKSPACE_CONTEXT_FILE}`
+  const contextPath = `${toShellPath(workspacePath)}/${WORKSPACE_CONTEXT_FILE}`
   const lines = [
     '',
     `背景知識：在開始執行前，請先閱讀 ${contextPath} 作為此任務的額外 context。`,
@@ -167,6 +167,11 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
+/** Normalize path separators to forward slashes for use inside shell commands. */
+function toShellPath(p: string): string {
+  return p.replace(/\\/g, '/')
+}
+
 /**
  * Build a Claude launch that resumes the pinned session when it exists, else
  * starts it fresh. `claude --resume <id>` hard-fails ("No conversation found")
@@ -215,7 +220,7 @@ const SUBAGENTS_DIR = '.vibeflow-subagents'
  * shell that actually runs the hook.
  */
 function buildSubAgentSettings(worktreePath: string): string {
-  const dir = `${worktreePath}/${SUBAGENTS_DIR}`
+  const dir = `${toShellPath(worktreePath)}/${SUBAGENTS_DIR}`
   const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
   const taskHook = {
     matcher: 'Task',
@@ -504,7 +509,7 @@ function assembleCommand(
       : ''
     // Grant the agent read/write access to the workspace folder so it can read
     // context.md and write back the updated knowledge directory.
-    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
@@ -553,7 +558,7 @@ export function buildReviewCommand(
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
-    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${addDir}`
     const sysArg = reviewSysPrompt
@@ -610,7 +615,7 @@ export function buildReviseCommand(
     const settings = task.worktreePath
       ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
       : ''
-    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
+    const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const tail = `${flags} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}`
