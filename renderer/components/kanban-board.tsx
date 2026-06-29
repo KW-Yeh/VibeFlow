@@ -525,7 +525,7 @@ export function KanbanBoard({
 
               {!selected && (
                 <div className="flex h-full overflow-y-auto p-8">
-                  <div className="mx-auto w-full max-w-5xl">
+                  <div className="mx-auto w-full max-w-5xl pb-8">
                     <NewTaskForm
                       inline
                       creating={creating}
