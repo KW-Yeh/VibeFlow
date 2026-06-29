@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
-import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued'
-import ReactMarkdown from 'react-markdown'
+import { lazy, memo, Suspense, useEffect, useState } from 'react'
+import type { DiffMethod } from 'react-diff-viewer-continued'
 import remarkGfm from 'remark-gfm'
+
+const ReactDiffViewer = lazy(() =>
+  import('react-diff-viewer-continued').then((m) => ({ default: m.default }))
+)
+const ReactMarkdown = lazy(() =>
+  import('react-markdown').then((m) => ({ default: m.default }))
+)
 import {
   Check,
   CheckCircle2,
@@ -225,37 +231,39 @@ function MarkdownContent({
         compact ? 'prose-xs text-[11px] leading-snug' : 'prose-sm'
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ children, ...props }) => (
-            <a {...props} className="break-words text-primary underline underline-offset-2">
-              {children}
-            </a>
-          ),
-          code: ({ children, className, ...props }) => (
-            <code
-              {...props}
-              className={cn('break-words rounded bg-background/70 px-1 py-0.5', className)}
-            >
-              {children}
-            </code>
-          ),
-          pre: ({ children, ...props }) => (
-            <pre
-              {...props}
-              className={cn(
-                'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
-                compact ? 'text-[10px] leading-snug' : 'text-xs'
-              )}
-            >
-              {children}
-            </pre>
-          ),
-        }}
-      >
-        {source}
-      </ReactMarkdown>
+      <Suspense fallback={null}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ children, ...props }) => (
+              <a {...props} className="break-words text-primary underline underline-offset-2">
+                {children}
+              </a>
+            ),
+            code: ({ children, className, ...props }) => (
+              <code
+                {...props}
+                className={cn('break-words rounded bg-background/70 px-1 py-0.5', className)}
+              >
+                {children}
+              </code>
+            ),
+            pre: ({ children, ...props }) => (
+              <pre
+                {...props}
+                className={cn(
+                  'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
+                  compact ? 'text-[10px] leading-snug' : 'text-xs'
+                )}
+              >
+                {children}
+              </pre>
+            ),
+          }}
+        >
+          {source}
+        </ReactMarkdown>
+      </Suspense>
     </div>
   )
 }
@@ -305,7 +313,7 @@ function PlanContent({ taskId }: { taskId: string }) {
   )
 }
 
-function DiffFileViewer({ file }: { file: DiffFile }) {
+const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }) {
   return (
     <div className="overflow-hidden rounded-md border border-border/70">
       <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
@@ -322,61 +330,63 @@ function DiffFileViewer({ file }: { file: DiffFile }) {
         )}
       </div>
       <div className="min-w-0 max-w-full overflow-x-auto text-[11px] [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:min-w-full [&_table]:table-fixed [&_td]:min-w-0 [&_td]:align-top">
-        <ReactDiffViewer
-          oldValue={file.oldValue}
-          newValue={file.newValue}
-          splitView={false}
-          useDarkTheme
-          compareMethod={DiffMethod.LINES}
-          renderContent={(source) => (
-            <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words">
-              {source}
-            </span>
-          )}
-          styles={{
-            diffContainer: {
-              width: '100%',
-              maxWidth: '100%',
-              overflowX: 'visible',
-            },
-            line: {
-              width: '100%',
-            },
-            content: {
-              width: '100%',
-              maxWidth: '100%',
-              overflowX: 'visible',
-            },
-            contentText: {
-              display: 'block',
-              width: '100%',
-              maxWidth: '100%',
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
-              wordBreak: 'break-word',
-            },
-            lineContent: {
-              display: 'block',
-              width: '100%',
-              maxWidth: '100%',
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
-              wordBreak: 'break-word',
-            },
-            gutter: {
-              maxWidth: '2.5rem',
-              minWidth: '2.5rem',
-              width: '2.5rem',
-              paddingLeft: '0.25rem',
-              paddingRight: '0.25rem',
-              whiteSpace: 'nowrap',
-            },
-          }}
-        />
+        <Suspense fallback={null}>
+          <ReactDiffViewer
+            oldValue={file.oldValue}
+            newValue={file.newValue}
+            splitView={false}
+            useDarkTheme
+            compareMethod={'diffLines' as unknown as DiffMethod}
+            renderContent={(source) => (
+              <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words">
+                {source}
+              </span>
+            )}
+            styles={{
+              diffContainer: {
+                width: '100%',
+                maxWidth: '100%',
+                overflowX: 'visible',
+              },
+              line: {
+                width: '100%',
+              },
+              content: {
+                width: '100%',
+                maxWidth: '100%',
+                overflowX: 'visible',
+              },
+              contentText: {
+                display: 'block',
+                width: '100%',
+                maxWidth: '100%',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              },
+              lineContent: {
+                display: 'block',
+                width: '100%',
+                maxWidth: '100%',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              },
+              gutter: {
+                maxWidth: '2.5rem',
+                minWidth: '2.5rem',
+                width: '2.5rem',
+                paddingLeft: '0.25rem',
+                paddingRight: '0.25rem',
+                whiteSpace: 'nowrap',
+              },
+            }}
+          />
+        </Suspense>
       </div>
     </div>
   )
-}
+})
 
 function DiffSection({ taskId }: { taskId: string }) {
   const [files, setFiles] = useState<DiffFile[]>([])
