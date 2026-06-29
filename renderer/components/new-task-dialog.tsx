@@ -797,7 +797,7 @@ export function NewTaskForm({
 
       {/* Footer buttons */}
       {inline ? (
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 space-y-2 pb-10">
           {!isProjectReady && title.trim().length > 0 && (
             <p className="text-right text-xs text-muted-foreground">
               請先在左側選擇專案資料夾
