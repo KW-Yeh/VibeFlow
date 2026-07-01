@@ -268,11 +268,15 @@ const vibeflow = {
     },
     /** Exit event pushed when a PTY session ends. Carries `sessionKey`. */
     onExit: (
-      callback: (payload: { sessionKey: string; exitCode: number }) => void
+      callback: (payload: {
+        sessionKey: string
+        exitCode: number
+        intentional: boolean
+      }) => void
     ): (() => void) => {
       const sub = (
         _event: IpcRendererEvent,
-        payload: { sessionKey: string; exitCode: number }
+        payload: { sessionKey: string; exitCode: number; intentional: boolean }
       ) => callback(payload)
       ipcRenderer.on('pty:exit', sub)
       return () => ipcRenderer.removeListener('pty:exit', sub)

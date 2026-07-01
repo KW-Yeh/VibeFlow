@@ -11,6 +11,11 @@ import { buildEnv } from './env'
  */
 const sessions = new Map<string, nodePty.IPty>()
 
+// Procs we tore down on purpose (session kill / phase switch). node-pty's
+// kill() sends SIGHUP, so the shell exits 129 — an expected teardown, not a
+// crash. The renderer reads this flag to avoid a false「異常結束」warning.
+const intentionalKills = new WeakSet<nodePty.IPty>()
+
 // ---------------------------------------------------------------------------
 // Scrollback ring buffer — survives `killSession` so a remounting terminal
 // can replay what happened before it unmounted. Cleared when a new *command*
@@ -112,7 +117,9 @@ export function startSession(
     if (!sender.isDestroyed()) sender.send('pty:data', { sessionKey, data })
   })
   proc.onExit(({ exitCode }) => {
-    if (!sender.isDestroyed()) sender.send('pty:exit', { sessionKey, exitCode })
+    const intentional = intentionalKills.has(proc)
+    if (!sender.isDestroyed())
+      sender.send('pty:exit', { sessionKey, exitCode, intentional })
     // Guard against a stale exit: a kill-and-restart replaces the map entry
     // before the old process's exit event fires, and that old event must not
     // deregister (or fire callbacks for) the new session.
@@ -144,6 +151,7 @@ export function resizeSession(
 export function killSession(sessionKey: string): void {
   const proc = sessions.get(sessionKey)
   if (proc) {
+    intentionalKills.add(proc)
     try {
       proc.kill()
     } catch {

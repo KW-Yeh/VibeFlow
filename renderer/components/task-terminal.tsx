@@ -65,10 +65,6 @@ export function TaskTerminal({
   const cwdRef = useRef<string | null>(cwd)
   cwdRef.current = cwd
   const readOnlyRef = useRef(readOnly)
-  // Counts pending intentional PTY kills. Each armLaunch increments; each
-  // suppressed exit decrements. A counter (not boolean) handles rapid double-kills
-  // (e.g. planning→execution switch racing with the selectedTaskId resume).
-  const suppressExitRef = useRef(0)
 
   // Run the launch command AS the login shell's argument (`zsh -lic <cmd>`)
   // rather than typing it into the interactive line editor. The command is often
@@ -99,7 +95,6 @@ export function TaskTerminal({
     // exit blip from killing the prior process.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
-    suppressExitRef.current += 1
     launchWithCommand(cmd)
   }, [launchWithCommand])
 
@@ -169,10 +164,11 @@ export function TaskTerminal({
       offData = api.term.onData(({ sessionKey: id, data }) => {
         if (id === sessionKey) term.write(data)
       })
-      offExit = api.term.onExit(({ sessionKey: id, exitCode }) => {
+      offExit = api.term.onExit(({ sessionKey: id, exitCode, intentional }) => {
         if (id !== sessionKey) return
-        if (suppressExitRef.current > 0) {
-          suppressExitRef.current -= 1
+        // A kill we initiated (phase switch / teardown) — node-pty's SIGHUP
+        // makes the shell exit 129; that's expected, not a crash.
+        if (intentional) {
           term.writeln('\r\n⏳  切換至下一階段...')
           return
         }

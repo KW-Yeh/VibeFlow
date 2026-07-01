@@ -386,7 +386,11 @@ export function onTermData(
  * Subscribe to PTY exit events. Carries `sessionKey`.
  */
 export function onTermExit(
-  callback: (payload: { sessionKey: string; exitCode: number }) => void
+  callback: (payload: {
+    sessionKey: string
+    exitCode: number
+    intentional: boolean
+  }) => void
 ): () => void {
   const b = bridge()
   return b ? b.term.onExit(callback) : () => {}
