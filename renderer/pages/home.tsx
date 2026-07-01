@@ -12,6 +12,7 @@ import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
   connectAgent,
+  refreshAgentModels,
   createRole,
   createTask,
   createWorkspace,
@@ -225,6 +226,11 @@ export default function HomePage() {
     } finally {
       setSavingSettings(false)
     }
+  }
+
+  const handleRefreshAgentModels = async (agentId: ConnectableAgentId): Promise<void> => {
+    const state = await refreshAgentModels(agentId)
+    if (state) setAgentConnections(state.settings.agentConnections ?? {})
   }
 
   const handleCreateTask = async (
@@ -530,6 +536,7 @@ export default function HomePage() {
               error={settingsError}
               onSave={handleSaveSettings}
               onConnectAgent={handleConnectAgent}
+              onRefreshModels={handleRefreshAgentModels}
               onClose={() => setSettingsOpen(false)}
             />
             <RolesDialog

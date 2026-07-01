@@ -7,6 +7,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  RefreshCw,
   RotateCcw,
 } from 'lucide-react'
 
@@ -49,6 +50,7 @@ interface SettingsDialogProps {
   /** Called with the new custom prompt ('' = revert to the default). */
   onSave: (systemPrompt: string) => void
   onConnectAgent: (agentId: ConnectableAgentId, apiKey: string) => Promise<string | null>
+  onRefreshModels?: (agentId: ConnectableAgentId) => Promise<void>
   onClose: () => void
 }
 
@@ -60,6 +62,7 @@ export function SettingsDialog({
   error,
   onSave,
   onConnectAgent,
+  onRefreshModels,
   onClose,
 }: SettingsDialogProps) {
   const [text, setText] = useState('')
@@ -68,6 +71,7 @@ export function SettingsDialog({
   const [showKey, setShowKey] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [refreshing, setRefreshing] = useState<ConnectableAgentId | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -294,6 +298,23 @@ export function SettingsDialog({
                           : connection?.error ?? '尚未連線'}
                       </p>
                     </div>
+                    {connected && onRefreshModels && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        disabled={refreshing === agent.id}
+                        aria-label="重新整理 model 列表"
+                        onClick={async () => {
+                          setRefreshing(agent.id)
+                          await onRefreshModels(agent.id)
+                          setRefreshing(null)
+                        }}
+                      >
+                        <RefreshCw className={cn('size-4', refreshing === agent.id && 'animate-spin')} />
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
