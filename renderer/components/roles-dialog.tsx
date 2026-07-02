@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 
+import { AvatarCropDialog } from '@/components/avatar-crop-dialog'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
@@ -19,37 +20,12 @@ interface RolesDialogProps {
   onClose: () => void
 }
 
-/** Max edge length for stored avatar images — keeps the data URL small. */
-const AVATAR_MAX_EDGE = 128
-
-/**
- * Read an image File, downscale it to fit AVATAR_MAX_EDGE, and return a JPEG
- * data URL. Downscaling keeps the persisted state (electron-store) compact.
- */
-function fileToAvatarDataUrl(file: File): Promise<string> {
+/** Read an image File as a raw data URL, handed off to the crop dialog. */
+function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('讀取圖片失敗'))
-    reader.onload = () => {
-      const img = new Image()
-      img.onerror = () => reject(new Error('無法解析圖片'))
-      img.onload = () => {
-        const scale = Math.min(
-          1,
-          AVATAR_MAX_EDGE / Math.max(img.width, img.height)
-        )
-        const w = Math.round(img.width * scale)
-        const h = Math.round(img.height * scale)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return reject(new Error('無法建立繪圖環境'))
-        ctx.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', 0.85))
-      }
-      img.src = reader.result as string
-    }
+    reader.onload = () => resolve(reader.result as string)
     reader.readAsDataURL(file)
   })
 }
@@ -117,6 +93,7 @@ export function RolesDialog({
   const [avatarError, setAvatarError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [showPresets, setShowPresets] = useState(false)
+  const [cropSrc, setCropSrc] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Reset to the list view whenever the dialog (re-)opens.
@@ -127,6 +104,7 @@ export function RolesDialog({
       setAvatarError(null)
       setConfirmDeleteId(null)
       setShowPresets(false)
+      setCropSrc(null)
     }
   }, [open])
 
@@ -168,8 +146,8 @@ export function RolesDialog({
     if (!file) return
     setAvatarError(null)
     try {
-      const dataUrl = await fileToAvatarDataUrl(file)
-      setForm((f) => ({ ...f, avatar: dataUrl }))
+      const dataUrl = await fileToDataUrl(file)
+      setCropSrc(dataUrl)
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : String(err))
     }
@@ -203,6 +181,7 @@ export function RolesDialog({
   }
 
   return (
+    <>
     <DialogShell
       title={isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
       description={isEditing ? '定義 agent 執行任務時的角色定位、職責與邊界。' : '管理新增任務與編輯任務可指派的角色。'}
@@ -481,5 +460,16 @@ export function RolesDialog({
         )}
 
     </DialogShell>
+    {cropSrc && (
+      <AvatarCropDialog
+        src={cropSrc}
+        onCancel={() => setCropSrc(null)}
+        onApply={(dataUrl) => {
+          setForm((f) => ({ ...f, avatar: dataUrl }))
+          setCropSrc(null)
+        }}
+      />
+    )}
+    </>
   )
 }
