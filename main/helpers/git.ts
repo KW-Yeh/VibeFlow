@@ -274,6 +274,67 @@ async function resolveBranchName(
 }
 
 /**
+ * Runtime-only VibeFlow artifacts that must never be carried over from the
+ * source project into a new worktree — each task starts these fresh. They
+ * live in `.git/info/exclude` (see `ensureLocalExclude`), so `git ls-files
+ * --ignored` would otherwise happily include them.
+ */
+const RUNTIME_ARTIFACT_DENYLIST = new Set([PROGRESS_FILE, PLAN_FILE, SUBAGENTS_DIR])
+
+/**
+ * Best-effort copy of every git-ignored/untracked top-level path (node_modules,
+ * .venv, target/, vendor/, build caches, .env, …) from the source project into
+ * a freshly created worktree, so typecheck/build/dev work immediately without
+ * the new worktree running its own install. Driven by `git ls-files --ignored`
+ * instead of a hardcoded list — VibeFlow manages arbitrary projects, not just
+ * Node ones, so there's no fixed set of dependency directory names to special-case.
+ *
+ * Copies are real, never symlinks: Next.js/Turbopack refuses to resolve a
+ * node_modules symlink that points outside the project directory (`Symlink
+ * [project]/node_modules is invalid, it points out of the filesystem root`),
+ * which breaks `next dev`/`next build` outright — other toolchains may have
+ * similar assumptions. Best-effort throughout: a missing git command, an
+ * unreadable path, or a failed copy never fails provisioning — it just means
+ * the worktree needs its own install/build step before those files exist.
+ */
+async function copyIgnoredFiles(
+  projectPath: string,
+  worktreePath: string
+): Promise<void> {
+  let listing: string
+  try {
+    listing = await git(projectPath, [
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--directory',
+    ])
+  } catch (err) {
+    console.error('Failed to list ignored files for worktree copy:', err)
+    return
+  }
+
+  const entries = listing
+    .split('\n')
+    .map((line) => line.replace(/\/$/, '').trim())
+    .filter((entry) => entry && !entry.startsWith('.git') && !RUNTIME_ARTIFACT_DENYLIST.has(entry))
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const src = path.join(projectPath, entry)
+      const dest = path.join(worktreePath, entry)
+      try {
+        await fs.mkdir(path.dirname(dest), { recursive: true })
+        await fs.cp(src, dest, { recursive: true })
+      } catch (err) {
+        console.error(`Failed to copy ignored path "${entry}" into worktree:`, err)
+      }
+    })
+  )
+}
+
+/**
  * Create an isolated worktree for a task under `<workspacePath>/<branch-dir>` on
  * a new branch, and (when a remote exists) push the branch upstream. The branch
  * is named from `preferredBranch` (e.g. feature/WR-4832, fix/WCL260522-0002,
@@ -337,15 +398,18 @@ export async function provisionWorktree(
     throw err
   }
 
-  let pushed = false
-  if (info.hasRemote) {
-    try {
-      await git(worktreePath, ['push', '-u', 'origin', branch])
-      pushed = true
-    } catch {
-      pushed = false
-    }
-  }
+  const [pushed] = await Promise.all([
+    (async () => {
+      if (!info.hasRemote) return false
+      try {
+        await git(worktreePath, ['push', '-u', 'origin', branch])
+        return true
+      } catch {
+        return false
+      }
+    })(),
+    copyIgnoredFiles(projectPath, worktreePath),
+  ])
 
   return { branch, worktreePath, pushed, baseBranch: base }
 }
