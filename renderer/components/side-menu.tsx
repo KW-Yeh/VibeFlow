@@ -193,7 +193,7 @@ function TaskRow({
         {status.icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
-      <span className={cn('shrink-0 text-[10px]', status.className)}>
+      <span className={cn('shrink-0 text-[11px]', status.className)}>
         {status.label}
       </span>
     </button>
@@ -222,7 +222,7 @@ export function SideMenu({
     <aside
       className={cn(
         'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-[width] duration-200',
-        collapsed ? 'w-12' : 'w-64'
+        collapsed ? 'w-12' : 'w-72'
       )}
     >
       {/* Header */}
@@ -260,7 +260,7 @@ export function SideMenu({
                 <button
                   type="button"
                   onClick={() => setWorkspacesExpanded((v) => !v)}
-                  className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                  className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
                 >
                   {workspacesExpanded ? (
                     <ChevronDown className="size-3" />
@@ -295,7 +295,7 @@ export function SideMenu({
               {workspacesExpanded && (
                 <div className="space-y-0.5">
                   {workspaces.length === 0 ? (
-                    <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                    <p className="px-2 py-1 text-xs text-muted-foreground">
                       尚無 workspace
                     </p>
                   ) : (
@@ -367,7 +367,7 @@ export function SideMenu({
                     disabled={!firstTask}
                     onClick={() => firstTask && onSelectTask(firstTask.id)}
                     className={cn(
-                      'mx-auto flex size-8 items-center justify-center rounded-md text-[10px] font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
+                      'mx-auto flex size-8 items-center justify-center rounded-md text-[11px] font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
                       selected
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -381,7 +381,7 @@ export function SideMenu({
           ) : (
             <>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Projects
                 </span>
                 <IconButton
@@ -396,7 +396,7 @@ export function SideMenu({
 
               <div className="space-y-1.5">
                 {projects.length === 0 ? (
-                  <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                  <p className="px-2 py-1 text-xs text-muted-foreground">
                     尚無任務
                   </p>
                 ) : (
@@ -416,7 +416,7 @@ export function SideMenu({
                             }))
                           }
                           className={cn(
-                            'flex w-full items-center gap-1 rounded px-1 py-1 text-[11px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                            'flex w-full items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
                             project.hasSelected && 'text-foreground'
                           )}
                           title={project.path ?? project.name}
@@ -438,7 +438,7 @@ export function SideMenu({
                         {expanded && (
                           <div className="ml-3 space-y-0.5">
                             {project.active.length === 0 ? (
-                              <p className="px-2 py-0.5 text-[11px] text-muted-foreground/60">
+                              <p className="px-2 py-0.5 text-xs text-muted-foreground/60">
                                 無進行中任務
                               </p>
                             ) : (
@@ -462,7 +462,7 @@ export function SideMenu({
                                       [project.key]: !doneOpen,
                                     }))
                                   }
-                                  className="mt-1 flex w-full items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                  className="mt-1 flex w-full items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                 >
                                   {doneOpen ? (
                                     <ChevronDown className="size-3 shrink-0" />
