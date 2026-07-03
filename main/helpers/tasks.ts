@@ -108,9 +108,13 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     )
   }
 
-  const pipeline: PipelineRun | undefined = input.reviewerRoleId
-    ? { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
-    : undefined
+  // Every task runs the review pipeline: the executor's completion auto-triggers
+  // the fixed 測試工程師 reviewer pass (see kanban-board orchestration).
+  const pipeline: PipelineRun = {
+    stage: 'developing',
+    round: 0,
+    maxRounds: DEFAULT_MAX_REVIEW_ROUNDS,
+  }
 
   const task: Task = {
     id: taskId,

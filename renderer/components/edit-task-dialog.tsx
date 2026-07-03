@@ -79,7 +79,6 @@ export function EditTaskDialog({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [roleId, setRoleId] = useState('')
-  const [reviewerRoleId, setReviewerRoleId] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
@@ -103,7 +102,6 @@ export function EditTaskDialog({
     setTitle(task.title)
     setDescription(task.description ?? '')
     setRoleId(task.roleId ?? '')
-    setReviewerRoleId(task.reviewerRoleId ?? '')
     setAgentCli(task.agentCli ?? 'claude')
     setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
@@ -147,7 +145,6 @@ export function EditTaskDialog({
     title !== task.title ||
     description !== (task.description ?? '') ||
     roleId !== (task.roleId ?? '') ||
-    reviewerRoleId !== (task.reviewerRoleId ?? '') ||
     agentCli !== (task.agentCli ?? 'claude') ||
     model !== (task.model ?? '') ||
     executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
@@ -199,7 +196,6 @@ export function EditTaskDialog({
     (!projectChanged || isRepo)
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
-  const selectedReviewerRole = roles.find((r) => r.id === reviewerRoleId) ?? null
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -207,7 +203,8 @@ export function EditTaskDialog({
       title: title.trim(),
       description: description.trim(),
       roleId,
-      reviewerRoleId,
+      // Reviewer is fixed (測試工程師) and always on; no per-task selection.
+      reviewerRoleId: '',
       agentCli,
       model,
       executionAgentCli,
@@ -413,64 +410,33 @@ export function EditTaskDialog({
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <UserRound className="size-3" />
-                      指派角色
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {selectedRole && (
-                        <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
-                      )}
-                      <select
-                        name="edit-task-role"
-                        value={roleId}
-                        onChange={(e) => setRoleId(e.target.value)}
-                        className={F}
-                      >
-                        <option value="">不指派角色</option>
-                        {roles.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <ShieldCheck className="size-3" />
-                      Code Reviewer
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {selectedReviewerRole && (
-                        <RoleAvatar
-                          role={selectedReviewerRole}
-                          className="size-6 shrink-0 text-[10px]"
-                        />
-                      )}
-                      <select
-                        name="edit-task-reviewer-role"
-                        value={reviewerRoleId}
-                        onChange={(e) => setReviewerRoleId(e.target.value)}
-                        className={F}
-                      >
-                        <option value="">不自動審查</option>
-                        {roles.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {selectedReviewerRole && (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedReviewerRole.name} 會自動審查並來回修正（須開啟 Auto Mode）。
-                      </p>
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <UserRound className="size-3" />
+                    指派角色
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {selectedRole && (
+                      <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
                     )}
+                    <select
+                      name="edit-task-role"
+                      value={roleId}
+                      onChange={(e) => setRoleId(e.target.value)}
+                      className={F}
+                    >
+                      <option value="">不指派角色</option>
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ShieldCheck className="size-3" />
+                    完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
+                  </p>
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import type { AgentCliId, Role, Task } from '@/lib/types'
+import presetRolesData from '@/lib/preset-roles.json'
 
 /**
  * Default system prompt appended when auto-launching Claude for a card. It
@@ -28,52 +29,24 @@ export const DEFAULT_SYSTEM_PROMPT = [
 ].join('\n')
 
 /**
- * Built-in role templates the user can pick from when creating a new role.
- * These are read-only presets — they populate the creation form and are only
- * persisted to the store when the user explicitly saves.
+ * Built-in role templates the user can pick from when creating a new role, and
+ * the seeded default roles. Single source shared with main's DEFAULT_ROLES
+ * (both import the same JSON — see main/helpers/store.ts).
  */
-export const PRESET_ROLES: Omit<Role, 'id'>[] = [
-  {
-    name: '資深RD',
-    avatar: '👨‍💻',
-    positioning:
-      '負責產品的技術實現與架構設計。將業務需求與設計稿轉化為穩定、高效且具擴展性的程式碼，是產品落地的心臟。',
-    responsibilities:
-      '技術實作： 負責前端、後端、資料庫或演算法的程式碼撰寫與系統架構設計。\n技術可行性評估： 在專案初期評估需求技術難度、所需時間與潛在技術風險。\n程式碼品質維護： 執行 Code Review、撰寫單元測試（Unit Test），並進行系統重構以優化效能。\n問題診斷： 負責線上環境（Production）的 Bug 追蹤、效能瓶頸排查與修復。',
-    boundaries:
-      '不負責 決定產品的「商業邏輯」與「功能優先順序」（此為 PM 職責）。\n不負責 憑空通靈使用者體驗，所有介面與互動必須基於 UIUX 的設計規範。\n不負責 產品的最終品質驗收（Acceptance Testing），必須交由 QA 進行獨立測試。',
-  },
-  {
-    name: '專案經理（PM）',
-    avatar: '📋',
-    positioning:
-      '流程導向、注重細節的專案經理。核心任務是擔任需求的「守門員」與團隊的「協調者」，負責串聯 RD、QA、Design 以及 Code Reviewer。確保任務在每個階段都有完整的 context，並在角色間進行精準的「交棒（Hand-off）」。',
-    responsibilities:
-      '帶領團隊依序經歷規劃、檢視修正、執行、驗收四個階段。確認需求完整性，必要時進行多輪澄清。根據各角色反饋調整計畫直到達成共識。指派任務給負責角色並監控進度。管理 Bug 修復循環直到驗收通過。',
-    boundaries:
-      '不直接撰寫程式碼或設計稿（分別為 RD / Design 職責）。不跳過任何階段的確認機制。不在需求不完整的情況下進入執行階段。確保角色職責不互相越界。',
-  },
-  {
-    name: '一般開發者',
-    avatar: '🛠️',
-    positioning:
-      '你是一位全端開發者，負責將任務需求轉化為可運作、可維護的程式碼實作。你重視程式碼的可讀性與模組化，並以最小、聚焦的改動達成任務目標。',
-    responsibilities:
-      '解析任務需求並釐清模糊的邊界；規劃實作步驟；撰寫與修改程式碼；遵循專案既有的架構慣例與程式風格；執行專案既有的型別檢查、測試與建置；診斷並修正過程中出現的錯誤。',
-    boundaries:
-      '應做：保持改動聚焦於任務範圍、確實處理錯誤與邊界條件。禁做：嚴禁進行範疇外的無關重構；嚴禁為趕時程而略過標準的錯誤處理；不修改與任務無關的檔案。',
-  },
-  {
-    name: '測試者',
-    avatar: '🧪',
-    positioning:
-      '你是一位 QA／測試工程師，站在品質把關的立場審查程式碼改動，確保實作正確、符合需求且不引入回歸。',
-    responsibilities:
-      '審查 git diff 與實作邏輯；驗證需求達成度與邊界條件；檢查錯誤處理、潛在回歸與安全性問題；確認改動符合專案既有慣例；提出具體且可操作的修正建議。',
-    boundaries:
-      '應做：審查意見須具體指出問題的位置與原因，並區分必須修正與建議性意見。禁做：不主動改寫實作，僅提出修正建議；不給籠統含糊的評語；若無必須修正的問題即明確核可（approve）。',
-  },
-]
+export const PRESET_ROLES = presetRolesData as Role[]
+
+/** Look up a preset by its stable id (ids are guaranteed present in the JSON). */
+function presetById(id: string): Role {
+  const role = PRESET_ROLES.find((r) => r.id === id)
+  if (!role) throw new Error(`preset role ${id} missing from preset-roles.json`)
+  return role
+}
+
+/** 路卡利歐 - 專案經理: persona injected during the planning phase. */
+export const PLANNING_ROLE = presetById('49abf867')
+
+/** 倫琴貓 - 測試工程師: persona always used for the reviewer pass. */
+export const REVIEWER_ROLE = presetById('2075a355')
 
 /**
  * Progress file the agent maintains at the session cwd. Must match
@@ -466,7 +439,7 @@ export function buildClaudeCommand(
   workspacePath?: string
 ): string {
   const isExecution = task.progress?.planDone === true
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : PLANNING_ROLE)
   const basePrompt = isExecution
     ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
@@ -545,12 +518,14 @@ function assembleCommand(
  */
 export function buildReviewCommand(
   task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel' | 'worktreePath'>,
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0],
-  workspacePath?: string
+  workspacePath?: string,
+  // Reviewer persona; caller passes the store's (user-editable) 測試工程師 role so
+  // edits take effect. Falls back to the built-in REVIEWER_ROLE when absent.
+  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const agent = taskExecutionAgent(task)
   const model = taskExecutionModel(task)
-  const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole)
+  const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole ?? REVIEWER_ROLE)
   const basePrompt = buildReviewPrompt(task)
   // Reviewer only reads the workspace context, never updates it.
   const prompt = workspacePath
@@ -723,12 +698,15 @@ export function buildAgentCommand(
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
-  workspacePath?: string
+  workspacePath?: string,
+  // Planning persona; caller passes the store's (user-editable) PM role so
+  // edits take effect. Falls back to the built-in PLANNING_ROLE when absent.
+  planningRole?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const isExecution = task.progress?.planDone === true
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
   const model = isExecution ? taskExecutionModel(task) : taskModel(task)
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : undefined)
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : (planningRole ?? PLANNING_ROLE))
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)

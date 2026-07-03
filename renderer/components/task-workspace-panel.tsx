@@ -768,15 +768,25 @@ export function TaskWorkspacePanel({
 export function buildWorkspaceLaunchCommand({
   task,
   role,
+  planningRole,
   systemPrompt,
   workspacePath,
   resume,
 }: {
   task: Task
   role: Role | null
+  /** Store's PM role for the planning phase; undefined → built-in fallback. */
+  planningRole?: Role | null
   systemPrompt: string
   workspacePath?: string
   resume?: boolean
 }): string {
-  return buildAgentCommand(task, systemPrompt, role ?? undefined, { resume }, workspacePath)
+  return buildAgentCommand(
+    task,
+    systemPrompt,
+    role ?? undefined,
+    { resume },
+    workspacePath,
+    planningRole ?? undefined
+  )
 }
