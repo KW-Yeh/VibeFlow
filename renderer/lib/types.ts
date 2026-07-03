@@ -17,6 +17,10 @@ export type {
 export type { GitInfo, DiffFile, FinalizeResult, PrStatus } from '../../main/helpers/git'
 export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {
+  GitHubCliAuthEvent,
+  GitHubCliAuthStatus,
+} from '../../main/helpers/github-auth'
+export type {
   TaskProgress,
   TaskProgressStep,
   ReviewVerdict,
