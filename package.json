@@ -2,7 +2,7 @@
   "private": true,
   "name": "vibeflow",
   "description": "意圖驅動的本地開發看板 — Electron + Next.js + Claude Code CLI + Git Worktree",
-  "version": "1.2.0",
+  "version": "3.0.1",
   "author": "KW-Yeh",
   "type": "module",
   "main": "app/main.js",
