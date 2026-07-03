@@ -1,6 +1,8 @@
+import { spawnSync } from 'child_process'
+import { createRequire } from 'node:module'
 import { app, type BrowserWindow } from 'electron'
-import { autoUpdater } from 'electron-updater'
-import type { ProgressInfo, UpdateInfo } from 'electron-updater'
+
+const require = createRequire(import.meta.url)
 
 export type RemoteUpdateStatus =
   | 'idle'
@@ -25,6 +27,36 @@ export interface RemoteUpdateSnapshot {
   message?: string
 }
 
+interface UpdateInfo {
+  version: string
+  releaseName?: string | null
+  releaseDate: string
+}
+
+interface ProgressInfo {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+interface AutoUpdater {
+  autoDownload: boolean
+  autoInstallOnAppQuit: boolean
+  autoRunAppAfterInstall: boolean
+  logger: unknown
+  on(event: 'checking-for-update', listener: () => void): void
+  on(event: 'update-available', listener: (info: UpdateInfo) => void): void
+  on(event: 'update-not-available', listener: (info: UpdateInfo) => void): void
+  on(event: 'download-progress', listener: (progress: ProgressInfo) => void): void
+  on(event: 'update-downloaded', listener: (info: UpdateInfo) => void): void
+  on(event: 'update-cancelled', listener: (info: UpdateInfo) => void): void
+  on(event: 'error', listener: (err: Error) => void): void
+  checkForUpdates(): Promise<{ updateInfo: UpdateInfo } | null>
+  downloadUpdate(): Promise<unknown>
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
+}
+
 let snapshot: RemoteUpdateSnapshot = {
   status: 'idle',
   currentVersion: app.getVersion(),
@@ -34,6 +66,7 @@ let checking = false
 let downloading = false
 let updateInfo: UpdateInfo | null = null
 let mainWindow: BrowserWindow | null = null
+let updater: AutoUpdater | null = null
 
 function toInfoPatch(info: UpdateInfo): Partial<RemoteUpdateSnapshot> {
   return {
@@ -55,34 +88,69 @@ function publish(patch: Partial<RemoteUpdateSnapshot>): RemoteUpdateSnapshot {
   return snapshot
 }
 
+function unsupportedMessage(): string {
+  if (!app.isPackaged) return '遠端更新只會在 packaged app 中啟用。'
+  if (process.platform === 'darwin') {
+    return '遠端更新需要 Developer ID 簽署的 macOS app。'
+  }
+  return '目前環境沒有可用的更新設定。'
+}
+
+function isSupportedForRemoteUpdates(): boolean {
+  if (!app.isPackaged) return false
+  if (process.platform !== 'darwin') return true
+
+  try {
+    const result = spawnSync('codesign', ['-dv', '--verbose=4', app.getPath('exe')], {
+      encoding: 'utf8',
+    })
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+    return (
+      result.status === 0 &&
+      !output.includes('Signature=adhoc') &&
+      !output.includes('TeamIdentifier=not set') &&
+      /Authority=(Developer ID Application|Apple)/.test(output)
+    )
+  } catch {
+    return false
+  }
+}
+
 function unsupportedSnapshot(): RemoteUpdateSnapshot {
   return publish({
     status: 'unsupported',
-    message: '遠端更新只會在 packaged app 中啟用。',
+    message: unsupportedMessage(),
   })
+}
+
+async function getAutoUpdater(): Promise<AutoUpdater | null> {
+  if (!isSupportedForRemoteUpdates()) return null
+  if (!updater) {
+    const updaterModule = ['electron', 'updater'].join('-')
+    updater = (require(updaterModule) as { autoUpdater: AutoUpdater }).autoUpdater
+  }
+  return updater
 }
 
 export function getRemoteUpdateSnapshot(): RemoteUpdateSnapshot {
   return snapshot
 }
 
-export function configureRemoteUpdates(window: BrowserWindow): void {
+export async function configureRemoteUpdates(window: BrowserWindow): Promise<void> {
   mainWindow = window
   if (configured) return
   configured = true
+
+  const autoUpdater = await getAutoUpdater()
+  if (!autoUpdater) {
+    unsupportedSnapshot()
+    return
+  }
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.autoRunAppAfterInstall = true
   autoUpdater.logger = null
-
-  if (!app.isPackaged) {
-    publish({
-      status: 'unsupported',
-      message: '遠端更新只會在 packaged app 中啟用。',
-    })
-    return
-  }
 
   autoUpdater.on('checking-for-update', () => {
     checking = true
@@ -157,7 +225,8 @@ export function configureRemoteUpdates(window: BrowserWindow): void {
 }
 
 export async function checkForRemoteUpdates(): Promise<RemoteUpdateSnapshot> {
-  if (!app.isPackaged) return unsupportedSnapshot()
+  const autoUpdater = await getAutoUpdater()
+  if (!autoUpdater) return unsupportedSnapshot()
   if (checking) return snapshot
   try {
     checking = true
@@ -182,7 +251,8 @@ export async function checkForRemoteUpdates(): Promise<RemoteUpdateSnapshot> {
 }
 
 export async function downloadRemoteUpdate(): Promise<RemoteUpdateSnapshot> {
-  if (!app.isPackaged) return unsupportedSnapshot()
+  const autoUpdater = await getAutoUpdater()
+  if (!autoUpdater) return unsupportedSnapshot()
   if (downloading) return snapshot
   if (snapshot.status === 'downloaded') return snapshot
 
@@ -207,5 +277,5 @@ export async function downloadRemoteUpdate(): Promise<RemoteUpdateSnapshot> {
 
 export function installRemoteUpdate(): void {
   if (snapshot.status !== 'downloaded') return
-  autoUpdater.quitAndInstall(false, true)
+  updater?.quitAndInstall(false, true)
 }
