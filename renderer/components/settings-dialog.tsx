@@ -3,10 +3,12 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Clipboard,
   ExternalLink,
   Eye,
   EyeOff,
   Loader2,
+  LogOut,
   RefreshCw,
   RotateCcw,
 } from 'lucide-react'
@@ -14,9 +16,20 @@ import {
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/claude'
-import { openExternal } from '@/lib/api'
+import {
+  cancelGithubAuthLogin,
+  getGithubAuthStatus,
+  logoutGithubAuth,
+  onGithubAuthEvent,
+  openExternal,
+  startGithubAuthLogin,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
-import type { AgentConnections, ConnectableAgentId } from '@/lib/types'
+import type {
+  AgentConnections,
+  ConnectableAgentId,
+  GitHubCliAuthStatus,
+} from '@/lib/types'
 
 interface AgentInfo {
   id: ConnectableAgentId
@@ -39,6 +52,8 @@ const CONNECTABLE_AGENTS: AgentInfo[] = [
     keyUrl: 'https://platform.openai.com/api-keys',
   },
 ]
+
+type GithubAuthPhase = 'idle' | 'starting' | 'waiting' | 'success' | 'error'
 
 interface SettingsDialogProps {
   open: boolean
@@ -72,17 +87,64 @@ export function SettingsDialog({
   const [connectError, setConnectError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [refreshing, setRefreshing] = useState<ConnectableAgentId | null>(null)
+  const [githubPage, setGithubPage] = useState(false)
+  const [githubStatus, setGithubStatus] = useState<GitHubCliAuthStatus | null>(null)
+  const [githubPhase, setGithubPhase] = useState<GithubAuthPhase>('idle')
+  const [githubCode, setGithubCode] = useState('')
+  const [githubUrl, setGithubUrl] = useState('https://github.com/login/device')
+  const [githubError, setGithubError] = useState<string | null>(null)
+  const [githubBusy, setGithubBusy] = useState(false)
+  const [copiedCode, setCopiedCode] = useState(false)
 
   useEffect(() => {
     if (open) {
       setText(systemPrompt.trim() ? systemPrompt : DEFAULT_SYSTEM_PROMPT)
       setAgentPage(null)
+      setGithubPage(false)
       setApiKey('')
       setShowKey(false)
       setConnectError(null)
       setConnecting(false)
+      setGithubPhase('idle')
+      setGithubCode('')
+      setGithubError(null)
+      setCopiedCode(false)
+      void getGithubAuthStatus().then(setGithubStatus)
     }
   }, [open, systemPrompt])
+
+  useEffect(() => {
+    if (!open) return
+    return onGithubAuthEvent((event) => {
+      if (event.type === 'starting') {
+        setGithubPhase('starting')
+        setGithubError(null)
+        return
+      }
+      if (event.type === 'code') {
+        setGithubPhase('waiting')
+        setGithubCode(event.code)
+        setGithubUrl(event.url)
+        setCopiedCode(false)
+        setGithubBusy(false)
+        return
+      }
+      if (event.type === 'success') {
+        setGithubStatus(event.status)
+        setGithubPhase('success')
+        setGithubBusy(false)
+        return
+      }
+      if (event.type === 'cancelled') {
+        setGithubPhase('idle')
+        setGithubBusy(false)
+        return
+      }
+      setGithubPhase('error')
+      setGithubError(event.error)
+      setGithubBusy(false)
+    })
+  }, [open])
 
   const selectedConnection = agentPage ? agentConnections?.[agentPage.id] : undefined
 
@@ -97,7 +159,7 @@ export function SettingsDialog({
 
   const trimmed = text.trim()
   const isDefault = trimmed === '' || trimmed === DEFAULT_SYSTEM_PROMPT.trim()
-  const canSubmit = !saving && !agentPage
+  const canSubmit = !saving && !agentPage && !githubPage
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -118,20 +180,95 @@ export function SettingsDialog({
     setConnecting(false)
   }
 
+  const openGithubLoginPage = async () => {
+    setGithubPage(true)
+    setGithubPhase('starting')
+    setGithubCode('')
+    setGithubError(null)
+    setCopiedCode(false)
+    setGithubBusy(true)
+    try {
+      await startGithubAuthLogin()
+    } catch (err) {
+      setGithubPhase('error')
+      setGithubError(err instanceof Error ? err.message : String(err))
+      setGithubBusy(false)
+    }
+  }
+
+  const closeGithubPage = async () => {
+    if (githubPhase === 'starting' || githubPhase === 'waiting') {
+      await cancelGithubAuthLogin()
+    }
+    setGithubPage(false)
+    setGithubPhase('idle')
+    setGithubBusy(false)
+    setGithubCode('')
+    setGithubError(null)
+    setCopiedCode(false)
+    const status = await getGithubAuthStatus()
+    setGithubStatus(status)
+  }
+
+  const handleGithubLogout = async () => {
+    setGithubBusy(true)
+    setGithubError(null)
+    try {
+      const status = await logoutGithubAuth()
+      setGithubStatus(status)
+    } catch (err) {
+      setGithubError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setGithubBusy(false)
+    }
+  }
+
+  const handleClose = () => {
+    if (githubPage && (githubPhase === 'starting' || githubPhase === 'waiting')) {
+      void cancelGithubAuthLogin()
+    }
+    onClose()
+  }
+
+  const copyGithubCode = async () => {
+    if (!githubCode) return
+    await navigator.clipboard.writeText(githubCode)
+    setCopiedCode(true)
+    window.setTimeout(() => setCopiedCode(false), 1500)
+  }
+
   return (
     <DialogShell
-      title={agentPage ? `連結 ${agentPage.name}` : '設定'}
+      title={githubPage ? '登入 GitHub CLI' : agentPage ? `連結 ${agentPage.name}` : '設定'}
       description={
-        agentPage
+        githubPage
+          ? '使用 GitHub CLI 的網頁授權流程登入 github.com。'
+          : agentPage
           ? '綁定個人 API key 以取得可用 model list。'
           : '調整 system prompt 與 agent 帳號連線。'
       }
-      saving={saving || connecting}
-      onClose={onClose}
+      saving={saving || connecting || githubBusy}
+      onClose={handleClose}
       showHeader
       contentClassName="max-w-2xl"
       footer={
-        agentPage ? (
+        githubPage ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void closeGithubPage()}
+              disabled={githubBusy && githubPhase !== 'success'}
+            >
+              {githubPhase === 'success' ? '完成' : '返回'}
+            </Button>
+            {githubPhase === 'error' && (
+              <Button size="sm" onClick={() => void openGithubLoginPage()}>
+                重新登入
+              </Button>
+            )}
+          </>
+        ) : agentPage ? (
           <>
             <Button
               variant="ghost"
@@ -153,7 +290,7 @@ export function SettingsDialog({
           </>
         ) : (
           <>
-            <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+            <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
               取消
             </Button>
             <Button
@@ -169,7 +306,94 @@ export function SettingsDialog({
         )
       }
     >
-      {agentPage ? (
+      {githubPage ? (
+        <div className="space-y-5">
+          <button
+            type="button"
+            onClick={() => void closeGithubPage()}
+            disabled={githubBusy && githubPhase !== 'success'}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <ArrowLeft className="size-4" />
+            返回設定
+          </button>
+
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="flex items-start gap-3">
+              {githubPhase === 'success' ? (
+                <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-400" />
+              ) : githubPhase === 'error' ? (
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+              ) : (
+                <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground" />
+              )}
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-sm font-medium">
+                  {githubPhase === 'success'
+                    ? 'GitHub CLI 已完成授權'
+                    : githubPhase === 'error'
+                    ? 'GitHub CLI 授權失敗'
+                    : githubPhase === 'waiting'
+                    ? '等待 GitHub 授權完成'
+                    : '正在啟動 GitHub CLI 登入'}
+                </p>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {githubPhase === 'success'
+                    ? `目前登入帳號：${githubStatus?.login ?? 'GitHub'}`
+                    : githubPhase === 'error'
+                    ? githubError
+                    : githubPhase === 'waiting'
+                    ? '請複製授權碼並開啟 GitHub 授權頁，完成後 VibeFlow 會自動更新狀態。'
+                    : 'VibeFlow 正在背景準備 gh auth login。'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {(githubPhase === 'waiting' || githubCode) && (
+            <div className="space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">授權碼</span>
+                <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
+                  <input
+                    readOnly
+                    value={githubCode}
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm tracking-wider outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void copyGithubCode()}
+                    className="flex h-9 items-center gap-1.5 px-3 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={!githubCode}
+                  >
+                    <Clipboard className="size-4" />
+                    {copiedCode ? '已複製' : '複製'}
+                  </button>
+                </div>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">登入網址</span>
+                <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
+                  <input
+                    readOnly
+                    value={githubUrl}
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void openExternal(githubUrl)}
+                    className="flex h-9 items-center gap-1.5 px-3 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ExternalLink className="size-4" />
+                    開啟
+                  </button>
+                </div>
+              </label>
+            </div>
+          )}
+        </div>
+      ) : agentPage ? (
         <div className="space-y-5">
           <button
             type="button"
@@ -331,7 +555,73 @@ export function SettingsDialog({
                   </div>
                 )
               })}
+              <div className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5">
+                {githubStatus?.authenticated ? (
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+                ) : githubStatus?.error ? (
+                  <AlertTriangle className="size-4 shrink-0 text-destructive" />
+                ) : (
+                  <span className="size-4 shrink-0 rounded-full border border-muted-foreground/50" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">GitHub CLI</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {githubStatus?.authenticated
+                      ? `${githubStatus.login ?? 'GitHub'} 已授權（${githubStatus.gitProtocol ?? 'https'}）`
+                      : githubStatus?.installed === false
+                      ? '找不到 GitHub CLI（gh）'
+                      : githubStatus?.error
+                      ? githubStatus.error
+                      : '尚未授權'}
+                  </p>
+                </div>
+                {githubStatus?.authenticated && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2"
+                    disabled={githubBusy}
+                    onClick={() => void openGithubLoginPage()}
+                  >
+                    重新登入
+                  </Button>
+                )}
+                {githubStatus?.authenticated && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    disabled={githubBusy}
+                    aria-label="登出 GitHub CLI"
+                    onClick={() => void handleGithubLogout()}
+                  >
+                    {githubBusy ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <LogOut className="size-4" />
+                    )}
+                  </Button>
+                )}
+                {!githubStatus?.authenticated && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={githubStatus?.installed === false || githubBusy}
+                    onClick={() => void openGithubLoginPage()}
+                  >
+                    {githubBusy ? '啟動中…' : '登入'}
+                  </Button>
+                )}
+              </div>
             </div>
+            {githubError && !githubPage && (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+                {githubError}
+              </p>
+            )}
             {connectedModelCount > 0 && (
               <p className="text-xs text-muted-foreground">
                 目前共有 {connectedModelCount} 個已同步 model 可供 task 選擇。

@@ -15,6 +15,10 @@ import type { MemoryCheckpoint } from './helpers/memory'
 import type { SubAgentRun } from './helpers/subagents'
 import type { Conversation } from './helpers/chat-store'
 import type { AttachmentInput, ChatChunk, ChatPhase } from './helpers/chat-session'
+import type {
+  GitHubCliAuthEvent,
+  GitHubCliAuthStatus,
+} from './helpers/github-auth'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -70,6 +74,21 @@ const vibeflow = {
       ipcRenderer.invoke('settings:connectAgent', { agentId, apiKey }),
     refreshAgentModels: (agentId: ConnectableAgentId): Promise<VibeFlowState> =>
       ipcRenderer.invoke('settings:refreshAgentModels', agentId),
+    getGithubAuthStatus: (): Promise<GitHubCliAuthStatus> =>
+      ipcRenderer.invoke('settings:githubAuthStatus'),
+    startGithubAuthLogin: (): Promise<void> =>
+      ipcRenderer.invoke('settings:startGithubAuthLogin'),
+    cancelGithubAuthLogin: (): Promise<void> =>
+      ipcRenderer.invoke('settings:cancelGithubAuthLogin'),
+    logoutGithubAuth: (): Promise<GitHubCliAuthStatus> =>
+      ipcRenderer.invoke('settings:logoutGithubAuth'),
+    onGithubAuthEvent: (
+      callback: (payload: GitHubCliAuthEvent) => void
+    ): (() => void) => {
+      const sub = (_event: IpcRendererEvent, payload: GitHubCliAuthEvent) => callback(payload)
+      ipcRenderer.on('github-auth:event', sub)
+      return () => ipcRenderer.removeListener('github-auth:event', sub)
+    },
   /** Native folder picker — returns the chosen absolute path, or null. */
   pickFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickFolder'),

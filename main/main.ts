@@ -38,6 +38,12 @@ import {
 import { detectAgents, type AgentCliId } from './helpers/agents'
 import { fetchAgentModels } from './helpers/agent-connections'
 import {
+  cancelGitHubCliLogin,
+  getGitHubCliAuthStatus,
+  logoutGitHubCli,
+  startGitHubCliLogin,
+} from './helpers/github-auth'
+import {
   commitAndPush,
   deleteBranch,
   fallbackBranchName,
@@ -220,6 +226,22 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return getState()
     }
   )
+
+  ipcMain.handle('settings:githubAuthStatus', () => getGitHubCliAuthStatus())
+
+  ipcMain.handle('settings:startGithubAuthLogin', (event) => {
+    startGitHubCliLogin((payload) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('github-auth:event', payload)
+      }
+    })
+  })
+
+  ipcMain.handle('settings:cancelGithubAuthLogin', () => {
+    cancelGitHubCliLogin()
+  })
+
+  ipcMain.handle('settings:logoutGithubAuth', () => logoutGitHubCli())
 
   // Open a native folder picker and return the chosen path (no global state).
   ipcMain.handle('dialog:pickFolder', async () => {

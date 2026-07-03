@@ -11,6 +11,8 @@ import type {
   DiffFile,
   FinalizeResult,
   GitInfo,
+  GitHubCliAuthEvent,
+  GitHubCliAuthStatus,
   MemoryCheckpoint,
   PrStatus,
   Role,
@@ -84,6 +86,33 @@ export async function refreshAgentModels(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.refreshAgentModels(agentId) : null
+}
+
+export async function getGithubAuthStatus(): Promise<GitHubCliAuthStatus | null> {
+  const b = bridge()
+  return b ? b.getGithubAuthStatus() : null
+}
+
+export async function startGithubAuthLogin(): Promise<void> {
+  const b = bridge()
+  if (b) await b.startGithubAuthLogin()
+}
+
+export async function cancelGithubAuthLogin(): Promise<void> {
+  const b = bridge()
+  if (b) await b.cancelGithubAuthLogin()
+}
+
+export async function logoutGithubAuth(): Promise<GitHubCliAuthStatus | null> {
+  const b = bridge()
+  return b ? b.logoutGithubAuth() : null
+}
+
+export function onGithubAuthEvent(
+  callback: (payload: GitHubCliAuthEvent) => void
+): () => void {
+  const b = bridge()
+  return b ? b.onGithubAuthEvent(callback) : () => {}
 }
 
 export async function pickFolder(): Promise<string | null> {

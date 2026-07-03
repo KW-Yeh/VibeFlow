@@ -22,6 +22,10 @@ export type {
 } from '../../main/helpers/memory'
 export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {
+  GitHubCliAuthEvent,
+  GitHubCliAuthStatus,
+} from '../../main/helpers/github-auth'
+export type {
   TaskProgress,
   TaskProgressStep,
   ReviewVerdict,
