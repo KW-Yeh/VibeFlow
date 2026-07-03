@@ -15,6 +15,11 @@ export type {
   PipelineRun,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult, PrStatus } from '../../main/helpers/git'
+export type {
+  MemoryCheckpoint,
+  MemoryDecision,
+  MemoryArtifact,
+} from '../../main/helpers/memory'
 export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {
   TaskProgress,

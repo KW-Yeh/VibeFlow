@@ -11,6 +11,7 @@ import type {
 import type { AgentCli, AgentCliId } from './helpers/agents'
 import type { DiffFile, FinalizeResult, GitInfo, PrStatus } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
+import type { MemoryCheckpoint } from './helpers/memory'
 import type { SubAgentRun } from './helpers/subagents'
 import type { Conversation } from './helpers/chat-store'
 import type { AttachmentInput, ChatChunk, ChatPhase } from './helpers/chat-session'
@@ -146,6 +147,9 @@ const vibeflow = {
   /** Convert PLAN.md to plan.html and return the HTML string. */
   getPlanHtml: (taskId: string): Promise<string | null> =>
     ipcRenderer.invoke('task:getPlanHtml', taskId),
+  /** Agent-memory checkpoints for the task (keyed by branch name). */
+  getCheckpoints: (taskId: string): Promise<MemoryCheckpoint[]> =>
+    ipcRenderer.invoke('task:getCheckpoints', taskId),
   approve: (
     taskId: string,
     message: string
