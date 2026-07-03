@@ -60,6 +60,7 @@ import {
 } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
 import { generatePlanHtml } from './helpers/plan-html'
+import { getCheckpoints } from './helpers/memory'
 import {
   killAllSessions,
   killSession,
@@ -627,11 +628,22 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   })
 
-  /** Convert PLAN.md → plan.html (written to disk) and return the HTML string. */
+  /**
+   * Convert PLAN.md → plan.html (written to disk) and return the HTML string.
+   * Once the worktree is gone (completed task) fall back to the snapshot taken
+   * at cleanup time so the plan is still viewable.
+   */
   ipcMain.handle('task:getPlanHtml', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    if (!task?.worktreePath) return null
-    return generatePlanHtml(task.worktreePath)
+    if (task?.worktreePath) return generatePlanHtml(task.worktreePath)
+    return task?.planHtml ?? null
+  })
+
+  /** Agent-memory checkpoints for a task, keyed by branch name in the db. */
+  ipcMain.handle('task:getCheckpoints', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.workspacePath) return []
+    return getCheckpoints(task.workspacePath, task.branch)
   })
 
   // Approve: commit everything in the worktree and push the branch upstream.
@@ -695,6 +707,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
+    // Snapshot the plan before the worktree (and its live PLAN.md) is removed,
+    // so a done task can still show its plan.
+    let planHtml: string | undefined
+    if (task?.worktreePath) {
+      planHtml = (await generatePlanHtml(task.worktreePath)) ?? undefined
+    }
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
@@ -703,7 +721,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
     // The agent updated context.md during the run — refresh its rendered view.
     if (task?.workspacePath) await regenerateContextHtml(task.workspacePath)
-    updateTask(taskId, { worktreePath: undefined })
+    // Only overwrite planHtml when we actually captured a snapshot this call.
+    // A repeat completion (done→in_progress→done) has no worktree to snapshot,
+    // so leaving planHtml out preserves the earlier snapshot instead of nulling it.
+    updateTask(taskId, planHtml ? { worktreePath: undefined, planHtml } : { worktreePath: undefined })
     return getState()
   })
 

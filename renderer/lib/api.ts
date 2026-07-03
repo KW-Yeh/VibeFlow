@@ -13,6 +13,7 @@ import type {
   GitInfo,
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
+  MemoryCheckpoint,
   PrStatus,
   Role,
   SubAgentRun,
@@ -240,6 +241,13 @@ export async function getPlan(taskId: string): Promise<string | null> {
 export async function getPlanHtml(taskId: string): Promise<string | null> {
   const b = bridge()
   return b ? b.getPlanHtml(taskId) : null
+}
+
+export async function getCheckpoints(
+  taskId: string
+): Promise<MemoryCheckpoint[]> {
+  const b = bridge()
+  return b ? b.getCheckpoints(taskId) : []
 }
 
 export async function approve(

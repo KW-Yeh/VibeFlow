@@ -132,6 +132,7 @@ export const PROGRESS_PROTOCOL_PROMPT = [
   '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
   `5. 若 ${PROGRESS_FILE} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
   `6. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
+  '7. 若使用 agent-memory 存 checkpoint，task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 memory。',
 ].join('\n')
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */

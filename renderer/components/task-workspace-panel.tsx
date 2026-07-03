@@ -16,7 +16,10 @@ import {
   GitBranch,
   GitCompare,
   Hammer,
+  History,
   Layers,
+  Lightbulb,
+  ListTodo,
   Loader2,
   Maximize2,
   RefreshCw,
@@ -34,9 +37,16 @@ import {
   buildAgentCommand,
   isTaskComplete,
 } from '@/lib/claude'
-import { getDiff, getPlanHtml } from '@/lib/api'
+import { getCheckpoints, getDiff, getPlanHtml } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import type { ColumnId, DiffFile, Role, SubAgentRun, Task } from '@/lib/types'
+import type {
+  ColumnId,
+  DiffFile,
+  MemoryCheckpoint,
+  Role,
+  SubAgentRun,
+  Task,
+} from '@/lib/types'
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -310,6 +320,103 @@ function PlanContent({ taskId }: { taskId: string }) {
       style={{ width: 'calc(100% + 1.5rem)', height: 'calc(100% + 1.5rem)' }}
       title="Plan"
     />
+  )
+}
+
+function formatCheckpointTime(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+}
+
+function MemorySection({ taskId }: { taskId: string }) {
+  const [checkpoints, setCheckpoints] = useState<MemoryCheckpoint[] | undefined>(
+    undefined
+  )
+
+  useEffect(() => {
+    let active = true
+    setCheckpoints(undefined)
+    getCheckpoints(taskId)
+      .then((next) => {
+        if (active) setCheckpoints(next)
+      })
+      .catch(() => {
+        if (active) setCheckpoints([])
+      })
+    return () => {
+      active = false
+    }
+  }, [taskId])
+
+  return (
+    <InfoSection title="Memory" icon={<History className="size-3.5" />}>
+      {checkpoints === undefined ? (
+        <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          讀取 memory 中…
+        </div>
+      ) : checkpoints.length === 0 ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">
+          此任務沒有記錄任何 memory checkpoint。
+        </p>
+      ) : (
+        <ol className="space-y-3">
+          {checkpoints.map((cp) => (
+            <li
+              key={cp.id}
+              className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs"
+            >
+              <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
+                  #{cp.seq}
+                </span>
+                <span className="tabular-nums">{formatCheckpointTime(cp.createdAt)}</span>
+              </div>
+              {cp.outcome && (
+                <p className="whitespace-pre-wrap break-words text-foreground">
+                  {cp.outcome}
+                </p>
+              )}
+              {cp.decisions.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {cp.decisions.map((d, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-amber-400" />
+                      <span className="break-words">
+                        <span className="text-foreground">{d.choice}</span>
+                        {d.reason && (
+                          <span className="text-muted-foreground"> — {d.reason}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {cp.openItems.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {cp.openItems.map((item, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-muted-foreground">
+                      <ListTodo className="mt-0.5 size-3 shrink-0" />
+                      <span className="break-words">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {cp.artifacts.length > 0 && (
+                <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                  {cp.artifacts.map((a) => (
+                    <div key={a.id} className="flex items-start gap-1.5 text-muted-foreground">
+                      <FileDiff className="mt-0.5 size-3 shrink-0" />
+                      <span className="break-words">{a.description}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </InfoSection>
   )
 }
 
@@ -587,6 +694,14 @@ export function TaskWorkspacePanel({
         )}
       </header>
 
+      {column === 'done' ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
+          <InfoSection title="Plan" icon={<FileDiff className="size-3.5" />}>
+            <PlanContent taskId={task.id} />
+          </InfoSection>
+          <MemorySection taskId={task.id} />
+        </main>
+      ) : (
       <main className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_minmax(20rem,24rem)] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,27rem)]">
         <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-black p-0 lg:border-b-0 lg:border-r">
           <TaskTerminal
@@ -597,7 +712,7 @@ export function TaskWorkspacePanel({
             launchNonce={launchNonce}
             launchLabel={task.launchedAt ? '重跑' : '開始任務'}
             onLaunchRequest={canLaunch ? requestLaunch : undefined}
-            readOnly={column === 'done'}
+            readOnly={false}
           />
         </div>
 
@@ -645,6 +760,7 @@ export function TaskWorkspacePanel({
           <DiffSection taskId={task.id} />
         </aside>
       </main>
+      )}
     </div>
   )
 }

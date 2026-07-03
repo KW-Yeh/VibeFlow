@@ -92,6 +92,12 @@ export interface Task {
   workspacePath?: string
   /** Base branch the worktree was created from. */
   baseBranch?: string
+  /**
+   * Snapshot of the rendered plan.html taken just before the worktree is torn
+   * down on completion. Lets a done task still show its PLAN once the worktree
+   * (and its live PLAN.md) is gone.
+   */
+  planHtml?: string
   /** Whether the branch was pushed upstream at creation. */
   pushed?: boolean
   /** Agent CLI used for planning/review. Absent = 'claude' (pre-field tasks). */
