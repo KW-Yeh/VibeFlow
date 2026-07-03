@@ -493,9 +493,9 @@ export function SettingsDialog({
 
           <section className="space-y-3">
             <div>
-              <h3 className="text-sm font-medium">Agent 帳號連線</h3>
+              <h3 className="text-sm font-medium">CLI 與帳號設定</h3>
               <p className="text-xs text-muted-foreground">
-                已連線的 agent 會在建立或編輯任務時顯示可選 model。未連線時使用預設 model。
+                設定 Agent CLI 的 API key 以同步 model；設定 GitHub CLI 以支援本機 GitHub 操作。
               </p>
             </div>
             <div className="grid gap-2">
@@ -550,7 +550,7 @@ export function SettingsDialog({
                         setConnectError(null)
                       }}
                     >
-                      {connected ? '更新' : 'Connect'}
+                      {connected ? '設定' : 'Connect'}
                     </Button>
                   </div>
                 )
@@ -584,7 +584,7 @@ export function SettingsDialog({
                     disabled={githubBusy}
                     onClick={() => void openGithubLoginPage()}
                   >
-                    重新登入
+                    切換使用者
                   </Button>
                 )}
                 {githubStatus?.authenticated && (
@@ -592,9 +592,8 @@ export function SettingsDialog({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-8 w-8 p-0"
+                    className="h-8 px-2"
                     disabled={githubBusy}
-                    aria-label="登出 GitHub CLI"
                     onClick={() => void handleGithubLogout()}
                   >
                     {githubBusy ? (
@@ -602,6 +601,7 @@ export function SettingsDialog({
                     ) : (
                       <LogOut className="size-4" />
                     )}
+                    登出
                   </Button>
                 )}
                 {!githubStatus?.authenticated && (
