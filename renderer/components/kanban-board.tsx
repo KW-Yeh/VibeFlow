@@ -16,6 +16,8 @@ import {
   executorSessionId,
   isTaskComplete,
   planningSessionId,
+  PLANNING_ROLE,
+  REVIEWER_ROLE,
 } from '@/lib/claude'
 import { termKill, termSessionExists } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -124,6 +126,12 @@ export function KanbanBoard({
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
 
+  // Auto-assigned personas: prefer the user's (editable) store role by id so
+  // edits in the role manager take effect; fall back to the built-in preset
+  // when the store lacks it (e.g. users predating the seeded 6-role set).
+  const planningRole = (): Role => roleById(PLANNING_ROLE.id) ?? PLANNING_ROLE
+  const reviewerRole = (): Role => roleById(REVIEWER_ROLE.id) ?? REVIEWER_ROLE
+
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
   // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
@@ -168,7 +176,14 @@ export function KanbanBoard({
     const role = roleById(task.roleId)
     armTerminalCommand(
       task.id,
-      buildWorkspaceLaunchCommand({ task, role, systemPrompt, workspacePath, resume: opts?.resume })
+      buildWorkspaceLaunchCommand({
+        task,
+        role,
+        planningRole: planningRole(),
+        systemPrompt,
+        workspacePath,
+        resume: opts?.resume,
+      })
     )
   }
 
@@ -188,8 +203,8 @@ export function KanbanBoard({
 
   // --- Auto-assign pipeline orchestration ---
   //
-  // For tasks with both an executor (roleId) and a reviewer (reviewerRoleId),
-  // drive the executor → reviewer → (revise → reviewer)* → approve loop.
+  // Every task drives the executor → reviewer → (revise → reviewer)* → approve
+  // loop; the reviewer persona is always the fixed 測試工程師 (REVIEWER_ROLE).
   // `firedRef` dedupes by a (stage, allDone, verdict, round) signature.
   const firedRef = useRef<Map<string, string>>(new Map())
   // Tracks the previous board so we can detect allDone transitions within the
@@ -221,7 +236,7 @@ export function KanbanBoard({
     setReviewerLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildReviewCommand(task, roleById(task.reviewerRoleId), resolveWorkspacePath(task)),
+        command: buildReviewCommand(task, resolveWorkspacePath(task), reviewerRole()),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -270,7 +285,7 @@ export function KanbanBoard({
     prevBoardRef.current = board
     for (const task of board.in_progress) {
       const p = task.pipeline
-      if (!p || !task.reviewerRoleId) continue
+      if (!p) continue
       if (p.stage === 'approved' || p.stage === 'blocked') continue
 
       const allDone = isTaskComplete(task)
@@ -508,7 +523,7 @@ export function KanbanBoard({
                       task={entry.task}
                       column={entry.column}
                       role={roleById(entry.task.roleId)}
-                      reviewerRole={roleById(entry.task.reviewerRoleId)}
+                      reviewerRole={reviewerRole()}
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
                       onRun={runTask}
@@ -575,7 +590,7 @@ export function KanbanBoard({
               cwd: task.worktreePath ?? task.projectPath ?? null,
               launchCommand: reviewerLaunch[id]?.command,
               launchNonce: reviewerLaunch[id]?.nonce,
-              reviewerRoleName: roleById(task.reviewerRoleId)?.name ?? undefined,
+              reviewerRoleName: reviewerRole().name,
             },
           ]
         })

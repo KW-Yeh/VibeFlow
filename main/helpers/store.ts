@@ -3,6 +3,9 @@ import { randomUUID } from 'crypto'
 import { basename } from 'path'
 import type { AgentCliId } from './agents'
 import type { ReviewVerdict, TaskProgress } from './progress'
+// Shared single source with renderer's PRESET_ROLES (renderer/lib/claude.ts).
+// Import attribute is required so the CLI path (main run via node --experimental-strip-types) loads it.
+import presetRoles from '../../renderer/lib/preset-roles.json' with { type: 'json' }
 
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -186,34 +189,12 @@ const STATE_VERSION = 3
 
 /**
  * Built-in starter roles seeded for first-time users so the board ships with a
- * usable executor + reviewer pair out of the box. These are ordinary roles —
- * users may freely edit or delete them via the role manager; once seeded they
- * are not re-created (the version gate in `migrateStore` only fires once).
+ * full team (技術總監 / 專案經理 / 測試工程師 / 設計師 / 後端 / 前端) out of the
+ * box. These are ordinary roles — users may freely edit or delete them via the
+ * role manager; once seeded they are not re-created (the version gate in
+ * `migrateStore` only fires once). Shared JSON with renderer's PRESET_ROLES.
  */
-const DEFAULT_ROLES: Role[] = [
-  {
-    id: 'default-developer',
-    name: '一般開發者',
-    avatar: '👨‍💻',
-    positioning:
-      '你是一位全端開發者，負責將任務需求轉化為可運作、可維護的程式碼實作。你重視程式碼的可讀性與模組化，並以最小、聚焦的改動達成任務目標。',
-    responsibilities:
-      '解析任務需求並釐清模糊的邊界；規劃實作步驟；撰寫與修改程式碼；遵循專案既有的架構慣例與程式風格；執行專案既有的型別檢查、測試與建置；診斷並修正過程中出現的錯誤。',
-    boundaries:
-      '應做：保持改動聚焦於任務範圍、確實處理錯誤與邊界條件。禁做：嚴禁進行範疇外的無關重構；嚴禁為趕時程而略過標準的錯誤處理；不修改與任務無關的檔案。',
-  },
-  {
-    id: 'default-tester',
-    name: '測試者',
-    avatar: '🧪',
-    positioning:
-      '你是一位 QA／測試工程師，站在品質把關的立場審查程式碼改動，確保實作正確、符合需求且不引入回歸。',
-    responsibilities:
-      '審查 git diff 與實作邏輯；驗證需求達成度與邊界條件；檢查錯誤處理、潛在回歸與安全性問題；確認改動符合專案既有慣例；提出具體且可操作的修正建議。',
-    boundaries:
-      '應做：審查意見須具體指出問題的位置與原因，並區分必須修正與建議性意見。禁做：不主動改寫實作，僅提出修正建議；不給籠統含糊的評語；若無必須修正的問題即明確核可（approve）。',
-  },
-]
+const DEFAULT_ROLES: Role[] = presetRoles as Role[]
 
 const defaults: VibeFlowState = {
   version: STATE_VERSION,

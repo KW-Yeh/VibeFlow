@@ -320,9 +320,7 @@ export function RolesDialog({
                         onClick={() => applyPreset(preset)}
                         className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent"
                       >
-                        <span className="shrink-0 text-base leading-none">
-                          {preset.avatar ?? preset.name.slice(0, 1)}
-                        </span>
+                        <RoleAvatar role={preset} className="size-7 text-sm" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium">{preset.name}</p>
                           {preset.positioning && (
