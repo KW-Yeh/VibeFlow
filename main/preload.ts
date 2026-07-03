@@ -19,6 +19,7 @@ import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
 } from './helpers/github-auth'
+import type { RemoteUpdateSnapshot } from './helpers/remote-update'
 
 const handler = {
   send<T>(channel: string, value?: T) {
@@ -52,6 +53,21 @@ const vibeflow = {
     const sub = () => callback()
     ipcRenderer.on('update:available', sub)
     return () => ipcRenderer.removeListener('update:available', sub)
+  },
+  getRemoteUpdateState: (): Promise<RemoteUpdateSnapshot> =>
+    ipcRenderer.invoke('remote-update:getState'),
+  checkForRemoteUpdate: (): Promise<RemoteUpdateSnapshot> =>
+    ipcRenderer.invoke('remote-update:check'),
+  downloadRemoteUpdate: (): Promise<RemoteUpdateSnapshot> =>
+    ipcRenderer.invoke('remote-update:download'),
+  installRemoteUpdate: (): Promise<void> =>
+    ipcRenderer.invoke('remote-update:install'),
+  onRemoteUpdateState: (
+    callback: (state: RemoteUpdateSnapshot) => void
+  ): (() => void) => {
+    const sub = (_event: IpcRendererEvent, state: RemoteUpdateSnapshot) => callback(state)
+    ipcRenderer.on('remote-update:state', sub)
+    return () => ipcRenderer.removeListener('remote-update:state', sub)
   },
   /**
    * Fired when an external write (e.g. CLI) changes the store backing file.

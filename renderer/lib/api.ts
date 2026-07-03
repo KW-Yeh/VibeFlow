@@ -15,6 +15,7 @@ import type {
   GitHubCliAuthStatus,
   MemoryCheckpoint,
   PrStatus,
+  RemoteUpdateSnapshot,
   Role,
   SubAgentRun,
   Task,
@@ -59,6 +60,33 @@ export async function relaunchApp(): Promise<void> {
 export function onUpdateAvailable(callback: () => void): () => void {
   const b = bridge()
   return b ? b.onUpdateAvailable(callback) : () => {}
+}
+
+export async function getRemoteUpdateState(): Promise<RemoteUpdateSnapshot | null> {
+  const b = bridge()
+  return b ? b.getRemoteUpdateState() : null
+}
+
+export async function checkForRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
+  const b = bridge()
+  return b ? b.checkForRemoteUpdate() : null
+}
+
+export async function downloadRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
+  const b = bridge()
+  return b ? b.downloadRemoteUpdate() : null
+}
+
+export async function installRemoteUpdate(): Promise<void> {
+  const b = bridge()
+  if (b) await b.installRemoteUpdate()
+}
+
+export function onRemoteUpdateState(
+  callback: (state: RemoteUpdateSnapshot) => void
+): () => void {
+  const b = bridge()
+  return b ? b.onRemoteUpdateState(callback) : () => {}
 }
 
 export async function persistBoard(board: BoardState): Promise<void> {

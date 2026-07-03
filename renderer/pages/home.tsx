@@ -11,6 +11,7 @@ import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
+  checkForRemoteUpdate,
   connectAgent,
   refreshAgentModels,
   createRole,
@@ -18,10 +19,14 @@ import {
   createWorkspace,
   deleteTask,
   detectAgents,
+  downloadRemoteUpdate,
   getGitInfo,
+  getRemoteUpdateState,
   initRepository,
+  installRemoteUpdate,
   loadState,
   onProgressUpdate,
+  onRemoteUpdateState,
   onStateChanged,
   onSubAgentsUpdate,
   onUpdateAvailable,
@@ -43,6 +48,7 @@ import type {
   BoardState,
   ConnectableAgentId,
   Role,
+  RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
   Workspace,
@@ -75,6 +81,7 @@ export default function HomePage() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [agentConnections, setAgentConnections] = useState<AgentConnections>({})
   const [loaded, setLoaded] = useState(false)
+  const [remoteUpdate, setRemoteUpdate] = useState<RemoteUpdateSnapshot | null>(null)
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -160,6 +167,18 @@ export default function HomePage() {
     return onUpdateAvailable(() => setUpdateReady(true))
   }, [])
 
+  useEffect(() => {
+    let active = true
+    void getRemoteUpdateState().then((state) => {
+      if (active && state) setRemoteUpdate(state)
+    })
+    const unsubscribe = onRemoteUpdateState((state) => setRemoteUpdate(state))
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
+
   // Refresh board when the CLI (or any external writer) changes the store file.
   useEffect(() => {
     return onStateChanged((state) => {
@@ -175,6 +194,22 @@ export default function HomePage() {
   const handleRelaunch = () => {
     setRelaunching(true)
     void relaunchApp()
+  }
+
+  const handleCheckForRemoteUpdate = () => {
+    void checkForRemoteUpdate().then((state) => {
+      if (state) setRemoteUpdate(state)
+    })
+  }
+
+  const handleDownloadRemoteUpdate = () => {
+    void downloadRemoteUpdate().then((state) => {
+      if (state) setRemoteUpdate(state)
+    })
+  }
+
+  const handleInstallRemoteUpdate = () => {
+    void installRemoteUpdate()
   }
 
   const handleBoardChange = (next: BoardState) => {
@@ -476,6 +511,10 @@ export default function HomePage() {
                 onEditWorkspace={handleEditWorkspace}
                 onRefreshWorkspaces={handleRefreshWorkspaces}
                 refreshing={refreshingWorkspaces}
+                remoteUpdate={remoteUpdate}
+                onCheckForUpdate={handleCheckForRemoteUpdate}
+                onDownloadUpdate={handleDownloadRemoteUpdate}
+                onInstallUpdate={handleInstallRemoteUpdate}
               />
               <div className="flex flex-1 flex-col overflow-hidden">
                 <KanbanBoard

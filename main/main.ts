@@ -89,6 +89,13 @@ import {
   watchForNewBuild,
 } from './helpers/update'
 import {
+  checkForRemoteUpdates,
+  configureRemoteUpdates,
+  downloadRemoteUpdate,
+  getRemoteUpdateSnapshot,
+  installRemoteUpdate,
+} from './helpers/remote-update'
+import {
   cancelAllChatSends,
   cancelChatSend,
   startChatSend,
@@ -138,6 +145,16 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // the new code is picked up.
   ipcMain.handle('app:relaunch', () => {
     relaunchApp()
+  })
+
+  ipcMain.handle('remote-update:getState', () => getRemoteUpdateSnapshot())
+
+  ipcMain.handle('remote-update:check', () => checkForRemoteUpdates())
+
+  ipcMain.handle('remote-update:download', () => downloadRemoteUpdate())
+
+  ipcMain.handle('remote-update:install', () => {
+    installRemoteUpdate()
   })
 
   ipcMain.handle('vibeflow:setBoard', (_event, board: BoardState) => {
@@ -819,6 +836,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send('update:available')
     }
   })
+
+  configureRemoteUpdates(mainWindow)
+  setTimeout(() => {
+    void checkForRemoteUpdates()
+  }, 3000)
 
   if (isProd) {
     await mainWindow.loadURL('app://./home')

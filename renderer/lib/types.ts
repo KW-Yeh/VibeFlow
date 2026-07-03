@@ -26,6 +26,10 @@ export type {
   GitHubCliAuthStatus,
 } from '../../main/helpers/github-auth'
 export type {
+  RemoteUpdateSnapshot,
+  RemoteUpdateStatus,
+} from '../../main/helpers/remote-update'
+export type {
   TaskProgress,
   TaskProgressStep,
   ReviewVerdict,

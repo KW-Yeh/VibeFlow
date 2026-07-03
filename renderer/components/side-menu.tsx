@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Download,
   Eye,
   FolderOpen,
   Hammer,
@@ -12,10 +14,17 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Rocket,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
-import type { BoardState, ColumnId, Task, Workspace } from '@/lib/types'
+import type {
+  BoardState,
+  ColumnId,
+  RemoteUpdateSnapshot,
+  Task,
+  Workspace,
+} from '@/lib/types'
 
 interface SideMenuProps {
   collapsed: boolean
@@ -29,6 +38,10 @@ interface SideMenuProps {
   onEditWorkspace: (ws: Workspace) => void
   onRefreshWorkspaces: () => void
   refreshing: boolean
+  remoteUpdate: RemoteUpdateSnapshot | null
+  onCheckForUpdate: () => void
+  onDownloadUpdate: () => void
+  onInstallUpdate: () => void
 }
 
 type TaskEntry = {
@@ -200,6 +213,145 @@ function TaskRow({
   )
 }
 
+function formatPercent(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '0%'
+  return `${Math.max(0, Math.min(100, Math.round(value)))}%`
+}
+
+function shouldShowUpdateBanner(update: RemoteUpdateSnapshot | null): boolean {
+  if (!update) return false
+  return ['available', 'downloading', 'downloaded', 'error'].includes(update.status)
+}
+
+function UpdateBanner({
+  update,
+  collapsed,
+  onCheck,
+  onDownload,
+  onInstall,
+}: {
+  update: RemoteUpdateSnapshot | null
+  collapsed: boolean
+  onCheck: () => void
+  onDownload: () => void
+  onInstall: () => void
+}) {
+  if (!update || !shouldShowUpdateBanner(update)) return null
+
+  if (collapsed) {
+    const title =
+      update.status === 'downloaded'
+        ? '更新已下載，點擊重新啟動'
+        : update.status === 'downloading'
+          ? `正在下載更新 ${formatPercent(update.percent)}`
+          : update.status === 'error'
+            ? '更新檢查失敗，點擊重試'
+            : `新版本 ${update.version ?? ''} 可用`
+    const action =
+      update.status === 'downloaded'
+        ? onInstall
+        : update.status === 'error'
+          ? onCheck
+          : update.status === 'available'
+            ? onDownload
+            : undefined
+
+    return (
+      <div className="border-t border-border p-2">
+        <button
+          type="button"
+          title={title}
+          aria-label={title}
+          disabled={!action}
+          onClick={action}
+          className="mx-auto flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary outline-none transition-colors hover:bg-primary/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70"
+        >
+          {update.status === 'downloaded' ? (
+            <Rocket className="size-4" />
+          ) : update.status === 'downloading' ? (
+            <Download className="size-4 animate-pulse" />
+          ) : update.status === 'error' ? (
+            <AlertTriangle className="size-4" />
+          ) : (
+            <RefreshCw className="size-4" />
+          )}
+        </button>
+      </div>
+    )
+  }
+
+  const version = update.version ? `v${update.version}` : '新版本'
+  const message =
+    update.status === 'downloaded'
+      ? '下載完成，重新啟動後套用。'
+      : update.status === 'downloading'
+        ? `正在下載 ${formatPercent(update.percent)}`
+        : update.status === 'error'
+          ? update.message || '更新檢查失敗。'
+          : `${version} 可以使用。`
+  const buttonLabel =
+    update.status === 'downloaded'
+      ? '重新啟動'
+      : update.status === 'downloading'
+        ? '下載中'
+        : update.status === 'error'
+          ? '重試'
+          : '升版'
+  const action =
+    update.status === 'downloaded'
+      ? onInstall
+      : update.status === 'error'
+        ? onCheck
+        : update.status === 'available'
+          ? onDownload
+          : undefined
+
+  return (
+    <div className="border-t border-border p-3">
+      <div className="rounded-md border border-primary/25 bg-primary/10 p-3">
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
+            {update.status === 'downloaded' ? (
+              <CheckCircle2 className="size-4" />
+            ) : update.status === 'error' ? (
+              <AlertTriangle className="size-4" />
+            ) : (
+              <Download className="size-4" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-foreground">
+              {update.status === 'error' ? '更新暫時不可用' : 'VibeFlow 更新'}
+            </p>
+            <p className="mt-0.5 break-words text-xs text-muted-foreground">
+              {message}
+            </p>
+          </div>
+        </div>
+
+        {update.status === 'downloading' && (
+          <div className="mt-3 h-1.5 overflow-hidden rounded bg-background/80">
+            <div
+              className="h-full rounded bg-primary transition-[width]"
+              style={{ width: formatPercent(update.percent) }}
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={!action}
+          onClick={action}
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {update.status === 'downloading' && <RefreshCw className="size-3 animate-spin" />}
+          {buttonLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function SideMenu({
   collapsed,
   onToggleCollapse,
@@ -212,6 +364,10 @@ export function SideMenu({
   onEditWorkspace,
   onRefreshWorkspaces,
   refreshing,
+  remoteUpdate,
+  onCheckForUpdate,
+  onDownloadUpdate,
+  onInstallUpdate,
 }: SideMenuProps) {
   const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
   const [doneExpanded, setDoneExpanded] = useState<Record<string, boolean>>({})
@@ -497,6 +653,14 @@ export function SideMenu({
           )}
         </div>
       </div>
+
+      <UpdateBanner
+        update={remoteUpdate}
+        collapsed={collapsed}
+        onCheck={onCheckForUpdate}
+        onDownload={onDownloadUpdate}
+        onInstall={onInstallUpdate}
+      />
     </aside>
   )
 }
