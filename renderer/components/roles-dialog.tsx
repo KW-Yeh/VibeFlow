@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react'
 
 import { AvatarCropDialog } from '@/components/avatar-crop-dialog'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { IconButton } from '@/components/ui/icon-button'
 import { PRESET_ROLES } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
@@ -202,14 +201,52 @@ export function RolesDialog({
           </>
         ) : (
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setEditingId(null)}
-              disabled={saving}
-            >
-              返回
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditingId(null)}
+                disabled={saving}
+              >
+                返回
+              </Button>
+              {editingId && editingId !== 'new' && (
+                confirmDeleteId === editingId ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        onDelete(editingId)
+                        setConfirmDeleteId(null)
+                        setEditingId(null)
+                      }}
+                      disabled={saving}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      確認刪除
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmDeleteId(editingId)}
+                    disabled={saving}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" />
+                    刪除
+                  </Button>
+                )
+              )}
+            </div>
             <Button
               size="sm"
               onClick={handleSubmit}
@@ -230,64 +267,26 @@ export function RolesDialog({
                 還沒有任何角色 — 建立角色後即可在新增任務時指派。
               </p>
             ) : (
-              <ul className="space-y-2">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {roles.map((role) => (
-                  <li
+                  <button
                     key={role.id}
-                    className="flex items-center gap-3 rounded-md border bg-background p-2.5"
+                    type="button"
+                    onClick={() => startEdit(role)}
+                    className="flex flex-col items-center gap-1.5 rounded-md border bg-background p-3 text-center transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    <RoleAvatar role={role} className="size-9 text-sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {role.name}
+                    <RoleAvatar role={role} className="size-12 text-lg" />
+                    <p className="w-full truncate text-sm font-medium">
+                      {role.name}
+                    </p>
+                    {role.positioning && (
+                      <p className="line-clamp-2 w-full text-xs text-muted-foreground">
+                        {role.positioning}
                       </p>
-                      {role.positioning && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {role.positioning}
-                        </p>
-                      )}
-                    </div>
-                    <IconButton
-                      aria-label={`編輯角色 ${role.name}`}
-                      onClick={() => startEdit(role)}
-                      title="編輯角色"
-                      className="p-1"
-                    >
-                      <Pencil className="size-3.5" />
-                    </IconButton>
-                    {confirmDeleteId === role.id ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent"
-                        >
-                          取消
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { onDelete(role.id); setConfirmDeleteId(null) }}
-                          disabled={saving}
-                          className="rounded px-1.5 py-1 text-xs text-destructive hover:bg-destructive/15 disabled:opacity-50"
-                        >
-                          確認
-                        </button>
-                      </div>
-                    ) : (
-                      <IconButton
-                        aria-label={`刪除角色 ${role.name}`}
-                        onClick={() => setConfirmDeleteId(role.id)}
-                        disabled={saving}
-                        title="刪除角色"
-                        className="p-1"
-                        tone="danger"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </IconButton>
                     )}
-                  </li>
+                  </button>
                 ))}
-              </ul>
+              </div>
             )}
             {error && (
               <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
