@@ -64,7 +64,7 @@ export function ReviewTerminalPanel({
         <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
             <h2 className="flex items-center gap-1.5 truncate text-lg font-semibold">
-              <Eye className="size-4 shrink-0 text-amber-500" />
+              <Eye className="size-4 shrink-0 text-amber-600" />
               Reviewer
             </h2>
             {visible && (

@@ -90,14 +90,14 @@ function InfoSection({
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col border-b border-border last:border-b-0">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-3">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-4">
         <h2 className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
           {icon}
           <span className="truncate">{title}</span>
         </h2>
         {actions}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
     </section>
   )
 }
@@ -120,7 +120,7 @@ function TaskInfo({
   const stage = task.pipeline?.stage
 
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-4 text-sm">
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
@@ -170,7 +170,7 @@ function TaskInfo({
             </span>
           )}
           {reviewerRole && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700">
               reviewer: {reviewerRole.name}
             </span>
           )}
@@ -381,7 +381,7 @@ function MemorySection({ taskId }: { taskId: string }) {
                 <ul className="mt-2 space-y-1">
                   {cp.decisions.map((d, i) => (
                     <li key={i} className="flex items-start gap-1.5">
-                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-amber-400" />
+                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-amber-600" />
                       <span className="break-words">
                         <span className="text-foreground">{d.choice}</span>
                         {d.reason && (
@@ -442,7 +442,6 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
             oldValue={file.oldValue}
             newValue={file.newValue}
             splitView={false}
-            useDarkTheme
             compareMethod={'diffLines' as unknown as DiffMethod}
             renderContent={(source) => (
               <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words">
@@ -630,7 +629,7 @@ export function TaskWorkspacePanel({
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
@@ -659,7 +658,7 @@ export function TaskWorkspacePanel({
           <IconButton
             aria-label="查看 Reviewer 終端"
             title="查看 Reviewer 終端"
-            className="text-amber-500 hover:text-amber-400"
+            className="text-amber-600 hover:text-amber-700"
             onClick={() => onOpenReviewPanel?.(task.id)}
           >
             <Hammer className="size-4" />
@@ -703,7 +702,7 @@ export function TaskWorkspacePanel({
         </main>
       ) : (
       <main className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_minmax(20rem,24rem)] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,27rem)]">
-        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-black p-0 lg:border-b-0 lg:border-r">
+        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-0 lg:border-b-0 lg:border-r">
           <TaskTerminal
             key={`${task.id}:${launchNonce}`}
             taskId={task.id}

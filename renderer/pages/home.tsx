@@ -495,7 +495,7 @@ export default function HomePage() {
       <Head>
         <title>VibeFlow</title>
       </Head>
-      <div className="dark">
+      <div className="bg-background text-foreground">
         {loaded ? (
           <>
             <div className="flex h-screen overflow-hidden">
