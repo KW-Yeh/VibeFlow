@@ -121,7 +121,30 @@ export function TaskTerminal({
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
         disableStdin: readOnlyRef.current,
-        theme: { background: '#0a0a0a', foreground: '#e5e5e5' },
+        theme: {
+          background: '#fbfbfd',
+          foreground: '#1d1d1f',
+          cursor: '#0066cc',
+          cursorAccent: '#fbfbfd',
+          selectionBackground: 'rgba(0, 102, 204, 0.18)',
+          selectionForeground: '#1d1d1f',
+          black: '#1d1d1f',
+          red: '#c0362c',
+          green: '#1e7d34',
+          yellow: '#946f00',
+          blue: '#0066cc',
+          magenta: '#8a3fa0',
+          cyan: '#0f7a8c',
+          white: '#5f5f63',
+          brightBlack: '#7a7a7a',
+          brightRed: '#e0483e',
+          brightGreen: '#2fa84a',
+          brightYellow: '#b98900',
+          brightBlue: '#2997ff',
+          brightMagenta: '#a855c9',
+          brightCyan: '#12a5bd',
+          brightWhite: '#1d1d1f',
+        },
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
@@ -240,8 +263,8 @@ export function TaskTerminal({
   return (
     // Height is owned by the card (fixed expanded height per column): the
     // terminal fills whatever space is left after the steps/description block.
-    <div className="flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md bg-black">
-      <div className="flex shrink-0 items-center justify-between bg-white/[0.06] px-2 py-1">
+    <div className="flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/50 px-2 py-1">
         <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>

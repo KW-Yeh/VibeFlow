@@ -3,29 +3,36 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /* Apple-light token set (DESIGN.md). --radius is the "md" step (11px);
+     the full sm/md/lg/pill scale lives in @theme inline below. */
+  --radius: 0.6875rem;
+  --background: #ffffff;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
   /* DESIGN.md Action Blue (#0066cc) — the single interactive accent. */
-  --primary: oklch(0.522 0.177 255.8);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --primary: #0066cc;
+  --primary-foreground: #ffffff;
+  /* Parchment (#f5f5f7) — the secondary surface for chrome and alt rows. */
+  --secondary: #f5f5f7;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f5f5f7;
+  --muted-foreground: #7a7a7a;
+  /* Pearl (#fafafc) — hover/active tint for ghost surfaces on parchment. */
+  --accent: #fafafc;
+  --accent-foreground: #1d1d1f;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: #e0e0e0;
+  --input: #e0e0e0;
   /* Focus ring follows DESIGN.md primary-focus (#0071e3). */
-  --ring: oklch(0.563 0.193 256.2);
+  --ring: #0071e3;
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/* Reserved for chrome that must stay dark regardless of theme (e.g. the
+   xterm terminal surface) — not applied at the app shell level anymore. */
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
@@ -33,9 +40,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* DESIGN.md Action Blue, focus variant (#0071e3) — works on dark tiles. */
-  --primary: oklch(0.563 0.193 256.2);
-  --primary-foreground: oklch(1 0 0);
+  --primary: #2997ff;
+  --primary-foreground: #1d1d1f;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -45,8 +51,7 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  /* Focus ring follows DESIGN.md primary-focus (#0071e3). */
-  --ring: oklch(0.563 0.193 256.2);
+  --ring: #2997ff;
 }
 
 @theme inline {
@@ -68,10 +73,14 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-sans);
+  /* DESIGN.md radius scale: xs5 / sm8 / md11 / lg18; xl is a slightly
+     larger step reserved for dialogs/sheets (not in DESIGN.md verbatim). */
+  --radius-xs: 0.3125rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.6875rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.25rem;
 }
 
 @layer base {
@@ -86,7 +95,8 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    color-scheme: dark;
+    color-scheme: light;
     touch-action: manipulation;
+    font-family: var(--font-sans);
   }
 }

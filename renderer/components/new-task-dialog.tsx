@@ -868,7 +868,7 @@ export function NewTaskDialog({
       title="新增任務"
       saving={creating}
       onClose={handleClose}
-      contentClassName="max-w-md rounded-xl p-5"
+      contentClassName="max-w-md rounded-lg p-5"
     >
       <NewTaskForm creating={creating} onClose={onClose} {...rest} />
     </DialogShell>

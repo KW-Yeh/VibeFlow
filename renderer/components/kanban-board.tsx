@@ -422,59 +422,63 @@ export function KanbanBoard({
   const completeTask = (task: Task) => moveTask(task, 'done')
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-3">
-        <span className="mr-auto text-sm font-semibold tracking-tight">VibeFlow</span>
+      <header className="flex shrink-0 items-center gap-4 border-b border-border px-6 py-4">
+        <span className="mr-auto text-[15px] font-semibold tracking-tight text-foreground">
+          VibeFlow
+        </span>
         <button
           type="button"
           role="switch"
           aria-checked={autoMode}
           onClick={onToggleAutoMode}
           title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
-          className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-2 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
         >
           <span
             className={cn(
               'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
-              autoMode ? 'bg-primary' : 'bg-muted'
+              autoMode ? 'bg-primary' : 'bg-border'
             )}
           >
             <span
               className={cn(
-                'absolute left-0 top-0.5 size-3 rounded-full bg-white transition-transform',
+                'absolute left-0 top-0.5 size-3 rounded-full bg-white ring-1 ring-border transition-transform',
                 autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
               )}
             />
           </span>
           Auto Mode
         </button>
-        <IconButton
-          aria-label="管理角色"
-          onClick={onManageRoles}
-          title="管理角色"
-        >
-          <Users className="size-4" />
-        </IconButton>
-        {onRemoteShare && (
+        <div className="flex items-center gap-1">
           <IconButton
-            aria-label="遠端控制"
-            onClick={onRemoteShare}
-            title="遠端控制"
-            className={cn(
-              remoteActive
-                ? 'text-primary hover:text-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
+            aria-label="管理角色"
+            onClick={onManageRoles}
+            title="管理角色"
           >
-            <Smartphone className="size-4" />
+            <Users className="size-4" />
           </IconButton>
-        )}
-        <IconButton
-          aria-label="設定 System Prompt"
-          onClick={onOpenSettings}
-          title="設定（System Prompt）"
-        >
-          <Settings className="size-4" />
-        </IconButton>
+          {onRemoteShare && (
+            <IconButton
+              aria-label="遠端控制"
+              onClick={onRemoteShare}
+              title="遠端控制"
+              className={cn(
+                remoteActive
+                  ? 'text-primary hover:text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Smartphone className="size-4" />
+            </IconButton>
+          )}
+          <IconButton
+            aria-label="設定 System Prompt"
+            onClick={onOpenSettings}
+            title="設定（System Prompt）"
+          >
+            <Settings className="size-4" />
+          </IconButton>
+        </div>
         <Button
           size="sm"
           className="rounded-full active:scale-95"

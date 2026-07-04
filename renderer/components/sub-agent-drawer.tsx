@@ -29,7 +29,7 @@ const STATUS_META: Record<
   running: {
     label: '執行中',
     icon: Loader2,
-    tone: 'text-amber-500',
+    tone: 'text-amber-700',
     spin: true,
   },
   completed: { label: '已完成', icon: CheckCircle2, tone: 'text-primary' },

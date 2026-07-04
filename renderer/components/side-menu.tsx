@@ -146,7 +146,7 @@ function taskStatus(entry: TaskEntry): {
   if (stage === 'reviewing') {
     return {
       label: 'Reviewing',
-      className: 'text-amber-400',
+      className: 'text-amber-700',
       icon: <Eye className="size-3 shrink-0" />,
     }
   }
@@ -154,7 +154,7 @@ function taskStatus(entry: TaskEntry): {
   if (stage === 'revising') {
     return {
       label: 'Revising',
-      className: 'text-amber-400',
+      className: 'text-amber-700',
       icon: <Hammer className="size-3 shrink-0" />,
     }
   }
@@ -163,10 +163,10 @@ function taskStatus(entry: TaskEntry): {
     const planning = entry.task.progress?.planDone !== true
     return {
       label: planning ? 'Planning' : 'Running',
-      className: 'text-amber-400',
+      className: 'text-amber-700',
       icon: (
         <span className="flex size-3 shrink-0 items-center justify-center">
-          <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span className="size-1.5 rounded-full bg-amber-700 animate-pulse" />
         </span>
       ),
     }
@@ -398,9 +398,9 @@ export function SideMenu({
       </div>
 
       {/* Scrollable content */}
-      <div className={cn('flex flex-1 flex-col py-2', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
+      <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Workspaces section */}
-        <div className="px-2 pb-2">
+        <div className="px-2 pb-3">
           {collapsed ? (
             <button
               type="button"
@@ -497,7 +497,7 @@ export function SideMenu({
         </div>
 
         {/* Divider */}
-        {!collapsed && <div className="mx-2 mb-2 border-t border-border" />}
+        {!collapsed && <div className="mx-2 mb-3 border-t border-border" />}
 
         {/* Projects section */}
         <div className="px-2">
@@ -550,7 +550,7 @@ export function SideMenu({
                 </IconButton>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {projects.length === 0 ? (
                   <p className="px-2 py-1 text-xs text-muted-foreground">
                     尚無任務

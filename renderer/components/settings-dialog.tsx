@@ -321,7 +321,7 @@ export function SettingsDialog({
           <div className="rounded-md border border-border/60 p-3">
             <div className="flex items-start gap-3">
               {githubPhase === 'success' ? (
-                <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-400" />
+                <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
               ) : githubPhase === 'error' ? (
                 <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
               ) : (
@@ -508,7 +508,7 @@ export function SettingsDialog({
                     className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5"
                   >
                     {connected ? (
-                      <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
                     ) : connection?.error ? (
                       <AlertTriangle className="size-4 shrink-0 text-destructive" />
                     ) : (
@@ -557,7 +557,7 @@ export function SettingsDialog({
               })}
               <div className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5">
                 {githubStatus?.authenticated ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
                 ) : githubStatus?.error ? (
                   <AlertTriangle className="size-4 shrink-0 text-destructive" />
                 ) : (
