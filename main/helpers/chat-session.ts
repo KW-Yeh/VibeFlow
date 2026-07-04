@@ -96,20 +96,63 @@ function claudeBin(): string {
   return 'claude'
 }
 
+type ShellQuote = (s: string) => string
+
+interface CommandShell {
+  command: string
+  args: (cmd: string) => string[]
+  quote: ShellQuote
+}
+
 function buildRawAgentCommand(
   agentCli: Exclude<AgentCliId, 'claude'>,
   model: string,
   fullText: string,
   systemPrompt: string,
   worktreePath: string,
+  quote: ShellQuote,
   workspacePath?: string
 ): string {
   const combined = `${systemPrompt}\n\n${fullText}`
   if (agentCli === 'codex') {
-    const addDir = workspacePath ? ` --add-dir ${shellQuote(workspacePath)}` : ''
-    return `codex exec --model ${shellQuote(model)} --sandbox workspace-write --ask-for-approval never -C ${shellQuote(worktreePath)}${addDir} --color never ${shellQuote(combined)}`
+    const addDir = workspacePath ? ` --add-dir ${quote(workspacePath)}` : ''
+    return `codex exec --model ${quote(model)} --sandbox workspace-write --ask-for-approval never -C ${quote(worktreePath)}${addDir} --color never ${quote(combined)}`
   }
-  return `gemini --yolo -i --model ${shellQuote(model)} ${shellQuote(combined)}`
+  return `gemini --yolo -i --model ${quote(model)} ${quote(combined)}`
+}
+
+function posixShellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+function powerShellQuote(s: string): string {
+  return `'${s.replace(/'/g, `''`)}'`
+}
+
+function gitBashPath(): string | null {
+  const candidates = [
+    process.env.GIT_BASH_PATH,
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : null,
+    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)']!, 'Git', 'bin', 'bash.exe') : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe') : null,
+  ].filter((candidate): candidate is string => Boolean(candidate))
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null
+}
+
+function commandShell(): CommandShell {
+  if (process.platform !== 'win32') {
+    return { command: 'sh', args: (cmd) => ['-lc', cmd], quote: posixShellQuote }
+  }
+
+  const bash = gitBashPath()
+  if (bash) return { command: bash, args: (cmd) => ['-lc', cmd], quote: posixShellQuote }
+
+  return {
+    command: 'powershell.exe',
+    args: (cmd) => ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd],
+    quote: powerShellQuote,
+  }
 }
 
 /** Write base64-encoded attachment bytes to a temp dir inside the worktree. */
@@ -120,11 +163,6 @@ function writeAttachment(worktreePath: string, input: AttachmentInput): ChatAtta
   const filePath = path.join(attachDir, `${id}-${input.name}`)
   fs.writeFileSync(filePath, Buffer.from(input.dataBase64, 'base64'))
   return { id, name: input.name, mime: input.mime, path: filePath }
-}
-
-/** Quote a string for safe use as a single POSIX shell argument. */
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 /**
@@ -173,8 +211,9 @@ export function sendChatMessage(
     ts: Date.now(),
     attachments: savedAttachments.length ? savedAttachments : undefined,
   })
-
-  const addDirFlag = workspacePath ? `--add-dir ${shellQuote(workspacePath)}` : ''
+  const shell = commandShell()
+  const quote = shell.quote
+  const addDirFlag = workspacePath ? `--add-dir ${quote(workspacePath)}` : ''
   const ensureGitignore = () => {
     const gi = path.join(worktreePath, '.gitignore')
     const entry = '.vibeflow-attachments/'
@@ -195,15 +234,15 @@ export function sendChatMessage(
         '--output-format stream-json',
         '--verbose', // required by claude CLI when --print + stream-json
         `--permission-mode auto`,
-        `--model ${shellQuote(model)}`,
+        `--model ${quote(model)}`,
         sessionFlag,
         addDirFlag,
-        `--append-system-prompt ${shellQuote(systemPrompt)}`,
-        shellQuote(fullText),
+        `--append-system-prompt ${quote(systemPrompt)}`,
+        quote(fullText),
       ].filter(Boolean).join(' ')
-    : buildRawAgentCommand(agentCli, model, fullText, systemPrompt, worktreePath, workspacePath)
+    : buildRawAgentCommand(agentCli, model, fullText, systemPrompt, worktreePath, quote, workspacePath)
 
-  const proc = spawn('sh', ['-lc', cmd], {
+  const proc = spawn(shell.command, shell.args(cmd), {
     cwd: worktreePath,
     env: execEnv(),
   })

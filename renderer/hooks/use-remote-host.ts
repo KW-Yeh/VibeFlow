@@ -1,28 +1,64 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BoardState, ColumnId, Task, Workspace } from '@/lib/types'
-import { createTask, onTermData, persistBoard, termInput } from '@/lib/api'
+import type { BoardState, ColumnId, MemoryCheckpoint, Task, TaskProgressStep, Workspace } from '@/lib/types'
+import { getCheckpoints, getPlanHtml, onTermData, persistBoard, termInput } from '@/lib/api'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function buildRemoteState(board: BoardState, workspaces: Workspace[], autoMode: boolean) {
-  const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
+type RemoteTask = {
+  id: string
+  title: string
+  description?: string
+  projectName?: string
+  column: ColumnId
+  progress?: {
+    summary?: string
+    steps: TaskProgressStep[]
+  }
+  pipeline?: { stage: NonNullable<Task['pipeline']>['stage']; round: number }
+  launchedAt?: number
+  plan?: { html: string }
+  checkpoints?: MemoryCheckpoint[]
+}
+
+async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask> {
+  const remoteTask: RemoteTask = {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    projectName: task.projectName,
+    column,
+    progress: task.progress
+      ? { summary: task.progress.summary, steps: task.progress.steps }
+      : undefined,
+    pipeline: task.pipeline
+      ? { stage: task.pipeline.stage, round: task.pipeline.round }
+      : undefined,
+    launchedAt: task.launchedAt,
+  }
+
+  if (column !== 'done') return remoteTask
+
+  const [planHtml, checkpoints] = await Promise.all([
+    getPlanHtml(task.id).catch(() => null),
+    getCheckpoints(task.id).catch(() => []),
+  ])
+
   return {
-    tasks: cols.flatMap(col =>
-      board[col].map(t => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        projectName: t.projectName,
-        column: col,
-        progress: t.progress
-          ? { summary: t.progress.summary, steps: t.progress.steps }
-          : undefined,
-        pipeline: t.pipeline
-          ? { stage: t.pipeline.stage, round: t.pipeline.round }
-          : undefined,
-        launchedAt: t.launchedAt,
-      }))
-    ),
+    ...remoteTask,
+    plan: planHtml ? { html: planHtml } : undefined,
+    checkpoints,
+  }
+}
+
+async function buildRemoteState(board: BoardState, workspaces: Workspace[], autoMode: boolean) {
+  const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
+  const tasks = await Promise.all(
+    cols.flatMap((col) => board[col].map((task) => buildRemoteTask(task, col)))
+  )
+
+  return {
+    capabilities: { createTask: false },
+    tasks,
     workspaces: workspaces.map(w => ({ id: w.id, name: w.name, available: w.available ?? true })),
     settings: { autoMode },
   }
@@ -77,10 +113,16 @@ export function useRemoteHost({
   // ── broadcast state on every board/workspace change ──────────────────────
   useEffect(() => {
     if (!peersRef.current.size) return
-    const state = buildRemoteState(board, workspaces, autoMode)
-    for (const conn of peersRef.current) {
-      try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
-    }
+    let cancelled = false
+
+    void buildRemoteState(board, workspaces, autoMode).then((state) => {
+      if (cancelled) return
+      for (const conn of peersRef.current) {
+        try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
+      }
+    })
+
+    return () => { cancelled = true }
   }, [board, workspaces, autoMode])
 
   // ── handle incoming message from a remote client ──────────────────────────
@@ -93,20 +135,10 @@ export function useRemoteHost({
         try {
           conn.send({
             type: 'vf:state',
-            payload: buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+            payload: await buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
           })
         } catch { /* ignored */ }
         break
-
-      case 'client:create-task': {
-        const { title, description, workspaceId } = payload ?? {}
-        if (!title || !workspaceId) break
-        const ws = workspacesRef.current.find(w => w.id === workspaceId)
-        if (!ws) break
-        const result = await createTask({ title, description, projectPath: ws.path, baseBranch: null })
-        if (result) onStateChangeRef.current(result.state.board)
-        break
-      }
 
       case 'client:send-command': {
         const { taskId, text } = payload ?? {}
@@ -159,13 +191,15 @@ export function useRemoteHost({
         setPeerCount(c => c + 1)
 
         conn.on('open', () => {
-          try {
-            conn.send({ type: 'vf:hello', payload: { version: '1.0' } })
-            conn.send({
-              type: 'vf:state',
-              payload: buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
-            })
-          } catch { /* ignored */ }
+          void (async () => {
+            try {
+              conn.send({ type: 'vf:hello', payload: { version: '1.0' } })
+              conn.send({
+                type: 'vf:state',
+                payload: await buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+              })
+            } catch { /* ignored */ }
+          })()
         })
 
         conn.on('data', (raw: unknown) => { void handleMessage(raw, conn) })

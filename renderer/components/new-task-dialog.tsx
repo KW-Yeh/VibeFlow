@@ -17,6 +17,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
+import { basenameFromPath as basename, findWorkspaceForProject } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
@@ -56,20 +57,6 @@ export interface NewTaskFormProps {
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
   inline?: boolean
-}
-
-function basename(p: string): string {
-  const parts = p.split(/[/\\]/).filter(Boolean)
-  return parts[parts.length - 1] ?? p
-}
-
-// Mirror of main's defaultWorkspacePath (helpers/workspace.ts): a project's
-// sibling workspace is `<parent>/<slug>-workspace`. Used to auto-pick the
-// matching workspace once a project folder is chosen.
-function defaultWorkspacePath(projectPath: string): string {
-  const slug = basename(projectPath).trim().toLowerCase().replace(/\s+/g, '_')
-  const parent = projectPath.replace(/[/\\][^/\\]+[/\\]?$/, '')
-  return `${parent}/${slug}-workspace`
 }
 
 // Shared field class — uniform height, subtle border, smooth focus ring
@@ -343,8 +330,7 @@ export function NewTaskForm({
     setProjectPath(path)
     setGitInfo(null)
 
-    const wsPath = defaultWorkspacePath(path)
-    const matched = workspaces.find((ws) => ws.path === wsPath)
+    const matched = findWorkspaceForProject(path, workspaces)
     setWorkspaceId(matched?.id ?? '')
     if (matched) setAdvancedOpen(true)
 

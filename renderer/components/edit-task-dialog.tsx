@@ -15,6 +15,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import { cn } from '@/lib/utils'
+import { basenameFromPath as basename, findWorkspaceForProject } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
@@ -55,11 +56,6 @@ interface EditTaskDialogProps {
   error: string | null
   onSubmit: (payload: EditTaskPayload) => void
   onClose: () => void
-}
-
-function basename(p: string): string {
-  const parts = p.split(/[/\\]/).filter(Boolean)
-  return parts[parts.length - 1] ?? p
 }
 
 export function EditTaskDialog({
@@ -175,6 +171,7 @@ export function EditTaskDialog({
     if (!picked) return
     setProjectPath(picked)
     setProjectChanged(picked !== task.projectPath)
+    setWorkspaceId(findWorkspaceForProject(picked, workspaces)?.id ?? '')
     setGitInfo(null)
     setLoadingInfo(true)
     try {
