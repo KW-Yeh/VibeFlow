@@ -18,11 +18,12 @@ files:
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 # Squeeze the installer/archive harder — slower to build, smaller to download.
 compression: maximum
-# Chromium ships ~220 UI locale packs (~47 MB). The app itself only speaks
-# English + Chinese, so drop the rest from the Electron Framework.
+# Chromium ships ~220 UI locale packs (~47 MB). The app only speaks Traditional
+# Chinese + English, so drop the rest from the Electron Framework.
+# NOTE: use Chromium's exact pak names (hyphen + region). en-US is Chromium's
+# mandatory fallback locale — dropping it crashes the renderer.
 electronLanguages:
   - en-US
-  - zh-CN
   - zh-TW
 mac:
   category: public.app-category.developer-tools
