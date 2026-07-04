@@ -1,6 +1,11 @@
 appId: com.kwyeh.vibeflow
 productName: VibeFlow
 copyright: Copyright © 2026 KW-Yeh
+# node-pty ships prebuilt binaries for every target we package (darwin/win,
+# x64/arm64) and they load fine against the pinned Electron. Skip electron-builder's
+# from-source native rebuild: on Windows it fails inside node-pty's bundled winpty
+# build (GetCommitHash.bat), and the rebuild is unnecessary given the prebuilds.
+npmRebuild: false
 directories:
   output: dist
   buildResources: resources
@@ -16,9 +21,9 @@ compression: maximum
 # Chromium ships ~220 UI locale packs (~47 MB). The app itself only speaks
 # English + Chinese, so drop the rest from the Electron Framework.
 electronLanguages:
-  - en
-  - zh_CN
-  - zh_TW
+  - en-US
+  - zh-CN
+  - zh-TW
 mac:
   category: public.app-category.developer-tools
   target:
