@@ -702,7 +702,7 @@ export function TaskWorkspacePanel({
         </main>
       ) : (
       <main className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_minmax(20rem,24rem)] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,27rem)]">
-        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-0 lg:border-b-0 lg:border-r">
+        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-3 lg:border-b-0 lg:border-r">
           <TaskTerminal
             key={`${task.id}:${launchNonce}`}
             taskId={task.id}
@@ -730,7 +730,7 @@ export function TaskWorkspacePanel({
                     type="button"
                     onClick={() => setActiveTaskTab(tab)}
                     className={cn(
-                      'rounded px-2 py-0.5 text-[11px]',
+                      'rounded-sm px-2 py-0.5 text-[11px]',
                       activeTaskTab === tab
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:text-foreground'

@@ -152,7 +152,7 @@ function wrapDocument(body: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Plan</title>
 <style>
-:root { color-scheme: dark; }
+:root { color-scheme: light; }
 *, *::before, *::after { box-sizing: border-box; }
 body {
   margin: 0;
@@ -160,15 +160,15 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 12.5px;
   line-height: 1.65;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: #ffffff;
+  color: #1d1d1f;
 }
 h1, h2, h3, h4, h5, h6 {
-  color: #e6edf3;
+  color: #1d1d1f;
   font-weight: 600;
   margin: 1.4em 0 0.35em;
   padding-bottom: 0.25em;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid #e0e0e0;
 }
 h1 { font-size: 1.35em; }
 h2 { font-size: 1.15em; }
@@ -186,23 +186,23 @@ ul.task-list li {
   padding: 0.1em 0;
 }
 ul.task-list li input[type="checkbox"] {
-  accent-color: #58a6ff;
+  accent-color: #0066cc;
   flex-shrink: 0;
   margin: 0;
   cursor: default;
 }
-ul.task-list li.done span { color: #6e7681; text-decoration: line-through; }
+ul.task-list li.done span { color: #7a7a7a; text-decoration: line-through; }
 code {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: #f5f5f7;
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
   padding: 0.1em 0.35em;
   font-size: 0.88em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 pre {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: #f5f5f7;
+  border: 1px solid #e0e0e0;
   border-radius: 6px;
   padding: 0.9em 1em;
   overflow-x: auto;
@@ -214,17 +214,17 @@ pre code {
   padding: 0;
   font-size: inherit;
 }
-strong { color: #e6edf3; font-weight: 600; }
+strong { color: #1d1d1f; font-weight: 600; }
 em { font-style: italic; }
-del { color: #6e7681; }
-a { color: #58a6ff; text-underline-offset: 2px; }
+del { color: #7a7a7a; }
+a { color: #0066cc; text-underline-offset: 2px; }
 a:hover { text-decoration: none; }
-hr { border: none; border-top: 1px solid #21262d; margin: 1.2em 0; }
+hr { border: none; border-top: 1px solid #e0e0e0; margin: 1.2em 0; }
 blockquote {
-  border-left: 3px solid #30363d;
+  border-left: 3px solid #e0e0e0;
   margin: 0.5em 0;
   padding: 0.25em 0.75em;
-  color: #8b949e;
+  color: #7a7a7a;
 }
 </style>
 </head>
