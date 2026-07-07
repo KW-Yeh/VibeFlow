@@ -180,12 +180,14 @@ function claudeResumeOrFresh(
 const SUBAGENTS_DIR = '.vibeflow-subagents'
 
 /**
- * Build the `--settings` inline-JSON value that wires Claude's Task-tool hooks
- * to record each spawned sub-agent. PreToolUse captures the prompt at spawn;
- * PostToolUse captures the result at completion. Each event is written to its
- * OWN file (`<epoch>-<pid>-<rand>.json`) so parallel sub-agents never interleave
- * bytes into one log. The hook always exits 0 and emits no decision JSON, so it
- * is purely passive — it never blocks or alters the main agent.
+ * Build the `--settings` inline-JSON value passed to every `claude` launch.
+ * Always pins the light theme so the CLI matches the app's light UI. When a
+ * worktree path is given, also wires Claude's Task-tool hooks to record each
+ * spawned sub-agent: PreToolUse captures the prompt at spawn; PostToolUse
+ * captures the result at completion. Each event is written to its OWN file
+ * (`<epoch>-<pid>-<rand>.json`) so parallel sub-agents never interleave bytes
+ * into one log. The hook always exits 0 and emits no decision JSON, so it is
+ * purely passive — it never blocks or alters the main agent.
  *
  * The event dir is the worktree's absolute path so the location is stable
  * regardless of the agent's cwd at hook time (more robust than $CLAUDE_PROJECT_DIR
@@ -193,16 +195,18 @@ const SUBAGENTS_DIR = '.vibeflow-subagents'
  * the outer shell passes them through verbatim — they are expanded later by the
  * shell that actually runs the hook.
  */
-function buildSubAgentSettings(worktreePath: string): string {
-  const dir = `${toShellPath(worktreePath)}/${SUBAGENTS_DIR}`
-  const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
-  const taskHook = {
-    matcher: 'Task',
-    hooks: [{ type: 'command', command }],
+function buildClaudeSettings(worktreePath?: string): string {
+  const settings: Record<string, unknown> = { theme: 'light' }
+  if (worktreePath) {
+    const dir = `${toShellPath(worktreePath)}/${SUBAGENTS_DIR}`
+    const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
+    const taskHook = {
+      matcher: 'Task',
+      hooks: [{ type: 'command', command }],
+    }
+    settings.hooks = { PreToolUse: [taskHook], PostToolUse: [taskHook] }
   }
-  return JSON.stringify({
-    hooks: { PreToolUse: [taskHook], PostToolUse: [taskHook] },
-  })
+  return JSON.stringify(settings)
 }
 
 /**
@@ -476,11 +480,9 @@ function assembleCommand(
 ): string {
   let cmd: string
   if (agent === 'claude') {
-    // Install the sub-agent recording hooks via inline --settings (session-only,
-    // never touches the user's repo). Only when the worktree path is known.
-    const settings = worktreePath
-      ? ` --settings ${shellQuote(buildSubAgentSettings(worktreePath))}`
-      : ''
+    // Inline --settings: light theme always, sub-agent recording hooks only
+    // when the worktree path is known (session-only, never touches the repo).
+    const settings = ` --settings ${shellQuote(buildClaudeSettings(worktreePath))}`
     // Grant the agent read/write access to the workspace folder so it can read
     // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
@@ -508,8 +510,9 @@ function assembleCommand(
  * independent Claude Code process in the task's worktree. This is a fresh CLI
  * launch — NOT a turn typed into the executor's running session — so:
  *   - The reviewer role persona is passed via `--append-system-prompt`.
- *   - Sub-agent hooks (--settings) are intentionally NOT installed to avoid
- *     collisions with the executor's .vibeflow-subagents directory.
+ *   - `--settings` is passed for the light theme only; sub-agent hooks are
+ *     intentionally NOT installed to avoid collisions with the executor's
+ *     .vibeflow-subagents directory.
  *   - `taskAgent(task)` is used so Codex/Gemini tasks fall through to their own
  *     assembleCommand branch (which folds the system prompt into the body).
  *
@@ -534,9 +537,10 @@ export function buildReviewCommand(
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
+    const settings = ` --settings ${shellQuote(buildClaudeSettings())}`
     const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
-    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${addDir}`
+    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const sysArg = reviewSysPrompt
       ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
       : ''
@@ -588,9 +592,7 @@ export function buildReviseCommand(
   if (agent === 'claude') {
     // Resume the executor's pinned session by its exact UUID so the reviewer
     // session (which ran in the same cwd) does not pollute "most recent".
-    const settings = task.worktreePath
-      ? ` --settings ${shellQuote(buildSubAgentSettings(task.worktreePath))}`
-      : ''
+    const settings = ` --settings ${shellQuote(buildClaudeSettings(task.worktreePath))}`
     const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
