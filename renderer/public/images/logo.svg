@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">VibeFlow logo</title>
+  <desc id="desc">A minimalist VF monogram made from flowing task-card bars inside a rounded square app icon.</desc>
+  <rect x="72" y="72" width="880" height="880" rx="196" fill="#0D1117"/>
+  <rect x="104" y="104" width="816" height="816" rx="168" stroke="#1F2937" stroke-width="28"/>
+
+  <g>
+    <path d="M228 264H338L452 622L414 760H374L228 264Z" fill="#F8FAFC"/>
+    <path d="M422 760H374L516 264H626L480 760H422Z" fill="#F8FAFC"/>
+
+    <rect x="548" y="264" width="112" height="496" rx="42" fill="#F8FAFC"/>
+    <rect x="548" y="264" width="292" height="112" rx="42" fill="#2DD4BF"/>
+    <rect x="548" y="458" width="238" height="104" rx="40" fill="#F8FAFC"/>
+  </g>
+
+  <path d="M660 320H832" stroke="#A7F3D0" stroke-width="12" stroke-linecap="round" opacity=".32"/>
+</svg>
