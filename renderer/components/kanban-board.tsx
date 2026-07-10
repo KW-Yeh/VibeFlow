@@ -59,6 +59,8 @@ interface KanbanBoardProps {
   selectedTaskId?: string | null
   /** Deselect the current task (shows inline new-task form). */
   onDeselectTask: () => void
+  /** Pre-fill the inline new-task form with this existing project folder. */
+  initialProjectPath?: string | null
   /** Available workspaces for context injection. */
   workspaces?: Workspace[]
   /** Props forwarded to the inline NewTaskForm when no task is selected. */
@@ -113,6 +115,7 @@ export function KanbanBoard({
   subAgents,
   selectedTaskId,
   onDeselectTask,
+  initialProjectPath,
   workspaces,
   creating,
   createError,
@@ -546,7 +549,9 @@ export function KanbanBoard({
                 <div className="flex h-full overflow-y-auto p-8">
                   <div className="mx-auto w-full max-w-5xl pb-8">
                     <NewTaskForm
+                      key={initialProjectPath ?? 'new'}
                       inline
+                      initialProjectPath={initialProjectPath}
                       creating={creating}
                       error={createError}
                       pickFolder={pickFolder}

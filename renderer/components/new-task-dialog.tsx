@@ -57,6 +57,11 @@ export interface NewTaskFormProps {
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
   inline?: boolean
+  /**
+   * Pre-fill an existing project folder on mount (inline mode) — triggers the
+   * same git detection + workspace auto-match as manually picking the folder.
+   */
+  initialProjectPath?: string | null
 }
 
 // Shared field class — uniform height, subtle border, smooth focus ring
@@ -260,6 +265,7 @@ export function NewTaskForm({
   onSubmit,
   onClose,
   inline = false,
+  initialProjectPath,
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [mode, setMode] = useState<ProjectMode>('existing')
@@ -324,9 +330,9 @@ export function NewTaskForm({
     setWorkspaceId('')
   }
 
-  const handlePick = async () => {
-    const path = await pickFolder()
-    if (!path) return
+  // Shared by manual folder pick and initialProjectPath prefill: record the
+  // path, auto-match a workspace, then run the mode-appropriate git detection.
+  const loadProject = async (path: string) => {
     setProjectPath(path)
     setGitInfo(null)
 
@@ -353,6 +359,19 @@ export function NewTaskForm({
       }
     }
   }
+
+  const handlePick = async () => {
+    const path = await pickFolder()
+    if (!path) return
+    await loadProject(path)
+  }
+
+  // Inline mode: prefill the given existing project on mount (from the sidebar's
+  // per-project「新增任務」entry). Runs once; default mode is 'existing'.
+  useEffect(() => {
+    if (inline && initialProjectPath) void loadProject(initialProjectPath)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isRepo = gitInfo?.isRepo ?? false
   const hasRemote = gitInfo?.hasRemote ?? false

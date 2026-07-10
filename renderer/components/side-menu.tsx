@@ -8,13 +8,12 @@ import {
   Eye,
   FolderOpen,
   Hammer,
-  Layers,
   PanelLeftClose,
   PanelLeftOpen,
-  Pencil,
   Plus,
   RefreshCw,
   Rocket,
+  Trash2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
@@ -23,21 +22,19 @@ import type {
   ColumnId,
   RemoteUpdateSnapshot,
   Task,
-  Workspace,
 } from '@/lib/types'
 
 interface SideMenuProps {
   collapsed: boolean
   onToggleCollapse: () => void
   board: BoardState
-  workspaces: Workspace[]
   selectedTaskId: string | null
   onSelectTask: (id: string) => void
   onNewTask: () => void
-  onAddWorkspace: () => void
-  onEditWorkspace: (ws: Workspace) => void
-  onRefreshWorkspaces: () => void
-  refreshing: boolean
+  /** Open the new-task form pre-filled for a specific project folder. */
+  onNewTaskForProject: (projectPath: string | null) => void
+  /** Delete an entire project: every listed task (worktree + branch + conversation). */
+  onDeleteProject: (name: string, taskIds: string[]) => void
   remoteUpdate: RemoteUpdateSnapshot | null
   onCheckForUpdate: () => void
   onDownloadUpdate: () => void
@@ -356,14 +353,11 @@ export function SideMenu({
   collapsed,
   onToggleCollapse,
   board,
-  workspaces,
   selectedTaskId,
   onSelectTask,
   onNewTask,
-  onAddWorkspace,
-  onEditWorkspace,
-  onRefreshWorkspaces,
-  refreshing,
+  onNewTaskForProject,
+  onDeleteProject,
   remoteUpdate,
   onCheckForUpdate,
   onDownloadUpdate,
@@ -371,14 +365,13 @@ export function SideMenu({
 }: SideMenuProps) {
   const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
   const [doneExpanded, setDoneExpanded] = useState<Record<string, boolean>>({})
-  const [workspacesExpanded, setWorkspacesExpanded] = useState(true)
   const projects = groupTasksByProject(board, selectedTaskId)
 
   return (
     <aside
       className={cn(
         'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-[width] duration-200',
-        collapsed ? 'w-12' : 'w-72'
+        collapsed ? 'w-12' : 'w-80'
       )}
     >
       {/* Header */}
@@ -399,106 +392,6 @@ export function SideMenu({
 
       {/* Scrollable content */}
       <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
-        {/* Workspaces section */}
-        <div className="px-2 pb-3">
-          {collapsed ? (
-            <button
-              type="button"
-              onClick={onAddWorkspace}
-              title="Workspaces"
-              className="mx-auto flex w-8 items-center justify-center rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <Layers className="size-4" />
-            </button>
-          ) : (
-            <>
-              <div className="mb-1 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setWorkspacesExpanded((v) => !v)}
-                  className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
-                >
-                  {workspacesExpanded ? (
-                    <ChevronDown className="size-3" />
-                  ) : (
-                    <ChevronRight className="size-3" />
-                  )}
-                  Workspaces
-                </button>
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    aria-label="重新掃描所有 workspace"
-                    onClick={onRefreshWorkspaces}
-                    disabled={refreshing}
-                    title="重新掃描所有 workspace"
-                    className="p-1"
-                  >
-                    <RefreshCw
-                      className={cn('size-3', refreshing && 'animate-spin')}
-                    />
-                  </IconButton>
-                  <IconButton
-                    aria-label="新增 Workspace"
-                    onClick={onAddWorkspace}
-                    title="新增 Workspace"
-                    className="p-1"
-                  >
-                    <Plus className="size-3" />
-                  </IconButton>
-                </div>
-              </div>
-
-              {workspacesExpanded && (
-                <div className="space-y-0.5">
-                  {workspaces.length === 0 ? (
-                    <p className="px-2 py-1 text-xs text-muted-foreground">
-                      尚無 workspace
-                    </p>
-                  ) : (
-                    workspaces.map((ws) => (
-                      <div
-                        key={ws.id}
-                        className="group flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent"
-                      >
-                        <FolderOpen
-                          className={cn(
-                            'size-3 shrink-0',
-                            ws.available === false
-                              ? 'text-destructive'
-                              : 'text-muted-foreground'
-                          )}
-                        />
-                        <span
-                          className="flex-1 truncate text-xs"
-                          title={ws.path}
-                        >
-                          {ws.name}
-                        </span>
-                        {ws.available === false && (
-                          <span title="資料夾不存在">
-                            <AlertTriangle className="size-3 shrink-0 text-destructive" />
-                          </span>
-                        )}
-                        <IconButton
-                          aria-label={`編輯 ${ws.name}`}
-                          onClick={() => onEditWorkspace(ws)}
-                          className="hidden p-0.5 group-hover:inline-flex"
-                          title="編輯"
-                        >
-                          <Pencil className="size-3" />
-                        </IconButton>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Divider */}
-        {!collapsed && <div className="mx-2 mb-3 border-t border-border" />}
-
         {/* Projects section */}
         <div className="px-2">
           {collapsed ? (
@@ -563,33 +456,61 @@ export function SideMenu({
 
                     return (
                       <div key={project.key} className="rounded-md">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setProjectsExpanded((prev) => ({
-                              ...prev,
-                              [project.key]: !expanded,
-                            }))
-                          }
+                        <div
                           className={cn(
-                            'flex w-full items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                            'group flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground',
                             project.hasSelected && 'text-foreground'
                           )}
-                          title={project.path ?? project.name}
                         >
-                          {expanded ? (
-                            <ChevronDown className="size-3 shrink-0" />
-                          ) : (
-                            <ChevronRight className="size-3 shrink-0" />
-                          )}
-                          <FolderOpen className="size-3 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-left font-medium">
-                            {project.name}
-                          </span>
-                          <span className="tabular-nums text-muted-foreground">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setProjectsExpanded((prev) => ({
+                                ...prev,
+                                [project.key]: !expanded,
+                              }))
+                            }
+                            className="flex min-w-0 flex-1 items-center gap-1 rounded text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            title={project.path ?? project.name}
+                          >
+                            {expanded ? (
+                              <ChevronDown className="size-3 shrink-0" />
+                            ) : (
+                              <ChevronRight className="size-3 shrink-0" />
+                            )}
+                            <FolderOpen className="size-3 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate font-medium">
+                              {project.name}
+                            </span>
+                          </button>
+                          <span className="shrink-0 tabular-nums text-muted-foreground group-hover:hidden">
                             {project.total}
                           </span>
-                        </button>
+                          <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                            <IconButton
+                              aria-label={`在 ${project.name} 新增任務`}
+                              title="在此專案新增任務"
+                              onClick={() => onNewTaskForProject(project.path)}
+                              className="p-0.5"
+                            >
+                              <Plus className="size-3" />
+                            </IconButton>
+                            <IconButton
+                              aria-label={`刪除專案 ${project.name}`}
+                              title="刪除整個專案（含所有任務）"
+                              tone="danger"
+                              onClick={() =>
+                                onDeleteProject(project.name, [
+                                  ...project.active.map((e) => e.task.id),
+                                  ...project.done.map((e) => e.task.id),
+                                ])
+                              }
+                              className="p-0.5"
+                            >
+                              <Trash2 className="size-3" />
+                            </IconButton>
+                          </div>
+                        </div>
 
                         {expanded && (
                           <div className="ml-3 space-y-0.5">

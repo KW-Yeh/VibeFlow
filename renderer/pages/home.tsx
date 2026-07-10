@@ -6,8 +6,9 @@ import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dia
 import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
-import { WorkspaceDialog } from '@/components/workspace-dialog'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
+import { DialogShell } from '@/components/ui/dialog-shell'
+import { AlertTriangle } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
@@ -16,7 +17,6 @@ import {
   refreshAgentModels,
   createRole,
   createTask,
-  createWorkspace,
   deleteTask,
   detectAgents,
   downloadRemoteUpdate,
@@ -33,13 +33,10 @@ import {
   persistBoard,
   pickFolder,
   relaunchApp,
-  refreshWorkspaces,
   removeRole,
-  removeWorkspace,
   setSettings,
   updateRole,
   updateTask,
-  updateWorkspace,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import type {
@@ -114,11 +111,15 @@ export default function HomePage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [sideMenuCollapsed, setSideMenuCollapsed] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [refreshingWorkspaces, setRefreshingWorkspaces] = useState(false)
-  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false)
-  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
-  const [savingWorkspace, setSavingWorkspace] = useState(false)
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  // Existing-project folder to prefill in the inline new-task form (null = blank form).
+  const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
+
+  // Delete-project confirmation modal state.
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{
+    name: string
+    taskIds: string[]
+  } | null>(null)
+  const [deletingProject, setDeletingProject] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -219,6 +220,15 @@ export default function HomePage() {
 
   const handleOpenNewTask = () => {
     setCreateError(null)
+    setNewTaskInitialProject(null)
+    setSelectedTaskId(null)
+  }
+
+  // Sidebar per-project「新增任務」: open the inline form prefilled with that
+  // project's folder (null path falls back to a blank form).
+  const handleNewTaskForProject = (projectPath: string | null) => {
+    setCreateError(null)
+    setNewTaskInitialProject(projectPath)
     setSelectedTaskId(null)
   }
 
@@ -424,59 +434,30 @@ export default function HomePage() {
     }
   }
 
-  const handleAddWorkspace = () => {
-    setEditingWorkspace(null)
-    setWorkspaceError(null)
-    setWorkspaceDialogOpen(true)
+  const handleDeleteProject = (name: string, taskIds: string[]) => {
+    if (taskIds.length === 0) return
+    setDeleteProjectTarget({ name, taskIds })
   }
 
-  const handleEditWorkspace = (ws: Workspace) => {
-    setEditingWorkspace(ws)
-    setWorkspaceError(null)
-    setWorkspaceDialogOpen(true)
-  }
-
-  const handleRefreshWorkspaces = async () => {
-    setRefreshingWorkspaces(true)
+  // Delete every task under the project (each deleteTask clears its PTY +
+  // worktree + branch + conversation and drops the card). Runs sequentially so
+  // git worktree operations on the shared repo don't race one another.
+  const confirmDeleteProject = async () => {
+    if (!deleteProjectTarget) return
+    setDeletingProject(true)
     try {
-      const state = await refreshWorkspaces()
-      if (state) setWorkspaces(state.workspaces ?? [])
-    } finally {
-      setRefreshingWorkspaces(false)
-    }
-  }
-
-  const handleSaveWorkspace = async (name: string, path: string) => {
-    setSavingWorkspace(true)
-    setWorkspaceError(null)
-    try {
-      if (editingWorkspace) {
-        const state = await updateWorkspace(editingWorkspace.id, { name, path })
-        if (state) setWorkspaces(state.workspaces ?? [])
-      } else {
-        const res = await createWorkspace({ name, path })
-        if (res) setWorkspaces(res.state.workspaces ?? [])
+      let latest: BoardState | null = null
+      for (const id of deleteProjectTarget.taskIds) {
+        const state = await deleteTask(id)
+        if (state) latest = state.board
       }
-      setWorkspaceDialogOpen(false)
-    } catch (err) {
-      setWorkspaceError(err instanceof Error ? err.message : String(err))
+      if (latest) setBoard(latest)
+      if (selectedTaskId && deleteProjectTarget.taskIds.includes(selectedTaskId)) {
+        setSelectedTaskId(null)
+      }
+      setDeleteProjectTarget(null)
     } finally {
-      setSavingWorkspace(false)
-    }
-  }
-
-  const handleDeleteWorkspace = async () => {
-    if (!editingWorkspace) return
-    setSavingWorkspace(true)
-    setWorkspaceError(null)
-    try {
-      const state = await removeWorkspace(editingWorkspace.id)
-      if (state) setWorkspaces(state.workspaces ?? [])
-      setWorkspaceDialogOpen(false)
-    } catch (err) {
-      setWorkspaceError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSavingWorkspace(false)
+      setDeletingProject(false)
     }
   }
 
@@ -503,14 +484,11 @@ export default function HomePage() {
                 collapsed={sideMenuCollapsed}
                 onToggleCollapse={() => setSideMenuCollapsed((v) => !v)}
                 board={board}
-                workspaces={workspaces}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={setSelectedTaskId}
                 onNewTask={handleOpenNewTask}
-                onAddWorkspace={handleAddWorkspace}
-                onEditWorkspace={handleEditWorkspace}
-                onRefreshWorkspaces={handleRefreshWorkspaces}
-                refreshing={refreshingWorkspaces}
+                onNewTaskForProject={handleNewTaskForProject}
+                onDeleteProject={handleDeleteProject}
                 remoteUpdate={remoteUpdate}
                 onCheckForUpdate={handleCheckForRemoteUpdate}
                 onDownloadUpdate={handleDownloadRemoteUpdate}
@@ -541,6 +519,7 @@ export default function HomePage() {
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   onDeselectTask={() => setSelectedTaskId(null)}
+                  initialProjectPath={newTaskInitialProject}
                   workspaces={workspaces}
                   creating={creating}
                   createError={createError}
@@ -588,16 +567,53 @@ export default function HomePage() {
               onDelete={handleDeleteRole}
               onClose={() => setRolesOpen(false)}
             />
-            <WorkspaceDialog
-              open={workspaceDialogOpen}
-              workspace={editingWorkspace}
-              pickFolder={pickFolder}
-              saving={savingWorkspace}
-              error={workspaceError}
-              onSubmit={handleSaveWorkspace}
-              onDelete={editingWorkspace ? handleDeleteWorkspace : undefined}
-              onClose={() => setWorkspaceDialogOpen(false)}
-            />
+            {deleteProjectTarget && (
+              <DialogShell
+                title="刪除專案"
+                saving={deletingProject}
+                onClose={() => {
+                  if (!deletingProject) setDeleteProjectTarget(null)
+                }}
+                contentClassName="max-w-md rounded-lg p-5"
+              >
+                <div className="space-y-5">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+                      <AlertTriangle className="size-5" />
+                    </span>
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="text-base font-semibold tracking-tight">
+                        刪除專案「{deleteProjectTarget.name}」？
+                      </h2>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        這會刪除此專案底下的 {deleteProjectTarget.taskIds.length}{' '}
+                        個任務，包含它們的 worktree、branch 與對話紀錄。此操作無法復原。
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full"
+                      disabled={deletingProject}
+                      onClick={() => setDeleteProjectTarget(null)}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-full active:scale-95"
+                      disabled={deletingProject}
+                      onClick={confirmDeleteProject}
+                    >
+                      {deletingProject ? '刪除中…' : '刪除專案'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogShell>
+            )}
             {remoteShareOpen && remoteHost.roomCode && (
               <RemoteShareDialog
                 roomCode={remoteHost.roomCode}
