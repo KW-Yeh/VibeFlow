@@ -19,6 +19,9 @@ export type {
   MemoryCheckpoint,
   MemoryDecision,
   MemoryArtifact,
+  MemoryLaunchInfo,
+  MemoryTaskLink,
+  RelatedTask,
 } from '../../main/helpers/memory'
 export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
 export type {

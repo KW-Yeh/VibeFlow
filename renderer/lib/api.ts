@@ -14,7 +14,10 @@ import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
   MemoryCheckpoint,
+  MemoryLaunchInfo,
+  MemoryTaskLink,
   PrStatus,
+  RelatedTask,
   RemoteUpdateSnapshot,
   Role,
   SubAgentRun,
@@ -276,6 +279,21 @@ export async function getCheckpoints(
 ): Promise<MemoryCheckpoint[]> {
   const b = bridge()
   return b ? b.getCheckpoints(taskId) : []
+}
+
+export async function getMemoryLaunchInfo(): Promise<MemoryLaunchInfo | null> {
+  const b = bridge()
+  return b ? b.getMemoryLaunchInfo() : null
+}
+
+export async function getRelatedTasks(taskId: string): Promise<RelatedTask[]> {
+  const b = bridge()
+  return b ? b.getRelatedTasks(taskId) : []
+}
+
+export async function getTaskLinks(taskId: string): Promise<MemoryTaskLink[]> {
+  const b = bridge()
+  return b ? b.getTaskLinks(taskId) : []
 }
 
 export async function approve(

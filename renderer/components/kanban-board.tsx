@@ -19,7 +19,7 @@ import {
   PLANNING_ROLE,
   REVIEWER_ROLE,
 } from '@/lib/claude'
-import { termKill, termSessionExists } from '@/lib/api'
+import { getMemoryLaunchInfo, termKill, termSessionExists } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -28,6 +28,7 @@ import type {
   BoardState,
   ColumnId,
   GitInfo,
+  MemoryLaunchInfo,
   ReviewVerdict,
   Role,
   SubAgentRun,
@@ -153,6 +154,15 @@ export function KanbanBoard({
   const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
   const executionStartedRef = useRef<Set<string>>(new Set())
 
+  // Built-in agent-memory server + unified db paths are constant for the app
+  // session, so fetch once and reuse for every launch command.
+  const memoryLaunchRef = useRef<MemoryLaunchInfo | null>(null)
+  useEffect(() => {
+    getMemoryLaunchInfo().then((info) => {
+      if (info) memoryLaunchRef.current = info
+    })
+  }, [])
+
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
@@ -186,6 +196,7 @@ export function KanbanBoard({
         systemPrompt,
         workspacePath,
         resume: opts?.resume,
+        memory: memoryLaunchRef.current ?? undefined,
       })
     )
   }
