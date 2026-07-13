@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BoardState, ColumnId, MemoryCheckpoint, Task, TaskProgressStep, Workspace } from '@/lib/types'
+import type { BoardState, ColumnId, MemoryCheckpoint, Task, TaskProgressStep } from '@/lib/types'
 import { getCheckpoints, getPlanHtml, onTermData, persistBoard, termInput } from '@/lib/api'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask
   }
 }
 
-async function buildRemoteState(board: BoardState, workspaces: Workspace[], autoMode: boolean) {
+async function buildRemoteState(board: BoardState, autoMode: boolean) {
   const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
   const tasks = await Promise.all(
     cols.flatMap((col) => board[col].map((task) => buildRemoteTask(task, col)))
@@ -59,7 +59,8 @@ async function buildRemoteState(board: BoardState, workspaces: Workspace[], auto
   return {
     capabilities: { createTask: false },
     tasks,
-    workspaces: workspaces.map(w => ({ id: w.id, name: w.name, available: w.available ?? true })),
+    // Workspaces were removed from the model; keep the field for wire compat.
+    workspaces: [] as { id: string; name: string; available: boolean }[],
     settings: { autoMode },
   }
 }
@@ -85,12 +86,10 @@ function moveBetweenColumns(board: BoardState, taskId: string, target: ColumnId)
 
 export function useRemoteHost({
   board,
-  workspaces,
   autoMode,
   onStateChange,
 }: {
   board: BoardState
-  workspaces: Workspace[]
   autoMode: boolean
   onStateChange: (board: BoardState) => void
 }) {
@@ -101,21 +100,19 @@ export function useRemoteHost({
   const peersRef = useRef<Set<any>>(new Set())
   const termSubsRef = useRef<Map<string, Set<any>>>(new Map())
   const boardRef = useRef(board)
-  const workspacesRef = useRef(workspaces)
   const autoModeRef = useRef(autoMode)
   const onStateChangeRef = useRef(onStateChange)
 
   useEffect(() => { boardRef.current = board }, [board])
-  useEffect(() => { workspacesRef.current = workspaces }, [workspaces])
   useEffect(() => { autoModeRef.current = autoMode }, [autoMode])
   useEffect(() => { onStateChangeRef.current = onStateChange }, [onStateChange])
 
-  // ── broadcast state on every board/workspace change ──────────────────────
+  // ── broadcast state on every board change ────────────────────────────────
   useEffect(() => {
     if (!peersRef.current.size) return
     let cancelled = false
 
-    void buildRemoteState(board, workspaces, autoMode).then((state) => {
+    void buildRemoteState(board, autoMode).then((state) => {
       if (cancelled) return
       for (const conn of peersRef.current) {
         try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
@@ -123,7 +120,7 @@ export function useRemoteHost({
     })
 
     return () => { cancelled = true }
-  }, [board, workspaces, autoMode])
+  }, [board, autoMode])
 
   // ── handle incoming message from a remote client ──────────────────────────
   async function handleMessage(raw: unknown, conn: any) {
@@ -135,7 +132,7 @@ export function useRemoteHost({
         try {
           conn.send({
             type: 'vf:state',
-            payload: await buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+            payload: await buildRemoteState(boardRef.current, autoModeRef.current),
           })
         } catch { /* ignored */ }
         break
@@ -196,7 +193,7 @@ export function useRemoteHost({
               conn.send({ type: 'vf:hello', payload: { version: '1.0' } })
               conn.send({
                 type: 'vf:state',
-                payload: await buildRemoteState(boardRef.current, workspacesRef.current, autoModeRef.current),
+                payload: await buildRemoteState(boardRef.current, autoModeRef.current),
               })
             } catch { /* ignored */ }
           })()

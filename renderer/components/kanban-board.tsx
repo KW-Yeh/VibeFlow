@@ -33,7 +33,6 @@ import type {
   Role,
   SubAgentRun,
   Task,
-  Workspace,
 } from '@/lib/types'
 
 interface KanbanBoardProps {
@@ -62,8 +61,6 @@ interface KanbanBoardProps {
   onDeselectTask: () => void
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
-  /** Available workspaces for context injection. */
-  workspaces?: Workspace[]
   /** Props forwarded to the inline NewTaskForm when no task is selected. */
   creating: boolean
   createError: string | null
@@ -83,8 +80,7 @@ interface KanbanBoardProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
-    workspaceId: string
+    reviewerRoleId: string
   ) => void
 }
 
@@ -117,7 +113,6 @@ export function KanbanBoard({
   selectedTaskId,
   onDeselectTask,
   initialProjectPath,
-  workspaces,
   creating,
   createError,
   pickFolder,
@@ -168,13 +163,6 @@ export function KanbanBoard({
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
-  // Prefer the workspace folder recorded on the task (now always set at creation,
-  // including the auto-created sibling); fall back to the assigned workspace's
-  // path for legacy tasks predating task.workspacePath.
-  const resolveWorkspacePath = (task: Task): string | undefined =>
-    task.workspacePath ??
-    (task.workspaceId ? workspaces?.find((w) => w.id === task.workspaceId)?.path : undefined)
-
   // Direct command dispatch — used by revise (which needs its own full command).
   const armTerminalCommand = (taskId: string, command: string) => {
     markMounted(taskId)
@@ -185,7 +173,6 @@ export function KanbanBoard({
   }
 
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
-    const workspacePath = resolveWorkspacePath(task)
     const role = roleById(task.roleId)
     armTerminalCommand(
       task.id,
@@ -194,9 +181,10 @@ export function KanbanBoard({
         role,
         planningRole: planningRole(),
         systemPrompt,
-        workspacePath,
+        workspacePath: task.workspacePath,
         resume: opts?.resume,
         memory: memoryLaunchRef.current ?? undefined,
+        autoMode,
       })
     )
   }
@@ -252,9 +240,9 @@ export function KanbanBoard({
       [task.id]: {
         command: buildReviewCommand(
           task,
-          resolveWorkspacePath(task),
+          task.workspacePath,
           reviewerRole(),
-          memoryLaunchRef.current ?? undefined
+          autoMode
         ),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
@@ -293,8 +281,8 @@ export function KanbanBoard({
         task,
         roleById(task.roleId) ?? undefined,
         review.comments,
-        resolveWorkspacePath(task),
-        memoryLaunchRef.current ?? undefined
+        task.workspacePath,
+        autoMode
       )
     )
   }
@@ -578,7 +566,6 @@ export function KanbanBoard({
                       agentConnections={agentConnections}
                       roles={roles}
                       onManageRoles={onManageRoles}
-                      workspaces={workspaces}
                       onSubmit={onCreateTask}
                     />
                   </div>

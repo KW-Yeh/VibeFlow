@@ -6,7 +6,6 @@ import type {
   Role,
   Task,
   VibeFlowState,
-  Workspace,
 } from './helpers/store'
 import type { AgentCli, AgentCliId } from './helpers/agents'
 import type { DiffFile, FinalizeResult, GitInfo, PrStatus } from './helpers/git'
@@ -133,7 +132,6 @@ const vibeflow = {
     executionModel?: string
     roleId?: string
     reviewerRoleId?: string
-    workspaceId?: string
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {
@@ -146,7 +144,6 @@ const vibeflow = {
     model?: string
     executionAgentCli?: AgentCliId
     executionModel?: string
-    workspaceId?: string
     projectPath?: string
     baseBranch?: string | null
   }): Promise<VibeFlowState> =>
@@ -164,16 +161,6 @@ const vibeflow = {
     ipcRenderer.invoke('roles:update', { roleId, patch }),
   removeRole: (roleId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('roles:remove', roleId),
-
-  // --- Workspaces ---
-  createWorkspace: (input: { name: string; path: string }): Promise<{ state: VibeFlowState; workspace: Workspace; scan: { folderExists: boolean; hasContextFile: boolean } }> =>
-    ipcRenderer.invoke('workspaces:create', input),
-  updateWorkspace: (id: string, patch: Partial<Workspace>): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('workspaces:update', { id, patch }),
-  removeWorkspace: (id: string): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('workspaces:remove', id),
-  refreshWorkspaces: (): Promise<VibeFlowState> =>
-    ipcRenderer.invoke('workspaces:refresh'),
 
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),

@@ -59,28 +59,35 @@ interface SettingsDialogProps {
   open: boolean
   /** Current custom system prompt ('' = the built-in default is in effect). */
   systemPrompt: string
+  /** Current global workstation path ('' = the ~/Desktop default is in effect). */
+  workstationPath: string
   agentConnections?: AgentConnections
   saving: boolean
   error: string | null
-  /** Called with the new custom prompt ('' = revert to the default). */
-  onSave: (systemPrompt: string) => void
+  /** Called with the new custom prompt ('' = default) and workstation path ('' = default). */
+  onSave: (systemPrompt: string, workstationPath: string) => void
   onConnectAgent: (agentId: ConnectableAgentId, apiKey: string) => Promise<string | null>
   onRefreshModels?: (agentId: ConnectableAgentId) => Promise<void>
+  /** Native folder picker — returns the chosen absolute path, or null. */
+  onPickFolder: () => Promise<string | null>
   onClose: () => void
 }
 
 export function SettingsDialog({
   open,
   systemPrompt,
+  workstationPath,
   agentConnections,
   saving,
   error,
   onSave,
   onConnectAgent,
   onRefreshModels,
+  onPickFolder,
   onClose,
 }: SettingsDialogProps) {
   const [text, setText] = useState('')
+  const [workstation, setWorkstation] = useState('')
   const [agentPage, setAgentPage] = useState<AgentInfo | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -99,6 +106,7 @@ export function SettingsDialog({
   useEffect(() => {
     if (open) {
       setText(systemPrompt.trim() ? systemPrompt : DEFAULT_SYSTEM_PROMPT)
+      setWorkstation(workstationPath)
       setAgentPage(null)
       setGithubPage(false)
       setApiKey('')
@@ -111,7 +119,7 @@ export function SettingsDialog({
       setCopiedCode(false)
       void getGithubAuthStatus().then(setGithubStatus)
     }
-  }, [open, systemPrompt])
+  }, [open, systemPrompt, workstationPath])
 
   useEffect(() => {
     if (!open) return
@@ -163,7 +171,12 @@ export function SettingsDialog({
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSave(isDefault ? '' : trimmed)
+    onSave(isDefault ? '' : trimmed, workstation.trim())
+  }
+
+  const handlePickWorkstation = async () => {
+    const picked = await onPickFolder()
+    if (picked) setWorkstation(picked)
   }
 
   const handleConnect = async () => {
@@ -451,6 +464,46 @@ export function SettingsDialog({
         </div>
       ) : (
         <div className="space-y-6">
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">
+                工作站資料夾
+                <span
+                  className={cn(
+                    'ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                    workstation.trim() === ''
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'bg-primary/15 text-primary'
+                  )}
+                >
+                  {workstation.trim() === '' ? '預設（~/Desktop）' : '已自訂'}
+                </span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                name="workstation-path"
+                autoComplete="off"
+                spellCheck={false}
+                value={workstation}
+                placeholder="~/Desktop"
+                onChange={(e) => setWorkstation(e.target.value)}
+                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => void handlePickWorkstation()}
+              >
+                選擇資料夾
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              每個任務的 worktree 與執行期檔案會建立在 {'<工作站>/<專案名>/'} 底下；留空則預設為 ~/Desktop。
+            </p>
+          </section>
+
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">

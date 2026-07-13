@@ -48,7 +48,6 @@ import type {
   RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
-  Workspace,
 } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when the
@@ -76,6 +75,8 @@ export default function HomePage() {
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = the built-in default is in effect).
   const [systemPrompt, setSystemPrompt] = useState('')
+  // Global workstation path ('' = the ~/Desktop default is in effect).
+  const [workstationPath, setWorkstationPath] = useState('')
   const [agentConnections, setAgentConnections] = useState<AgentConnections>({})
   const [loaded, setLoaded] = useState(false)
   const [remoteUpdate, setRemoteUpdate] = useState<RemoteUpdateSnapshot | null>(null)
@@ -107,8 +108,7 @@ export default function HomePage() {
   // Remote share state
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
 
-  // Workspaces + side menu state
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  // Side menu state
   const [sideMenuCollapsed, setSideMenuCollapsed] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
@@ -129,9 +129,9 @@ export default function HomePage() {
         setBoard(state.board)
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
+        setWorkstationPath(state.settings.workstationPath ?? '')
         setAgentConnections(state.settings.agentConnections ?? {})
         setRoles(state.roles ?? [])
-        setWorkspaces(state.workspaces ?? [])
       }
       setLoaded(true)
     })
@@ -186,9 +186,9 @@ export default function HomePage() {
       setBoard(state.board)
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
+      setWorkstationPath(state.settings.workstationPath ?? '')
       setAgentConnections(state.settings.agentConnections ?? {})
       setRoles(state.roles ?? [])
-      setWorkspaces(state.workspaces ?? [])
     })
   }, [])
 
@@ -238,12 +238,16 @@ export default function HomePage() {
     void setSettings({ autoMode: next })
   }
 
-  const handleSaveSettings = async (nextPrompt: string) => {
+  const handleSaveSettings = async (nextPrompt: string, nextWorkstation: string) => {
     setSavingSettings(true)
     setSettingsError(null)
     try {
-      await setSettings({ systemPrompt: nextPrompt })
+      await setSettings({
+        systemPrompt: nextPrompt,
+        workstationPath: nextWorkstation || undefined,
+      })
       setSystemPrompt(nextPrompt)
+      setWorkstationPath(nextWorkstation)
       setSettingsOpen(false)
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err))
@@ -289,8 +293,7 @@ export default function HomePage() {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
-    workspaceId: string
+    reviewerRoleId: string
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -307,7 +310,6 @@ export default function HomePage() {
         executionModel: executionModel || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
-        workspaceId: workspaceId || undefined,
       })
       if (result) {
         setBoard(result.state.board)
@@ -340,7 +342,6 @@ export default function HomePage() {
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
         executionModel: payload.executionModel || undefined,
-        workspaceId: payload.workspaceId || undefined,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
       })
@@ -463,7 +464,6 @@ export default function HomePage() {
 
   const remoteHost = useRemoteHost({
     board,
-    workspaces,
     autoMode,
     onStateChange: (next) => {
       setBoard(next)
@@ -520,7 +520,6 @@ export default function HomePage() {
                   selectedTaskId={selectedTaskId}
                   onDeselectTask={() => setSelectedTaskId(null)}
                   initialProjectPath={newTaskInitialProject}
-                  workspaces={workspaces}
                   creating={creating}
                   createError={createError}
                   pickFolder={pickFolder}
@@ -535,7 +534,6 @@ export default function HomePage() {
             <EditTaskDialog
               task={editTask}
               roles={roles}
-              workspaces={workspaces}
               detectAgents={detectAgents}
               agentConnections={agentConnections}
               pickFolder={pickFolder}
@@ -549,12 +547,14 @@ export default function HomePage() {
             <SettingsDialog
               open={settingsOpen}
               systemPrompt={systemPrompt}
+              workstationPath={workstationPath}
               agentConnections={agentConnections}
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}
               onConnectAgent={handleConnectAgent}
               onRefreshModels={handleRefreshAgentModels}
+              onPickFolder={pickFolder}
               onClose={() => setSettingsOpen(false)}
             />
             <RolesDialog

@@ -4,15 +4,15 @@ import fs from 'fs/promises'
 import {
   getStore,
   getStoreAtPath,
+  resolveWorkstationPath,
   DEFAULT_MAX_REVIEW_ROUNDS,
   type ColumnId,
   type PipelineRun,
   type Task,
-  type Workspace,
 } from './store'
 import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
-import { defaultWorkspacePath, ensureContextFiles } from './workspace'
+import { projectWorkstationPath } from './workspace'
 import type { AgentCliId } from './agents'
 
 export interface CreateTaskInput {
@@ -28,7 +28,6 @@ export interface CreateTaskInput {
   executionModel?: string
   roleId?: string
   reviewerRoleId?: string
-  workspaceId?: string
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
   storePath?: string
 }
@@ -62,35 +61,16 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
 
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
 
-  // Resolve the workspace folder: an assigned workspace's path, else a sibling
-  // `<slug>-workspace` folder next to the project. The worktree lives inside it.
-  const assignedWorkspace = input.workspaceId
-    ? (store.get('workspaces') ?? []).find((w) => w.id === input.workspaceId)
-    : undefined
-  const workspacePath = assignedWorkspace?.path ?? defaultWorkspacePath(projectPath)
-  await ensureContextFiles(workspacePath)
-
-  // Register the auto-created sibling workspace as a first-class record (once per
-  // path) so it appears in the sidebar and is auto-selected for the next task in
-  // the same project. Tasks with an explicitly assigned workspace keep its id.
-  let workspaceId = input.workspaceId || undefined
-  if (!assignedWorkspace) {
-    const workspaces = store.get('workspaces') ?? []
-    const existing = workspaces.find((w) => w.path === workspacePath)
-    if (existing) {
-      workspaceId = existing.id
-    } else {
-      const ws: Workspace = {
-        id: randomUUID(),
-        name: path.basename(workspacePath),
-        path: workspacePath,
-        available: true,
-        lastScannedAt: Date.now(),
-      }
-      store.set('workspaces', [...workspaces, ws])
-      workspaceId = ws.id
-    }
-  }
+  // The task's workspace folder is `<workstationRoot>/<projectName>` under the
+  // global workstation (settings.workstationPath, default ~/Desktop). The
+  // worktree and all runtime files (PLAN.md, progress/review json, plan.html)
+  // live directly inside it. Create it up front so provisioning has a home.
+  const projectName = path.basename(projectPath)
+  const workspacePath = projectWorkstationPath(
+    resolveWorkstationPath(store.get('settings')),
+    projectName
+  )
+  await fs.mkdir(workspacePath, { recursive: true })
 
   let provisionResult
   try {
@@ -122,11 +102,12 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     description: input.description?.trim() || undefined,
     branch: provisionResult.branch,
     projectPath,
-    projectName: path.basename(projectPath),
+    projectName,
     worktreePath: provisionResult.worktreePath,
     workspacePath,
     baseBranch: provisionResult.baseBranch,
     pushed: provisionResult.pushed,
+    createdAt: Date.now(),
     agentCli: input.agentCli ?? 'claude',
     model: input.model || undefined,
     executionAgentCli: input.executionAgentCli ?? input.agentCli ?? 'claude',
@@ -136,7 +117,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       undefined,
     roleId: input.roleId || undefined,
     reviewerRoleId: input.reviewerRoleId || undefined,
-    workspaceId,
     pipeline,
   }
 

@@ -5,7 +5,6 @@ import {
   Check,
   FolderOpen,
   GitBranch,
-  Layers,
   Loader2,
   ShieldCheck,
   UserRound,
@@ -17,14 +16,13 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { cn } from '@/lib/utils'
-import { basenameFromPath as basename, findWorkspaceForProject } from '@/lib/workspace-path'
+import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
   AgentConnections,
   GitInfo,
   Role,
-  Workspace,
 } from '@/lib/types'
 
 type ProjectMode = 'existing' | 'new'
@@ -39,7 +37,6 @@ export interface NewTaskFormProps {
   agentConnections?: AgentConnections
   roles: Role[]
   onManageRoles: () => void
-  workspaces?: Workspace[]
   onSubmit: (
     title: string,
     description: string,
@@ -51,8 +48,7 @@ export interface NewTaskFormProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
-    workspaceId: string
+    reviewerRoleId: string
   ) => void
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
@@ -261,7 +257,6 @@ export function NewTaskForm({
   agentConnections,
   roles,
   onManageRoles,
-  workspaces = [],
   onSubmit,
   onClose,
   inline = false,
@@ -285,7 +280,6 @@ export function NewTaskForm({
   const [model, setModel] = useState('')
   const [executionModel, setExecutionModel] = useState('')
   const [roleId, setRoleId] = useState('')
-  const [workspaceId, setWorkspaceId] = useState('')
 
   const titleRef = useRef<HTMLInputElement>(null)
 
@@ -327,18 +321,13 @@ export function NewTaskForm({
     setLoadingInfo(false)
     setInitializing(false)
     setBaseBranch('')
-    setWorkspaceId('')
   }
 
   // Shared by manual folder pick and initialProjectPath prefill: record the
-  // path, auto-match a workspace, then run the mode-appropriate git detection.
+  // path, then run the mode-appropriate git detection.
   const loadProject = async (path: string) => {
     setProjectPath(path)
     setGitInfo(null)
-
-    const matched = findWorkspaceForProject(path, workspaces)
-    setWorkspaceId(matched?.id ?? '')
-    if (matched) setAdvancedOpen(true)
 
     if (mode === 'new') {
       setInitializing(true)
@@ -399,8 +388,7 @@ export function NewTaskForm({
       executionModel,
       roleId,
       // Reviewer is fixed (測試工程師) and always on; no per-task selection.
-      '',
-      workspaceId
+      ''
     )
   }
 
@@ -472,41 +460,6 @@ export function NewTaskForm({
           此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
           為基準建立本地 worktree。
         </p>
-      )}
-    </div>
-  )
-
-  const workspaceBlock = (
-    <div className="space-y-1.5">
-      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Layers className="size-3" />
-        Workspace（選填）
-      </span>
-      {workspaces.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          尚無 Workspace — 可在側邊欄新增後再指派。
-        </p>
-      ) : (
-        <>
-          <select
-            name="workspace"
-            value={workspaceId}
-            onChange={(e) => setWorkspaceId(e.target.value)}
-            className={F}
-          >
-            <option value="">不使用 Workspace</option>
-            {workspaces.map((ws) => (
-              <option key={ws.id} value={ws.id}>
-                {ws.name}
-              </option>
-            ))}
-          </select>
-          {workspaceId && (
-            <p className="text-xs text-muted-foreground">
-              Agent 將在開始前讀取 context.md，並在完成後更新它。
-            </p>
-          )}
-        </>
       )}
     </div>
   )
@@ -602,7 +555,6 @@ export function NewTaskForm({
             agentConnections={agentConnections}
           />
           {rolesCard}
-          {workspaceBlock}
         </div>
       )}
     </div>

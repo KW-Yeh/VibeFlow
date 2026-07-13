@@ -851,6 +851,7 @@ export function buildWorkspaceLaunchCommand({
   workspacePath,
   resume,
   memory,
+  autoMode,
 }: {
   task: Task
   role: Role | null
@@ -861,12 +862,14 @@ export function buildWorkspaceLaunchCommand({
   resume?: boolean
   /** Built-in agent-memory server injection; undefined → not wired. */
   memory?: MemoryLaunchInfo
+  /** Global Auto Mode — drives Codex authorization at launch. */
+  autoMode?: boolean
 }): string {
   return buildAgentCommand(
     task,
     systemPrompt,
     role ?? undefined,
-    { resume, memory },
+    { resume, memory, autoMode },
     workspacePath,
     planningRole ?? undefined
   )

@@ -4,7 +4,6 @@ export type {
   ColumnId,
   Task,
   Role,
-  Workspace,
   BoardState,
   AppSettings,
   AgentConnection,

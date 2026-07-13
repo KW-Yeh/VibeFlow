@@ -6,20 +6,17 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
   addRole,
-  addWorkspace,
   findTask,
+  getSettings,
   getState,
   getStorePath,
-  getWorkspaces,
-  reconcileWorkspacesFromTasks,
   removeRole,
   removeTask,
-  removeWorkspace,
+  resolveWorkstationPath,
   setBoard,
   setSettings,
   updateRole,
   updateTask,
-  updateWorkspace,
   DEFAULT_MAX_REVIEW_ROUNDS,
   type AppSettings,
   type BoardState,
@@ -27,14 +24,8 @@ import {
   type PipelineRun,
   type Role,
   type Task,
-  type Workspace,
 } from './helpers/store'
-import {
-  defaultWorkspacePath,
-  ensureContextFiles,
-  regenerateContextHtml,
-  scanWorkspace,
-} from './helpers/workspace'
+import { projectWorkstationPath } from './helpers/workspace'
 import { detectAgents, type AgentCliId } from './helpers/agents'
 import { fetchAgentModels } from './helpers/agent-connections'
 import {
@@ -75,7 +66,7 @@ import {
   writeSession,
 } from './helpers/pty'
 import {
-  PLAN_FILE,
+  agentPlanPath,
   agentProgressPath,
   agentReviewPath,
   deleteAgentFiles,
@@ -315,7 +306,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         executionModel?: string
         roleId?: string
         reviewerRoleId?: string
-        workspaceId?: string
       }
     ) => {
       if (!payload.projectPath) {
@@ -349,7 +339,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model?: string
         executionAgentCli?: AgentCliId
         executionModel?: string
-        workspaceId?: string
         projectPath?: string
         baseBranch?: string | null
       }
@@ -400,14 +389,18 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         if (existing.projectPath && existing.worktreePath) {
           const oldBranch = existing.branch || fallbackBranchName(payload.taskId)
           await removeWorktree(existing.projectPath, existing.worktreePath)
-          deleteAgentFiles(app.getPath('userData'), existing.worktreePath)
+          deleteAgentFiles(
+            existing.workspacePath ?? path.dirname(existing.worktreePath),
+            existing.worktreePath
+          )
           await deleteBranch(existing.projectPath, oldBranch)
         }
-        const assignedWorkspace = payload.workspaceId
-          ? getWorkspaces().find((w) => w.id === payload.workspaceId)
-          : undefined
-        const workspacePath = assignedWorkspace?.path ?? defaultWorkspacePath(nextProject)
-        await ensureContextFiles(workspacePath)
+        const projectName = path.basename(nextProject)
+        const workspacePath = projectWorkstationPath(
+          resolveWorkstationPath(getSettings()),
+          projectName
+        )
+        await fs.promises.mkdir(workspacePath, { recursive: true })
         const result = await provisionWorktree(
           nextProject,
           workspacePath,
@@ -417,7 +410,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         )
         gitPatch = {
           projectPath: nextProject,
-          projectName: path.basename(nextProject),
+          projectName,
           branch: result.branch,
           worktreePath: result.worktreePath,
           workspacePath,
@@ -435,7 +428,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
         executionModel: payload.executionModel || undefined,
-        workspaceId: payload.workspaceId || undefined,
         pipeline,
         ...gitPatch,
       })
@@ -461,47 +453,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('roles:remove', (_event, roleId: string) => {
     removeRole(roleId)
-    return getState()
-  })
-
-  // ── Workspaces ──────────────────────────────────────────────────────────────
-
-  ipcMain.handle('workspaces:create', async (_e, input: { name: string; path: string }) => {
-    let scan = await scanWorkspace(input.path)
-    if (scan.folderExists && !scan.hasContextFile) {
-      await ensureContextFiles(input.path)
-      scan = { ...scan, hasContextFile: true }
-    }
-    const workspace: Workspace = {
-      id: crypto.randomUUID(),
-      name: input.name,
-      path: input.path,
-      available: scan.folderExists,
-      lastScannedAt: Date.now(),
-    }
-    addWorkspace(workspace)
-    return { state: getState(), workspace, scan }
-  })
-
-  ipcMain.handle('workspaces:update', async (_e, { id, patch }: { id: string; patch: Partial<Workspace> }) => {
-    updateWorkspace(id, patch)
-    return getState()
-  })
-
-  ipcMain.handle('workspaces:remove', (_e, id: string) => {
-    removeWorkspace(id)
-    return getState()
-  })
-
-  ipcMain.handle('workspaces:refresh', async () => {
-    const workspaces = getWorkspaces()
-    for (const ws of workspaces) {
-      const scan = await scanWorkspace(ws.path)
-      updateWorkspace(ws.id, {
-        available: scan.folderExists,
-        lastScannedAt: Date.now(),
-      })
-    }
     return getState()
   })
 
@@ -544,9 +495,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         payload.cols,
         payload.rows
       )
-      // Progress / review files live beside the unified memory db (userData),
-      // named by the task's workspace — not inside the worktree. Watch them there.
-      const agentFilesDir = app.getPath('userData')
+      // Progress / review files live in the task's workspace folder — the
+      // worktree's parent (dirname of cwd) — named by the worktree folder, not
+      // inside the worktree itself. Watch them there.
+      const agentFilesDir = path.dirname(payload.cwd)
       if (sessionKey === taskId) {
         // Executor session: mirror the full progress file into the store.
         watchProgress(sessionKey, agentProgressPath(agentFilesDir, payload.cwd), (progress) => {
@@ -649,9 +601,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('task:getPlan', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    if (!task?.worktreePath) return null
+    if (!task?.worktreePath || !task.workspacePath) return null
     try {
-      return await fs.promises.readFile(path.join(task.worktreePath, PLAN_FILE), 'utf8')
+      return await fs.promises.readFile(
+        agentPlanPath(task.workspacePath, task.worktreePath),
+        'utf8'
+      )
     } catch {
       return null
     }
@@ -664,7 +619,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
    */
   ipcMain.handle('task:getPlanHtml', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    if (task?.worktreePath) return generatePlanHtml(task.worktreePath)
+    if (task?.worktreePath && task.workspacePath) {
+      return generatePlanHtml(
+        task.workspacePath,
+        task.worktreePath,
+        task.title,
+        task.createdAt ?? 0
+      )
+    }
     return task?.planHtml ?? null
   })
 
@@ -753,21 +715,29 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
-    // Snapshot the plan before the worktree (and its live PLAN.md) is removed,
-    // so a done task can still show its plan.
+    // Snapshot the plan before the runtime PLAN.md is removed, so a done task can
+    // still show its plan. This also writes the preserved <title>-<createdAt>.html
+    // into the workspace folder (kept after cleanup).
     let planHtml: string | undefined
-    if (task?.worktreePath) {
-      planHtml = (await generatePlanHtml(task.worktreePath)) ?? undefined
+    if (task?.worktreePath && task.workspacePath) {
+      planHtml =
+        (await generatePlanHtml(
+          task.workspacePath,
+          task.worktreePath,
+          task.title,
+          task.createdAt ?? 0
+        )) ?? undefined
     }
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
-      deleteAgentFiles(app.getPath('userData'), task.worktreePath)
+      deleteAgentFiles(
+        task.workspacePath ?? path.dirname(task.worktreePath),
+        task.worktreePath
+      )
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
-    // The agent updated context.md during the run — refresh its rendered view.
-    if (task?.workspacePath) await regenerateContextHtml(task.workspacePath)
     // Only overwrite planHtml when we actually captured a snapshot this call.
     // A repeat completion (done→in_progress→done) has no worktree to snapshot,
     // so leaving planHtml out preserves the earlier snapshot instead of nulling it.
@@ -783,7 +753,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
-      deleteAgentFiles(app.getPath('userData'), task.worktreePath)
+      deleteAgentFiles(
+        task.workspacePath ?? path.dirname(task.worktreePath),
+        task.worktreePath
+      )
       await deleteBranch(task.projectPath, branch)
     }
     clearConversation(taskId)
@@ -841,10 +814,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   mainWindow.maximize()
-
-  // Backfill workspace records for tasks whose sibling workspace predates
-  // workspace registration, so they show in the sidebar and auto-select.
-  reconcileWorkspacesFromTasks()
 
   registerIpcHandlers(mainWindow)
 

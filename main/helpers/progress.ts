@@ -94,14 +94,27 @@ export function agentReviewPath(baseDir: string, worktreePath: string): string {
 }
 
 /**
- * Best-effort removal of a task's progress + review files. Called when the task's
- * worktree is torn down (cleanup / delete / re-provision) so these files share
- * the same lifecycle they had when they lived inside the worktree.
+ * Absolute path of a task's planning artifact (PLAN.md). Like the progress /
+ * review files it lives in `baseDir` (the task's workspace folder = the
+ * worktree's parent), named by the worktree folder, so git never sees it and
+ * concurrent tasks never collide. Renderer builds the identical path (see
+ * renderer/lib/claude.ts agentFilePaths) — keep both in sync.
+ */
+export function agentPlanPath(baseDir: string, worktreePath: string): string {
+  return path.join(baseDir, `${path.basename(worktreePath)}.${PLAN_FILE}`)
+}
+
+/**
+ * Best-effort removal of a task's progress + review + plan files. Called when
+ * the task's worktree is torn down (cleanup / delete / re-provision) so these
+ * runtime files share the worktree's lifecycle. The preserved plan.html is NOT
+ * removed here — it outlives the task.
  */
 export function deleteAgentFiles(baseDir: string, worktreePath: string): void {
   for (const p of [
     agentProgressPath(baseDir, worktreePath),
     agentReviewPath(baseDir, worktreePath),
+    agentPlanPath(baseDir, worktreePath),
   ]) {
     try {
       fs.rmSync(p, { force: true })

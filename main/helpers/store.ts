@@ -1,6 +1,6 @@
 import Store from 'electron-store'
-import { randomUUID } from 'crypto'
-import { basename } from 'path'
+import { homedir } from 'os'
+import { join } from 'path'
 import type { AgentCliId } from './agents'
 import type { ReviewVerdict, TaskProgress } from './progress'
 // Shared single source with renderer's PRESET_ROLES (renderer/lib/claude.ts).
@@ -37,14 +37,6 @@ export interface PipelineRun {
   maxRounds: number
   /** Latest reviewer verdict, kept for display on the card. */
   lastReview?: ReviewVerdict
-}
-
-export interface Workspace {
-  id: string
-  name: string
-  path: string
-  available?: boolean
-  lastScannedAt?: number
 }
 
 /**
@@ -119,7 +111,8 @@ export interface Task {
    * pass in the same worktree, looping until approval or the round cap.
    */
   reviewerRoleId?: string
-  workspaceId?: string
+  /** Epoch ms when the card was created. Used to name the preserved plan.html. */
+  createdAt?: number
   /**
    * Runtime state of the executor↔reviewer review loop. Present only for
    * pipeline tasks (those carrying a reviewerRoleId at creation).
@@ -152,8 +145,23 @@ export interface AppSettings {
    * blank = use the renderer's built-in default (DEFAULT_SYSTEM_PROMPT).
    */
   systemPrompt?: string
+  /**
+   * Global workstation root: every task's worktree + runtime files live under
+   * `<workstationPath>/<projectName>/`. Absent = default to `~/Desktop`.
+   */
+  workstationPath?: string
   /** Local-only API keys + model lists for providers that expose model APIs. */
   agentConnections?: AgentConnections
+}
+
+/**
+ * Resolve the effective workstation root: the user's configured path, else the
+ * default `~/Desktop`. Every task's per-project workspace folder is built from
+ * this (see workspace.ts projectWorkstationPath).
+ */
+export function resolveWorkstationPath(settings?: AppSettings): string {
+  const p = settings?.workstationPath?.trim()
+  return p && p.length > 0 ? p : join(homedir(), 'Desktop')
 }
 
 export interface VibeFlowState {
@@ -167,7 +175,6 @@ export interface VibeFlowState {
   settings: AppSettings
   /** Reusable roles that can be assigned to tasks. */
   roles: Role[]
-  workspaces: Workspace[]
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -202,7 +209,6 @@ const defaults: VibeFlowState = {
   board: DEFAULT_BOARD,
   settings: DEFAULT_SETTINGS,
   roles: DEFAULT_ROLES,
-  workspaces: [],
 }
 
 let _store: Store<VibeFlowState> | null = null
@@ -253,7 +259,6 @@ export function getState(): VibeFlowState {
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
     // `roles` may be absent in state persisted before the role feature existed.
     roles: store.get('roles') ?? [],
-    workspaces: store.get('workspaces') ?? [],
   }
 }
 
@@ -380,69 +385,6 @@ export function removeRole(roleId: string): Role[] {
   const roles = getRoles().filter((r) => r.id !== roleId)
   getStore().set('roles', roles)
   return roles
-}
-
-// --- Workspaces ---
-
-export function getWorkspaces(): Workspace[] {
-  return getStore().get('workspaces') ?? []
-}
-
-/** Append a workspace and persist; returns the full workspaces list. */
-export function addWorkspace(ws: Workspace): Workspace[] {
-  const existing = getWorkspaces()
-  const pathClash = existing.some((w) => w.path === ws.path)
-  if (pathClash) throw new Error(`已存在路徑為「${ws.path}」的 Workspace`)
-  const workspaces = [...existing, ws]
-  getStore().set('workspaces', workspaces)
-  return workspaces
-}
-
-/** Shallow-merge a patch into a workspace (by id) and persist; returns the list. */
-export function updateWorkspace(id: string, patch: Partial<Workspace>): Workspace[] {
-  const existing = getWorkspaces()
-  if (patch.path !== undefined) {
-    const pathClash = existing.some((w) => w.id !== id && w.path === patch.path)
-    if (pathClash) throw new Error(`已存在路徑為「${patch.path}」的 Workspace`)
-  }
-  const workspaces = existing.map((w) =>
-    w.id === id ? { ...w, ...patch, id: w.id } : w
-  )
-  getStore().set('workspaces', workspaces)
-  return workspaces
-}
-
-/** Remove a workspace by id and persist; returns the remaining workspaces. */
-export function removeWorkspace(id: string): Workspace[] {
-  const workspaces = getWorkspaces().filter((w) => w.id !== id)
-  getStore().set('workspaces', workspaces)
-  return workspaces
-}
-
-/**
- * Backfill workspace records for tasks created before sibling workspaces were
- * registered (their `<project>-workspace` folder exists on disk but has no
- * Workspace record). Without this they never show in the sidebar and the new-task
- * dialog can't auto-select them. Idempotent: only adds paths not already present.
- */
-export function reconcileWorkspacesFromTasks(): Workspace[] {
-  const store = getStore()
-  const board = store.get('board')
-  const workspaces = store.get('workspaces') ?? []
-  const known = new Set(workspaces.map((w) => w.path))
-  const added: Workspace[] = []
-  for (const col of ['backlog', 'in_progress', 'done'] as const) {
-    for (const task of board[col]) {
-      const p = task.workspacePath
-      if (!p || known.has(p)) continue
-      known.add(p)
-      added.push({ id: randomUUID(), name: basename(p), path: p, available: true })
-    }
-  }
-  if (added.length === 0) return workspaces
-  const merged = [...workspaces, ...added]
-  store.set('workspaces', merged)
-  return merged
 }
 
 /**

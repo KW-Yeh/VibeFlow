@@ -64,8 +64,13 @@ const PROGRESS_FILE = '.vibeflow-progress.json'
  */
 const REVIEW_FILE = '.vibeflow-review.json'
 
-/** Workspace context file name (mirrors main/helpers/workspace.ts CONTEXT_MD). */
-const WORKSPACE_CONTEXT_FILE = 'context.md'
+/**
+ * Planning artifact base name. The agent writes it to
+ * `<workspacePath>/<worktree-dir>.PLAN.md` (see agentFilePaths) — outside the
+ * worktree so git never sees it — falling back to this bare, cwd-relative name
+ * only when paths are unknown. Must match PLAN_FILE in main/helpers/progress.ts.
+ */
+const PLAN_FILE = 'PLAN.md'
 
 /** Last path segment, tolerant of both separators and a trailing slash. */
 function pathBasename(p: string): string {
@@ -74,95 +79,70 @@ function pathBasename(p: string): string {
   return i >= 0 ? norm.slice(i + 1) : norm
 }
 
-/** Everything before the last path segment (forward-slashed). */
-function pathDirname(p: string): string {
-  const norm = p.replace(/\\/g, '/')
-  const i = norm.lastIndexOf('/')
-  return i > 0 ? norm.slice(0, i) : norm
-}
-
 /**
- * Absolute paths the agent writes its progress / review files to. They live in
- * the same dir as the unified memory db (Electron userData), named by the task's
- * workspace (worktree folder), so git never sees them and concurrent tasks never
- * collide. Mirrors main/helpers/progress.ts agentProgressPath/agentReviewPath —
- * keep both in sync. Returns null when the base dir (memory info) or worktree is
- * unknown, so callers fall back to the legacy cwd-relative filenames.
+ * Absolute paths the agent writes its progress / review / plan files to. They
+ * live directly in the task's workspace folder (the worktree's parent), named
+ * by the worktree folder, so git never sees them and concurrent tasks never
+ * collide. Mirrors main/helpers/progress.ts agentProgressPath/agentReviewPath/
+ * agentPlanPath — keep both in sync. Returns null when the workspace path or
+ * worktree is unknown, so callers fall back to the legacy cwd-relative names.
  */
 function agentFilePaths(
   worktreePath: string | undefined,
-  memory: MemoryLaunchInfo | undefined
-): { progress: string; review: string } | null {
-  if (!worktreePath || !memory?.dbPath) return null
-  const dir = pathDirname(memory.dbPath)
+  workspacePath: string | undefined
+): { progress: string; review: string; plan: string } | null {
+  if (!worktreePath || !workspacePath) return null
+  const dir = toShellPath(workspacePath)
   const ws = pathBasename(worktreePath)
   return {
     progress: `${dir}/${ws}${PROGRESS_FILE}`,
     review: `${dir}/${ws}${REVIEW_FILE}`,
+    plan: `${dir}/${ws}.${PLAN_FILE}`,
   }
-}
-
-/**
- * Build the workspace section appended to executor prompts when a workspace is
- * attached. The "read" note tells the agent where to find background knowledge;
- * the "update" instruction tells it to refresh the file after completion.
- *
- * Placed in the prompt body (not the system prompt) so it travels with every
- * session turn and survives --resume / --continue.
- */
-function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boolean): string {
-  const contextPath = `${toShellPath(workspacePath)}/${WORKSPACE_CONTEXT_FILE}`
-  const lines = [
-    '',
-    `背景知識：在開始執行前，請先閱讀 ${contextPath} 作為此任務的額外 context。`,
-  ]
-  if (includeUpdate) {
-    lines.push(
-      '',
-      '完成任務後（所有步驟 done、且非審查退回狀態），請更新 workspace 知識目錄：',
-      `- 讀取並更新 ${contextPath}（Markdown），把本次任務新增或變更的重要知識、決策、檔案結構摘要寫入。`,
-      '- 這是跨任務共用的長期 context，請以「未來其他任務能快速理解專案」為目標來維護它。',
-      '- 同目錄的 context.html 是系統自動產生的渲染檢視，請勿手動編輯。'
-    )
-  }
-  return lines.join('\n')
 }
 
 /**
  * Fixed protocol appended to the task prompt body. It makes the agent persist
- * its plan + step states to PROGRESS_FILE, which main watches and mirrors into
- * the task record — enabling card progress display and resume-on-rerun. Kept
- * separate from DEFAULT_SYSTEM_PROMPT so editing the workflow prompt cannot
- * break progress tracking.
+ * its plan (to `planFile`) + step states (to `progressFile`), which main watches
+ * and mirrors into the task record — enabling card progress display, the Plan
+ * view, and resume-on-rerun. Kept separate from DEFAULT_SYSTEM_PROMPT so editing
+ * the workflow prompt cannot break progress tracking.
  */
-function buildProgressProtocolLines(progressFile: string): string {
+function buildProgressProtocolLines(progressFile: string, planFile: string): string {
   return [
     '進度追蹤協議（務必遵守）：',
-    '1. 規劃階段：先把執行計劃寫入目前工作目錄的 PLAN.md（Markdown 格式，包含任務目標、執行步驟、預期成果）。',
-    `2. 若需求足夠明確，可形成可執行計劃，PLAN.md 建立完成後立即把步驟列表寫入 ${progressFile}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "needsUserInput": false, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
+    `1. 規劃階段：先把執行計劃寫入 ${planFile}（Markdown 格式，包含任務目標、執行步驟、預期成果）。`,
+    `2. 若需求足夠明確，可形成可執行計劃，${planFile} 建立完成後立即把步驟列表寫入 ${progressFile}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "needsUserInput": false, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
     `3. 若 planning 發現必須先詢問使用者才能完善計劃，請先向使用者提出具體問題，並把 ${progressFile} 寫成 {"summary": "需要使用者補充的問題摘要", "planDone": false, "needsUserInput": true, "steps": []}；不要開始執行。`,
     '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
     `5. 若 ${progressFile} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
-    `6. 進度檔（${progressFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
-    '7. Agent Memory（VibeFlow 內建、跨所有 workspace/專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
+    `6. 進度檔（${progressFile}）與計劃檔（${planFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
+    '7. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
     '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
   ].join('\n')
 }
 
 /**
- * Fixed progress-tracking protocol. `progressFile` is the path the agent writes
- * its progress JSON to — an absolute userData path when known (see
- * agentFilePaths), else the legacy cwd-relative filename. Exported const uses
- * the relative fallback for backward-compatible callers/tests.
+ * Fixed progress-tracking protocol. `progressFile` / `planFile` are the paths
+ * the agent writes to — absolute workspace-folder paths when known (see
+ * agentFilePaths), else the legacy cwd-relative filenames. Exported const uses
+ * the relative fallbacks for backward-compatible callers/tests.
  */
-export function buildProgressProtocol(progressFile: string = PROGRESS_FILE): string {
-  return buildProgressProtocolLines(progressFile)
+export function buildProgressProtocol(
+  progressFile: string = PROGRESS_FILE,
+  planFile: string = PLAN_FILE
+): string {
+  return buildProgressProtocolLines(progressFile, planFile)
 }
 
-export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(PROGRESS_FILE)
+export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(PROGRESS_FILE, PLAN_FILE)
 
-function appendProgressProtocol(prompt: string, progressFile?: string): string {
-  return `${prompt}\n\n${buildProgressProtocol(progressFile)}`
+function appendProgressProtocol(
+  prompt: string,
+  progressFile?: string,
+  planFile?: string
+): string {
+  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile)}`
 }
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -201,6 +181,15 @@ function shellQuote(s: string): string {
 /** Normalize path separators to forward slashes for use inside shell commands. */
 function toShellPath(p: string): string {
   return p.replace(/\\/g, '/')
+}
+
+/**
+ * Codex authorization flag driven by Auto Mode. ON → bypass approvals + sandbox
+ * (unattended); OFF → '' (Codex stays interactive and waits for approval). The
+ * trailing space keeps the caller's template tidy.
+ */
+function codexAutoFlag(autoMode?: boolean): string {
+  return autoMode ? '--dangerously-bypass-approvals-and-sandbox ' : ''
 }
 
 /**
@@ -498,6 +487,13 @@ export interface LaunchOptions {
    * would otherwise disable the session's other MCP servers.
    */
   memory?: MemoryLaunchInfo
+  /**
+   * Global Auto Mode. For Codex this decides authorization: ON adds
+   * `--dangerously-bypass-approvals-and-sandbox` so the agent runs unattended;
+   * OFF leaves Codex in its default interactive mode (waits for approval each
+   * step). Claude/Gemini already run non-interactively via their own flags.
+   */
+  autoMode?: boolean
 }
 
 /**
@@ -532,19 +528,15 @@ export function buildClaudeCommand(
   workspacePath?: string
 ): string {
   const isExecution = task.progress?.planDone === true
-  const files = agentFilePaths(task.worktreePath, opts?.memory)
-  const agentFilesDir = opts?.memory ? pathDirname(opts.memory.dbPath) : undefined
+  const files = agentFilePaths(task.worktreePath, workspacePath)
   const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : PLANNING_ROLE)
   const basePrompt = isExecution
     ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
-  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
-  const prompt = workspacePath
-    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
-    : progressPrompt
+  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
   const model = task.model || DEFAULT_MODELS.claude
   const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
-  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath, agentFilesDir)
+  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
 }
 
 /**
@@ -568,21 +560,19 @@ function assembleCommand(
   opts?: LaunchOptions,
   worktreePath?: string,
   sessionId?: string,
-  workspacePath?: string,
-  agentFilesDir?: string
+  workspacePath?: string
 ): string {
   let cmd: string
   if (agent === 'claude') {
     // Inline --settings: light theme always, sub-agent recording hooks only
     // when the worktree path is known (session-only, never touches the repo).
     const settings = ` --settings ${shellQuote(buildClaudeSettings(worktreePath))}`
-    // Grant the agent read/write access to the workspace folder so it can read
-    // context.md and write back the updated knowledge directory, and to the
-    // dir holding the progress/review files (userData) so it can write them
-    // there even though it runs with cwd inside the worktree.
-    const addDir =
-      (workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : '') +
-      (agentFilesDir ? ` --add-dir ${shellQuote(toShellPath(agentFilesDir))}` : '')
+    // Grant the agent write access to the workspace folder (the worktree's
+    // parent) so it can write the progress/review/PLAN files there even though
+    // it runs with cwd inside the worktree.
+    const addDir = workspacePath
+      ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
+      : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const mcpFlag = buildMemoryMcpFlag(opts?.memory)
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}${mcpFlag}`
@@ -594,7 +584,9 @@ function assembleCommand(
     // Codex / Gemini have no separate system-prompt flag — fold it into the body.
     const combined = `${systemPrompt}\n\n${prompt}`
     cmd = agent === 'codex'
-      ? `codex --model ${model} ${shellQuote(combined)}\r`
+      // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
+      // interactive mode (waits for the user to approve each step).
+      ? `codex ${codexAutoFlag(opts?.autoMode)}--model ${model} ${shellQuote(combined)}\r`
       // gemini: --yolo auto-approves tool calls; -i stays interactive
       : `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
   }
@@ -623,26 +615,23 @@ export function buildReviewCommand(
   // Reviewer persona; caller passes the store's (user-editable) 測試工程師 role so
   // edits take effect. Falls back to the built-in REVIEWER_ROLE when absent.
   reviewerRole?: Parameters<typeof buildRolePrompt>[0],
-  // Built-in agent-memory info; its db dir is where the review file is written.
-  memory?: MemoryLaunchInfo
+  // Auto Mode — drives Codex authorization (see codexAutoFlag).
+  autoMode?: boolean
 ): string {
   const agent = taskExecutionAgent(task)
   const model = taskExecutionModel(task)
-  const files = agentFilePaths(task.worktreePath, memory)
-  const agentFilesDir = memory ? pathDirname(memory.dbPath) : undefined
+  const files = agentFilePaths(task.worktreePath, workspacePath)
   const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole ?? REVIEWER_ROLE)
-  const basePrompt = buildReviewPrompt(task, files?.review, files?.progress)
-  // Reviewer only reads the workspace context, never updates it.
-  const prompt = workspacePath
-    ? basePrompt + buildWorkspacePromptSection(workspacePath, false)
-    : basePrompt
+  const prompt = buildReviewPrompt(task, files?.review, files?.progress)
 
   if (agent === 'claude') {
     // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
     const settings = ` --settings ${shellQuote(buildClaudeSettings())}`
-    const addDir =
-      (workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : '') +
-      (agentFilesDir ? ` --add-dir ${shellQuote(toShellPath(agentFilesDir))}` : '')
+    // Write access to the workspace folder so the reviewer can write its verdict
+    // file there (its cwd is inside the worktree).
+    const addDir = workspacePath
+      ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
+      : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const sysArg = reviewSysPrompt
@@ -653,7 +642,7 @@ export function buildReviewCommand(
   // Codex / Gemini: fold system prompt into the body (no separate flag).
   const combined = `${reviewSysPrompt}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --model ${model} ${shellQuote(combined)}\r`
+    return `codex ${codexAutoFlag(autoMode)}--model ${model} ${shellQuote(combined)}\r`
   }
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
@@ -684,27 +673,23 @@ export function buildReviseCommand(
   executorRole?: Parameters<typeof buildRolePrompt>[0],
   comments: string[] = [],
   workspacePath?: string,
-  // Built-in agent-memory info; its db dir is where the progress file is written.
-  memory?: MemoryLaunchInfo
+  // Auto Mode — drives Codex authorization (see codexAutoFlag).
+  autoMode?: boolean
 ): string {
   const agent = taskExecutionAgent(task)
   const model = taskExecutionModel(task)
-  const files = agentFilePaths(task.worktreePath, memory)
-  const agentFilesDir = memory ? pathDirname(memory.dbPath) : undefined
+  const files = agentFilePaths(task.worktreePath, workspacePath)
   const sys = resolveSystemPrompt(null, executorRole)
   const basePrompt = buildRevisePrompt(task, comments, executorRole, files?.progress)
-  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
-  const prompt = workspacePath
-    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
-    : progressPrompt
+  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
 
   if (agent === 'claude') {
     // Resume the executor's pinned session by its exact UUID so the reviewer
     // session (which ran in the same cwd) does not pollute "most recent".
     const settings = ` --settings ${shellQuote(buildClaudeSettings(task.worktreePath))}`
-    const addDir =
-      (workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : '') +
-      (agentFilesDir ? ` --add-dir ${shellQuote(toShellPath(agentFilesDir))}` : '')
+    const addDir = workspacePath
+      ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
+      : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
     const tail = `${flags} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}`
@@ -713,7 +698,7 @@ export function buildReviseCommand(
   // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
   const combined = `${sys}\n\n${prompt}`
   if (agent === 'codex') {
-    return `codex --model ${model} ${shellQuote(combined)}\r`
+    return `codex ${codexAutoFlag(autoMode)}--model ${model} ${shellQuote(combined)}\r`
   }
   return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
@@ -819,20 +804,16 @@ export function buildAgentCommand(
   const isExecution = task.progress?.planDone === true
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
   const model = isExecution ? taskExecutionModel(task) : taskModel(task)
-  const files = agentFilePaths(task.worktreePath, opts?.memory)
-  const agentFilesDir = opts?.memory ? pathDirname(opts.memory.dbPath) : undefined
+  const files = agentFilePaths(task.worktreePath, workspacePath)
   const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : (planningRole ?? PLANNING_ROLE))
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)
       : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
-  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
-  const prompt = workspacePath
-    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
-    : progressPrompt
+  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
   const sessionId = agent === 'claude'
     ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
     : undefined
-  return assembleCommand(agent, sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath, agentFilesDir)
+  return assembleCommand(agent, sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
 }

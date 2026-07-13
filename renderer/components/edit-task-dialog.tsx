@@ -3,7 +3,6 @@ import {
   ChevronDown,
   FolderOpen,
   GitBranch,
-  Layers,
   Loader2,
   Lock,
   ShieldCheck,
@@ -15,7 +14,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import { cn } from '@/lib/utils'
-import { basenameFromPath as basename, findWorkspaceForProject } from '@/lib/workspace-path'
+import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
@@ -23,7 +22,6 @@ import type {
   GitInfo,
   Role,
   Task,
-  Workspace,
 } from '@/lib/types'
 
 export interface EditTaskPayload {
@@ -35,7 +33,6 @@ export interface EditTaskPayload {
   model: string
   executionAgentCli: AgentCliId
   executionModel: string
-  workspaceId: string
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
   baseBranch?: string | null
@@ -46,7 +43,6 @@ interface EditTaskDialogProps {
   task: Task | null
   /** Roles available for assignment ('' = use the default, no role). */
   roles: Role[]
-  workspaces?: Workspace[]
   detectAgents: () => Promise<AgentCli[]>
   agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
@@ -61,7 +57,6 @@ interface EditTaskDialogProps {
 export function EditTaskDialog({
   task,
   roles,
-  workspaces = [],
   detectAgents,
   agentConnections,
   pickFolder,
@@ -79,7 +74,6 @@ export function EditTaskDialog({
   const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
   const [executionModel, setExecutionModel] = useState('')
-  const [workspaceId, setWorkspaceId] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
@@ -102,7 +96,6 @@ export function EditTaskDialog({
     setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
     setExecutionModel(task.executionModel ?? '')
-    setWorkspaceId(task.workspaceId ?? '')
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
     setGitInfo(null)
@@ -145,7 +138,6 @@ export function EditTaskDialog({
     model !== (task.model ?? '') ||
     executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
     executionModel !== (task.executionModel ?? '') ||
-    workspaceId !== (task.workspaceId ?? '') ||
     projectChanged ||
     baseBranch !== (task.baseBranch ?? '')
 
@@ -171,7 +163,6 @@ export function EditTaskDialog({
     if (!picked) return
     setProjectPath(picked)
     setProjectChanged(picked !== task.projectPath)
-    setWorkspaceId(findWorkspaceForProject(picked, workspaces)?.id ?? '')
     setGitInfo(null)
     setLoadingInfo(true)
     try {
@@ -206,7 +197,6 @@ export function EditTaskDialog({
       model,
       executionAgentCli,
       executionModel,
-      workspaceId,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
         : {}),
@@ -216,7 +206,7 @@ export function EditTaskDialog({
   return (
     <DialogShell
       title="編輯任務"
-      description="更新任務內容、agent、角色與 workspace 指派。"
+      description="更新任務內容、agent 與角色指派。"
       saving={saving}
       onClose={handleClose}
       showHeader
@@ -435,39 +425,6 @@ export function EditTaskDialog({
                     完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
                   </p>
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Layers className="size-3" />
-                  Workspace（選填）
-                </span>
-                {workspaces.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    尚無 Workspace — 可在側邊欄新增後再指派。
-                  </p>
-                ) : (
-                  <>
-                    <select
-                      name="edit-task-workspace"
-                      value={workspaceId}
-                      onChange={(e) => setWorkspaceId(e.target.value)}
-                      className={F}
-                    >
-                      <option value="">不使用 Workspace</option>
-                      {workspaces.map((ws) => (
-                        <option key={ws.id} value={ws.id}>
-                          {ws.name}
-                        </option>
-                      ))}
-                    </select>
-                    {workspaceId && (
-                      <p className="text-xs text-muted-foreground">
-                        Agent 將在開始前讀取 context.md，並在完成後更新它。
-                      </p>
-                    )}
-                  </>
-                )}
               </div>
             </div>
           )}
