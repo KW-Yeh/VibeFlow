@@ -129,11 +129,11 @@ function buildWorkspacePromptSection(workspacePath: string, includeUpdate: boole
 }
 
 /**
- * Fixed protocol appended after the (editable) system prompt. It makes the
- * agent persist its plan + step states to PROGRESS_FILE, which main watches
- * and mirrors into the task record — enabling card progress display and
- * resume-on-rerun. Kept separate from DEFAULT_SYSTEM_PROMPT so editing the
- * workflow prompt cannot break progress tracking.
+ * Fixed protocol appended to the task prompt body. It makes the agent persist
+ * its plan + step states to PROGRESS_FILE, which main watches and mirrors into
+ * the task record — enabling card progress display and resume-on-rerun. Kept
+ * separate from DEFAULT_SYSTEM_PROMPT so editing the workflow prompt cannot
+ * break progress tracking.
  */
 function buildProgressProtocolLines(progressFile: string): string {
   return [
@@ -160,6 +160,10 @@ export function buildProgressProtocol(progressFile: string = PROGRESS_FILE): str
 }
 
 export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(PROGRESS_FILE)
+
+function appendProgressProtocol(prompt: string, progressFile?: string): string {
+  return `${prompt}\n\n${buildProgressProtocol(progressFile)}`
+}
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
 export const DEFAULT_PERMISSION_MODE = 'auto'
@@ -285,17 +289,16 @@ function buildClaudeSettings(worktreePath?: string): string {
 /**
  * Resolve the effective system prompt: the assigned role's persona (when set)
  * in front, then the user's custom prompt when set (non-blank) otherwise the
- * built-in default — always followed by the fixed progress-tracking protocol.
+ * built-in default. Runtime file-writing instructions stay in the prompt body
+ * because their paths are per-launch values derived from the unified files dir.
  */
 export function resolveSystemPrompt(
   custom?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0],
-  progressFile?: string
+  role?: Parameters<typeof buildRolePrompt>[0]
 ): string {
   const base = custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
   const rolePrompt = buildRolePrompt(role)
-  const head = rolePrompt ? `${rolePrompt}\n\n${base}` : base
-  return `${head}\n\n${buildProgressProtocol(progressFile)}`
+  return rolePrompt ? `${rolePrompt}\n\n${base}` : base
 }
 
 /**
@@ -531,13 +534,14 @@ export function buildClaudeCommand(
   const isExecution = task.progress?.planDone === true
   const files = agentFilePaths(task.worktreePath, opts?.memory)
   const agentFilesDir = opts?.memory ? pathDirname(opts.memory.dbPath) : undefined
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : PLANNING_ROLE, files?.progress)
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : PLANNING_ROLE)
   const basePrompt = isExecution
     ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
+  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
   const prompt = workspacePath
-    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
-    : basePrompt
+    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
+    : progressPrompt
   const model = task.model || DEFAULT_MODELS.claude
   const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
   return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath, agentFilesDir)
@@ -687,11 +691,12 @@ export function buildReviseCommand(
   const model = taskExecutionModel(task)
   const files = agentFilePaths(task.worktreePath, memory)
   const agentFilesDir = memory ? pathDirname(memory.dbPath) : undefined
-  const sys = resolveSystemPrompt(null, executorRole, files?.progress)
+  const sys = resolveSystemPrompt(null, executorRole)
   const basePrompt = buildRevisePrompt(task, comments, executorRole, files?.progress)
+  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
   const prompt = workspacePath
-    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
-    : basePrompt
+    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
+    : progressPrompt
 
   if (agent === 'claude') {
     // Resume the executor's pinned session by its exact UUID so the reviewer
@@ -779,7 +784,7 @@ export function taskExecutionModel(
  * agent/model and injects the executor role.
  *
  * Codex and Gemini have no separate system-prompt flag, so the effective
- * system prompt (incl. the progress protocol) is folded into the prompt text.
+ * system prompt and task prompt are folded into one CLI argument.
  *
  * For Claude, planning and execution use separate deterministic session ids:
  *   - Planning: `planningSessionId(task.id)` for plan-only context.
@@ -816,15 +821,16 @@ export function buildAgentCommand(
   const model = isExecution ? taskExecutionModel(task) : taskModel(task)
   const files = agentFilePaths(task.worktreePath, opts?.memory)
   const agentFilesDir = opts?.memory ? pathDirname(opts.memory.dbPath) : undefined
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : (planningRole ?? PLANNING_ROLE), files?.progress)
+  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : (planningRole ?? PLANNING_ROLE))
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)
       : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
+  const progressPrompt = appendProgressProtocol(basePrompt, files?.progress)
   const prompt = workspacePath
-    ? basePrompt + buildWorkspacePromptSection(workspacePath, true)
-    : basePrompt
+    ? progressPrompt + buildWorkspacePromptSection(workspacePath, true)
+    : progressPrompt
   const sessionId = agent === 'claude'
     ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
     : undefined

@@ -487,7 +487,7 @@ export function SettingsDialog({
               className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
             <p className="text-xs text-muted-foreground">
-              啟動 Agent 時會以此 prompt 作為 system prompt；進度追蹤協議會自動附加。
+              啟動 Agent 時會以此 prompt 作為 system prompt；進度追蹤協議會隨任務內容自動附加。
             </p>
           </section>
 

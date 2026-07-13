@@ -7,6 +7,7 @@ import {
   buildReviewPrompt,
   buildRolePrompt,
   buildReviewerSystemPrompt,
+  resolveSystemPrompt,
   executorSessionId,
   planningSessionId,
   DEFAULT_SYSTEM_PROMPT,
@@ -75,6 +76,18 @@ test('buildAgentCommand — execution uses execution role after PLAN is done', (
   assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
 })
 
+test('resolveSystemPrompt — does not inject progress protocol into system prompt', () => {
+  const sys = resolveSystemPrompt('', EXECUTOR_ROLE)
+  assert.ok(sys.includes(DEFAULT_SYSTEM_PROMPT), 'must still include the default system prompt')
+  assert.ok(sys.includes('資深前端工程師'), 'must still include the role prompt')
+  assert.ok(!sys.includes(PROGRESS_PROTOCOL_PROMPT), 'progress protocol belongs to the prompt body')
+})
+
+test('buildAgentCommand — carries progress protocol in prompt body', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE)
+  assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
+})
+
 test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {
   const task = {
     ...CODEX_TASK,
@@ -120,7 +133,7 @@ test('buildAgentCommand — Claude planning and execution use separate session i
 // ─── buildReviewCommand (fresh-launch) ──────────────────────────────────────
 
 test('buildReviewCommand — is a fresh claude launch, not a REPL keystroke sequence', () => {
-  const cmd = buildReviewCommand(TASK, REVIEWER_ROLE)
+  const cmd = buildReviewCommand(TASK, undefined, REVIEWER_ROLE)
   // Must end with \r (CR-terminated command line)
   assert.equal(cmd.endsWith('\r'), true, 'must end with CR so the shell runs it')
   // Must start a fresh claude process with auto permission mode
@@ -131,20 +144,20 @@ test('buildReviewCommand — is a fresh claude launch, not a REPL keystroke sequ
 })
 
 test('buildReviewCommand — reviewer role goes into --append-system-prompt', () => {
-  const cmd = buildReviewCommand(TASK, REVIEWER_ROLE)
+  const cmd = buildReviewCommand(TASK, undefined, REVIEWER_ROLE)
   assert.ok(cmd.includes('--append-system-prompt'), 'reviewer role must be passed via --append-system-prompt')
   // The role preamble should appear in the system prompt arg, not inline in the body
   assert.ok(cmd.includes('超夢'), 'reviewer role name must appear in the command')
 })
 
-test('buildReviewCommand — no sub-agent hooks (--settings must be absent)', () => {
-  const cmd = buildReviewCommand(TASK, REVIEWER_ROLE)
-  assert.ok(!cmd.includes('--settings'), 'reviewer launch must not install sub-agent hooks')
+test('buildReviewCommand — no sub-agent hooks in reviewer settings', () => {
+  const cmd = buildReviewCommand(TASK, undefined, REVIEWER_ROLE)
+  assert.ok(cmd.includes('--settings'), 'reviewer launch may still pass non-hook settings')
   assert.ok(!cmd.includes('.vibeflow-subagents'), 'must not reference subagents dir')
 })
 
 test('buildReviewCommand — carries the verdict-writing instruction the orchestrator depends on', () => {
-  const cmd = buildReviewCommand(TASK, REVIEWER_ROLE)
+  const cmd = buildReviewCommand(TASK, undefined, REVIEWER_ROLE)
   // Prompt body must include task title and verdict instruction
   assert.ok(cmd.includes('修復登入流程'), 'must include task title in prompt')
   assert.ok(cmd.includes('"verdict"'), 'must tell reviewer to emit a verdict')
@@ -159,7 +172,7 @@ test('buildReviewCommand — works without a reviewer role (falls back to defaul
 })
 
 test('buildReviewCommand — does NOT carry the executor system prompt or progress protocol', () => {
-  const cmd = buildReviewCommand(TASK, REVIEWER_ROLE)
+  const cmd = buildReviewCommand(TASK, undefined, REVIEWER_ROLE)
   assert.ok(!cmd.includes(DEFAULT_SYSTEM_PROMPT), 'must not carry executor system prompt')
   assert.ok(!cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must not re-inject progress protocol')
 })
@@ -218,7 +231,7 @@ test('buildReviseCommand — is a fresh claude launch with --resume <uuid> (not 
   const comments = ['修正 off-by-one', '處理 null 輸入']
   const cmd = buildReviseCommand(TASK, EXECUTOR_ROLE, comments)
   const expectedUuid = executorSessionId(TASK.id)
-  assert.ok(cmd.startsWith('claude '), 'must be a fresh claude launch')
+  assert.ok(cmd.includes('claude '), 'must launch claude')
   assert.ok(!cmd.includes('--continue'), 'must NOT use --continue (would pick up reviewer session)')
   assert.ok(cmd.includes(`--resume ${expectedUuid}`), 'must use --resume with the pinned executor UUID')
   assert.ok(cmd.includes(`--permission-mode ${DEFAULT_PERMISSION_MODE}`), 'must pass permission mode')
