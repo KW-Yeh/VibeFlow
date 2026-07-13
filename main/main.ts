@@ -76,6 +76,9 @@ import {
 } from './helpers/pty'
 import {
   PLAN_FILE,
+  agentProgressPath,
+  agentReviewPath,
+  deleteAgentFiles,
   unwatchAllProgress,
   unwatchAllReview,
   unwatchProgress,
@@ -397,6 +400,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         if (existing.projectPath && existing.worktreePath) {
           const oldBranch = existing.branch || fallbackBranchName(payload.taskId)
           await removeWorktree(existing.projectPath, existing.worktreePath)
+          deleteAgentFiles(app.getPath('userData'), existing.worktreePath)
           await deleteBranch(existing.projectPath, oldBranch)
         }
         const assignedWorkspace = payload.workspaceId
@@ -540,9 +544,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         payload.cols,
         payload.rows
       )
+      // Progress / review files live beside the unified memory db (userData),
+      // named by the task's workspace — not inside the worktree. Watch them there.
+      const agentFilesDir = app.getPath('userData')
       if (sessionKey === taskId) {
         // Executor session: mirror the full progress file into the store.
-        watchProgress(sessionKey, payload.cwd, (progress) => {
+        watchProgress(sessionKey, agentProgressPath(agentFilesDir, payload.cwd), (progress) => {
           updateTask(taskId, { progress })
           if (!event.sender.isDestroyed()) {
             event.sender.send('progress:update', { taskId, progress })
@@ -551,7 +558,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       } else {
         // Reviewer session: watch only the review verdict file and merge the
         // verdict into the executor's existing progress — never overwrite steps.
-        watchReview(sessionKey, payload.cwd, (review) => {
+        watchReview(sessionKey, agentReviewPath(agentFilesDir, payload.cwd), (review) => {
           const current = findTask(taskId)?.progress
           const merged = {
             ...(current ?? { steps: [], updatedAt: Date.now() }),
@@ -755,6 +762,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
+      deleteAgentFiles(app.getPath('userData'), task.worktreePath)
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
@@ -775,6 +783,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
+      deleteAgentFiles(app.getPath('userData'), task.worktreePath)
       await deleteBranch(task.projectPath, branch)
     }
     clearConversation(taskId)

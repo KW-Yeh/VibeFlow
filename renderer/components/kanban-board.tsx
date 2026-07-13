@@ -250,7 +250,12 @@ export function KanbanBoard({
     setReviewerLaunch((prev) => ({
       ...prev,
       [task.id]: {
-        command: buildReviewCommand(task, resolveWorkspacePath(task), reviewerRole()),
+        command: buildReviewCommand(
+          task,
+          resolveWorkspacePath(task),
+          reviewerRole(),
+          memoryLaunchRef.current ?? undefined
+        ),
         nonce: (prev[task.id]?.nonce ?? 0) + 1,
       },
     }))
@@ -288,7 +293,8 @@ export function KanbanBoard({
         task,
         roleById(task.roleId) ?? undefined,
         review.comments,
-        resolveWorkspacePath(task)
+        resolveWorkspacePath(task),
+        memoryLaunchRef.current ?? undefined
       )
     )
   }

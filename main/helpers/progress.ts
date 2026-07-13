@@ -24,10 +24,10 @@ export interface ReviewVerdict {
 
 /**
  * Persisted execution progress of a task. The Claude agent maintains a
- * `.vibeflow-progress.json` file at the session cwd (per the progress protocol
- * appended to the system prompt); main watches that file and mirrors its
- * content into the store, so progress survives restarts and a re-run can
- * resume from the recorded state.
+ * progress file (in the userData dir, named by workspace — see agentProgressPath;
+ * per the progress protocol appended to the system prompt); main watches that
+ * file and mirrors its content into the store, so progress survives restarts and
+ * a re-run can resume from the recorded state.
  */
 export interface TaskProgress {
   /** One-line summary of where the task currently stands. */
@@ -70,6 +70,46 @@ export const PLAN_FILE = 'PLAN.md'
  * executor's `steps` / `planDone` fields.
  */
 export const REVIEW_FILE = '.vibeflow-review.json'
+
+/**
+ * Absolute path of a task's progress file. The agent-maintained progress /
+ * review files no longer live inside the worktree — they sit in `baseDir`
+ * (the same userData dir as the unified memory db) named by the task's
+ * workspace (the worktree folder), so git never sees them and concurrent
+ * tasks never collide. Renderer builds the identical path from the memory
+ * db's dir (see renderer/lib/claude.ts agentFilePaths) — keep both in sync.
+ *
+ * ponytail: workspace name = the worktree folder basename (branch slug). Two
+ * different projects running an identically-named branch worktree at the same
+ * time would collide; acceptable for now — prefix with a project discriminator
+ * if that ever happens in practice.
+ */
+export function agentProgressPath(baseDir: string, worktreePath: string): string {
+  return path.join(baseDir, `${path.basename(worktreePath)}${PROGRESS_FILE}`)
+}
+
+/** Absolute path of a task's reviewer verdict file (sibling of the progress file). */
+export function agentReviewPath(baseDir: string, worktreePath: string): string {
+  return path.join(baseDir, `${path.basename(worktreePath)}${REVIEW_FILE}`)
+}
+
+/**
+ * Best-effort removal of a task's progress + review files. Called when the task's
+ * worktree is torn down (cleanup / delete / re-provision) so these files share
+ * the same lifecycle they had when they lived inside the worktree.
+ */
+export function deleteAgentFiles(baseDir: string, worktreePath: string): void {
+  for (const p of [
+    agentProgressPath(baseDir, worktreePath),
+    agentReviewPath(baseDir, worktreePath),
+  ]) {
+    try {
+      fs.rmSync(p, { force: true })
+    } catch {
+      // best-effort — a missing file or unlink race must not fail teardown
+    }
+  }
+}
 
 /** Parse the optional reviewer verdict; undefined when absent or malformed. */
 function parseReview(raw: unknown): ReviewVerdict | undefined {
@@ -121,10 +161,10 @@ function parseProgress(raw: string): TaskProgress | null {
   }
 }
 
-/** Read + parse the progress file under `cwd`; null when absent or invalid. */
-export function readProgressFile(cwd: string): TaskProgress | null {
+/** Read + parse the progress file at `filePath`; null when absent or invalid. */
+export function readProgressFile(filePath: string): TaskProgress | null {
   try {
-    return parseProgress(fs.readFileSync(path.join(cwd, PROGRESS_FILE), 'utf8'))
+    return parseProgress(fs.readFileSync(filePath, 'utf8'))
   } catch {
     return null
   }
@@ -154,13 +194,15 @@ const watchers = new Map<string, WatchEntry>()
  */
 export function watchProgress(
   sessionKey: string,
-  cwd: string,
+  filePath: string,
   onUpdate: (progress: TaskProgress) => void
 ): void {
   unwatchProgress(sessionKey)
-  const file = path.join(cwd, PROGRESS_FILE)
+  const file = filePath
+  const dir = path.dirname(filePath)
+  const name = path.basename(filePath)
   const sync = () => {
-    const progress = readProgressFile(cwd)
+    const progress = readProgressFile(file)
     if (!progress) return
     const json = JSON.stringify({
       summary: progress.summary,
@@ -176,11 +218,11 @@ export function watchProgress(
   const entry: WatchEntry = { file, lastJson: null, sync }
   watchers.set(sessionKey, entry)
 
-  // Try event-based watching on the worktree directory (stable on macOS/Linux).
+  // Try event-based watching on the containing directory (stable on macOS/Linux).
   // Fall back to poll if the platform doesn't support it (network drives, etc.).
   try {
-    const fsWatcher = fs.watch(cwd, (_event: string, filename: string | null) => {
-      if (filename === PROGRESS_FILE) sync()
+    const fsWatcher = fs.watch(dir, (_event: string, filename: string | null) => {
+      if (filename === name) sync()
     })
     fsWatcher.on('error', () => {
       // Watcher died mid-session — activate poll fallback for the remainder.
@@ -226,10 +268,10 @@ export function unwatchAllProgress(): void {
 // reviewer writes never clobber the executor's progress fields.
 // ---------------------------------------------------------------------------
 
-/** Read + parse the reviewer verdict file; null when absent or invalid. */
-export function readReviewFile(cwd: string): ReviewVerdict | null {
+/** Read + parse the reviewer verdict file at `filePath`; null when absent or invalid. */
+export function readReviewFile(filePath: string): ReviewVerdict | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(cwd, REVIEW_FILE), 'utf8'))
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'))
     return parseReview(raw) ?? null
   } catch {
     return null
@@ -245,13 +287,15 @@ const reviewWatchers = new Map<string, WatchEntry>()
  */
 export function watchReview(
   sessionKey: string,
-  cwd: string,
+  filePath: string,
   onUpdate: (review: ReviewVerdict) => void
 ): void {
   unwatchReview(sessionKey)
-  const file = path.join(cwd, REVIEW_FILE)
+  const file = filePath
+  const dir = path.dirname(filePath)
+  const name = path.basename(filePath)
   const sync = () => {
-    const review = readReviewFile(cwd)
+    const review = readReviewFile(file)
     if (!review) return
     const json = JSON.stringify(review)
     if (json === entry.lastJson) return
@@ -262,8 +306,8 @@ export function watchReview(
   reviewWatchers.set(sessionKey, entry)
 
   try {
-    const fsWatcher = fs.watch(cwd, (_event: string, filename: string | null) => {
-      if (filename === REVIEW_FILE) sync()
+    const fsWatcher = fs.watch(dir, (_event: string, filename: string | null) => {
+      if (filename === name) sync()
     })
     fsWatcher.on('error', () => {
       fsWatcher.close()
