@@ -37,12 +37,21 @@ import {
   buildAgentCommand,
   isTaskComplete,
 } from '@/lib/claude'
-import { getCheckpoints, getDiff, getPlanHtml } from '@/lib/api'
+import {
+  getCheckpoints,
+  getDiff,
+  getPlanHtml,
+  getRelatedTasks,
+  getTaskLinks,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
   ColumnId,
   DiffFile,
   MemoryCheckpoint,
+  MemoryLaunchInfo,
+  MemoryTaskLink,
+  RelatedTask,
   Role,
   SubAgentRun,
   Task,
@@ -332,10 +341,14 @@ function MemorySection({ taskId }: { taskId: string }) {
   const [checkpoints, setCheckpoints] = useState<MemoryCheckpoint[] | undefined>(
     undefined
   )
+  const [related, setRelated] = useState<RelatedTask[]>([])
+  const [links, setLinks] = useState<MemoryTaskLink[]>([])
 
   useEffect(() => {
     let active = true
     setCheckpoints(undefined)
+    setRelated([])
+    setLinks([])
     getCheckpoints(taskId)
       .then((next) => {
         if (active) setCheckpoints(next)
@@ -343,6 +356,10 @@ function MemorySection({ taskId }: { taskId: string }) {
       .catch(() => {
         if (active) setCheckpoints([])
       })
+    // Cross-task relations come from the unified store, so they naturally span
+    // every workspace. Failures degrade to empty (block simply hides).
+    getRelatedTasks(taskId).then((r) => active && setRelated(r)).catch(() => {})
+    getTaskLinks(taskId).then((l) => active && setLinks(l)).catch(() => {})
     return () => {
       active = false
     }
@@ -355,11 +372,13 @@ function MemorySection({ taskId }: { taskId: string }) {
           <Loader2 className="size-3.5 animate-spin" />
           讀取 memory 中…
         </div>
-      ) : checkpoints.length === 0 ? (
+      ) : checkpoints.length === 0 && related.length === 0 && links.length === 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">
           此任務沒有記錄任何 memory checkpoint。
         </p>
       ) : (
+        <div className="space-y-4">
+        {checkpoints.length > 0 && (
         <ol className="space-y-3">
           {checkpoints.map((cp) => (
             <li
@@ -415,6 +434,66 @@ function MemorySection({ taskId }: { taskId: string }) {
             </li>
           ))}
         </ol>
+        )}
+
+        {related.length > 0 && (
+          <div>
+            <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <Layers className="size-3.5" />
+              相關任務
+            </h3>
+            <ul className="space-y-1.5">
+              {related.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-md border border-border/70 bg-muted/20 p-2 text-xs"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={r.id}>
+                      {r.title}
+                    </span>
+                    {r.status && (
+                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">
+                        {r.status}
+                      </span>
+                    )}
+                  </div>
+                  {r.summary && (
+                    <p className="mt-1 line-clamp-2 break-words text-muted-foreground">
+                      {r.summary}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {links.length > 0 && (
+          <div>
+            <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <GitBranch className="size-3.5" />
+              關聯
+            </h3>
+            <ul className="space-y-1.5">
+              {links.map((l, i) => (
+                <li
+                  key={`${l.direction}-${l.otherId}-${l.relation}-${i}`}
+                  className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-xs"
+                >
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">
+                    {l.direction === 'outgoing' ? l.relation : `← ${l.relation}`}
+                  </span>
+                  <span className="min-w-0 flex-1 break-words">
+                    <span className="text-foreground">{l.otherTitle ?? l.otherId}</span>
+                    {l.note && <span className="text-muted-foreground"> — {l.note}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        </div>
       )}
     </InfoSection>
   )
@@ -771,6 +850,7 @@ export function buildWorkspaceLaunchCommand({
   systemPrompt,
   workspacePath,
   resume,
+  memory,
 }: {
   task: Task
   role: Role | null
@@ -779,12 +859,14 @@ export function buildWorkspaceLaunchCommand({
   systemPrompt: string
   workspacePath?: string
   resume?: boolean
+  /** Built-in agent-memory server injection; undefined → not wired. */
+  memory?: MemoryLaunchInfo
 }): string {
   return buildAgentCommand(
     task,
     systemPrompt,
     role ?? undefined,
-    { resume },
+    { resume, memory },
     workspacePath,
     planningRole ?? undefined
   )

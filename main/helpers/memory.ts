@@ -4,8 +4,44 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-/** File name of the agent-memory sqlite store kept at the workspace root. */
+/** File name of the single, shared agent-memory sqlite store. */
 export const MEMORY_DB_FILE = 'agent_memory.db'
+
+/**
+ * Absolute path to the one agent-memory db shared across every workspace and
+ * project. It lives under Electron's userData dir, so dev (`VibeFlow
+ * (development)`) and the packaged app each get their own single file. electron
+ * is imported lazily so this module stays loadable outside an Electron runtime
+ * (headless tests, the standalone MCP server).
+ */
+export async function unifiedMemoryDbPath(): Promise<string> {
+  const { app } = await import('electron')
+  return path.join(app.getPath('userData'), MEMORY_DB_FILE)
+}
+
+/**
+ * Absolute path to the bundled stdio MCP memory server script. In dev it lives
+ * in the repo (`main/memory/mcp-server.mjs`, relative to the app root); packaged
+ * it is copied outside the asar via electron-builder `extraResources` so an
+ * external `node` can execute it.
+ */
+export async function memoryServerPath(): Promise<string> {
+  const { app } = await import('electron')
+  if (app.isPackaged) return path.join(process.resourcesPath, 'mcp-server.mjs')
+  return path.join(app.getAppPath(), 'main', 'memory', 'mcp-server.mjs')
+}
+
+/** What the renderer needs to inject the built-in memory MCP server at launch. */
+export interface MemoryLaunchInfo {
+  serverPath: string
+  dbPath: string
+}
+
+/** Resolve the built-in memory server + unified db paths for a launch command. */
+export async function memoryLaunchInfo(): Promise<MemoryLaunchInfo> {
+  const [serverPath, dbPath] = await Promise.all([memoryServerPath(), unifiedMemoryDbPath()])
+  return { serverPath, dbPath }
+}
 
 export interface MemoryDecision {
   choice: string
@@ -26,6 +62,23 @@ export interface MemoryCheckpoint {
   openItems: string[]
   createdAt: string
   artifacts: MemoryArtifact[]
+}
+
+/** A prior task surfaced by FTS similarity to the current one. */
+export interface RelatedTask {
+  id: string
+  title: string
+  summary: string | null
+  status: string | null
+}
+
+/** One explicit task_links edge, with the neighbour's title resolved. */
+export interface MemoryTaskLink {
+  otherId: string
+  otherTitle: string | null
+  relation: string
+  note: string | null
+  direction: 'outgoing' | 'incoming'
 }
 
 /** Run a query against the sqlite db via the system CLI and parse -json output. */
@@ -54,15 +107,21 @@ function sqlQuote(value: string): string {
 
 /**
  * Read the agent-memory checkpoints (and their artifact summaries) for a task
- * from the workspace's `agent_memory.db`. The memory task id is the VibeFlow
- * branch name (see the progress protocol). Returns [] when the db is absent,
- * the task has no checkpoints, or sqlite3 is unavailable.
+ * from the shared unified db. The memory task id is the VibeFlow branch name
+ * (see the progress protocol). Returns [] when the db is absent, the task has
+ * no checkpoints, or sqlite3 is unavailable.
  */
 export async function getCheckpoints(
-  workspacePath: string,
   memoryTaskId: string
 ): Promise<MemoryCheckpoint[]> {
-  const dbPath = path.join(workspacePath, MEMORY_DB_FILE)
+  return getCheckpointsFromDb(await unifiedMemoryDbPath(), memoryTaskId)
+}
+
+/** getCheckpoints against an explicit db path (testable without Electron). */
+export async function getCheckpointsFromDb(
+  dbPath: string,
+  memoryTaskId: string
+): Promise<MemoryCheckpoint[]> {
   const id = sqlQuote(memoryTaskId)
   try {
     const rows = await query<{
@@ -104,6 +163,99 @@ export async function getCheckpoints(
       openItems: parseJsonArray<string>(r.open_items),
       createdAt: r.created_at,
       artifacts: byCheckpoint.get(r.id) ?? [],
+    }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Other tasks in the unified store that are textually similar to this one
+ * (FTS over title/summary, seeded from the current task's own title+summary,
+ * excluding itself). Now that the store is unified this naturally spans every
+ * workspace/project. Returns [] on any failure.
+ */
+export async function getRelatedTasks(memoryTaskId: string): Promise<RelatedTask[]> {
+  return getRelatedTasksFromDb(await unifiedMemoryDbPath(), memoryTaskId)
+}
+
+export async function getRelatedTasksFromDb(
+  dbPath: string,
+  memoryTaskId: string,
+  limit = 5
+): Promise<RelatedTask[]> {
+  const id = sqlQuote(memoryTaskId)
+  try {
+    const self = await query<{ title: string; summary: string | null }>(
+      dbPath,
+      `SELECT title, summary FROM tasks WHERE id = ${id};`
+    )
+    if (self.length === 0) return []
+    const seed = `${self[0].title ?? ''} ${self[0].summary ?? ''}`.trim()
+    const tokens = seed.split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) return []
+    // FTS5 OR of the seed tokens so partial overlap still matches; excludes self.
+    const ftsQuery = tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' OR ')
+    let rows: RelatedTask[]
+    try {
+      rows = await query<RelatedTask>(
+        dbPath,
+        `SELECT t.id, t.title, t.summary, t.status FROM tasks_fts f
+         JOIN tasks t ON t.id = f.id
+         WHERE tasks_fts MATCH ${sqlQuote(ftsQuery)} AND t.id != ${id} LIMIT ${limit};`
+      )
+    } catch {
+      const like = sqlQuote(`%${seed}%`)
+      rows = await query<RelatedTask>(
+        dbPath,
+        `SELECT id, title, summary, status FROM tasks
+         WHERE id != ${id} AND (title LIKE ${like} OR summary LIKE ${like}) LIMIT ${limit};`
+      )
+    }
+    return rows
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Explicit task_links edges touching this task, in both directions, with the
+ * neighbour task's title resolved. Returns [] on any failure.
+ */
+export async function getTaskLinks(memoryTaskId: string): Promise<MemoryTaskLink[]> {
+  return getTaskLinksFromDb(await unifiedMemoryDbPath(), memoryTaskId)
+}
+
+export async function getTaskLinksFromDb(
+  dbPath: string,
+  memoryTaskId: string
+): Promise<MemoryTaskLink[]> {
+  const id = sqlQuote(memoryTaskId)
+  try {
+    const rows = await query<{
+      other_id: string
+      other_title: string | null
+      relation: string
+      note: string | null
+      direction: 'outgoing' | 'incoming'
+    }>(
+      dbPath,
+      `SELECT l.to_task AS other_id, t.title AS other_title, l.relation, l.note,
+              'outgoing' AS direction
+         FROM task_links l LEFT JOIN tasks t ON t.id = l.to_task
+        WHERE l.from_task = ${id}
+       UNION ALL
+       SELECT l.from_task AS other_id, t.title AS other_title, l.relation, l.note,
+              'incoming' AS direction
+         FROM task_links l LEFT JOIN tasks t ON t.id = l.from_task
+        WHERE l.to_task = ${id};`
+    )
+    return rows.map((r) => ({
+      otherId: r.other_id,
+      otherTitle: r.other_title,
+      relation: r.relation,
+      note: r.note,
+      direction: r.direction,
     }))
   } catch {
     return []

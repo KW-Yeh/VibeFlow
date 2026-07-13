@@ -11,7 +11,12 @@ import type {
 import type { AgentCli, AgentCliId } from './helpers/agents'
 import type { DiffFile, FinalizeResult, GitInfo, PrStatus } from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
-import type { MemoryCheckpoint } from './helpers/memory'
+import type {
+  MemoryCheckpoint,
+  MemoryLaunchInfo,
+  MemoryTaskLink,
+  RelatedTask,
+} from './helpers/memory'
 import type { SubAgentRun } from './helpers/subagents'
 import type { Conversation } from './helpers/chat-store'
 import type { AttachmentInput, ChatChunk, ChatPhase } from './helpers/chat-session'
@@ -185,6 +190,15 @@ const vibeflow = {
   /** Agent-memory checkpoints for the task (keyed by branch name). */
   getCheckpoints: (taskId: string): Promise<MemoryCheckpoint[]> =>
     ipcRenderer.invoke('task:getCheckpoints', taskId),
+  /** Built-in memory MCP server + unified db paths for launch injection. */
+  getMemoryLaunchInfo: (): Promise<MemoryLaunchInfo> =>
+    ipcRenderer.invoke('memory:getLaunchInfo'),
+  /** FTS-similar prior tasks across the unified store. */
+  getRelatedTasks: (taskId: string): Promise<RelatedTask[]> =>
+    ipcRenderer.invoke('task:getRelatedTasks', taskId),
+  /** Explicit task_links neighbours for the task. */
+  getTaskLinks: (taskId: string): Promise<MemoryTaskLink[]> =>
+    ipcRenderer.invoke('task:getTaskLinks', taskId),
   approve: (
     taskId: string,
     message: string

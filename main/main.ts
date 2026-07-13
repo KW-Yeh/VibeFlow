@@ -60,7 +60,12 @@ import {
 } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
 import { generatePlanHtml } from './helpers/plan-html'
-import { getCheckpoints } from './helpers/memory'
+import {
+  getCheckpoints,
+  getRelatedTasks,
+  getTaskLinks,
+  memoryLaunchInfo,
+} from './helpers/memory'
 import {
   killAllSessions,
   killSession,
@@ -659,8 +664,25 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   /** Agent-memory checkpoints for a task, keyed by branch name in the db. */
   ipcMain.handle('task:getCheckpoints', async (_event, taskId: string) => {
     const task = findTask(taskId)
-    if (!task?.workspacePath) return []
-    return getCheckpoints(task.workspacePath, task.branch)
+    if (!task) return []
+    return getCheckpoints(task.branch)
+  })
+
+  /** Built-in memory MCP server + unified db paths for launch-command injection. */
+  ipcMain.handle('memory:getLaunchInfo', () => memoryLaunchInfo())
+
+  /** FTS-similar prior tasks across the unified store (keyed by branch name). */
+  ipcMain.handle('task:getRelatedTasks', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task) return []
+    return getRelatedTasks(task.branch)
+  })
+
+  /** Explicit task_links neighbours for a task (keyed by branch name). */
+  ipcMain.handle('task:getTaskLinks', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task) return []
+    return getTaskLinks(task.branch)
   })
 
   // Approve: commit everything in the worktree and push the branch upstream.

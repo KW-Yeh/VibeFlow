@@ -1,4 +1,4 @@
-import type { AgentCliId, Role, Task } from '@/lib/types'
+import type { AgentCliId, MemoryLaunchInfo, Role, Task } from '@/lib/types'
 import presetRolesData from '@/lib/preset-roles.json'
 
 /**
@@ -105,7 +105,8 @@ export const PROGRESS_PROTOCOL_PROMPT = [
   '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
   `5. 若 ${PROGRESS_FILE} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
   `6. 不要將 ${PROGRESS_FILE} 加入 git commit。`,
-  '7. 若使用 agent-memory 存 checkpoint，task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 memory。',
+  '7. Agent Memory（VibeFlow 內建、跨所有 workspace/專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
+  '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
 ].join('\n')
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -144,6 +145,26 @@ function shellQuote(s: string): string {
 /** Normalize path separators to forward slashes for use inside shell commands. */
 function toShellPath(p: string): string {
   return p.replace(/\\/g, '/')
+}
+
+/**
+ * Build the `--mcp-config` flag that registers VibeFlow's built-in agent-memory
+ * server for this Claude launch. Inline JSON (the CLI accepts files or strings);
+ * paths are forward-slashed so they need no JSON backslash escaping. The server
+ * key `agent-memory` overrides any same-named external server (see
+ * LaunchOptions.memory). Returns '' when no memory info is provided.
+ */
+function buildMemoryMcpFlag(memory?: MemoryLaunchInfo): string {
+  if (!memory) return ''
+  const config = {
+    mcpServers: {
+      'agent-memory': {
+        command: 'node',
+        args: [toShellPath(memory.serverPath), '--db', toShellPath(memory.dbPath)],
+      },
+    },
+  }
+  return ` --mcp-config ${shellQuote(JSON.stringify(config))}`
 }
 
 /**
@@ -409,6 +430,15 @@ export interface LaunchOptions {
    * have run in the same worktree.
    */
   resume?: boolean
+  /**
+   * When set, the launch injects VibeFlow's built-in agent-memory MCP server
+   * (`--mcp-config`) so the session can read/write the shared unified store.
+   * The config key `agent-memory` intentionally matches the name a user's own
+   * MCP config would use, so it overrides any external same-named server (e.g.
+   * the standalone Python install) without needing `--strict-mcp-config` — which
+   * would otherwise disable the session's other MCP servers.
+   */
+  memory?: MemoryLaunchInfo
 }
 
 /**
@@ -487,7 +517,8 @@ function assembleCommand(
     // context.md and write back the updated knowledge directory.
     const addDir = workspacePath ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}` : ''
     const modelFlag = model ? ` --model ${model}` : ''
-    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
+    const mcpFlag = buildMemoryMcpFlag(opts?.memory)
+    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}${mcpFlag}`
     const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)

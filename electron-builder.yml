@@ -14,6 +14,12 @@ files:
     filter:
       - package.json
       - app
+# The built-in agent-memory MCP server runs as a standalone script under an
+# external `node`, so it must sit OUTSIDE the asar bundle. extraResources drops
+# it in Contents/Resources/ (see memoryServerPath()).
+extraResources:
+  - from: main/memory/mcp-server.mjs
+    to: mcp-server.mjs
 # Distinguish artifacts per platform/arch so a single GitHub Release can host them all.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 # Squeeze the installer/archive harder — slower to build, smaller to download.
