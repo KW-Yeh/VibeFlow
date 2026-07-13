@@ -1,8 +1,21 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { PLAN_FILE } from './progress'
+import { agentPlanPath } from './progress'
 
-export const PLAN_HTML_FILE = 'plan.html'
+/**
+ * Filesystem-safe name for the preserved plan.html: `<title>-<createdAt>.html`.
+ * Unlike the runtime PLAN.md/progress/review files, this is NOT cleared when the
+ * task completes — it stays in the workspace folder as a durable record.
+ */
+export function planHtmlFileName(title: string, createdAt: number): string {
+  const safe =
+    title
+      .trim()
+      .replace(/[/\\:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .slice(0, 80) || 'plan'
+  return `${safe}-${createdAt}.html`
+}
 
 // ── Inline-level markdown transforms ─────────────────────────────────────────
 
@@ -237,12 +250,18 @@ ${body}
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Read PLAN.md from the worktree, convert to a styled HTML document, write
- * plan.html alongside it, and return the HTML string.  Returns null when
- * PLAN.md does not exist or is empty.
+ * Read a task's PLAN.md (now living in `workspacePath` as `<worktree-dir>.PLAN.md`,
+ * not inside the worktree), convert to a styled HTML document, write the
+ * preserved `<title>-<createdAt>.html` into `workspacePath`, and return the HTML
+ * string. Returns null when PLAN.md does not exist or is empty.
  */
-export async function generatePlanHtml(worktreePath: string): Promise<string | null> {
-  const planPath = path.join(worktreePath, PLAN_FILE)
+export async function generatePlanHtml(
+  workspacePath: string,
+  worktreePath: string,
+  title: string,
+  createdAt: number
+): Promise<string | null> {
+  const planPath = agentPlanPath(workspacePath, worktreePath)
   let md: string
   try {
     md = await fs.readFile(planPath, 'utf8')
@@ -252,6 +271,10 @@ export async function generatePlanHtml(worktreePath: string): Promise<string | n
   if (!md.trim()) return null
 
   const html = wrapDocument(mdToHtml(md))
-  await fs.writeFile(path.join(worktreePath, PLAN_HTML_FILE), html, 'utf8')
+  await fs.writeFile(
+    path.join(workspacePath, planHtmlFileName(title, createdAt)),
+    html,
+    'utf8'
+  )
   return html
 }

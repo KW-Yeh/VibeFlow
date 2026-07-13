@@ -24,7 +24,6 @@ import type {
   Task,
   TaskProgress,
   VibeFlowState,
-  Workspace,
 } from '@/lib/types'
 
 /**
@@ -181,7 +180,6 @@ export async function createTask(payload: {
   executionModel?: string
   roleId?: string
   reviewerRoleId?: string
-  workspaceId?: string
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
@@ -197,7 +195,6 @@ export async function updateTask(payload: {
   model?: string
   executionAgentCli?: AgentCliId
   executionModel?: string
-  workspaceId?: string
   projectPath?: string
   baseBranch?: string | null
 }): Promise<VibeFlowState | null> {
@@ -225,33 +222,6 @@ export async function removeRole(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.removeRole(roleId) : null
-}
-
-export async function createWorkspace(
-  input: { name: string; path: string }
-): Promise<{ state: VibeFlowState; workspace: Workspace; scan: { folderExists: boolean; hasContextFile: boolean } } | null> {
-  const b = bridge()
-  return b ? b.createWorkspace(input) : null
-}
-
-export async function updateWorkspace(
-  id: string,
-  patch: Partial<Workspace>
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.updateWorkspace(id, patch) : null
-}
-
-export async function removeWorkspace(
-  id: string
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.removeWorkspace(id) : null
-}
-
-export async function refreshWorkspaces(): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.refreshWorkspaces() : null
 }
 
 export async function removeTask(taskId: string): Promise<VibeFlowState | null> {
