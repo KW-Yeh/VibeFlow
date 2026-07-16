@@ -5,6 +5,7 @@ import fs from 'fs/promises'
 import { PLAN_FILE, PROGRESS_FILE } from './progress'
 import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
+import { ATTACHMENTS_DIR } from './attachments'
 
 const pexec = promisify(execFile)
 
@@ -201,6 +202,12 @@ export async function ensureLocalExclude(projectPath: string): Promise<void> {
     path.join(infoDir, 'exclude'),
     PLAN_FILE,
     '# VibeFlow planning artifact (runtime-only)',
+    { mkdir: true }
+  )
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    `${ATTACHMENTS_DIR}/`,
+    '# VibeFlow task attachments (runtime-only)',
     { mkdir: true }
   )
 }

@@ -6,12 +6,9 @@ import type { WebContents } from 'electron'
 import type { AgentCliId } from './agents'
 import { execEnv } from './env'
 import { appendMessage, type ChatAttachment } from './chat-store'
+import { writeAttachments, type AttachmentInput } from './attachments'
 
-export interface AttachmentInput {
-  name: string
-  mime: string
-  dataBase64: string
-}
+export type { AttachmentInput } from './attachments'
 
 export interface SendOptions {
   taskId: string
@@ -155,16 +152,6 @@ function commandShell(): CommandShell {
   }
 }
 
-/** Write base64-encoded attachment bytes to a temp dir inside the worktree. */
-function writeAttachment(worktreePath: string, input: AttachmentInput): ChatAttachment {
-  const attachDir = path.join(worktreePath, '.vibeflow-attachments')
-  fs.mkdirSync(attachDir, { recursive: true })
-  const id = randomUUID().slice(0, 8)
-  const filePath = path.join(attachDir, `${id}-${input.name}`)
-  fs.writeFileSync(filePath, Buffer.from(input.dataBase64, 'base64'))
-  return { id, name: input.name, mime: input.mime, path: filePath }
-}
-
 /**
  * Spawn claude in --print --output-format stream-json mode, stream the
  * response back to the renderer via `chat:chunk` events, and persist the
@@ -191,13 +178,8 @@ export function sendChatMessage(
   } = opts
 
   // Write attachment files and build the augmented message text.
-  const savedAttachments: ChatAttachment[] = []
-  const attachmentLines: string[] = []
-  for (const input of attachmentInputs) {
-    const saved = writeAttachment(worktreePath, input)
-    savedAttachments.push(saved)
-    attachmentLines.push(`[附件: ${saved.path}]`)
-  }
+  const savedAttachments: ChatAttachment[] = writeAttachments(worktreePath, attachmentInputs)
+  const attachmentLines = savedAttachments.map((attachment) => `[附件: ${attachment.path}]`)
   const fullText = attachmentLines.length
     ? `${text}\n\n${attachmentLines.join('\n')}`
     : text
@@ -214,18 +196,6 @@ export function sendChatMessage(
   const shell = commandShell()
   const quote = shell.quote
   const addDirFlag = workspacePath ? `--add-dir ${quote(workspacePath)}` : ''
-  const ensureGitignore = () => {
-    const gi = path.join(worktreePath, '.gitignore')
-    const entry = '.vibeflow-attachments/'
-    try {
-      const content = fs.existsSync(gi) ? fs.readFileSync(gi, 'utf8') : ''
-      if (!content.includes(entry)) {
-        fs.appendFileSync(gi, `\n${entry}\n`)
-      }
-    } catch { /* best effort */ }
-  }
-  if (savedAttachments.length) ensureGitignore()
-
   const sessionFlag = resume ? `--resume ${sessionId}` : `--session-id ${sessionId}`
   const cmd = agentCli === 'claude'
     ? [

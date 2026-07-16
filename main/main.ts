@@ -100,7 +100,7 @@ import {
   startChatSend,
 } from './helpers/chat-session'
 import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
-import type { AttachmentInput } from './helpers/chat-session'
+import { writeAttachments, type AttachmentInput } from './helpers/attachments'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -306,6 +306,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         executionModel?: string
         roleId?: string
         reviewerRoleId?: string
+        attachments?: AttachmentInput[]
       }
     ) => {
       if (!payload.projectPath) {
@@ -763,6 +764,18 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     removeTask(taskId)
     return getState()
   })
+
+  ipcMain.handle(
+    'attachments:write',
+    async (
+      _event,
+      payload: { taskId: string; attachments: AttachmentInput[] }
+    ) => {
+      const task = findTask(payload.taskId)
+      if (!task?.worktreePath) throw new Error('找不到任務 worktree')
+      return writeAttachments(task.worktreePath, payload.attachments)
+    }
+  )
 
   // --- Chat (structured output mode) ---
 

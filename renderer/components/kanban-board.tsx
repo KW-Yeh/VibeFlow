@@ -25,6 +25,7 @@ import type {
   AgentCli,
   AgentCliId,
   AgentConnections,
+  AttachmentInput,
   BoardState,
   ColumnId,
   GitInfo,
@@ -57,10 +58,9 @@ interface KanbanBoardProps {
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in pipeline view). */
   selectedTaskId?: string | null
-  /** Deselect the current task (shows inline new-task form). */
-  onDeselectTask: () => void
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
+  newTaskNonce: number
   /** Props forwarded to the inline NewTaskForm when no task is selected. */
   creating: boolean
   createError: string | null
@@ -80,7 +80,8 @@ interface KanbanBoardProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string
+    reviewerRoleId: string,
+    attachments: AttachmentInput[]
   ) => void
 }
 
@@ -111,8 +112,8 @@ export function KanbanBoard({
   remoteActive,
   subAgents,
   selectedTaskId,
-  onDeselectTask,
   initialProjectPath,
+  newTaskNonce,
   creating,
   createError,
   pickFolder,
@@ -490,7 +491,7 @@ export function KanbanBoard({
         <Button
           size="sm"
           className="rounded-full active:scale-95"
-          onClick={selectedTaskId ? onDeselectTask : onNewTask}
+          onClick={onNewTask}
         >
           <Plus />
           新增任務
@@ -554,7 +555,7 @@ export function KanbanBoard({
                 <div className="flex h-full overflow-y-auto p-8">
                   <div className="mx-auto w-full max-w-5xl pb-8">
                     <NewTaskForm
-                      key={initialProjectPath ?? 'new'}
+                      key={`${initialProjectPath ?? 'new'}:${newTaskNonce}`}
                       inline
                       initialProjectPath={initialProjectPath}
                       creating={creating}

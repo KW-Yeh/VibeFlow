@@ -3,6 +3,7 @@ import {
   Bot,
   ChevronDown,
   Check,
+  FileUp,
   FolderOpen,
   GitBranch,
   Loader2,
@@ -15,12 +16,14 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
+import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
   AgentConnections,
+  AttachmentInput,
   GitInfo,
   Role,
 } from '@/lib/types'
@@ -48,7 +51,8 @@ export interface NewTaskFormProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string
+    reviewerRoleId: string,
+    attachments: AttachmentInput[]
   ) => void
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
@@ -280,8 +284,13 @@ export function NewTaskForm({
   const [model, setModel] = useState('')
   const [executionModel, setExecutionModel] = useState('')
   const [roleId, setRoleId] = useState('')
+  const [attachments, setAttachments] = useState<AttachmentInput[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
+  const [isReadingAttachments, setIsReadingAttachments] = useState(false)
 
   const titleRef = useRef<HTMLInputElement>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let active = true
@@ -372,7 +381,7 @@ export function NewTaskForm({
 
   const canGoToStep2 = isProjectReady
   const canSubmit =
-    title.trim().length > 0 && !creating && (inline ? isProjectReady : true)
+    title.trim().length > 0 && !creating && !isReadingAttachments && (inline ? isProjectReady : true)
 
   const handleSubmit = () => {
     if (!canSubmit || !projectPath) return
@@ -388,8 +397,22 @@ export function NewTaskForm({
       executionModel,
       roleId,
       // Reviewer is fixed (測試工程師) and always on; no per-task selection.
-      ''
+      '',
+      attachments
     )
+  }
+
+  const addAttachments = async (files: FileList | File[]) => {
+    setAttachmentError(null)
+    setIsReadingAttachments(true)
+    try {
+      const inputs = await filesToAttachmentInputs(files)
+      setAttachments((current) => [...current, ...inputs])
+    } catch (err) {
+      setAttachmentError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsReadingAttachments(false)
+    }
   }
 
   const selectedRole = roles.find((r) => r.id === roleId) ?? null
@@ -560,6 +583,85 @@ export function NewTaskForm({
     </div>
   )
 
+  const attachmentsBlock = (
+    <div className="space-y-2">
+      <span className="text-sm font-medium">附件（選填）</span>
+      <button
+        type="button"
+        disabled={creating || isReadingAttachments}
+        onClick={() => attachmentInputRef.current?.click()}
+        onDragEnter={(event) => {
+          event.preventDefault()
+          if (!creating && !isReadingAttachments) setIsDraggingAttachment(true)
+        }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'copy'
+        }}
+        onDragLeave={() => setIsDraggingAttachment(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setIsDraggingAttachment(false)
+          if (!creating && !isReadingAttachments && event.dataTransfer.files.length > 0) {
+            void addAttachments(event.dataTransfer.files)
+          }
+        }}
+        className={cn(
+          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          isDraggingAttachment && 'border-primary/70 bg-primary/5 text-foreground'
+        )}
+      >
+        <FileUp className="size-5" />
+        <span className="text-xs">拖放檔案到這裡，或點擊選擇檔案</span>
+      </button>
+      <input
+        ref={attachmentInputRef}
+        type="file"
+        multiple
+        disabled={creating || isReadingAttachments}
+        className="hidden"
+        onChange={(event) => {
+          if (event.target.files) void addAttachments(event.target.files)
+          event.target.value = ''
+        }}
+      />
+      {isReadingAttachments && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          讀取附件中…
+        </p>
+      )}
+      {attachments.length > 0 && (
+        <ul className="space-y-1.5">
+          {attachments.map((attachment, index) => (
+            <li
+              key={`${attachment.name}-${index}`}
+              className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
+            >
+              <FileUp className="size-3.5 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1 truncate text-xs" title={attachment.name}>
+                {attachment.name}
+              </span>
+              <IconButton
+                aria-label={`移除附件 ${attachment.name}`}
+                onClick={() =>
+                  setAttachments((current) => current.filter((_, i) => i !== index))
+                }
+                disabled={creating}
+                className="p-1"
+              >
+                <X className="size-3.5" />
+              </IconButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {attachmentError && (
+        <p className="text-xs text-destructive">{attachmentError}</p>
+      )}
+    </div>
+  )
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
@@ -642,24 +744,25 @@ export function NewTaskForm({
             />
           </label>
 
-          <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
-            {/* Left: project settings + workspace */}
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            {/* Left: project settings + attachments */}
             <div className="space-y-4">
               {projectSettingsBlock}
+              {attachmentsBlock}
             </div>
 
-            {/* Right: description + agents + roles */}
-            <div className="space-y-4">
-              <label className="block space-y-1.5">
+            {/* Right: description */}
+            <div className="flex h-full flex-col gap-4">
+              <label className="flex min-h-0 flex-1 flex-col gap-1.5">
                 <span className="text-sm font-medium">詳細描述（選填）</span>
                 <textarea
                   name="task-description"
                   autoComplete="off"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={5}
+                  rows={12}
                   placeholder="描述這個任務的目標、需求或背景脈絡…"
-                  className={cn(F, 'resize-y')}
+                  className={cn(F, 'mb-2 min-h-64 flex-1 resize-y')}
                 />
               </label>
 
@@ -710,6 +813,8 @@ export function NewTaskForm({
                   className={cn(F, 'resize-y')}
                 />
               </label>
+
+              {attachmentsBlock}
 
               {advancedSettingsBlock}
 

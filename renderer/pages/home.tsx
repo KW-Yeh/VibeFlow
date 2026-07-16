@@ -42,6 +42,7 @@ import { Button } from '@/components/ui/button'
 import type {
   AgentCliId,
   AgentConnections,
+  AttachmentInput,
   BoardState,
   ConnectableAgentId,
   Role,
@@ -113,6 +114,7 @@ export default function HomePage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
+  const [newTaskNonce, setNewTaskNonce] = useState(0)
 
   // Delete-project confirmation modal state.
   const [deleteProjectTarget, setDeleteProjectTarget] = useState<{
@@ -221,6 +223,7 @@ export default function HomePage() {
   const handleOpenNewTask = () => {
     setCreateError(null)
     setNewTaskInitialProject(null)
+    setNewTaskNonce((nonce) => nonce + 1)
     setSelectedTaskId(null)
   }
 
@@ -229,6 +232,7 @@ export default function HomePage() {
   const handleNewTaskForProject = (projectPath: string | null) => {
     setCreateError(null)
     setNewTaskInitialProject(projectPath)
+    setNewTaskNonce((nonce) => nonce + 1)
     setSelectedTaskId(null)
   }
 
@@ -293,7 +297,8 @@ export default function HomePage() {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string
+    reviewerRoleId: string,
+    attachments: AttachmentInput[]
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -310,6 +315,7 @@ export default function HomePage() {
         executionModel: executionModel || undefined,
         roleId: roleId || undefined,
         reviewerRoleId: reviewerRoleId || undefined,
+        attachments,
       })
       if (result) {
         setBoard(result.state.board)
@@ -518,8 +524,8 @@ export default function HomePage() {
                   remoteActive={!!remoteHost.roomCode}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
-                  onDeselectTask={() => setSelectedTaskId(null)}
                   initialProjectPath={newTaskInitialProject}
+                  newTaskNonce={newTaskNonce}
                   creating={creating}
                   createError={createError}
                   pickFolder={pickFolder}

@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
+import { filesToAttachmentInputs } from '@/lib/file-attachments'
+import { termInput, writeAttachments } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Sparkles } from 'lucide-react'
+
+function quoteTerminalPath(path: string): string {
+  return `'${path.replace(/'/g, `'\\''`)}'`
+}
 
 interface TaskTerminalProps {
   taskId: string
@@ -49,6 +56,9 @@ export function TaskTerminal({
 
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
+  const dragDepthRef = useRef(0)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [isAttaching, setIsAttaching] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
   // PTY-start flow and the nonce effect read the latest values without
@@ -260,15 +270,68 @@ export function TaskTerminal({
     maybeLaunch()
   }, [launchCommand, launchNonce, maybeLaunch])
 
+  const handleFileDrop = async (files: FileList) => {
+    if (readOnlyRef.current || !readyRef.current || files.length === 0) return
+    setIsAttaching(true)
+    try {
+      const inputs = await filesToAttachmentInputs(files)
+      const written = await writeAttachments({ taskId, attachments: inputs })
+      if (written.length > 0) {
+        const paths = written.map(({ path }) => quoteTerminalPath(path)).join(' ')
+        termInput(sessionKey, `${paths} `)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      termRef.current?.writeln(`\r\n⚠️  附加檔案失敗：${message}`)
+    } finally {
+      setIsAttaching(false)
+    }
+  }
+
   return (
     // Height is owned by the card (fixed expanded height per column): the
     // terminal fills whatever space is left after the steps/description block.
-    <div className="flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md border border-border bg-card">
+    <div
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        if (readOnly || !readyRef.current) return
+        dragDepthRef.current += 1
+        setIsDraggingFile(true)
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = readOnly || !readyRef.current ? 'none' : 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        if (readOnly || !readyRef.current) return
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+        if (dragDepthRef.current === 0) setIsDraggingFile(false)
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        dragDepthRef.current = 0
+        setIsDraggingFile(false)
+        if (readOnly || !readyRef.current) return
+        void handleFileDrop(event.dataTransfer.files)
+      }}
+      className={cn(
+        'flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md border border-border bg-card transition-colors',
+        isDraggingFile && 'border-primary bg-primary/5'
+      )}
+    >
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/50 px-2 py-1">
         <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>
-        {readOnly ? (
+        {isAttaching ? (
+          <span className="shrink-0 px-2 text-[10px] text-muted-foreground">
+            附加檔案中…
+          </span>
+        ) : readOnly ? (
           <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
             唯讀
           </span>

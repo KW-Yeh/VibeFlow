@@ -15,6 +15,7 @@ import {
   commitAndPush,
 } from '../main/helpers/git.ts'
 import { PROGRESS_FILE } from '../main/helpers/progress.ts'
+import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
 import {
   makeRepo,
   git,
@@ -134,6 +135,7 @@ test('ensureLocalExclude — adds the progress file to .git/info/exclude (idempo
     const excludePath = path.join(projectPath, '.git', 'info', 'exclude')
     let content = await fs.readFile(excludePath, 'utf8')
     assert.ok(content.includes(PROGRESS_FILE))
+    assert.ok(content.includes(`${ATTACHMENTS_DIR}/`))
 
     await ensureLocalExclude(projectPath)
     content = await fs.readFile(excludePath, 'utf8')
