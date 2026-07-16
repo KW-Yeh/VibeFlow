@@ -14,6 +14,7 @@ import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
 import { projectWorkstationPath } from './workspace'
 import type { AgentCliId } from './agents'
+import { writeAttachments, type AttachmentInput } from './attachments'
 
 export interface CreateTaskInput {
   projectPath: string
@@ -28,6 +29,7 @@ export interface CreateTaskInput {
   executionModel?: string
   roleId?: string
   reviewerRoleId?: string
+  attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
   storePath?: string
 }
@@ -88,6 +90,18 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     )
   }
 
+  const attachments = writeAttachments(
+    provisionResult.worktreePath,
+    input.attachments ?? []
+  )
+  const attachmentLines = attachments.map(
+    (attachment) => `[附件: ${attachment.path}]`
+  )
+  const baseDescription = input.description?.trim()
+  const description = attachmentLines.length
+    ? [baseDescription, attachmentLines.join('\n')].filter(Boolean).join('\n\n')
+    : baseDescription || undefined
+
   // Every task runs the review pipeline: the executor's completion auto-triggers
   // the fixed 測試工程師 reviewer pass (see kanban-board orchestration).
   const pipeline: PipelineRun = {
@@ -99,7 +113,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   const task: Task = {
     id: taskId,
     title: input.title.trim() || `Task ${taskId}`,
-    description: input.description?.trim() || undefined,
+    description,
     branch: provisionResult.branch,
     projectPath,
     projectName,

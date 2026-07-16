@@ -17,8 +17,9 @@ import type {
   RelatedTask,
 } from './helpers/memory'
 import type { SubAgentRun } from './helpers/subagents'
-import type { Conversation } from './helpers/chat-store'
-import type { AttachmentInput, ChatChunk, ChatPhase } from './helpers/chat-session'
+import type { ChatAttachment, Conversation } from './helpers/chat-store'
+import type { AttachmentInput } from './helpers/attachments'
+import type { ChatChunk, ChatPhase } from './helpers/chat-session'
 import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
@@ -132,6 +133,7 @@ const vibeflow = {
     executionModel?: string
     roleId?: string
     reviewerRoleId?: string
+    attachments?: AttachmentInput[]
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {
@@ -229,6 +231,14 @@ const vibeflow = {
   },
   deleteTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:deleteTask', taskId),
+
+  attachments: {
+    write: (payload: {
+      taskId: string
+      attachments: AttachmentInput[]
+    }): Promise<ChatAttachment[]> =>
+      ipcRenderer.invoke('attachments:write', payload),
+  },
 
   // Chat (structured output) bridge.
   chat: {

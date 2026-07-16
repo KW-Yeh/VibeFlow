@@ -5,6 +5,7 @@ import type {
   AttachmentInput,
   BoardState,
   ChatChunk,
+  ChatAttachment,
   ChatPhase,
   Conversation,
   ConnectableAgentId,
@@ -180,6 +181,7 @@ export async function createTask(payload: {
   executionModel?: string
   roleId?: string
   reviewerRoleId?: string
+  attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
@@ -339,6 +341,14 @@ export async function deleteTask(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.deleteTask(taskId) : null
+}
+
+export async function writeAttachments(payload: {
+  taskId: string
+  attachments: AttachmentInput[]
+}): Promise<ChatAttachment[]> {
+  const b = bridge()
+  return b ? b.attachments.write(payload) : []
 }
 
 // --- Chat API wrappers ---
