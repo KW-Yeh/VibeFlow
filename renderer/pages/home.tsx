@@ -8,7 +8,7 @@ import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
@@ -573,6 +573,30 @@ export default function HomePage() {
               onDelete={handleDeleteRole}
               onClose={() => setRolesOpen(false)}
             />
+            {creating && (
+              <DialogShell
+                title="建立任務中"
+                saving
+                onClose={() => {}}
+                contentClassName="max-w-sm rounded-lg p-5"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                      <Loader2 className="size-5 animate-spin" />
+                    </span>
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="text-base font-semibold tracking-tight">
+                        正在建立 workspace
+                      </h2>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        正在建立 git worktree、分支與任務資料。完成前請先不要切換或操作其他任務。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </DialogShell>
+            )}
             {deleteProjectTarget && (
               <DialogShell
                 title="刪除專案"

@@ -287,27 +287,80 @@ async function resolveBranchName(
  * --ignored` would otherwise happily include them.
  */
 const RUNTIME_ARTIFACT_DENYLIST = new Set([PROGRESS_FILE, PLAN_FILE, SUBAGENTS_DIR])
+const MAX_IGNORED_COPY_BYTES = 10 * 1024 * 1024
+const MAX_IGNORED_COPY_FILES = 200
+
+const HEAVY_IGNORED_DIR_NAMES = new Set([
+  '.cache',
+  '.gradle',
+  '.next',
+  '.nuxt',
+  '.parcel-cache',
+  '.svelte-kit',
+  '.turbo',
+  '.venv',
+  'app',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'vendor',
+])
+
+const BACKGROUND_DEPENDENCY_DIR_NAMES = new Set([
+  '.venv',
+  'node_modules',
+  'vendor',
+])
+
+function ignoredEntryHasPart(entry: string, names: Set<string>): boolean {
+  return entry
+    .split(/[\\/]+/)
+    .some((part) => names.has(part))
+}
+
+function shouldSkipForegroundIgnoredEntry(entry: string): boolean {
+  return ignoredEntryHasPart(entry, HEAVY_IGNORED_DIR_NAMES)
+}
+
+function shouldCopyIgnoredEntryInBackground(entry: string): boolean {
+  return ignoredEntryHasPart(entry, BACKGROUND_DEPENDENCY_DIR_NAMES)
+}
+
+async function ignoredEntryFitsCopyBudget(src: string): Promise<boolean> {
+  let bytes = 0
+  let files = 0
+  const stack = [src]
+
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    const stat = await fs.lstat(current)
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) {
+      const children = await fs.readdir(current, { withFileTypes: true })
+      files += children.length
+      if (files > MAX_IGNORED_COPY_FILES) return false
+      for (const child of children) stack.push(path.join(current, child.name))
+      continue
+    }
+    files += 1
+    bytes += stat.size
+    if (bytes > MAX_IGNORED_COPY_BYTES || files > MAX_IGNORED_COPY_FILES) {
+      return false
+    }
+  }
+
+  return true
+}
 
 /**
- * Best-effort copy of every git-ignored/untracked top-level path (node_modules,
- * .venv, target/, vendor/, build caches, .env, …) from the source project into
- * a freshly created worktree, so typecheck/build/dev work immediately without
- * the new worktree running its own install. Driven by `git ls-files --ignored`
- * instead of a hardcoded list — VibeFlow manages arbitrary projects, not just
- * Node ones, so there's no fixed set of dependency directory names to special-case.
- *
- * Copies are real, never symlinks: Next.js/Turbopack refuses to resolve a
- * node_modules symlink that points outside the project directory (`Symlink
- * [project]/node_modules is invalid, it points out of the filesystem root`),
- * which breaks `next dev`/`next build` outright — other toolchains may have
- * similar assumptions. Best-effort throughout: a missing git command, an
- * unreadable path, or a failed copy never fails provisioning — it just means
- * the worktree needs its own install/build step before those files exist.
+ * Best-effort list of git-ignored/untracked paths that might be copied into a
+ * freshly created worktree. Shared by the foreground small-file copy and the
+ * background dependency copy.
  */
-async function copyIgnoredFiles(
-  projectPath: string,
-  worktreePath: string
-): Promise<void> {
+async function listIgnoredCopyEntries(projectPath: string): Promise<string[]> {
   let listing: string
   try {
     listing = await git(projectPath, [
@@ -319,26 +372,80 @@ async function copyIgnoredFiles(
     ])
   } catch (err) {
     console.error('Failed to list ignored files for worktree copy:', err)
-    return
+    return []
   }
 
-  const entries = listing
+  return listing
     .split('\n')
     .map((line) => line.replace(/\/$/, '').trim())
     .filter((entry) => entry && !entry.startsWith('.git') && !RUNTIME_ARTIFACT_DENYLIST.has(entry))
+    .filter((entry, index, all) => all.indexOf(entry) === index)
+}
+
+async function copyIgnoredEntry(
+  projectPath: string,
+  worktreePath: string,
+  entry: string
+): Promise<void> {
+  const src = path.join(projectPath, entry)
+  const dest = path.join(worktreePath, entry)
+  await fs.mkdir(path.dirname(dest), { recursive: true })
+  await fs.cp(src, dest, { recursive: true })
+}
+
+/**
+ * Best-effort copy of small git-ignored/untracked files (for example `.env`)
+ * from the source project into a freshly created worktree. Heavy dependency
+ * folders and build caches are intentionally skipped: copying `node_modules`,
+ * `.next`, `dist`, `.venv`, etc. can dominate task creation time and make the
+ * app look stuck while the actual git worktree is already ready. Dependency
+ * folders can be copied later by `copyIgnoredDependenciesInBackground`.
+ *
+ * Best-effort throughout: a missing git command, an unreadable path, or a
+ * skipped large entry never fails provisioning — it just means the worktree may
+ * need its own install/build step before those generated files exist.
+ */
+async function copySmallIgnoredFiles(
+  projectPath: string,
+  worktreePath: string
+): Promise<void> {
+  const entries = await listIgnoredCopyEntries(projectPath)
 
   await Promise.all(
     entries.map(async (entry) => {
       const src = path.join(projectPath, entry)
-      const dest = path.join(worktreePath, entry)
       try {
-        await fs.mkdir(path.dirname(dest), { recursive: true })
-        await fs.cp(src, dest, { recursive: true })
+        if (shouldSkipForegroundIgnoredEntry(entry)) return
+        if (!(await ignoredEntryFitsCopyBudget(src))) return
+        await copyIgnoredEntry(projectPath, worktreePath, entry)
       } catch (err) {
         console.error(`Failed to copy ignored path "${entry}" into worktree:`, err)
       }
     })
   )
+}
+
+/**
+ * Copy dependency directories in the background after task creation has already
+ * returned to the UI. This preserves the convenience of pre-warmed worktrees
+ * without making users wait on large filesystem copies during creation.
+ */
+function copyIgnoredDependenciesInBackground(
+  projectPath: string,
+  worktreePath: string
+): void {
+  void (async () => {
+    const entries = (await listIgnoredCopyEntries(projectPath))
+      .filter(shouldCopyIgnoredEntryInBackground)
+
+    for (const entry of entries) {
+      try {
+        await copyIgnoredEntry(projectPath, worktreePath, entry)
+      } catch (err) {
+        console.error(`Failed to background-copy ignored path "${entry}" into worktree:`, err)
+      }
+    }
+  })()
 }
 
 /**
@@ -415,8 +522,10 @@ export async function provisionWorktree(
         return false
       }
     })(),
-    copyIgnoredFiles(projectPath, worktreePath),
+    copySmallIgnoredFiles(projectPath, worktreePath),
   ])
+
+  copyIgnoredDependenciesInBackground(projectPath, worktreePath)
 
   return { branch, worktreePath, pushed, baseBranch: base }
 }
