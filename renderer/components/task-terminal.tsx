@@ -65,6 +65,7 @@ export function TaskTerminal({
   // re-running the heavy terminal-init effect.
   const readyRef = useRef(false)
   const sentNonceRef = useRef(-1)
+  const runningCommandRef = useRef(false)
   const launchCmdRef = useRef<string | null | undefined>(launchCommand)
   const launchNonceRef = useRef(launchNonce)
   launchCmdRef.current = launchCommand
@@ -89,10 +90,32 @@ export function TaskTerminal({
       if (!startCwd) return
       // scrollback is intentionally ignored here: maybeLaunch() restarts an
       // already-mounted terminal (new command = new phase = fresh buffer).
-      void window.vibeflow?.term.start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey)
+      readyRef.current = false
+      runningCommandRef.current = true
+      void window.vibeflow?.term
+        .start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey)
+        .then(() => {
+          readyRef.current = true
+          termRef.current?.focus()
+        })
     },
     [taskId, sessionKey]
   )
+
+  const restartInteractiveShell = useCallback(() => {
+    const startCwd = cwdRef.current
+    const term = termRef.current
+    const api = typeof window !== 'undefined' ? window.vibeflow : undefined
+    if (!startCwd || !term || !api || readOnlyRef.current) return
+    readyRef.current = false
+    runningCommandRef.current = false
+    void api.term
+      .start(taskId, startCwd, undefined, sessionKey, term.cols, term.rows)
+      .then(() => {
+        readyRef.current = true
+        term.focus()
+      })
+  }, [taskId, sessionKey])
 
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
@@ -183,6 +206,7 @@ export function TaskTerminal({
       // drive. Marking the nonce here stops maybeLaunch from re-spawning it.
       const armedCmd = !readOnlyRef.current ? launchCmdRef.current : null
       if (armedCmd) sentNonceRef.current = launchNonceRef.current
+      runningCommandRef.current = Boolean(armedCmd)
       const { scrollback } = await api.term.start(
         taskId,
         startCwd,
@@ -205,11 +229,20 @@ export function TaskTerminal({
           term.writeln('\r\n⏳  切換至下一階段...')
           return
         }
+        const wasCommand = runningCommandRef.current
+        runningCommandRef.current = false
+        if (!wasCommand) {
+          readyRef.current = false
+          term.writeln(`\r\nℹ️  終端已結束（exit code: ${exitCode}）`)
+          return
+        }
         if (exitCode === 0) {
           term.writeln('\r\n✅  Agent 執行完成。')
         } else {
           term.writeln(`\r\n⚠️  連線中斷或異常結束（exit code: ${exitCode}）`)
         }
+        term.writeln('\r\nℹ️  已切回互動終端，可手動輸入命令。')
+        restartInteractiveShell()
       })
       // Shift+Enter inserts a newline instead of submitting. xterm sends a plain
       // CR for both Enter and Shift+Enter, so the CLI running in the PTY (e.g.
@@ -263,7 +296,7 @@ export function TaskTerminal({
       termRef.current?.dispose()
       termRef.current = null
     }
-  }, [taskId, sessionKey, maybeLaunch])
+  }, [taskId, sessionKey, maybeLaunch, restartInteractiveShell])
 
   // Re-launch when the parent bumps the nonce while already mounted.
   useEffect(() => {
