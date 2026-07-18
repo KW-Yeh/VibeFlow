@@ -74,10 +74,10 @@ export const REVIEW_FILE = '.vibeflow-review.json'
 /**
  * Absolute path of a task's progress file. The agent-maintained progress /
  * review files no longer live inside the worktree — they sit in `baseDir`
- * (the same userData dir as the unified memory db) named by the task's
- * workspace (the worktree folder), so git never sees them and concurrent
- * tasks never collide. Renderer builds the identical path from the memory
- * db's dir (see renderer/lib/claude.ts agentFilePaths) — keep both in sync.
+ * (the task workspace parent) named by the task's workspace (the worktree
+ * folder), so git never sees them and concurrent tasks never collide. Renderer
+ * builds the identical path from the same workspace path (see
+ * renderer/lib/claude.ts agentFilePaths) — keep both in sync.
  *
  * ponytail: workspace name = the worktree folder basename (branch slug). Two
  * different projects running an identically-named branch worktree at the same

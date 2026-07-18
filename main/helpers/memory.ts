@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import { promisify } from 'util'
 
@@ -7,15 +8,47 @@ const execFileAsync = promisify(execFile)
 /** File name of the single, shared agent-memory sqlite store. */
 export const MEMORY_DB_FILE = 'agent_memory.db'
 
+function expandHome(p: string, home: string): string {
+  if (p === '~') return home
+  if (p.startsWith(`~${path.sep}`) || p.startsWith('~/')) return path.join(home, p.slice(2))
+  return p
+}
+
+function rootDbPath(root: string): string {
+  return path.join(root, MEMORY_DB_FILE)
+}
+
+function discoverAgentMemoryRoot(home: string): string | null {
+  const explicitRoot = process.env.AGENT_MEMORY_ROOT?.trim()
+  if (explicitRoot) return path.resolve(expandHome(explicitRoot, home))
+
+  const candidates = [
+    path.join(home, 'agent-memory'),
+    path.join(home, 'Desktop', 'agent-memory'),
+    path.join(home, 'Documents', 'agent-memory'),
+  ]
+  return (
+    candidates.find((root) =>
+      fs.existsSync(path.join(root, 'core', 'mcp_server.py')) ||
+      fs.existsSync(rootDbPath(root))
+    ) ?? null
+  )
+}
+
 /**
- * Absolute path to the one agent-memory db shared across every workspace and
- * project. It lives under Electron's userData dir, so dev (`VibeFlow
- * (development)`) and the packaged app each get their own single file. electron
- * is imported lazily so this module stays loadable outside an Electron runtime
- * (headless tests, the standalone MCP server).
+ * Absolute path to the one agent-memory db shared across every workspace,
+ * project, CLI, and app. It prefers AGENT_MEMORY_DB / AGENT_MEMORY_ROOT, then
+ * discovers a local agent-memory install root. The Electron userData path is
+ * only a fallback for users who run VibeFlow before installing agent-memory.
  */
 export async function unifiedMemoryDbPath(): Promise<string> {
   const { app } = await import('electron')
+  const explicitDb = process.env.AGENT_MEMORY_DB?.trim()
+  if (explicitDb) return path.resolve(expandHome(explicitDb, app.getPath('home')))
+
+  const root = discoverAgentMemoryRoot(app.getPath('home'))
+  if (root) return rootDbPath(root)
+
   return path.join(app.getPath('userData'), MEMORY_DB_FILE)
 }
 

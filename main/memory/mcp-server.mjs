@@ -8,15 +8,18 @@
  * read-only `memory.ts` already uses — no native sqlite dependency), so a
  * plain external `node` can run it from outside the asar bundle.
  *
- * VibeFlow launches Claude with `--mcp-config` pointing at:
- *     node <this> --db <unified userData agent_memory.db>
- * giving every task session the same shared memory store.
+ * VibeFlow launches Claude with `--mcp-config` pointing at the same
+ * install-root `agent_memory.db` used by the Python agent-memory server, so app
+ * and CLI sessions share one memory store.
  *
  * Tools (mirror memory.py): memory_find_related_tasks, memory_get_task_detail,
  * memory_get_artifact, memory_save_checkpoint, memory_link_tasks.
  */
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import readline from 'node:readline'
 
 const SERVER_NAME = 'agent_memory'
@@ -24,10 +27,42 @@ const SERVER_VERSION = '1.0.0'
 const DEFAULT_PROTOCOL = '2024-11-05'
 const COMPRESS_THRESHOLD = Number(process.env.AGENT_MEMORY_COMPRESS_AT || '12')
 
-// --db <path> tells the server which unified store to use.
+const DB_FILE = 'agent_memory.db'
+
+function expandHome(p) {
+  if (p === '~') return os.homedir()
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(os.homedir(), p.slice(2))
+  return p
+}
+
+function rootDbPath(root) {
+  return path.join(root, DB_FILE)
+}
+
+function discoverAgentMemoryRoot() {
+  if (process.env.AGENT_MEMORY_ROOT) return path.resolve(expandHome(process.env.AGENT_MEMORY_ROOT))
+  const home = os.homedir()
+  const candidates = [
+    path.join(home, 'agent-memory'),
+    path.join(home, 'Desktop', 'agent-memory'),
+    path.join(home, 'Documents', 'agent-memory'),
+  ]
+  return (
+    candidates.find((root) =>
+      fs.existsSync(path.join(root, 'core', 'mcp_server.py')) ||
+      fs.existsSync(rootDbPath(root))
+    ) ?? null
+  )
+}
+
+// --db <path> tells the server which unified store to use. Without it, prefer
+// the same install-root path used by the Python agent-memory server.
 function argDb() {
   const i = process.argv.indexOf('--db')
-  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : 'agent_memory.db'
+  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1]
+  if (process.env.AGENT_MEMORY_DB) return path.resolve(expandHome(process.env.AGENT_MEMORY_DB))
+  const root = discoverAgentMemoryRoot()
+  return root ? rootDbPath(root) : DB_FILE
 }
 const DB_PATH = argDb()
 
