@@ -40,8 +40,10 @@ jobs:
       - name: Pin npm 11
         run: npm install -g npm@11
 
-      # node-pty is a native module; postinstall (electron-builder install-app-deps)
-      # compiles it against the Electron headers on each platform.
+      # node-pty is native, but VibeFlow uses node-pty's prebuilt binaries where
+      # available. Root postinstall only verifies that the native binary loads;
+      # electron-builder native rebuilds stay disabled because Windows rebuilds
+      # fail in bundled winpty/MSVC and are unnecessary for the prebuild path.
       - name: Install dependencies
         run: npm ci --verbose
 

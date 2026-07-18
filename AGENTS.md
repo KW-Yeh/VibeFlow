@@ -167,8 +167,12 @@ There is no unit test harness, so verify behavior directly:
 
 ## Gotchas
 
-- **node-pty is native.** After bumping Electron, native modules must be rebuilt
-  (`postinstall` runs `electron-builder install-app-deps`; or `npx electron-rebuild -f -w node-pty`).
+- **node-pty is native, but do not force an Electron rebuild by default.**
+  `node-pty@1.1.0` ships prebuilt binaries for the packaged Windows/macOS targets,
+  and Windows source rebuilds fail in bundled winpty/MSVC. `postinstall` only runs
+  `npm run check:node-pty` to verify the installed binary can load; packaging keeps
+  `npmRebuild: false`. If Electron or node-pty is bumped, confirm prebuild support
+  before trying `electron-builder install-app-deps` or `electron-rebuild`.
   electron-builder unpacks the `.node` binary to `app.asar.unpacked` automatically.
 - **Stale `renderer/.next` types** can cause phantom "Duplicate identifier" tsc errors —
   `rm -rf renderer/.next` and re-run.

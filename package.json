@@ -12,9 +12,10 @@
     "build:webpack": "node scripts/build-webpack.mjs",
     "build:renderer:webpack": "cd renderer && NODE_ENV=production npx next build --webpack",
     "rebuild": "./rebuild.sh",
+    "check:node-pty": "node scripts/check-node-pty.mjs",
     "test": "NODE_OPTIONS=\"--experimental-strip-types --import ./test/support/register.mjs\" node --test \"./test/**/*.test.mjs\"",
     "vibeflow": "node --experimental-strip-types --import ./test/support/register.mjs scripts/vibeflow.mjs",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node scripts/check-node-pty.mjs"
   },
   "dependencies": {
     "electron-serve": "^3.0.0",
