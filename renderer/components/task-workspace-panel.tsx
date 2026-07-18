@@ -179,7 +179,7 @@ function TaskInfo({
             </span>
           )}
           {reviewerRole && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
               reviewer: {reviewerRole.name}
             </span>
           )}
@@ -400,7 +400,7 @@ function MemorySection({ taskId }: { taskId: string }) {
                 <ul className="mt-2 space-y-1">
                   {cp.decisions.map((d, i) => (
                     <li key={i} className="flex items-start gap-1.5">
-                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-amber-600" />
+                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-warning" />
                       <span className="break-words">
                         <span className="text-foreground">{d.choice}</span>
                         {d.reason && (
@@ -521,6 +521,7 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
             oldValue={file.oldValue}
             newValue={file.newValue}
             splitView={false}
+            useDarkTheme
             compareMethod={'diffLines' as unknown as DiffMethod}
             renderContent={(source) => (
               <span className="block min-w-0 max-w-full whitespace-pre-wrap break-words">
@@ -528,6 +529,37 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
               </span>
             )}
             styles={{
+              // Colour overrides go under variables.dark (paired with the
+              // useDarkTheme prop above). Text colours read app tokens via
+              // var(); the diff +/- tints need an alpha a single CSS var
+              // can't carry, so those are whitelisted near-hardcodes aligned
+              // to --success (#4ec98a) / --destructive (#e5484d) / --primary
+              // (#4c9bf5). See PLAN §2.2 whitelist item 3.
+              variables: {
+                dark: {
+                  diffViewerBackground: 'var(--card)',
+                  diffViewerColor: 'var(--card-foreground)',
+                  addedBackground: 'rgba(78, 201, 138, 0.15)',
+                  addedColor: 'var(--foreground)',
+                  removedBackground: 'rgba(229, 72, 77, 0.15)',
+                  removedColor: 'var(--foreground)',
+                  wordAddedBackground: 'rgba(78, 201, 138, 0.32)',
+                  wordRemovedBackground: 'rgba(229, 72, 77, 0.32)',
+                  addedGutterBackground: 'rgba(78, 201, 138, 0.20)',
+                  removedGutterBackground: 'rgba(229, 72, 77, 0.20)',
+                  gutterBackground: 'var(--muted)',
+                  gutterBackgroundDark: 'var(--muted)',
+                  gutterColor: 'var(--muted-foreground)',
+                  addedGutterColor: 'var(--foreground)',
+                  removedGutterColor: 'var(--foreground)',
+                  highlightBackground: 'rgba(76, 155, 245, 0.15)',
+                  highlightGutterBackground: 'rgba(76, 155, 245, 0.20)',
+                  codeFoldGutterBackground: 'var(--muted)',
+                  codeFoldBackground: 'var(--secondary)',
+                  codeFoldContentColor: 'var(--muted-foreground)',
+                  emptyLineBackground: 'var(--card)',
+                },
+              },
               diffContainer: {
                 width: '100%',
                 maxWidth: '100%',
@@ -737,7 +769,7 @@ export function TaskWorkspacePanel({
           <IconButton
             aria-label="查看 Reviewer 終端"
             title="查看 Reviewer 終端"
-            className="text-amber-600 hover:text-amber-700"
+            className="text-warning hover:text-warning/80"
             onClick={() => onOpenReviewPanel?.(task.id)}
           >
             <Hammer className="size-4" />

@@ -143,7 +143,7 @@ function taskStatus(entry: TaskEntry): {
   if (stage === 'reviewing') {
     return {
       label: 'Reviewing',
-      className: 'text-amber-700',
+      className: 'text-warning',
       icon: <Eye className="size-3 shrink-0" />,
     }
   }
@@ -151,7 +151,7 @@ function taskStatus(entry: TaskEntry): {
   if (stage === 'revising') {
     return {
       label: 'Revising',
-      className: 'text-amber-700',
+      className: 'text-warning',
       icon: <Hammer className="size-3 shrink-0" />,
     }
   }
@@ -160,10 +160,10 @@ function taskStatus(entry: TaskEntry): {
     const planning = entry.task.progress?.planDone !== true
     return {
       label: planning ? 'Planning' : 'Running',
-      className: 'text-amber-700',
+      className: 'text-warning',
       icon: (
         <span className="flex size-3 shrink-0 items-center justify-center">
-          <span className="size-1.5 rounded-full bg-amber-700 animate-pulse" />
+          <span className="size-1.5 rounded-full bg-warning animate-pulse" />
         </span>
       ),
     }
