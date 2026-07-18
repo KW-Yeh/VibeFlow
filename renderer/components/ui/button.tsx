@@ -10,7 +10,7 @@ const buttonVariants = cva(
       variant: {
         // Apple button-primary: full-pill Action Blue CTA, no shadow.
         default: 'rounded-full bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive: 'rounded-full bg-destructive text-white hover:bg-destructive/90',
+        destructive: 'rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline:
           'rounded-lg border bg-background hover:bg-accent hover:text-accent-foreground',
         secondary: 'rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80',

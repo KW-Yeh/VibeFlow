@@ -451,7 +451,7 @@ export function KanbanBoard({
           >
             <span
               className={cn(
-                'absolute left-0 top-0.5 size-3 rounded-full bg-white ring-1 ring-border transition-transform',
+                'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform',
                 autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
               )}
             />

@@ -232,8 +232,8 @@ export function EditTaskDialog({
       }
     >
       {confirmClose && (
-        <div className="mb-4 flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
-          <span className="text-amber-800">有未儲存的變更，確定要離開？</span>
+        <div className="mb-4 flex items-center justify-between rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          <span className="text-warning">有未儲存的變更，確定要離開？</span>
           <div className="flex gap-1.5">
             <button
               type="button"

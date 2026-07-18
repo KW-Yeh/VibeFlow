@@ -56,15 +56,15 @@ export function ReviewTerminalPanel({
     // Outer overlay is CSS-hidden when nothing is selected; terminals stay mounted.
     <div className={cn('fixed inset-0 z-50 flex justify-end', !visible && 'hidden')}>
       {/* Semi-transparent backdrop: clicking it closes (hides) the panel. */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute inset-0 bg-background/80" onClick={onClose} />
 
       {/* Panel */}
       <div className="relative z-10 flex h-full w-full max-w-xl flex-col border-l bg-card text-card-foreground shadow-lg">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
-            <h2 className="flex items-center gap-1.5 truncate text-lg font-semibold">
-              <Eye className="size-4 shrink-0 text-amber-600" />
+            <h2 className="flex items-center gap-1.5 truncate text-lg font-semibold tracking-tight">
+              <Eye className="size-4 shrink-0 text-warning" />
               Reviewer
             </h2>
             {visible && (
