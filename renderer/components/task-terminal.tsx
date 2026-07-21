@@ -283,6 +283,18 @@ export function TaskTerminal({
       resizeObs.observe(containerRef.current)
       api.term.resize(sessionKey, term.cols, term.rows)
 
+      // The initial fit.fit() (above, pre-mount) ran before xterm measured its
+      // actual cell size, so cols/rows undercounted and the container stayed
+      // narrow with no further resize to correct it. Re-fit one paint later,
+      // once cell metrics are real.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (disposed || termRef.current !== term) return
+          fit.fit()
+          api.term.resize(sessionKey, term.cols, term.rows)
+        })
+      })
+
       // PTY is live: send any armed launch command (e.g. auto-run on expand).
       readyRef.current = true
       maybeLaunch()
