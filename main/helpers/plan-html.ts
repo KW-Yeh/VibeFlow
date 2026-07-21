@@ -165,23 +165,23 @@ function wrapDocument(body: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Plan</title>
 <style>
-:root { color-scheme: light; }
+:root { color-scheme: dark; }
 *, *::before, *::after { box-sizing: border-box; }
 body {
   margin: 0;
   padding: 1.25rem 1.5rem 2rem;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Helvetica, Arial, sans-serif;
   font-size: 12.5px;
   line-height: 1.65;
-  background: #ffffff;
-  color: #1d1d1f;
+  background: #191919;
+  color: #ededed;
 }
 h1, h2, h3, h4, h5, h6 {
-  color: #1d1d1f;
+  color: #ededed;
   font-weight: 600;
   margin: 1.4em 0 0.35em;
   padding-bottom: 0.25em;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
 }
 h1 { font-size: 1.35em; }
 h2 { font-size: 1.15em; }
@@ -199,24 +199,24 @@ ul.task-list li {
   padding: 0.1em 0;
 }
 ul.task-list li input[type="checkbox"] {
-  accent-color: #0066cc;
+  accent-color: #4c9bf5;
   flex-shrink: 0;
   margin: 0;
   cursor: default;
 }
-ul.task-list li.done span { color: #7a7a7a; text-decoration: line-through; }
+ul.task-list li.done span { color: #a1a1a1; text-decoration: line-through; }
 code {
-  background: #f5f5f7;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  background: #212121;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 5px;
   padding: 0.1em 0.35em;
   font-size: 0.88em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 pre {
-  background: #f5f5f7;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  background: #212121;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 8px;
   padding: 0.9em 1em;
   overflow-x: auto;
   margin: 0.75em 0;
@@ -227,17 +227,17 @@ pre code {
   padding: 0;
   font-size: inherit;
 }
-strong { color: #1d1d1f; font-weight: 600; }
+strong { color: #ededed; font-weight: 600; }
 em { font-style: italic; }
-del { color: #7a7a7a; }
-a { color: #0066cc; text-underline-offset: 2px; }
+del { color: #a1a1a1; }
+a { color: #4c9bf5; text-underline-offset: 2px; }
 a:hover { text-decoration: none; }
-hr { border: none; border-top: 1px solid #e0e0e0; margin: 1.2em 0; }
+hr { border: none; border-top: 1px solid rgba(255,255,255,0.09); margin: 1.2em 0; }
 blockquote {
-  border-left: 3px solid #e0e0e0;
+  border-left: 3px solid rgba(255,255,255,0.09);
   margin: 0.5em 0;
   padding: 0.25em 0.75em;
-  color: #7a7a7a;
+  color: #a1a1a1;
 }
 </style>
 </head>
