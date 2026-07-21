@@ -87,13 +87,14 @@ export function TaskTerminal({
   const launchWithCommand = useCallback(
     (cmd: string) => {
       const startCwd = cwdRef.current
+      const term = termRef.current
       if (!startCwd) return
       // scrollback is intentionally ignored here: maybeLaunch() restarts an
       // already-mounted terminal (new command = new phase = fresh buffer).
       readyRef.current = false
       runningCommandRef.current = true
       void window.vibeflow?.term
-        .start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey)
+        .start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey, term?.cols, term?.rows)
         .then(() => {
           readyRef.current = true
           termRef.current?.focus()
