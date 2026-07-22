@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import {
   AlertTriangle,
   Bot,
@@ -17,6 +18,7 @@ import type { SubAgentRun, SubAgentStatus } from '@/lib/types'
 
 interface SubAgentDrawerProps {
   open: boolean
+  taskId: string
   taskTitle: string
   runs: SubAgentRun[]
   onClose: () => void
@@ -136,18 +138,22 @@ function RunItem({ run, index }: { run: SubAgentRun; index: number }) {
  */
 export function SubAgentDrawer({
   open,
+  taskId,
   taskTitle,
   runs,
   onClose,
 }: SubAgentDrawerProps) {
-  if (!open) return null
   return (
-    <DialogShell
-      title="子代理"
-      onClose={onClose}
-      className="justify-end p-0"
-      contentClassName="flex h-full max-w-md flex-col rounded-none border-l"
-    >
+    <AnimatePresence>
+      {open && (
+        <DialogShell
+          key={`sub-agent-drawer-${taskId}`}
+          title="子代理"
+          onClose={onClose}
+          motionVariant="drawer"
+          className="justify-end p-0"
+          contentClassName="flex h-full max-w-md flex-col rounded-none border-l"
+        >
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
             <h2 className="flex items-center gap-1.5 truncate text-xl font-semibold">
@@ -178,6 +184,8 @@ export function SubAgentDrawer({
             </ul>
           )}
         </div>
-    </DialogShell>
+        </DialogShell>
+      )}
+    </AnimatePresence>
   )
 }

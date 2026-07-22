@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   Bot,
   ChevronDown,
@@ -17,6 +18,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
+import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
@@ -29,6 +31,11 @@ import type {
 } from '@/lib/types'
 
 type ProjectMode = 'existing' | 'new'
+
+interface AttachmentItem {
+  id: number
+  input: AttachmentInput
+}
 
 export interface NewTaskFormProps {
   creating: boolean
@@ -66,7 +73,110 @@ export interface NewTaskFormProps {
 
 // Shared field class — uniform height, subtle border, smooth focus ring
 export const F =
-  'w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
+  'w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow motion-reduce:transition-none'
+
+function InlineEnterSurface({
+  show,
+  enabled,
+  id,
+  className,
+  children,
+}: {
+  show: boolean
+  enabled: boolean
+  id?: string
+  className?: string
+  children: ReactNode
+}) {
+  const reducedMotion = useReducedMotion() ?? false
+
+  if (!show) return null
+  if (!enabled) {
+    return (
+      <div id={id} className={className}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <motion.div
+      id={id}
+      initial="hidden"
+      animate="visible"
+      variants={createEnterVariants({
+        timing: 'standard',
+        transform: { y: -4 },
+        reducedMotion,
+      })}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+function AttachmentRow({
+  attachment,
+  id,
+  creating,
+  animated,
+  onRemove,
+}: {
+  attachment: AttachmentInput
+  id: number
+  creating: boolean
+  animated: boolean
+  onRemove: (id: number) => void
+}) {
+  const isPresent = useIsPresent()
+  const reducedMotion = useReducedMotion() ?? false
+  const content = (
+    <>
+      <FileUp className="size-3.5 shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate text-sm" title={attachment.name}>
+        {attachment.name}
+      </span>
+      <IconButton
+        aria-label={`移除附件 ${attachment.name}`}
+        onClick={() => onRemove(id)}
+        disabled={creating}
+        className="p-1"
+      >
+        <X className="size-3.5" />
+      </IconButton>
+    </>
+  )
+
+  if (!animated) {
+    return (
+      <li className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+        {content}
+      </li>
+    )
+  }
+
+  return (
+    <motion.li
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      variants={createPresenceVariants({
+        timing: 'micro',
+        transform: { y: 4 },
+        reducedMotion,
+      })}
+      inert={!isPresent}
+      aria-hidden={!isPresent || undefined}
+      className={cn(
+        'flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2',
+        !isPresent && 'pointer-events-none'
+      )}
+    >
+      {content}
+    </motion.li>
+  )
+}
 
 // ── Segmented control for existing vs new project ──────────────────────────
 function ProjectTypeToggle({
@@ -87,7 +197,7 @@ function ProjectTypeToggle({
           onClick={() => onChange(m)}
           disabled={disabled}
           className={cn(
-            'flex-1 rounded-full px-3 py-1 text-base transition-colors disabled:opacity-50',
+            'flex-1 rounded-full px-3 py-1 text-base transition-colors motion-reduce:transition-none disabled:opacity-50',
             mode === m
               ? 'bg-primary font-medium text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -135,7 +245,7 @@ export function FolderPickerZone({
       type="button"
       onClick={onPick}
       disabled={disabled}
-      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
     >
       <FolderOpen className="size-5" />
       <span className="text-sm">
@@ -284,11 +394,13 @@ export function NewTaskForm({
   const [model, setModel] = useState('')
   const [executionModel, setExecutionModel] = useState('')
   const [roleId, setRoleId] = useState('')
-  const [attachments, setAttachments] = useState<AttachmentInput[]>([])
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const [isReadingAttachments, setIsReadingAttachments] = useState(false)
 
+  const advancedContentId = useId()
+  const nextAttachmentIdRef = useRef(0)
   const titleRef = useRef<HTMLInputElement>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
 
@@ -398,7 +510,7 @@ export function NewTaskForm({
       roleId,
       // Reviewer is fixed (測試工程師) and always on; no per-task selection.
       '',
-      attachments
+      attachments.map(({ input }) => input)
     )
   }
 
@@ -407,7 +519,11 @@ export function NewTaskForm({
     setIsReadingAttachments(true)
     try {
       const inputs = await filesToAttachmentInputs(files)
-      setAttachments((current) => [...current, ...inputs])
+      const items = inputs.map((input) => ({
+        id: nextAttachmentIdRef.current++,
+        input,
+      }))
+      setAttachments((current) => [...current, ...items])
     } catch (err) {
       setAttachmentError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -444,20 +560,26 @@ export function NewTaskForm({
         />
       </div>
 
-      {(loadingInfo || initializing) && (
+      <InlineEnterSurface
+        show={loadingInfo || initializing}
+        enabled={inline}
+      >
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
         </p>
-      )}
+      </InlineEnterSurface>
 
-      {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
+      <InlineEnterSurface
+        show={mode === 'existing' && Boolean(projectPath) && !loadingInfo && !isRepo}
+        enabled={inline}
+      >
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
           這個資料夾不是 Git repository，請改選一個 Git 專案。
         </p>
-      )}
+      </InlineEnterSurface>
 
-      {isRepo && hasRemote && (
+      <InlineEnterSurface show={isRepo && hasRemote} enabled={inline}>
         <label className="block space-y-1.5">
           <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
             <GitBranch className="size-3" />
@@ -476,14 +598,14 @@ export function NewTaskForm({
             ))}
           </select>
         </label>
-      )}
+      </InlineEnterSurface>
 
-      {isRepo && !hasRemote && (
+      <InlineEnterSurface show={isRepo && !hasRemote} enabled={inline}>
         <p className="text-sm text-muted-foreground">
           此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
           為基準建立本地 worktree。
         </p>
-      )}
+      </InlineEnterSurface>
     </div>
   )
 
@@ -536,19 +658,25 @@ export function NewTaskForm({
     <div className="rounded-lg border border-border/50">
       <button
         type="button"
+        aria-expanded={advancedOpen}
+        aria-controls={advancedContentId}
         onClick={() => setAdvancedOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors motion-reduce:transition-none outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span>Advanced</span>
         <ChevronDown
           className={cn(
-            'size-4 text-muted-foreground transition-transform',
+            'size-4 text-muted-foreground transition-transform motion-reduce:transform-none motion-reduce:transition-none',
             advancedOpen && 'rotate-180'
           )}
         />
       </button>
-      {advancedOpen && (
-        <div className="space-y-4 border-t border-border/50 p-4">
+      <InlineEnterSurface
+        show={advancedOpen}
+        enabled={inline}
+        id={advancedContentId}
+        className="space-y-4 border-t border-border/50 p-4"
+      >
           <AgentModelFields
             title="Planning Agent"
             agents={agents}
@@ -578,8 +706,7 @@ export function NewTaskForm({
             agentConnections={agentConnections}
           />
           {rolesCard}
-        </div>
-      )}
+      </InlineEnterSurface>
     </div>
   )
 
@@ -607,7 +734,7 @@ export function NewTaskForm({
           }
         }}
         className={cn(
-          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
           isDraggingAttachment && 'border-primary/70 bg-primary/5 text-foreground'
         )}
       >
@@ -631,31 +758,24 @@ export function NewTaskForm({
           讀取附件中…
         </p>
       )}
-      {attachments.length > 0 && (
-        <ul className="space-y-1.5">
-          {attachments.map((attachment, index) => (
-            <li
-              key={`${attachment.name}-${index}`}
-              className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
-            >
-              <FileUp className="size-3.5 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1 truncate text-sm" title={attachment.name}>
-                {attachment.name}
-              </span>
-              <IconButton
-                aria-label={`移除附件 ${attachment.name}`}
-                onClick={() =>
-                  setAttachments((current) => current.filter((_, i) => i !== index))
-                }
-                disabled={creating}
-                className="p-1"
-              >
-                <X className="size-3.5" />
-              </IconButton>
-            </li>
+      <ul className="space-y-1.5">
+        <AnimatePresence initial={false}>
+          {attachments.map(({ id, input }) => (
+            <AttachmentRow
+              key={id}
+              attachment={input}
+              id={id}
+              creating={creating}
+              animated={inline}
+              onRemove={(removeId) =>
+                setAttachments((current) =>
+                  current.filter((item) => item.id !== removeId)
+                )
+              }
+            />
           ))}
-        </ul>
-      )}
+        </AnimatePresence>
+      </ul>
       {attachmentError && (
         <p className="text-sm text-destructive">{attachmentError}</p>
       )}
@@ -853,7 +973,7 @@ export function NewTaskForm({
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={cn(
-                'rounded-full px-5 active:scale-95 transition-transform',
+                'rounded-full px-5 active:scale-95 transition-transform motion-reduce:transform-none motion-reduce:transition-none',
                 creating && 'opacity-80'
               )}
             >
@@ -912,7 +1032,7 @@ export function NewTaskForm({
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={cn(
-                'rounded-full px-5 active:scale-95 transition-transform',
+                'rounded-full px-5 active:scale-95 transition-transform motion-reduce:transform-none motion-reduce:transition-none',
                 creating && 'opacity-80'
               )}
             >

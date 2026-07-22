@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -163,8 +164,6 @@ export function SettingsDialog({
     }, 0)
   }, [agentConnections])
 
-  if (!open) return null
-
   const trimmed = text.trim()
   const isDefault = trimmed === '' || trimmed === DEFAULT_SYSTEM_PROMPT.trim()
   const canSubmit = !saving && !agentPage && !githubPage
@@ -251,7 +250,10 @@ export function SettingsDialog({
   }
 
   return (
-    <DialogShell
+    <AnimatePresence>
+      {open && (
+        <DialogShell
+          key="settings-dialog"
       title={githubPage ? '登入 GitHub CLI' : agentPage ? `連結 ${agentPage.name}` : '設定'}
       description={
         githubPage
@@ -689,6 +691,8 @@ export function SettingsDialog({
           )}
         </div>
       )}
-    </DialogShell>
+        </DialogShell>
+      )}
+    </AnimatePresence>
   )
 }

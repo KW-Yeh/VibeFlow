@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  motion,
+  useAnimationControls,
+  useReducedMotion,
+} from 'motion/react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import {
@@ -17,6 +22,7 @@ import {
   REVIEWER_ROLE,
 } from '@/lib/claude'
 import { getMemoryLaunchInfo, termKill, termSessionExists } from '@/lib/api'
+import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -82,6 +88,48 @@ interface LaunchEntry {
   nonce: number
 }
 
+interface SubAgentDrawerSnapshot {
+  taskId: string
+  taskTitle: string
+  runs: SubAgentRun[]
+}
+
+function WorkspaceSurface({
+  active,
+  children,
+}: {
+  active: boolean
+  children: ReactNode
+}) {
+  const controls = useAnimationControls()
+  const reducedMotion = useReducedMotion() ?? false
+  const variants = createEnterVariants({
+    timing: 'standard',
+    initialOpacity: 0.96,
+    transform: { x: 4 },
+    reducedMotion,
+  })
+
+  useEffect(() => {
+    controls.stop()
+    controls.set('hidden')
+    if (active) void controls.start('visible')
+  }, [active, controls, reducedMotion])
+
+  return (
+    <motion.div
+      initial="hidden"
+      animate={controls}
+      variants={variants}
+      inert={!active}
+      aria-hidden={!active || undefined}
+      className={cn('h-full', !active && 'hidden pointer-events-none')}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
 /** Derive the reviewer session key from a task id (mirrors main/helpers/pty.ts). */
 function reviewSessionKey(taskId: string): string {
   return `${taskId}:review`
@@ -121,6 +169,7 @@ export function KanbanBoard({
 
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
+  const subAgentDrawerSnapshotRef = useRef<SubAgentDrawerSnapshot | null>(null)
   // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
   // in the DOM (just hidden) so PTY state survives switching tasks.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
@@ -136,6 +185,13 @@ export function KanbanBoard({
   const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
   const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
   const executionStartedRef = useRef<Set<string>>(new Set())
+  const reducedMotion = useReducedMotion() ?? false
+  const surfaceEnterVariants = createEnterVariants({
+    timing: 'standard',
+    initialOpacity: 0.96,
+    transform: { x: 4 },
+    reducedMotion,
+  })
 
   // Built-in agent-memory server + unified db paths are constant for the app
   // session, so fetch once and reuse for every launch command.
@@ -416,6 +472,35 @@ export function KanbanBoard({
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
+  const subAgentTask = subAgentTaskId
+    ? Object.values(board)
+        .flat()
+        .find((task) => task.id === subAgentTaskId)
+    : null
+  const liveSubAgentRuns = subAgentTaskId
+    ? subAgents[subAgentTaskId]
+    : undefined
+  const liveSubAgentDrawer =
+    subAgentTaskId && subAgentTask
+      ? {
+          taskId: subAgentTaskId,
+          taskTitle: subAgentTask.title,
+          runs: liveSubAgentRuns ?? [],
+        }
+      : null
+
+  useEffect(() => {
+    if (!subAgentTaskId || !subAgentTask) return
+    subAgentDrawerSnapshotRef.current = {
+      taskId: subAgentTaskId,
+      taskTitle: subAgentTask.title,
+      runs: liveSubAgentRuns ?? [],
+    }
+  }, [subAgentTaskId, subAgentTask, liveSubAgentRuns])
+
+  const subAgentDrawerSnapshot =
+    liveSubAgentDrawer ?? subAgentDrawerSnapshotRef.current
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <main className="min-h-0 flex-1">
@@ -451,7 +536,7 @@ export function KanbanBoard({
                 if (!entry) return null
                 const isSelected = taskId === selectedTaskId
                 return (
-                  <div key={taskId} className={cn('h-full', !isSelected && 'hidden')}>
+                  <WorkspaceSurface key={taskId} active={isSelected}>
                     <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
@@ -467,12 +552,17 @@ export function KanbanBoard({
                       onOpenReviewPanel={openReviewPanel}
                       onOpenSubAgents={setSubAgentTaskId}
                     />
-                  </div>
+                  </WorkspaceSurface>
                 )
               })}
 
               {!selected && (
-                <div className="flex h-full overflow-y-auto p-8">
+                <motion.div
+                  initial="hidden"
+                  animate="visible"
+                  variants={surfaceEnterVariants}
+                  className="flex h-full overflow-y-auto p-8"
+                >
                   <div className="mx-auto w-full max-w-5xl pb-8">
                     <NewTaskForm
                       key={`${initialProjectPath ?? 'new'}:${newTaskNonce}`}
@@ -490,7 +580,7 @@ export function KanbanBoard({
                       onSubmit={onCreateTask}
                     />
                   </div>
-                </div>
+                </motion.div>
               )}
             </>
           )
@@ -499,14 +589,9 @@ export function KanbanBoard({
 
       <SubAgentDrawer
         open={subAgentTaskId !== null}
-        taskTitle={
-          (subAgentTaskId &&
-            Object.values(board)
-              .flat()
-              .find((t) => t.id === subAgentTaskId)?.title) ||
-          ''
-        }
-        runs={(subAgentTaskId && subAgents[subAgentTaskId]) || []}
+        taskId={subAgentDrawerSnapshot?.taskId ?? ''}
+        taskTitle={subAgentDrawerSnapshot?.taskTitle ?? ''}
+        runs={subAgentDrawerSnapshot?.runs ?? []}
         onClose={() => setSubAgentTaskId(null)}
       />
 

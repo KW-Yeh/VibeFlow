@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ChevronDown,
   FolderOpen,
@@ -85,6 +86,12 @@ export function EditTaskDialog({
   const [detectKey, setDetectKey] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(true)
   const [confirmClose, setConfirmClose] = useState(false)
+  const taskSnapshotRef = useRef<Task | null>(null)
+  const displayedTask = task ?? taskSnapshotRef.current
+
+  useEffect(() => {
+    if (task) taskSnapshotRef.current = task
+  }, [task])
 
   // Seed the fields from the task whenever a new one is opened.
   useEffect(() => {
@@ -124,25 +131,26 @@ export function EditTaskDialog({
     }
   }, [task, detectAgents, detectKey])
 
-  if (!task) return null
+  if (!displayedTask) return null
 
   // A worktree exists from creation; re-selecting the project rebuilds it, so it
   // is only offered while the task has never been launched (no work to lose).
-  const canEditProject = !task.launchedAt
+  const canEditProject = !displayedTask.launchedAt
 
   const isDirty =
-    title !== task.title ||
-    description !== (task.description ?? '') ||
-    roleId !== (task.roleId ?? '') ||
-    agentCli !== (task.agentCli ?? 'claude') ||
-    model !== (task.model ?? '') ||
-    executionAgentCli !== (task.executionAgentCli ?? task.agentCli ?? 'claude') ||
-    executionModel !== (task.executionModel ?? '') ||
+    title !== displayedTask.title ||
+    description !== (displayedTask.description ?? '') ||
+    roleId !== (displayedTask.roleId ?? '') ||
+    agentCli !== (displayedTask.agentCli ?? 'claude') ||
+    model !== (displayedTask.model ?? '') ||
+    executionAgentCli !== (displayedTask.executionAgentCli ?? displayedTask.agentCli ?? 'claude') ||
+    executionModel !== (displayedTask.executionModel ?? '') ||
     projectChanged ||
-    baseBranch !== (task.baseBranch ?? '')
+    baseBranch !== (displayedTask.baseBranch ?? '')
 
   const handleClose = () => {
-    if (isDirty && !saving) {
+    if (saving) return
+    if (isDirty) {
       setConfirmClose(true)
     } else {
       onClose()
@@ -162,7 +170,7 @@ export function EditTaskDialog({
     const picked = await pickFolder()
     if (!picked) return
     setProjectPath(picked)
-    setProjectChanged(picked !== task.projectPath)
+    setProjectChanged(picked !== displayedTask.projectPath)
     setGitInfo(null)
     setLoadingInfo(true)
     try {
@@ -204,7 +212,10 @@ export function EditTaskDialog({
   }
 
   return (
-    <DialogShell
+    <AnimatePresence>
+      {task && (
+        <DialogShell
+          key={displayedTask.id}
       title="編輯任務"
       description="更新任務內容、agent 與角色指派。"
       saving={saving}
@@ -334,8 +345,8 @@ export function EditTaskDialog({
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
               <Lock className="size-4 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-base" title={task.projectPath}>
-                {task.projectName ?? (task.projectPath ? basename(task.projectPath) : '—')}
+              <span className="flex-1 truncate text-base" title={displayedTask.projectPath}>
+                {displayedTask.projectName ?? (displayedTask.projectPath ? basename(displayedTask.projectPath) : '—')}
               </span>
               <span className="shrink-0 text-sm text-muted-foreground">任務已開始，鎖定</span>
             </div>
@@ -352,7 +363,7 @@ export function EditTaskDialog({
             <span>Advanced</span>
             <ChevronDown
               className={cn(
-                'size-4 text-muted-foreground transition-transform',
+                'size-4 text-muted-foreground transition-transform motion-reduce:transform-none motion-reduce:transition-none',
                 advancedOpen && 'rotate-180'
               )}
             />
@@ -436,6 +447,8 @@ export function EditTaskDialog({
           </p>
         )}
       </div>
-    </DialogShell>
+        </DialogShell>
+      )}
+    </AnimatePresence>
   )
 }
