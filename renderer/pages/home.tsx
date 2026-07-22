@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
 import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
@@ -39,6 +40,7 @@ import {
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { createEnterVariants } from '@/lib/motion'
 import type {
   AgentCliId,
   AgentConnections,
@@ -68,6 +70,7 @@ function findTask(board: BoardState, taskId: string): Task | null {
 }
 
 export default function HomePage() {
+  const reducedMotion = useReducedMotion() ?? false
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
   // Sub-agent runs are session-only (never persisted to the store), so they
   // live in their own state keyed by task id — kept out of `board` so a
@@ -574,8 +577,10 @@ export default function HomePage() {
               onDelete={handleDeleteRole}
               onClose={() => setRolesOpen(false)}
             />
-            {creating && (
-              <DialogShell
+            <AnimatePresence>
+              {creating && (
+                <DialogShell
+                  key="creating-task-dialog"
                 title="建立任務中"
                 saving
                 onClose={() => {}}
@@ -596,10 +601,13 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-              </DialogShell>
-            )}
-            {deleteProjectTarget && (
-              <DialogShell
+                </DialogShell>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {deleteProjectTarget && (
+                <DialogShell
+                  key="delete-project-dialog"
                 title="刪除專案"
                 saving={deletingProject}
                 onClose={() => {
@@ -635,7 +643,7 @@ export default function HomePage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      className="rounded-full active:scale-95"
+                      className="rounded-full active:scale-95 motion-reduce:transform-none"
                       disabled={deletingProject}
                       onClick={confirmDeleteProject}
                     >
@@ -643,22 +651,33 @@ export default function HomePage() {
                     </Button>
                   </div>
                 </div>
-              </DialogShell>
-            )}
-            {remoteShareOpen && remoteHost.roomCode && (
-              <RemoteShareDialog
-                roomCode={remoteHost.roomCode}
-                peerCount={remoteHost.peerCount}
-                onClose={() => setRemoteShareOpen(false)}
-                onStop={() => {
-                  remoteHost.stopSharing()
-                  setRemoteShareOpen(false)
-                }}
-              />
-            )}
+                </DialogShell>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {remoteShareOpen && remoteHost.roomCode && (
+                <RemoteShareDialog
+                  key="remote-share-dialog"
+                  roomCode={remoteHost.roomCode}
+                  peerCount={remoteHost.peerCount}
+                  onClose={() => setRemoteShareOpen(false)}
+                  onStop={() => {
+                    remoteHost.stopSharing()
+                    setRemoteShareOpen(false)
+                  }}
+                />
+              )}
+            </AnimatePresence>
             {updateReady && (
-              <div
+              <motion.div
                 role="status"
+                initial="hidden"
+                animate="visible"
+                variants={createEnterVariants({
+                  timing: 'standard',
+                  transform: { y: 8 },
+                  reducedMotion,
+                })}
                 className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-border/40 bg-card py-2 pl-4 pr-2 text-base shadow-lg"
               >
                 <span className="text-foreground">
@@ -669,13 +688,13 @@ export default function HomePage() {
                 </span>
                 <Button
                   size="sm"
-                  className="rounded-full active:scale-95"
+                  className="rounded-full active:scale-95 motion-reduce:transform-none"
                   disabled={relaunching}
                   onClick={handleRelaunch}
                 >
                   {relaunching ? '重新啟動中…' : '立即重啟'}
                 </Button>
-              </div>
+              </motion.div>
             )}
           </>
         ) : (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import { ChevronDown, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react'
 
 import { AvatarCropDialog } from '@/components/avatar-crop-dialog'
@@ -119,8 +120,6 @@ export function RolesDialog({
     setAvatarError(null)
   }
 
-  if (!open) return null
-
   const startCreate = () => {
     setForm(EMPTY_FORM)
     setAvatarError(null)
@@ -181,7 +180,10 @@ export function RolesDialog({
 
   return (
     <>
-    <DialogShell
+    <AnimatePresence>
+      {open && (
+        <DialogShell
+          key="roles-dialog"
       title={isEditing ? (editingId === 'new' ? '新增角色' : '編輯角色') : '角色'}
       description={isEditing ? '定義 agent 執行任務時的角色定位、職責與邊界。' : '管理新增任務與編輯任務可指派的角色。'}
       saving={saving}
@@ -191,7 +193,7 @@ export function RolesDialog({
       footer={
         !isEditing ? (
           <>
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
               關閉
             </Button>
             <Button size="sm" onClick={startCreate} className="active:scale-95">
@@ -306,7 +308,7 @@ export function RolesDialog({
                 <span>從預設角色選擇</span>
                 <ChevronDown
                   className={cn(
-                    'size-3.5 transition-transform',
+                    'size-3.5 transition-transform motion-reduce:transform-none motion-reduce:transition-none',
                     showPresets && 'rotate-180'
                   )}
                 />
@@ -456,17 +458,22 @@ export function RolesDialog({
           </div>
         )}
 
-    </DialogShell>
-    {cropSrc && (
-      <AvatarCropDialog
-        src={cropSrc}
-        onCancel={() => setCropSrc(null)}
-        onApply={(dataUrl) => {
-          setForm((f) => ({ ...f, avatar: dataUrl }))
-          setCropSrc(null)
-        }}
-      />
-    )}
+        </DialogShell>
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {open && cropSrc && (
+        <AvatarCropDialog
+          key="avatar-crop-dialog"
+          src={cropSrc}
+          onCancel={() => setCropSrc(null)}
+          onApply={(dataUrl) => {
+            setForm((f) => ({ ...f, avatar: dataUrl }))
+            setCropSrc(null)
+          }}
+        />
+      )}
+    </AnimatePresence>
     </>
   )
 }

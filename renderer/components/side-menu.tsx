@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
+import { useId, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -23,6 +24,12 @@ import { cn } from '@/lib/utils'
 import { compareTasksByNewestFirst } from '@/lib/task-order'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import {
+  createEnterVariants,
+  createPresenceVariants,
+  MOTION_DURATION,
+  MOTION_EASING,
+} from '@/lib/motion'
 import type {
   BoardState,
   ColumnId,
@@ -133,8 +140,17 @@ function projectInitials(name: string): string {
     .join('') || '?'
 }
 
-function taskStatus(entry: TaskEntry): {
-  label: string
+const COLUMN_LABEL = {
+  backlog: 'Backlog',
+  in_progress: 'In Progress',
+  done: 'Done',
+} satisfies Record<ColumnId, string>
+
+function columnLabel(column: ColumnId): string {
+  return COLUMN_LABEL[column]
+}
+
+function pipelineVisual(entry: TaskEntry): {
   className: string
   pillClassName: string
   icon: ReactNode
@@ -143,7 +159,6 @@ function taskStatus(entry: TaskEntry): {
 
   if (entry.column === 'done' || stage === 'approved') {
     return {
-      label: 'Done',
       className: 'text-primary',
       pillClassName: 'bg-primary/10 text-primary',
       icon: <span className="size-1.5 rounded-full bg-primary" />,
@@ -152,7 +167,6 @@ function taskStatus(entry: TaskEntry): {
 
   if (stage === 'blocked') {
     return {
-      label: 'Blocked',
       className: 'text-destructive',
       pillClassName: 'bg-destructive/10 text-destructive',
       icon: <AlertTriangle className="size-3 shrink-0" />,
@@ -161,7 +175,6 @@ function taskStatus(entry: TaskEntry): {
 
   if (stage === 'reviewing') {
     return {
-      label: 'Reviewing',
       className: 'text-warning',
       pillClassName: 'bg-warning/10 text-warning',
       icon: <Eye className="size-3 shrink-0" />,
@@ -170,7 +183,6 @@ function taskStatus(entry: TaskEntry): {
 
   if (stage === 'revising') {
     return {
-      label: 'Revising',
       className: 'text-warning',
       pillClassName: 'bg-warning/10 text-warning',
       icon: <Hammer className="size-3 shrink-0" />,
@@ -178,9 +190,7 @@ function taskStatus(entry: TaskEntry): {
   }
 
   if (entry.column === 'in_progress') {
-    const planning = entry.task.progress?.planDone !== true
     return {
-      label: planning ? 'Planning' : 'Running',
       className: 'text-warning',
       pillClassName: 'bg-warning/10 text-warning',
       icon: (
@@ -192,7 +202,6 @@ function taskStatus(entry: TaskEntry): {
   }
 
   return {
-    label: 'Backlog',
     className: 'text-muted-foreground',
     pillClassName: 'bg-muted-foreground/10 text-muted-foreground',
     icon: <span className="size-1.5 rounded-full bg-muted-foreground/60" />,
@@ -208,33 +217,199 @@ function TaskRow({
   selected: boolean
   onSelectTask: (id: string) => void
 }) {
-  const status = taskStatus(entry)
+  const reducedMotion = useReducedMotion() ?? false
+  const visual = pipelineVisual(entry)
 
   return (
-    <button
+    <motion.button
       type="button"
       onClick={() => onSelectTask(entry.task.id)}
+      whileTap={reducedMotion ? undefined : { scale: 0.99, opacity: 0.9 }}
+      transition={{
+        duration: reducedMotion ? 0 : MOTION_DURATION.micro,
+        ease: MOTION_EASING.enter,
+      }}
       className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-sm transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         selected
           ? 'bg-primary/15 font-medium text-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
       )}
       title={entry.task.title}
     >
-      <span className={cn('flex size-3 shrink-0 items-center justify-center', status.className)}>
-        {status.icon}
+      <span className={cn('flex size-3 shrink-0 items-center justify-center', visual.className)}>
+        {visual.icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
       <span
         className={cn(
           'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
-          status.pillClassName
+          visual.pillClassName
         )}
       >
-        {status.label}
+        {columnLabel(entry.column)}
       </span>
-    </button>
+    </motion.button>
+  )
+}
+
+function ProjectTaskList({
+  id,
+  project,
+  selectedTaskId,
+  onSelectTask,
+}: {
+  id: string
+  project: ProjectGroup
+  selectedTaskId: string | null
+  onSelectTask: (id: string) => void
+}) {
+  const isPresent = useIsPresent()
+  const reducedMotion = useReducedMotion() ?? false
+
+  return (
+    <motion.div
+      id={id}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      variants={createPresenceVariants({
+        timing: 'standard',
+        exitTiming: 'micro',
+        transform: { y: -4 },
+        reducedMotion,
+      })}
+      inert={!isPresent}
+      aria-hidden={!isPresent || undefined}
+      className={cn('ml-3 space-y-0.5', !isPresent && 'pointer-events-none')}
+    >
+      {project.tasks.length === 0 ? (
+        <p className="px-2 py-0.5 text-sm text-muted-foreground/60">尚無任務</p>
+      ) : (
+        project.tasks.map((entry) => (
+          <TaskRow
+            key={entry.task.id}
+            entry={entry}
+            selected={entry.task.id === selectedTaskId}
+            onSelectTask={onSelectTask}
+          />
+        ))
+      )}
+    </motion.div>
+  )
+}
+
+function ProjectDisclosure({
+  project,
+  expanded,
+  selectedTaskId,
+  onToggle,
+  onSelectTask,
+  onNewTaskForProject,
+  onDeleteProject,
+}: {
+  project: ProjectGroup
+  expanded: boolean
+  selectedTaskId: string | null
+  onToggle: () => void
+  onSelectTask: (id: string) => void
+  onNewTaskForProject: (projectPath: string | null) => void
+  onDeleteProject: (name: string, taskIds: string[]) => void
+}) {
+  const contentId = useId()
+
+  return (
+    <div className="rounded-md">
+      <div
+        className={cn(
+          'group flex items-center gap-1 rounded px-1 py-1 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:text-foreground',
+          project.hasSelected && 'text-foreground'
+        )}
+      >
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          title={project.path ?? project.name}
+        >
+          {expanded ? (
+            <ChevronDown className="size-3 shrink-0" />
+          ) : (
+            <ChevronRight className="size-3 shrink-0" />
+          )}
+          <FolderOpen className="size-3 shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
+        </button>
+        <span className="shrink-0 tabular-nums text-muted-foreground group-hover:hidden">
+          {project.total}
+        </span>
+        <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+          <IconButton
+            aria-label={`在 ${project.name} 新增任務`}
+            title="在此專案新增任務"
+            onClick={() => onNewTaskForProject(project.path)}
+            className="p-0.5"
+          >
+            <Plus className="size-3" />
+          </IconButton>
+          <IconButton
+            aria-label={`刪除專案 ${project.name}`}
+            title="刪除整個專案（含所有任務）"
+            tone="danger"
+            onClick={() =>
+              onDeleteProject(
+                project.name,
+                project.tasks.map((entry) => entry.task.id)
+              )
+            }
+            className="p-0.5"
+          >
+            <Trash2 className="size-3" />
+          </IconButton>
+        </div>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <ProjectTaskList
+            key={project.key}
+            id={contentId}
+            project={project}
+            selectedTaskId={selectedTaskId}
+            onSelectTask={onSelectTask}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function SidebarModeContent({
+  mode,
+  className,
+  children,
+}: {
+  mode: 'collapsed' | 'expanded'
+  className?: string
+  children: ReactNode
+}) {
+  const reducedMotion = useReducedMotion() ?? false
+
+  return (
+    <motion.div
+      key={mode}
+      initial="hidden"
+      animate="visible"
+      variants={createEnterVariants({
+        timing: 'micro',
+        reducedMotion,
+      })}
+      className={className}
+    >
+      {children}
+    </motion.div>
   )
 }
 
@@ -282,14 +457,14 @@ function UpdateBanner({
             : undefined
 
     return (
-      <div className="border-t border-border p-2">
+      <SidebarModeContent mode="collapsed" className="border-t border-border p-2">
         <button
           type="button"
           title={title}
           aria-label={title}
           disabled={!action}
           onClick={action}
-          className="mx-auto flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary outline-none transition-colors hover:bg-primary/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70"
+          className="mx-auto flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary outline-none transition-colors motion-reduce:transition-none hover:bg-primary/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70"
         >
           {update.status === 'downloaded' ? (
             <Rocket className="size-4" />
@@ -301,7 +476,7 @@ function UpdateBanner({
             <RefreshCw className="size-4" />
           )}
         </button>
-      </div>
+      </SidebarModeContent>
     )
   }
 
@@ -332,7 +507,7 @@ function UpdateBanner({
           : undefined
 
   return (
-    <div className="border-t border-border p-3">
+    <SidebarModeContent mode="expanded" className="border-t border-border p-3">
       <div className="rounded-md border border-primary/25 bg-primary/10 p-3">
         <div className="flex items-start gap-2">
           <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
@@ -357,7 +532,7 @@ function UpdateBanner({
         {update.status === 'downloading' && (
           <div className="mt-3 h-1.5 overflow-hidden rounded bg-background/80">
             <div
-              className="h-full rounded bg-primary transition-[width]"
+              className="h-full rounded bg-primary transition-[width] motion-reduce:transition-none"
               style={{ width: formatPercent(update.percent) }}
             />
           </div>
@@ -367,13 +542,13 @@ function UpdateBanner({
           type="button"
           disabled={!action}
           onClick={action}
-          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors motion-reduce:transition-none hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {update.status === 'downloading' && <RefreshCw className="size-3 animate-spin" />}
           {buttonLabel}
         </button>
       </div>
-    </div>
+    </SidebarModeContent>
   )
 }
 
@@ -397,7 +572,10 @@ function SettingsDock({
 }) {
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-1 border-t border-border p-2">
+      <SidebarModeContent
+        mode="collapsed"
+        className="flex flex-col items-center gap-1 border-t border-border p-2"
+      >
         <IconButton
           aria-label={autoMode ? '關閉 Auto Mode' : '開啟 Auto Mode'}
           title="Auto Mode：移至 In Progress 時自動執行 Agent"
@@ -435,29 +613,32 @@ function SettingsDock({
         >
           <Settings className="size-4" />
         </IconButton>
-      </div>
+      </SidebarModeContent>
     )
   }
 
   return (
-    <div className="space-y-1 border-t border-border p-2">
+    <SidebarModeContent
+      mode="expanded"
+      className="space-y-1 border-t border-border p-2"
+    >
       <button
         type="button"
         role="switch"
         aria-checked={autoMode}
         onClick={onToggleAutoMode}
         title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-accent/60 hover:text-foreground"
       >
         <span
           className={cn(
-            'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
+            'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors motion-reduce:transition-none',
             autoMode ? 'bg-primary' : 'bg-border'
           )}
         >
           <span
             className={cn(
-              'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform',
+              'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform motion-reduce:transform-none motion-reduce:transition-none',
               autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
             )}
           />
@@ -490,7 +671,7 @@ function SettingsDock({
           <Settings className="size-4" />
         </IconButton>
       </div>
-    </div>
+    </SidebarModeContent>
   )
 }
 
@@ -515,14 +696,22 @@ export function SideMenu({
   onInstallUpdate,
 }: SideMenuProps) {
   const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
+  const reducedMotion = useReducedMotion() ?? false
   const projects = groupTasksByProject(board, selectedTaskId)
+  const contentVariants = createEnterVariants({
+    timing: 'micro',
+    reducedMotion,
+  })
 
   return (
-    <aside
-      className={cn(
-        'flex flex-shrink-0 flex-col border-r border-border bg-card text-card-foreground transition-[width] duration-200',
-        collapsed ? 'w-12' : 'w-80'
-      )}
+    <motion.aside
+      initial={false}
+      animate={{ width: collapsed ? 48 : 320 }}
+      transition={{
+        duration: reducedMotion ? 0 : MOTION_DURATION.spatial,
+        ease: MOTION_EASING.enter,
+      }}
+      className="flex flex-shrink-0 flex-col overflow-x-clip border-r border-border bg-card text-card-foreground"
     >
       {/* Top: app name + collapse toggle */}
       <div
@@ -532,9 +721,14 @@ export function SideMenu({
         )}
       >
         {!collapsed && (
-          <span className="text-[15px] font-semibold tracking-tight text-foreground">
+          <motion.span
+            initial="hidden"
+            animate="visible"
+            variants={contentVariants}
+            className="text-[15px] font-semibold tracking-tight text-foreground"
+          >
             VibeFlow
-          </span>
+          </motion.span>
         )}
         <IconButton
           aria-label={collapsed ? '展開選單' : '收合選單'}
@@ -551,7 +745,13 @@ export function SideMenu({
       </div>
 
       {/* New task */}
-      <div className={cn('shrink-0 px-2 pt-3', collapsed && 'flex justify-center')}>
+      <SidebarModeContent
+        mode={collapsed ? 'collapsed' : 'expanded'}
+        className={cn(
+          'shrink-0 px-2 pt-3',
+          collapsed ? 'flex justify-center' : 'w-full'
+        )}
+      >
         {collapsed ? (
           <IconButton
             aria-label="新增任務"
@@ -571,14 +771,20 @@ export function SideMenu({
             新增任務
           </Button>
         )}
-      </div>
+      </SidebarModeContent>
 
       {/* Scrollable content */}
       <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Projects section */}
         <div className="px-2">
           {collapsed ? (
-            <div className="space-y-1">
+            <motion.div
+              key="collapsed-projects"
+              initial="hidden"
+              animate="visible"
+              variants={contentVariants}
+              className="space-y-1"
+            >
               {projects.map((project) => {
                 const firstTask = project.tasks[0]?.task
                 const selected = project.hasSelected
@@ -591,7 +797,7 @@ export function SideMenu({
                     disabled={!firstTask}
                     onClick={() => firstTask && onSelectTask(firstTask.id)}
                     className={cn(
-                      'mx-auto flex size-8 items-center justify-center rounded-md text-xs font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
+                      'mx-auto flex size-8 items-center justify-center rounded-md text-xs font-semibold transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
                       selected
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -601,9 +807,14 @@ export function SideMenu({
                   </button>
                 )
               })}
-            </div>
+            </motion.div>
           ) : (
-            <>
+            <motion.div
+              key="expanded-projects"
+              initial="hidden"
+              animate="visible"
+              variants={contentVariants}
+            >
               <div className="mb-1 flex items-center px-1">
                 <span className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Projects
@@ -621,87 +832,26 @@ export function SideMenu({
                       projectsExpanded[project.key] ?? (project.hasSelected || project.tasks.length > 0)
 
                     return (
-                      <div key={project.key} className="rounded-md">
-                        <div
-                          className={cn(
-                            'group flex items-center gap-1 rounded px-1 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground',
-                            project.hasSelected && 'text-foreground'
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setProjectsExpanded((prev) => ({
-                                ...prev,
-                                [project.key]: !expanded,
-                              }))
-                            }
-                            className="flex min-w-0 flex-1 items-center gap-1 rounded text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            title={project.path ?? project.name}
-                          >
-                            {expanded ? (
-                              <ChevronDown className="size-3 shrink-0" />
-                            ) : (
-                              <ChevronRight className="size-3 shrink-0" />
-                            )}
-                            <FolderOpen className="size-3 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate font-medium">
-                              {project.name}
-                            </span>
-                          </button>
-                          <span className="shrink-0 tabular-nums text-muted-foreground group-hover:hidden">
-                            {project.total}
-                          </span>
-                          <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-                            <IconButton
-                              aria-label={`在 ${project.name} 新增任務`}
-                              title="在此專案新增任務"
-                              onClick={() => onNewTaskForProject(project.path)}
-                              className="p-0.5"
-                            >
-                              <Plus className="size-3" />
-                            </IconButton>
-                            <IconButton
-                              aria-label={`刪除專案 ${project.name}`}
-                              title="刪除整個專案（含所有任務）"
-                              tone="danger"
-                              onClick={() =>
-                                onDeleteProject(
-                                  project.name,
-                                  project.tasks.map((e) => e.task.id)
-                                )
-                              }
-                              className="p-0.5"
-                            >
-                              <Trash2 className="size-3" />
-                            </IconButton>
-                          </div>
-                        </div>
-
-                        {expanded && (
-                          <div className="ml-3 space-y-0.5">
-                            {project.tasks.length === 0 ? (
-                              <p className="px-2 py-0.5 text-sm text-muted-foreground/60">
-                                尚無任務
-                              </p>
-                            ) : (
-                              project.tasks.map((entry) => (
-                                <TaskRow
-                                  key={entry.task.id}
-                                  entry={entry}
-                                  selected={entry.task.id === selectedTaskId}
-                                  onSelectTask={onSelectTask}
-                                />
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <ProjectDisclosure
+                        key={project.key}
+                        project={project}
+                        expanded={expanded}
+                        selectedTaskId={selectedTaskId}
+                        onToggle={() =>
+                          setProjectsExpanded((prev) => ({
+                            ...prev,
+                            [project.key]: !expanded,
+                          }))
+                        }
+                        onSelectTask={onSelectTask}
+                        onNewTaskForProject={onNewTaskForProject}
+                        onDeleteProject={onDeleteProject}
+                      />
                     )
                   })
                 )}
               </div>
-            </>
+            </motion.div>
           )}
         </div>
       </div>
@@ -723,6 +873,6 @@ export function SideMenu({
         onDownload={onDownloadUpdate}
         onInstall={onInstallUpdate}
       />
-    </aside>
+    </motion.aside>
   )
 }
