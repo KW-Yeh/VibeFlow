@@ -58,7 +58,6 @@ export interface NewTaskFormProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
     attachments: AttachmentInput[]
   ) => void
   onClose?: () => void
@@ -508,8 +507,6 @@ export function NewTaskForm({
       model,
       executionModel,
       roleId,
-      // Reviewer is fixed (測試工程師) and always on; no per-task selection.
-      '',
       attachments.map(({ input }) => input)
     )
   }

@@ -132,7 +132,6 @@ const vibeflow = {
     executionAgentCli?: AgentCliId
     executionModel?: string
     roleId?: string
-    reviewerRoleId?: string
     attachments?: AttachmentInput[]
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
@@ -141,7 +140,6 @@ const vibeflow = {
     title: string
     description?: string
     roleId?: string
-    reviewerRoleId?: string
     agentCli?: AgentCliId
     model?: string
     executionAgentCli?: AgentCliId
@@ -274,11 +272,7 @@ const vibeflow = {
 
   // Interactive terminal bridge (Phase 3).
   term: {
-    /**
-     * Start a PTY session. Pass `sessionKey` to specify the composite session
-     * identifier (defaults to `taskId` for the executor). Use
-     * `${taskId}:review` for the reviewer's independent PTY session.
-     */
+    /** Start a PTY session. `sessionKey` defaults to `taskId`. */
     start: (
       taskId: string,
       cwd: string,
@@ -294,10 +288,7 @@ const vibeflow = {
     /** Resize the session identified by `sessionKey`. */
     resize: (sessionKey: string, cols: number, rows: number): void =>
       ipcRenderer.send('pty:resize', { sessionKey, cols, rows }),
-    /**
-     * Kill a session. Pass a taskId to tear down both the executor and reviewer
-     * sessions; pass `${taskId}:review` to kill only the reviewer session.
-     */
+    /** Kill a task's PTY session (tears down the session and its watchers). */
     kill: (sessionKey: string): void => ipcRenderer.send('pty:kill', sessionKey),
     /** Whether a pinned Claude conversation already exists on disk for `cwd`. */
     sessionExists: (cwd: string, sessionId: string): Promise<boolean> =>

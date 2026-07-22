@@ -300,7 +300,6 @@ export default function HomePage() {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
     attachments: AttachmentInput[]
   ) => {
     setCreating(true)
@@ -317,7 +316,6 @@ export default function HomePage() {
         executionAgentCli,
         executionModel: executionModel || undefined,
         roleId: roleId || undefined,
-        reviewerRoleId: reviewerRoleId || undefined,
         attachments,
       })
       if (result) {
@@ -346,7 +344,6 @@ export default function HomePage() {
         title: payload.title,
         description: payload.description,
         roleId: payload.roleId || undefined,
-        reviewerRoleId: payload.reviewerRoleId || undefined,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,

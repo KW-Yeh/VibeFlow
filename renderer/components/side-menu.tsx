@@ -6,9 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
-  Eye,
   FolderOpen,
-  Hammer,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -150,42 +148,16 @@ function columnLabel(column: ColumnId): string {
   return COLUMN_LABEL[column]
 }
 
-function pipelineVisual(entry: TaskEntry): {
+function columnVisual(entry: TaskEntry): {
   className: string
   pillClassName: string
   icon: ReactNode
 } {
-  const stage = entry.task.pipeline?.stage
-
-  if (entry.column === 'done' || stage === 'approved') {
+  if (entry.column === 'done') {
     return {
       className: 'text-primary',
       pillClassName: 'bg-primary/10 text-primary',
       icon: <span className="size-1.5 rounded-full bg-primary" />,
-    }
-  }
-
-  if (stage === 'blocked') {
-    return {
-      className: 'text-destructive',
-      pillClassName: 'bg-destructive/10 text-destructive',
-      icon: <AlertTriangle className="size-3 shrink-0" />,
-    }
-  }
-
-  if (stage === 'reviewing') {
-    return {
-      className: 'text-warning',
-      pillClassName: 'bg-warning/10 text-warning',
-      icon: <Eye className="size-3 shrink-0" />,
-    }
-  }
-
-  if (stage === 'revising') {
-    return {
-      className: 'text-warning',
-      pillClassName: 'bg-warning/10 text-warning',
-      icon: <Hammer className="size-3 shrink-0" />,
     }
   }
 
@@ -218,7 +190,7 @@ function TaskRow({
   onSelectTask: (id: string) => void
 }) {
   const reducedMotion = useReducedMotion() ?? false
-  const visual = pipelineVisual(entry)
+  const visual = columnVisual(entry)
 
   return (
     <motion.button
@@ -241,14 +213,18 @@ function TaskRow({
         {visual.icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
-      <span
-        className={cn(
-          'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
-          visual.pillClassName
-        )}
-      >
-        {columnLabel(entry.column)}
-      </span>
+      {/* Done stays quiet — just the leading dot, no label pill — so In Progress
+          (amber pill) keeps the visual weight. */}
+      {entry.column !== 'done' && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
+            visual.pillClassName
+          )}
+        >
+          {columnLabel(entry.column)}
+        </span>
+      )}
     </motion.button>
   )
 }

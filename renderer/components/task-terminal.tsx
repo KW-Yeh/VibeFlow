@@ -13,11 +13,7 @@ function quoteTerminalPath(path: string): string {
 
 interface TaskTerminalProps {
   taskId: string
-  /**
-   * Composite session key passed to the PTY layer. Defaults to `taskId` for the
-   * executor terminal. Pass `${taskId}:review` for the reviewer's independent
-   * PTY pane so both can coexist without stomping each other's sessions.
-   */
+  /** Session key passed to the PTY layer. Defaults to `taskId`. */
   sessionKey?: string
   /** Working directory: the task's worktree, or the project root as fallback. */
   cwd: string | null
@@ -50,8 +46,7 @@ export function TaskTerminal({
   launchLabel,
   readOnly = false,
 }: TaskTerminalProps) {
-  // Effective session key: use the prop when provided (reviewer pane uses
-  // `${taskId}:review`), otherwise fall back to taskId (executor session).
+  // Effective session key: use the prop when provided, else fall back to taskId.
   const sessionKey = sessionKeyProp ?? taskId
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -125,8 +120,8 @@ export function TaskTerminal({
     const nonce = launchNonceRef.current
     // The initial command is spawned by the init effect, which marks its nonce —
     // so this no-ops at mount. A new nonce on a still-mounted component (e.g. a
-    // reviewer re-run, whose key carries no nonce) restarts the PTY; suppress the
-    // exit blip from killing the prior process.
+    // re-run) restarts the PTY; suppress the exit blip from killing the prior
+    // process.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
     launchWithCommand(cmd)
@@ -307,8 +302,7 @@ export function TaskTerminal({
       offData?.()
       offExit?.()
       resizeObs?.disconnect()
-      // Kill only this session's PTY (pass the composite key so the reviewer pane
-      // doesn't accidentally tear down the executor session when it unmounts).
+      // Kill this session's PTY on unmount.
       window.vibeflow?.term.kill(sessionKey)
       termRef.current?.dispose()
       termRef.current = null

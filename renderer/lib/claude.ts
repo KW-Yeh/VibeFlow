@@ -16,13 +16,13 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '評估需求完整性（規格、邊界條件、目標是否明確）。如需求不完善，進行多輪詢問直到補齊所有必要 context。確認完整後，提出初步的分工與執行計劃。',
   '',
   '### 階段二：檢視並修正計劃',
-  '將計畫提交給相關角色進行檢視（Design 評估視覺可行性、RD 評估技術可行性與時程、Code Reviewer 預審架構）。根據反饋調整計畫，直到達成共識。',
+  '將計畫提交給相關角色進行檢視（Design 評估視覺可行性、RD 評估技術可行性與時程）。根據反饋調整計畫，直到達成共識。',
   '',
   '### 階段三：執行計劃',
-  '正式指派任務給負責執行的主要角色（Design / RD / QA）開始施工。執行完畢後視情況交棒 Code Reviewer 進行代碼審查。',
+  '正式指派任務給負責執行的主要角色（Design / RD / QA）開始施工。',
   '',
   '### 階段四：驗收與修復（非必經，視需求而定）',
-  '指派 QA 進行功能測試，或指派 Design 進行畫面驗收。若有 Bug/瑕疵，回報給原執行角色修復並再次驗收；若通過則結束此階段。',
+  '依照計劃中定義的驗收標準進行驗收：指派 QA 進行功能測試，或指派 Design 進行畫面驗收。若有 Bug/瑕疵，回報給原執行角色修復並再次驗收；若通過則結束此階段。',
   '',
   '## 結案總結',
   '所有環節執行完畢且確認無後續驗收或修復工作時，進行結案總結，列出最終成果與交付狀態。',
@@ -45,9 +45,6 @@ function presetById(id: string): Role {
 /** 路卡利歐 - 專案經理: persona injected during the planning phase. */
 export const PLANNING_ROLE = presetById('49abf867')
 
-/** 倫琴貓 - 測試工程師: persona always used for the reviewer pass. */
-export const REVIEWER_ROLE = presetById('2075a355')
-
 /**
  * Progress file suffix. The agent writes to `<userData>/<workspace>.vibeflow-progress.json`
  * (see agentFilePaths) — an absolute path outside the worktree so git never sees
@@ -56,13 +53,6 @@ export const REVIEWER_ROLE = presetById('2075a355')
  * duplicated because the renderer cannot runtime-import main-process modules).
  */
 const PROGRESS_FILE = '.vibeflow-progress.json'
-
-/**
- * Reviewer verdict file suffix (separate from the executor's progress file).
- * Same userData placement as PROGRESS_FILE. Must match REVIEW_FILE in
- * main/helpers/progress.ts.
- */
-const REVIEW_FILE = '.vibeflow-review.json'
 
 /**
  * Planning artifact base name. The agent writes it to
@@ -80,23 +70,22 @@ function pathBasename(p: string): string {
 }
 
 /**
- * Absolute paths the agent writes its progress / review / plan files to. They
- * live directly in the task's workspace folder (the worktree's parent), named
- * by the worktree folder, so git never sees them and concurrent tasks never
- * collide. Mirrors main/helpers/progress.ts agentProgressPath/agentReviewPath/
- * agentPlanPath — keep both in sync. Returns null when the workspace path or
- * worktree is unknown, so callers fall back to the legacy cwd-relative names.
+ * Absolute paths the agent writes its progress / plan files to. They live
+ * directly in the task's workspace folder (the worktree's parent), named by the
+ * worktree folder, so git never sees them and concurrent tasks never collide.
+ * Mirrors main/helpers/progress.ts agentProgressPath/agentPlanPath — keep both
+ * in sync. Returns null when the workspace path or worktree is unknown, so
+ * callers fall back to the legacy cwd-relative names.
  */
 function agentFilePaths(
   worktreePath: string | undefined,
   workspacePath: string | undefined
-): { progress: string; review: string; plan: string } | null {
+): { progress: string; plan: string } | null {
   if (!worktreePath || !workspacePath) return null
   const dir = toShellPath(workspacePath)
   const ws = pathBasename(worktreePath)
   return {
     progress: `${dir}/${ws}${PROGRESS_FILE}`,
-    review: `${dir}/${ws}${REVIEW_FILE}`,
     plan: `${dir}/${ws}.${PLAN_FILE}`,
   }
 }
@@ -379,70 +368,6 @@ export function buildExecutionPrompt(
 }
 
 /**
- * Prompt body for the reviewer stage of the pipeline. The reviewer is launched
- * as a fresh, independent CLI process (not a turn in the executor's session).
- * The reviewer role persona is passed via `--append-system-prompt` at the CLI
- * level; this body carries the task context and the verdict-writing instruction
- * that the orchestrator depends on.
- */
-export function buildReviewPrompt(
-  task: Pick<Task, 'title' | 'description'>,
-  reviewFile: string = REVIEW_FILE,
-  progressFile: string = PROGRESS_FILE
-): string {
-  const lines: string[] = []
-  lines.push(`任務標題：${task.title}`)
-  const description = task.description?.trim()
-  if (description) lines.push('', '任務描述：', description)
-  lines.push(
-    '',
-    '你現在是 Code Reviewer。請審查這個 git worktree 中相對於 base branch 的所有改動（用 git diff 檢視）。',
-    '審查重點：需求達成度（對照 PLAN.md 中定義的預期成果）、正確性、邊界條件、錯誤處理、是否符合專案既有慣例與風格。',
-    '',
-    `完成審查後，請把結論寫入 ${reviewFile}（不要動 ${progressFile}），格式如下（只包含 review 物件本身）：`,
-    '{"verdict": "approve" 或 "request_changes", "summary": "一句話總結", "comments": ["需修正的具體問題", ...]}',
-    '- 沒有需要修正的問題 → verdict 設為 "approve"，comments 用空陣列。',
-    '- 有必須修正的問題 → verdict 設為 "request_changes"，comments 逐條列出每個必須修正的點。',
-    '',
-    '注意：你只負責審查，不要修改任何程式碼。',
-  )
-  return lines.join('\n')
-}
-
-/**
- * Prompt for the revise stage: fed as a new turn into the same open session to
- * address the reviewer's change requests. The executor role is folded back into
- * the body to re-frame the agent (the previous turn was the reviewer persona).
- * The recorded comments are injected so the executor knows exactly what to fix;
- * it must rewrite the progress file without a stale `review` field so the next
- * executor-complete signal fires cleanly.
- */
-export function buildRevisePrompt(
-  task: Pick<Task, 'title' | 'description'>,
-  comments: string[],
-  executorRole?: Parameters<typeof buildRolePrompt>[0],
-  progressFile: string = PROGRESS_FILE
-): string {
-  const lines: string[] = []
-  const rolePrompt = buildRolePrompt(executorRole)
-  if (rolePrompt) lines.push(rolePrompt, '')
-  lines.push(`任務標題：${task.title}`)
-  const description = task.description?.trim()
-  if (description) lines.push('', '任務描述：', description)
-  lines.push('', 'Code Reviewer 審查後要求以下修正，請逐項處理：')
-  if (comments.length > 0) {
-    for (const c of comments) lines.push(`- ${c}`)
-  } else {
-    lines.push('- （審查未列出具體項目，請依審查總結自行判斷並改善）')
-  }
-  lines.push(
-    '',
-    `修正完成後，請重新建立 ${progressFile}（只包含 summary 與 steps，不要保留 review 欄位），並把所有 steps 標記為完成。`,
-  )
-  return lines.join('\n')
-}
-
-/**
  * Deterministic, stable session UUID for a task's executor conversation,
  * derived from the task id so it survives restarts without persistence.
  * Forces the version (4) and variant (8) nibbles so `claude --session-id`
@@ -497,21 +422,6 @@ export interface LaunchOptions {
 }
 
 /**
- * Build the system prompt used for the reviewer fresh-launch. The reviewer
- * role persona is the primary content; a minimal instruction to behave as
- * code reviewer is added when no role is provided. Returns an empty string
- * when the role body is empty (so the caller can skip `--append-system-prompt`).
- */
-export function buildReviewerSystemPrompt(
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0]
-): string {
-  const rolePrompt = buildRolePrompt(reviewerRole)
-  if (rolePrompt) return rolePrompt
-  // No role configured: minimal reviewer framing so the agent doesn't drift.
-  return '你是一位嚴謹的 Code Reviewer。請審查 git worktree 中的改動，依照任務描述中的指示輸出 verdict。'
-}
-
-/**
  * Build the full shell command (terminated with a carriage return) that
  * launches Claude in auto mode with the card's prompt and the effective
  * system prompt. Written verbatim into the card's PTY.
@@ -542,13 +452,11 @@ export function buildClaudeCommand(
 /**
  * Assemble the final shell command (CR-terminated) for a given agent CLI from
  * an already-resolved system prompt and prompt body. Centralizes the per-CLI
- * differences (flags, how the system prompt is passed, session resume) so the
- * normal launch and the pipeline review/revise launches stay in sync.
+ * differences (flags, how the system prompt is passed, session resume).
  *
  * When `sessionId` is provided the Claude session is pinned:
  *   - First launch (resume=false): `--session-id <id>` creates and pins the id.
- *   - Subsequent launches (resume=true): `--resume <id>` restores that exact session,
- *     unaffected by any other session (e.g. the reviewer) that ran in the same cwd.
+ *   - Subsequent launches (resume=true): `--resume <id>` restores that exact session.
  * When `sessionId` is absent, falls back to legacy behaviour (`--continue` for
  * resume, no flag for fresh start) so other call paths are not broken.
  */
@@ -593,114 +501,6 @@ function assembleCommand(
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
   return cmd
-}
-
-/**
- * Build the full shell command (CR-terminated) that launches the reviewer as an
- * independent Claude Code process in the task's worktree. This is a fresh CLI
- * launch — NOT a turn typed into the executor's running session — so:
- *   - The reviewer role persona is passed via `--append-system-prompt`.
- *   - `--settings` is passed for the light theme only; sub-agent hooks are
- *     intentionally NOT installed to avoid collisions with the executor's
- *     .vibeflow-subagents directory.
- *   - `taskAgent(task)` is used so Codex/Gemini tasks fall through to their own
- *     assembleCommand branch (which folds the system prompt into the body).
- *
- * The verdict-writing instruction (in `buildReviewPrompt`) is always present in
- * the prompt body so the orchestrator can read the review field.
- */
-export function buildReviewCommand(
-  task: Pick<Task, 'title' | 'description' | 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel' | 'worktreePath'>,
-  workspacePath?: string,
-  // Reviewer persona; caller passes the store's (user-editable) 測試工程師 role so
-  // edits take effect. Falls back to the built-in REVIEWER_ROLE when absent.
-  reviewerRole?: Parameters<typeof buildRolePrompt>[0],
-  // Auto Mode — drives Codex authorization (see codexAutoFlag).
-  autoMode?: boolean
-): string {
-  const agent = taskExecutionAgent(task)
-  const model = taskExecutionModel(task)
-  const files = agentFilePaths(task.worktreePath, workspacePath)
-  const reviewSysPrompt = buildReviewerSystemPrompt(reviewerRole ?? REVIEWER_ROLE)
-  const prompt = buildReviewPrompt(task, files?.review, files?.progress)
-
-  if (agent === 'claude') {
-    // Fresh launch, reviewer persona via --append-system-prompt, no sub-agent hooks.
-    const settings = ` --settings ${shellQuote(buildClaudeSettings())}`
-    // Write access to the workspace folder so the reviewer can write its verdict
-    // file there (its cwd is inside the worktree).
-    const addDir = workspacePath
-      ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
-      : ''
-    const modelFlag = model ? ` --model ${model}` : ''
-    const head = `claude --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
-    const sysArg = reviewSysPrompt
-      ? ` --append-system-prompt ${shellQuote(reviewSysPrompt)}`
-      : ''
-    return `${head}${sysArg} ${shellQuote(prompt)}\r`
-  }
-  // Codex / Gemini: fold system prompt into the body (no separate flag).
-  const combined = `${reviewSysPrompt}\n\n${prompt}`
-  if (agent === 'codex') {
-    return `codex ${codexAutoFlag(autoMode)}--model ${model} ${shellQuote(combined)}\r`
-  }
-  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
-}
-
-/**
- * Build the full shell command (CR-terminated) that restarts the executor to
- * address the reviewer's comments. For Claude, `--resume <sessionId>` restores
- * the executor's pinned session by its exact UUID — the reviewer running in the
- * same worktree cwd does NOT affect which session is resumed. For Codex/Gemini a
- * fresh launch with the recorded progress folded in acts as a soft resume.
- *
- * The reviewer session must be killed before this runs (handled by the
- * orchestrator) so only the executor PTY is live during the revise stage.
- */
-export function buildReviseCommand(
-  task: Pick<
-    Task,
-    | 'id'
-    | 'title'
-    | 'description'
-    | 'progress'
-    | 'agentCli'
-    | 'model'
-    | 'executionAgentCli'
-    | 'executionModel'
-    | 'worktreePath'
-  >,
-  executorRole?: Parameters<typeof buildRolePrompt>[0],
-  comments: string[] = [],
-  workspacePath?: string,
-  // Auto Mode — drives Codex authorization (see codexAutoFlag).
-  autoMode?: boolean
-): string {
-  const agent = taskExecutionAgent(task)
-  const model = taskExecutionModel(task)
-  const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = resolveSystemPrompt(null, executorRole)
-  const basePrompt = buildRevisePrompt(task, comments, executorRole, files?.progress)
-  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
-
-  if (agent === 'claude') {
-    // Resume the executor's pinned session by its exact UUID so the reviewer
-    // session (which ran in the same cwd) does not pollute "most recent".
-    const settings = ` --settings ${shellQuote(buildClaudeSettings(task.worktreePath))}`
-    const addDir = workspacePath
-      ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
-      : ''
-    const modelFlag = model ? ` --model ${model}` : ''
-    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}`
-    const tail = `${flags} --append-system-prompt ${shellQuote(sys)} ${shellQuote(prompt)}`
-    return claudeResumeOrFresh(executorSessionId(task.id), task.worktreePath, tail)
-  }
-  // Codex / Gemini: fresh launch, recorded progress folded into the prompt.
-  const combined = `${sys}\n\n${prompt}`
-  if (agent === 'codex') {
-    return `codex ${codexAutoFlag(autoMode)}--model ${model} ${shellQuote(combined)}\r`
-  }
-  return `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
 }
 
 /** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
