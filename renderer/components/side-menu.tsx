@@ -148,20 +148,12 @@ function columnLabel(column: ColumnId): string {
   return COLUMN_LABEL[column]
 }
 
-function columnVisual(entry: TaskEntry): {
+function columnVisual(column: Exclude<ColumnId, 'done'>): {
   className: string
   pillClassName: string
   icon: ReactNode
 } {
-  if (entry.column === 'done') {
-    return {
-      className: 'text-primary',
-      pillClassName: 'bg-primary/10 text-primary',
-      icon: <span className="size-1.5 rounded-full bg-primary" />,
-    }
-  }
-
-  if (entry.column === 'in_progress') {
+  if (column === 'in_progress') {
     return {
       className: 'text-warning',
       pillClassName: 'bg-warning/10 text-warning',
@@ -190,7 +182,7 @@ function TaskRow({
   onSelectTask: (id: string) => void
 }) {
   const reducedMotion = useReducedMotion() ?? false
-  const visual = columnVisual(entry)
+  const visual = entry.column === 'done' ? null : columnVisual(entry.column)
 
   return (
     <motion.button
@@ -205,17 +197,19 @@ function TaskRow({
         'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-sm transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         selected
           ? 'bg-primary/15 font-medium text-primary'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          : entry.column === 'done'
+            ? 'text-muted-foreground/60 hover:bg-accent/50 hover:text-muted-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
       )}
       title={entry.task.title}
     >
-      <span className={cn('flex size-3 shrink-0 items-center justify-center', visual.className)}>
-        {visual.icon}
-      </span>
+      {visual ? (
+        <span className={cn('flex size-3 shrink-0 items-center justify-center', visual.className)}>
+          {visual.icon}
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
-      {/* Done stays quiet — just the leading dot, no label pill — so In Progress
-          (amber pill) keeps the visual weight. */}
-      {entry.column !== 'done' && (
+      {visual ? (
         <span
           className={cn(
             'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
@@ -224,7 +218,7 @@ function TaskRow({
         >
           {columnLabel(entry.column)}
         </span>
-      )}
+      ) : null}
     </motion.button>
   )
 }
