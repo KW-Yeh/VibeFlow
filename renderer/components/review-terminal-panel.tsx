@@ -63,12 +63,12 @@ export function ReviewTerminalPanel({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
           <div className="min-w-0">
-            <h2 className="flex items-center gap-1.5 truncate text-lg font-semibold tracking-tight">
+            <h2 className="flex items-center gap-1.5 truncate text-xl font-semibold tracking-tight">
               <Eye className="size-4 shrink-0 text-warning" />
               Reviewer
             </h2>
             {visible && (
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-sm text-muted-foreground">
                 {visible.reviewerRoleName
                   ? `${visible.reviewerRoleName} · ${visible.task.title}`
                   : visible.task.title}

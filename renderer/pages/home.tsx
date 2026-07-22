@@ -495,6 +495,18 @@ export default function HomePage() {
                 onNewTask={handleOpenNewTask}
                 onNewTaskForProject={handleNewTaskForProject}
                 onDeleteProject={handleDeleteProject}
+                autoMode={autoMode}
+                onToggleAutoMode={handleToggleAutoMode}
+                onManageRoles={handleOpenRoles}
+                onRemoteShare={() => {
+                  if (!remoteHost.roomCode) remoteHost.startSharing()
+                  setRemoteShareOpen(true)
+                }}
+                remoteActive={!!remoteHost.roomCode}
+                onOpenSettings={() => {
+                  setSettingsError(null)
+                  setSettingsOpen(true)
+                }}
                 remoteUpdate={remoteUpdate}
                 onCheckForUpdate={handleCheckForRemoteUpdate}
                 onDownloadUpdate={handleDownloadRemoteUpdate}
@@ -504,24 +516,13 @@ export default function HomePage() {
                 <KanbanBoard
                   board={board}
                   onBoardChange={handleBoardChange}
-                  onNewTask={handleOpenNewTask}
                   onEditTask={handleOpenEditTask}
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
                   autoMode={autoMode}
-                  onToggleAutoMode={handleToggleAutoMode}
                   systemPrompt={systemPrompt}
-                  onOpenSettings={() => {
-                    setSettingsError(null)
-                    setSettingsOpen(true)
-                  }}
                   roles={roles}
                   onManageRoles={handleOpenRoles}
-                  onRemoteShare={() => {
-                    if (!remoteHost.roomCode) remoteHost.startSharing()
-                    setRemoteShareOpen(true)
-                  }}
-                  remoteActive={!!remoteHost.roomCode}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   initialProjectPath={newTaskInitialProject}
@@ -586,10 +587,10 @@ export default function HomePage() {
                       <Loader2 className="size-5 animate-spin" />
                     </span>
                     <div className="min-w-0 space-y-1">
-                      <h2 className="text-base font-semibold tracking-tight">
+                      <h2 className="text-lg font-semibold tracking-tight">
                         正在建立 workspace
                       </h2>
-                      <p className="text-sm leading-6 text-muted-foreground">
+                      <p className="text-base leading-6 text-muted-foreground">
                         正在建立 git worktree、分支與任務資料。完成前請先不要切換或操作其他任務。
                       </p>
                     </div>
@@ -612,10 +613,10 @@ export default function HomePage() {
                       <AlertTriangle className="size-5" />
                     </span>
                     <div className="min-w-0 space-y-1">
-                      <h2 className="text-base font-semibold tracking-tight">
+                      <h2 className="text-lg font-semibold tracking-tight">
                         刪除專案「{deleteProjectTarget.name}」？
                       </h2>
-                      <p className="text-sm leading-6 text-muted-foreground">
+                      <p className="text-base leading-6 text-muted-foreground">
                         這會刪除此專案底下的 {deleteProjectTarget.taskIds.length}{' '}
                         個任務，包含它們的 worktree、branch 與對話紀錄。此操作無法復原。
                       </p>
@@ -658,7 +659,7 @@ export default function HomePage() {
             {updateReady && (
               <div
                 role="status"
-                className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-border/40 bg-card py-2 pl-4 pr-2 text-sm shadow-lg"
+                className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-border/40 bg-card py-2 pl-4 pr-2 text-base shadow-lg"
               >
                 <span className="text-foreground">
                   新版本已建置完成
@@ -678,7 +679,7 @@ export default function HomePage() {
             )}
           </>
         ) : (
-          <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+          <div className="flex min-h-screen items-center justify-center bg-background text-base text-muted-foreground">
             載入中…
           </div>
         )}

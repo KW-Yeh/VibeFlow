@@ -325,7 +325,7 @@ export function SettingsDialog({
             type="button"
             onClick={() => void closeGithubPage()}
             disabled={githubBusy && githubPhase !== 'success'}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <ArrowLeft className="size-4" />
             返回設定
@@ -341,7 +341,7 @@ export function SettingsDialog({
                 <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-muted-foreground" />
               )}
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="text-sm font-medium">
+                <p className="text-base font-medium">
                   {githubPhase === 'success'
                     ? 'GitHub CLI 已完成授權'
                     : githubPhase === 'error'
@@ -350,7 +350,7 @@ export function SettingsDialog({
                     ? '等待 GitHub 授權完成'
                     : '正在啟動 GitHub CLI 登入'}
                 </p>
-                <p className="text-xs leading-5 text-muted-foreground">
+                <p className="text-sm leading-5 text-muted-foreground">
                   {githubPhase === 'success'
                     ? `目前登入帳號：${githubStatus?.login ?? 'GitHub'}`
                     : githubPhase === 'error'
@@ -366,17 +366,17 @@ export function SettingsDialog({
           {(githubPhase === 'waiting' || githubCode) && (
             <div className="space-y-4">
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium">授權碼</span>
+                <span className="text-base font-medium">授權碼</span>
                 <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
                   <input
                     readOnly
                     value={githubCode}
-                    className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm tracking-wider outline-none"
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-base tracking-wider outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => void copyGithubCode()}
-                    className="flex h-9 items-center gap-1.5 px-3 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    className="flex h-9 items-center gap-1.5 px-3 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
                     disabled={!githubCode}
                   >
                     <Clipboard className="size-4" />
@@ -386,17 +386,17 @@ export function SettingsDialog({
               </label>
 
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium">登入網址</span>
+                <span className="text-base font-medium">登入網址</span>
                 <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
                   <input
                     readOnly
                     value={githubUrl}
-                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none"
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-base outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => void openExternal(githubUrl)}
-                    className="flex h-9 items-center gap-1.5 px-3 text-sm text-muted-foreground hover:text-foreground"
+                    className="flex h-9 items-center gap-1.5 px-3 text-base text-muted-foreground hover:text-foreground"
                   >
                     <ExternalLink className="size-4" />
                     開啟
@@ -412,21 +412,21 @@ export function SettingsDialog({
             type="button"
             onClick={() => setAgentPage(null)}
             disabled={connecting}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <ArrowLeft className="size-4" />
             返回設定
           </button>
 
           <div className="space-y-3">
-            <p className="text-sm leading-6 text-muted-foreground">
+            <p className="text-base leading-6 text-muted-foreground">
               為了使用 AI 功能，請綁定您的個人 API 金鑰。前往 {agentPage.platform}
               後台建立 API 金鑰並手動貼上。這是個本地執行的應用程式，因此不會將您所儲存的資訊上傳到任何地方。
             </p>
             <button
               type="button"
               onClick={() => void openExternal(agentPage.keyUrl)}
-              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              className="inline-flex items-center gap-1.5 text-base text-primary hover:underline"
             >
               前往 {agentPage.platform}
               <ExternalLink className="size-3.5" />
@@ -434,7 +434,7 @@ export function SettingsDialog({
           </div>
 
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium">API key</span>
+            <span className="text-base font-medium">API key</span>
             <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
               <input
                 name={`${agentPage.id}-api-key`}
@@ -443,7 +443,7 @@ export function SettingsDialog({
                 onChange={(e) => setApiKey(e.target.value)}
                 type={showKey ? 'text' : 'password'}
                 placeholder={selectedConnection?.connected ? '輸入新的 API key 以更新連線' : '貼上 API key'}
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none"
+                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-base outline-none"
               />
               <button
                 type="button"
@@ -457,7 +457,7 @@ export function SettingsDialog({
           </label>
 
           {(connectError || selectedConnection?.error) && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
               {connectError ?? selectedConnection?.error}
             </p>
           )}
@@ -466,11 +466,11 @@ export function SettingsDialog({
         <div className="space-y-6">
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
+              <span className="text-base font-medium">
                 工作站資料夾
                 <span
                   className={cn(
-                    'ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                    'ml-2 rounded px-1.5 py-0.5 text-xs font-medium',
                     workstation.trim() === ''
                       ? 'bg-secondary text-secondary-foreground'
                       : 'bg-primary/15 text-primary'
@@ -488,7 +488,7 @@ export function SettingsDialog({
                 value={workstation}
                 placeholder="~/Desktop"
                 onChange={(e) => setWorkstation(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
               <Button
                 variant="outline"
@@ -499,18 +499,18 @@ export function SettingsDialog({
                 選擇資料夾
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               每個任務的 worktree 與執行期檔案會建立在 {'<工作站>/<專案名>/'} 底下；留空則預設為 ~/Desktop。
             </p>
           </section>
 
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
+              <span className="text-base font-medium">
                 System Prompt
                 <span
                   className={cn(
-                    'ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                    'ml-2 rounded px-1.5 py-0.5 text-xs font-medium',
                     isDefault
                       ? 'bg-secondary text-secondary-foreground'
                       : 'bg-primary/15 text-primary'
@@ -522,7 +522,7 @@ export function SettingsDialog({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2 text-sm"
                 disabled={saving || trimmed === DEFAULT_SYSTEM_PROMPT.trim()}
                 onClick={() => setText(DEFAULT_SYSTEM_PROMPT)}
               >
@@ -537,17 +537,17 @@ export function SettingsDialog({
               onChange={(e) => setText(e.target.value)}
               rows={10}
               spellCheck={false}
-              className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm leading-5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               啟動 Agent 時會以此 prompt 作為 system prompt；進度追蹤協議會隨任務內容自動附加。
             </p>
           </section>
 
           <section className="space-y-3">
             <div>
-              <h3 className="text-sm font-medium">CLI 與帳號設定</h3>
-              <p className="text-xs text-muted-foreground">
+              <h3 className="text-base font-medium">CLI 與帳號設定</h3>
+              <p className="text-sm text-muted-foreground">
                 設定 Agent CLI 的 API key 以同步 model；設定 GitHub CLI 以支援本機 GitHub 操作。
               </p>
             </div>
@@ -568,8 +568,8 @@ export function SettingsDialog({
                       <span className="size-4 shrink-0 rounded-full border border-muted-foreground/50" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{agent.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-base font-medium">{agent.name}</p>
+                      <p className="text-sm text-muted-foreground">
                         {connected
                           ? `${connection?.models?.length ?? 0} 個 models 可用`
                           : connection?.error ?? '尚未連線'}
@@ -617,8 +617,8 @@ export function SettingsDialog({
                   <span className="size-4 shrink-0 rounded-full border border-muted-foreground/50" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">GitHub CLI</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="text-base font-medium">GitHub CLI</p>
+                  <p className="truncate text-sm text-muted-foreground">
                     {githubStatus?.authenticated
                       ? `${githubStatus.login ?? 'GitHub'} 已授權（${githubStatus.gitProtocol ?? 'https'}）`
                       : githubStatus?.installed === false
@@ -671,19 +671,19 @@ export function SettingsDialog({
               </div>
             </div>
             {githubError && !githubPage && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
                 {githubError}
               </p>
             )}
             {connectedModelCount > 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 目前共有 {connectedModelCount} 個已同步 model 可供 task 選擇。
               </p>
             )}
           </section>
 
           {error && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
               {error}
             </p>
           )}

@@ -100,7 +100,7 @@ function InfoSection({
   return (
     <section className="flex min-h-0 flex-1 flex-col border-b border-border last:border-b-0">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-4">
-        <h2 className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold uppercase text-muted-foreground">
           {icon}
           <span className="truncate">{title}</span>
         </h2>
@@ -129,29 +129,29 @@ function TaskInfo({
   const stage = task.pipeline?.stage
 
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4 text-base">
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+          <span className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
             {column === 'in_progress' ? 'In Progress' : column === 'done' ? 'Done' : 'Backlog'}
           </span>
           {complete && (
-            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
               complete
             </span>
           )}
           {stage && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {stage}
             </span>
           )}
         </div>
-        <h3 className="break-words text-base font-semibold tracking-tight text-foreground">
+        <h3 className="break-words text-lg font-semibold tracking-tight text-foreground">
           {task.title}
         </h3>
       </div>
 
-      <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-xs text-muted-foreground">
+      <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
         {task.projectName && (
           <div className="flex items-center gap-2">
             <Layers className="size-3.5 shrink-0" />
@@ -173,13 +173,13 @@ function TaskInfo({
       {(role || reviewerRole) && (
         <div className="flex flex-wrap gap-1.5">
           {role && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-[10px] font-medium text-secondary-foreground">
-              <RoleAvatar role={role} className="size-4 text-[8px]" />
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-xs font-medium text-secondary-foreground">
+              <RoleAvatar role={role} className="size-4 text-[10px]" />
               {role.name}
             </span>
           )}
           {reviewerRole && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
+            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
               reviewer: {reviewerRole.name}
             </span>
           )}
@@ -190,7 +190,7 @@ function TaskInfo({
 
       {steps.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Progress</span>
             <span className="tabular-nums">
               {doneSteps}/{steps.length}
@@ -203,9 +203,9 @@ function TaskInfo({
             />
           </div>
           {progress?.summary && (
-            <p className="text-xs text-muted-foreground">{progress.summary}</p>
+            <p className="text-sm text-muted-foreground">{progress.summary}</p>
           )}
-          <ul className="space-y-1 rounded-md bg-muted/30 p-2.5 text-xs">
+          <ul className="space-y-1 rounded-md bg-muted/30 p-2.5 text-sm">
             {steps.map((step, index) => (
               <li key={index} className="flex items-start gap-1.5">
                 {step.done ? (
@@ -226,7 +226,7 @@ function TaskInfo({
         <button
           type="button"
           onClick={() => onOpenSubAgents(task.id)}
-          className="flex w-full items-center justify-between rounded-md border border-border/70 px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex w-full items-center justify-between rounded-md border border-border/70 px-2.5 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <span>{subAgents.length} sub-agent runs</span>
           <span>View</span>
@@ -247,7 +247,7 @@ function MarkdownContent({
     <div
       className={cn(
         'prose prose-invert max-w-none break-words rounded-md bg-muted/30 p-3 text-muted-foreground',
-        compact ? 'prose-xs text-[11px] leading-snug' : 'prose-sm'
+        compact ? 'prose-xs text-xs leading-snug' : 'prose-sm'
       )}
     >
       <Suspense fallback={null}>
@@ -272,7 +272,7 @@ function MarkdownContent({
                 {...props}
                 className={cn(
                   'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
-                  compact ? 'text-[10px] leading-snug' : 'text-xs'
+                  compact ? 'text-xs leading-snug' : 'text-sm'
                 )}
               >
                 {children}
@@ -307,7 +307,7 @@ function PlanContent({ taskId }: { taskId: string }) {
 
   if (html === undefined) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" />
         讀取 plan 中…
       </div>
@@ -316,7 +316,7 @@ function PlanContent({ taskId }: { taskId: string }) {
 
   if (!html) {
     return (
-      <p className="py-10 text-center text-xs text-muted-foreground">
+      <p className="py-10 text-center text-sm text-muted-foreground">
         尚未找到 agent 產出的 PLAN.md。
       </p>
     )
@@ -368,12 +368,12 @@ function MemorySection({ taskId }: { taskId: string }) {
   return (
     <InfoSection title="Memory" icon={<History className="size-3.5" />}>
       {checkpoints === undefined ? (
-        <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+        <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           讀取 memory 中…
         </div>
       ) : checkpoints.length === 0 && related.length === 0 && links.length === 0 ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">
+        <p className="py-10 text-center text-sm text-muted-foreground">
           此任務沒有記錄任何 memory checkpoint。
         </p>
       ) : (
@@ -383,9 +383,9 @@ function MemorySection({ taskId }: { taskId: string }) {
           {checkpoints.map((cp) => (
             <li
               key={cp.id}
-              className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs"
+              className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm"
             >
-              <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
                 <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
                   #{cp.seq}
                 </span>
@@ -438,7 +438,7 @@ function MemorySection({ taskId }: { taskId: string }) {
 
         {related.length > 0 && (
           <div>
-            <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Layers className="size-3.5" />
               相關任務
             </h3>
@@ -446,14 +446,14 @@ function MemorySection({ taskId }: { taskId: string }) {
               {related.map((r) => (
                 <li
                   key={r.id}
-                  className="rounded-md border border-border/70 bg-muted/20 p-2 text-xs"
+                  className="rounded-md border border-border/70 bg-muted/20 p-2 text-sm"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={r.id}>
                       {r.title}
                     </span>
                     {r.status && (
-                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">
+                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
                         {r.status}
                       </span>
                     )}
@@ -471,7 +471,7 @@ function MemorySection({ taskId }: { taskId: string }) {
 
         {links.length > 0 && (
           <div>
-            <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <GitBranch className="size-3.5" />
               關聯
             </h3>
@@ -479,9 +479,9 @@ function MemorySection({ taskId }: { taskId: string }) {
               {links.map((l, i) => (
                 <li
                   key={`${l.direction}-${l.otherId}-${l.relation}-${i}`}
-                  className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-xs"
+                  className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-sm"
                 >
-                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
                     {l.direction === 'outgoing' ? l.relation : `← ${l.relation}`}
                   </span>
                   <span className="min-w-0 flex-1 break-words">
@@ -503,19 +503,19 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
   return (
     <div className="overflow-hidden rounded-md border border-border/70">
       <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
-        <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+        <span className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
           {STATUS_LABEL[file.status] ?? file.status}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={file.path}>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
           {file.path}
         </span>
         {file.truncated && (
-          <span className="shrink-0 text-[10px] text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             已截斷
           </span>
         )}
       </div>
-      <div className="min-w-0 max-w-full overflow-x-auto text-[11px] [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:min-w-full [&_table]:table-fixed [&_td]:min-w-0 [&_td]:align-top">
+      <div className="min-w-0 max-w-full overflow-x-auto text-xs [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:min-w-full [&_table]:table-fixed [&_td]:min-w-0 [&_td]:align-top">
         <Suspense fallback={null}>
           <ReactDiffViewer
             oldValue={file.oldValue}
@@ -660,16 +660,16 @@ function DiffSection({ taskId }: { taskId: string }) {
       }
     >
       {loading ? (
-        <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+        <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           讀取 diff 中…
         </div>
       ) : error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
           {error}
         </div>
       ) : files.length === 0 ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">
+        <p className="py-10 text-center text-sm text-muted-foreground">
           與基準分支相比沒有變更。
         </p>
       ) : (
@@ -684,8 +684,8 @@ function DiffSection({ taskId }: { taskId: string }) {
           <div className="flex min-h-0 w-full flex-col">
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-5">
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold">Git diff</h2>
-                <p className="text-xs text-muted-foreground">
+                <h2 className="text-base font-semibold">Git diff</h2>
+                <p className="text-sm text-muted-foreground">
                   {files.length} changed {files.length === 1 ? 'file' : 'files'}
                 </p>
               </div>
@@ -744,7 +744,7 @@ export function TaskWorkspacePanel({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 truncate text-sm font-semibold">{task.title}</span>
+            <span className="min-w-0 truncate text-base font-semibold">{task.title}</span>
           </div>
         </div>
 
@@ -780,14 +780,14 @@ export function TaskWorkspacePanel({
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent"
+              className="rounded px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent"
             >
               取消
             </button>
             <button
               type="button"
               onClick={() => onDelete(task.id)}
-              className="rounded px-1.5 py-1 text-xs text-destructive hover:bg-destructive/15"
+              className="rounded px-1.5 py-1 text-sm text-destructive hover:bg-destructive/15"
             >
               確認刪除
             </button>
@@ -840,7 +840,7 @@ export function TaskWorkspacePanel({
                     type="button"
                     onClick={() => setActiveTaskTab(tab)}
                     className={cn(
-                      'rounded-sm px-2 py-0.5 text-[11px]',
+                      'rounded-sm px-2 py-0.5 text-xs',
                       activeTaskTab === tab
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:text-foreground'

@@ -263,7 +263,7 @@ export function RolesDialog({
         {!isEditing ? (
           <div className="space-y-3">
             {roles.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border/50 p-6 text-center text-sm text-muted-foreground">
+              <p className="rounded-md border border-dashed border-border/50 p-6 text-center text-base text-muted-foreground">
                 還沒有任何角色 — 建立角色後即可在新增任務時指派。
               </p>
             ) : (
@@ -275,12 +275,12 @@ export function RolesDialog({
                     onClick={() => startEdit(role)}
                     className="flex flex-col items-center gap-1.5 rounded-md border bg-background p-3 text-center transition-colors hover:border-border hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    <RoleAvatar role={role} className="size-12 text-lg" />
-                    <p className="w-full truncate text-sm font-medium">
+                    <RoleAvatar role={role} className="size-12 text-xl" />
+                    <p className="w-full truncate text-base font-medium">
                       {role.name}
                     </p>
                     {role.positioning && (
-                      <p className="line-clamp-2 w-full text-xs text-muted-foreground">
+                      <p className="line-clamp-2 w-full text-sm text-muted-foreground">
                         {role.positioning}
                       </p>
                     )}
@@ -289,7 +289,7 @@ export function RolesDialog({
               </div>
             )}
             {error && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
                 {error}
               </p>
             )}
@@ -301,7 +301,7 @@ export function RolesDialog({
               <button
                 type="button"
                 onClick={() => setShowPresets((v) => !v)}
-                className="flex w-full items-center justify-between rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground hover:border-border hover:text-foreground"
+                className="flex w-full items-center justify-between rounded-md border border-dashed border-border/60 px-3 py-2 text-base text-muted-foreground hover:border-border hover:text-foreground"
               >
                 <span>從預設角色選擇</span>
                 <ChevronDown
@@ -320,11 +320,11 @@ export function RolesDialog({
                         onClick={() => applyPreset(preset)}
                         className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent"
                       >
-                        <RoleAvatar role={preset} className="size-7 text-sm" />
+                        <RoleAvatar role={preset} className="size-7 text-base" />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium">{preset.name}</p>
+                          <p className="text-base font-medium">{preset.name}</p>
                           {preset.positioning && (
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate text-sm text-muted-foreground">
                               {preset.positioning}
                             </p>
                           )}
@@ -339,7 +339,7 @@ export function RolesDialog({
             <div className="flex items-center gap-3">
               <RoleAvatar
                 role={{ name: form.name || '?', avatar: form.avatar }}
-                className="size-14 text-xl"
+                className="size-14 text-2xl"
               />
               <div className="space-y-1.5">
                 <input
@@ -380,16 +380,16 @@ export function RolesDialog({
                   }
                   placeholder="或輸入 emoji / 縮寫"
                   disabled={isImageAvatar(form.avatar)}
-                  className="w-40 rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+                  className="w-40 rounded-md border bg-background px-2.5 py-1.5 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
                 />
               </div>
             </div>
             {avatarError && (
-              <p className="text-xs text-destructive">{avatarError}</p>
+              <p className="text-sm text-destructive">{avatarError}</p>
             )}
 
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium">角色名稱</span>
+              <span className="text-base font-medium">角色名稱</span>
               <input
                 autoFocus
                 name="role-name"
@@ -399,12 +399,12 @@ export function RolesDialog({
                   setForm((f) => ({ ...f, name: e.target.value }))
                 }
                 placeholder="例如：資深前端工程師"
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium">角色定位描述</span>
+              <span className="text-base font-medium">角色定位描述</span>
               <textarea
                 name="role-positioning"
                 autoComplete="off"
@@ -414,12 +414,12 @@ export function RolesDialog({
                 }
                 rows={2}
                 placeholder="這個角色是誰、站在什麼立場思考…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium">職責內容</span>
+              <span className="text-base font-medium">職責內容</span>
               <textarea
                 name="role-responsibilities"
                 autoComplete="off"
@@ -429,12 +429,12 @@ export function RolesDialog({
                 }
                 rows={3}
                 placeholder="這個角色負責哪些事情…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-sm font-medium">執行邊界描述</span>
+              <span className="text-base font-medium">執行邊界描述</span>
               <textarea
                 name="role-boundaries"
                 autoComplete="off"
@@ -444,12 +444,12 @@ export function RolesDialog({
                 }
                 rows={3}
                 placeholder="這個角色應該 / 不應該做什麼、有哪些限制…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               />
             </label>
 
             {error && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
                 {error}
               </p>
             )}
