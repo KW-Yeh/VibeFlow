@@ -46,6 +46,60 @@ function inline(raw: string): string {
   return s
 }
 
+type TableAlignment = 'left' | 'center' | 'right' | null
+
+function splitTableRow(line: string): string[] {
+  const cells: string[] = []
+  let cell = ''
+  let inCode = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    if (char === '\\' && line[index + 1] === '|') {
+      cell += '|'
+      index += 1
+    } else if (char === '`') {
+      inCode = !inCode
+      cell += char
+    } else if (char === '|' && !inCode) {
+      cells.push(cell.trim())
+      cell = ''
+    } else {
+      cell += char
+    }
+  }
+  cells.push(cell.trim())
+
+  if (cells[0] === '') cells.shift()
+  if (cells.at(-1) === '') cells.pop()
+  return cells
+}
+
+function tableAlignments(line: string): TableAlignment[] | null {
+  const cells = splitTableRow(line)
+  if (cells.length === 0) return null
+
+  const alignments: TableAlignment[] = []
+  for (const cell of cells) {
+    if (!/^:?-{3,}:?$/.test(cell)) return null
+    alignments.push(
+      cell.startsWith(':') && cell.endsWith(':')
+        ? 'center'
+        : cell.endsWith(':')
+          ? 'right'
+          : cell.startsWith(':')
+            ? 'left'
+            : null
+    )
+  }
+  return alignments
+}
+
+function tableCell(tag: 'th' | 'td', value: string, alignment: TableAlignment): string {
+  const alignAttr = alignment ? ` style="text-align: ${alignment}"` : ''
+  return `<${tag}${alignAttr}>${inline(value)}</${tag}>`
+}
+
 // ── Block-level conversion ────────────────────────────────────────────────────
 
 function mdToHtml(md: string): string {
@@ -66,7 +120,8 @@ function mdToHtml(md: string): string {
     if (inOl) { out.push('</ol>'); inOl = false }
   }
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
     // ── Fenced code block ──────────────────────────────────────────────────
     if (/^```/.test(line)) {
       if (inCode) {
@@ -86,6 +141,44 @@ function mdToHtml(md: string): string {
 
     if (inCode) {
       codeLines.push(line)
+      continue
+    }
+
+    // ── GFM table ────────────────────────────────────────────────────────
+    const headerCells = line.includes('|') ? splitTableRow(line) : []
+    const alignments = lines[lineIndex + 1]
+      ? tableAlignments(lines[lineIndex + 1])
+      : null
+    if (
+      headerCells.length > 0 &&
+      alignments &&
+      alignments.length === headerCells.length
+    ) {
+      closeList()
+      const header = headerCells
+        .map((cell, index) => tableCell('th', cell, alignments[index]))
+        .join('')
+      const rows: string[] = []
+      lineIndex += 2
+
+      while (lineIndex < lines.length && lines[lineIndex].trim()) {
+        const cells = splitTableRow(lines[lineIndex])
+        if (!lines[lineIndex].includes('|') || cells.length === 0) break
+        while (cells.length < headerCells.length) cells.push('')
+        const row = cells
+          .slice(0, headerCells.length)
+          .map((cell, index) => tableCell('td', cell, alignments[index]))
+          .join('')
+        rows.push(`<tr>${row}</tr>`)
+        lineIndex += 1
+      }
+      lineIndex -= 1
+
+      out.push(
+        `<div class="table-scroll"><table><thead><tr>${header}</tr></thead>${
+          rows.length ? `<tbody>${rows.join('')}</tbody>` : ''
+        }</table></div>`
+      )
       continue
     }
 
@@ -239,6 +332,28 @@ blockquote {
   padding: 0.25em 0.75em;
   color: #a1a1a1;
 }
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+th, td {
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 0.45em 0.65em;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #242424;
+  color: #ededed;
+  font-weight: 600;
+}
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
 </style>
 </head>
 <body>
