@@ -374,22 +374,22 @@ export function TaskTerminal({
       )}
     >
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/50 px-2 py-1">
-        <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
           {cwd ?? '(no cwd)'}
         </span>
         {isAttaching ? (
-          <span className="shrink-0 px-2 text-[10px] text-muted-foreground">
+          <span className="shrink-0 px-2 text-xs text-muted-foreground">
             附加檔案中…
           </span>
         ) : readOnly ? (
-          <span className="shrink-0 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 px-2 text-xs uppercase tracking-wide text-muted-foreground">
             唯讀
           </span>
         ) : onLaunchRequest ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 shrink-0 px-2 text-[10px]"
+            className="h-6 shrink-0 px-2 text-xs"
             onClick={onLaunchRequest}
           >
             <Sparkles className="size-3" />

@@ -66,7 +66,7 @@ export interface NewTaskFormProps {
 
 // Shared field class — uniform height, subtle border, smooth focus ring
 export const F =
-  'w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
+  'w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow'
 
 // ── Segmented control for existing vs new project ──────────────────────────
 function ProjectTypeToggle({
@@ -87,7 +87,7 @@ function ProjectTypeToggle({
           onClick={() => onChange(m)}
           disabled={disabled}
           className={cn(
-            'flex-1 rounded-full px-3 py-1 text-sm transition-colors disabled:opacity-50',
+            'flex-1 rounded-full px-3 py-1 text-base transition-colors disabled:opacity-50',
             mode === m
               ? 'bg-primary font-medium text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -116,14 +116,14 @@ export function FolderPickerZone({
     return (
       <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
         <FolderOpen className="size-4 shrink-0 text-primary" />
-        <span className="flex-1 truncate text-sm" title={projectPath}>
+        <span className="flex-1 truncate text-base" title={projectPath}>
           {basename(projectPath)}
         </span>
         <button
           type="button"
           onClick={onPick}
           disabled={disabled}
-          className="shrink-0 text-xs text-primary hover:underline disabled:opacity-50"
+          className="shrink-0 text-sm text-primary hover:underline disabled:opacity-50"
         >
           更換
         </button>
@@ -138,7 +138,7 @@ export function FolderPickerZone({
       className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
     >
       <FolderOpen className="size-5" />
-      <span className="text-xs">
+      <span className="text-sm">
         {mode === 'new' ? '選擇空資料夾（自動初始化 Git）' : '選擇專案資料夾'}
       </span>
     </button>
@@ -179,34 +179,34 @@ export function AgentModelFields({
   const canSelectModel = modelOptions.length > 0
   return (
     <div className="space-y-3 rounded-lg border border-border/50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
       <div className="space-y-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
           <Bot className="size-3" />
           Agent CLI
         </span>
         {agents === null ? (
           detectTimedOut ? (
             <div className="space-y-1">
-              <p className="text-xs text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
+              <p className="text-sm text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
               <button
                 type="button"
                 onClick={onRetry}
-                className="text-xs text-primary underline hover:no-underline"
+                className="text-sm text-primary underline hover:no-underline"
               >
                 重新偵測
               </button>
             </div>
           ) : (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
               偵測中…
             </p>
           )
         ) : agents.length === 0 ? (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
             未偵測到 Agent CLI（claude / codex / gemini）。
           </p>
         ) : (
@@ -225,7 +225,7 @@ export function AgentModelFields({
         )}
       </div>
       <div className="space-y-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Model</span>
+        <span className="text-sm font-medium text-muted-foreground">Model</span>
         {canSelectModel ? (
           <select
             name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
@@ -241,7 +241,7 @@ export function AgentModelFields({
             ))}
           </select>
         ) : (
-          <p className="rounded-md border border-border/50 bg-muted/20 p-2 text-xs text-muted-foreground">
+          <p className="rounded-md border border-border/50 bg-muted/20 p-2 text-sm text-muted-foreground">
             尚未連線或無法取得 model list，將使用預設 model。
           </p>
         )}
@@ -422,7 +422,7 @@ export function NewTaskForm({
   const projectSettingsBlock = (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
           專案類型
         </span>
         <ProjectTypeToggle
@@ -433,7 +433,7 @@ export function NewTaskForm({
       </div>
 
       <div className="space-y-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
           {mode === 'new' ? '專案位置' : '專案資料夾'}
         </span>
         <FolderPickerZone
@@ -445,21 +445,21 @@ export function NewTaskForm({
       </div>
 
       {(loadingInfo || initializing) && (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
         </p>
       )}
 
       {mode === 'existing' && projectPath && !loadingInfo && !isRepo && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
           這個資料夾不是 Git repository，請改選一個 Git 專案。
         </p>
       )}
 
       {isRepo && hasRemote && (
         <label className="block space-y-1.5">
-          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
             <GitBranch className="size-3" />
             基準分支 (Base Branch)
           </span>
@@ -479,7 +479,7 @@ export function NewTaskForm({
       )}
 
       {isRepo && !hasRemote && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
           為基準建立本地 worktree。
         </p>
@@ -490,25 +490,25 @@ export function NewTaskForm({
   const rolesCard = (
     <div className="space-y-3 rounded-lg border border-border/50 p-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           角色設定
         </p>
         <button
           type="button"
           onClick={onManageRoles}
-          className="text-xs text-primary hover:underline"
+          className="text-sm text-primary hover:underline"
         >
           管理角色
         </button>
       </div>
       <div className="space-y-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
           <UserRound className="size-3" />
           指派角色
         </span>
         <div className="flex items-center gap-2">
           {selectedRole && (
-            <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
+            <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-xs" />
           )}
           <select
             name="role"
@@ -524,7 +524,7 @@ export function NewTaskForm({
             ))}
           </select>
         </div>
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <ShieldCheck className="size-3" />
           完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
         </p>
@@ -537,7 +537,7 @@ export function NewTaskForm({
       <button
         type="button"
         onClick={() => setAdvancedOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span>Advanced</span>
         <ChevronDown
@@ -585,7 +585,7 @@ export function NewTaskForm({
 
   const attachmentsBlock = (
     <div className="space-y-2">
-      <span className="text-sm font-medium">附件（選填）</span>
+      <span className="text-base font-medium">附件（選填）</span>
       <button
         type="button"
         disabled={creating || isReadingAttachments}
@@ -612,7 +612,7 @@ export function NewTaskForm({
         )}
       >
         <FileUp className="size-5" />
-        <span className="text-xs">拖放檔案到這裡，或點擊選擇檔案</span>
+        <span className="text-sm">拖放檔案到這裡，或點擊選擇檔案</span>
       </button>
       <input
         ref={attachmentInputRef}
@@ -626,7 +626,7 @@ export function NewTaskForm({
         }}
       />
       {isReadingAttachments && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           讀取附件中…
         </p>
@@ -639,7 +639,7 @@ export function NewTaskForm({
               className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
             >
               <FileUp className="size-3.5 shrink-0 text-primary" />
-              <span className="min-w-0 flex-1 truncate text-xs" title={attachment.name}>
+              <span className="min-w-0 flex-1 truncate text-sm" title={attachment.name}>
                 {attachment.name}
               </span>
               <IconButton
@@ -657,7 +657,7 @@ export function NewTaskForm({
         </ul>
       )}
       {attachmentError && (
-        <p className="text-xs text-destructive">{attachmentError}</p>
+        <p className="text-sm text-destructive">{attachmentError}</p>
       )}
     </div>
   )
@@ -667,7 +667,7 @@ export function NewTaskForm({
     <>
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight">新增任務</h2>
+        <h2 className="text-lg font-semibold tracking-tight">新增任務</h2>
         {onClose && (
           <IconButton
             aria-label="關閉新增任務"
@@ -685,7 +685,7 @@ export function NewTaskForm({
         <div className="mb-5 flex items-center gap-2">
           <div
             className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
+              'flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors',
               step === 1
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-primary/20 text-primary'
@@ -695,7 +695,7 @@ export function NewTaskForm({
           </div>
           <span
             className={cn(
-              'text-sm tracking-[-0.224px]',
+              'text-base tracking-[-0.224px]',
               step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
@@ -709,7 +709,7 @@ export function NewTaskForm({
           />
           <div
             className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
+              'flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors',
               step === 2
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground'
@@ -719,7 +719,7 @@ export function NewTaskForm({
           </div>
           <span
             className={cn(
-              'text-sm tracking-[-0.224px]',
+              'text-base tracking-[-0.224px]',
               step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
@@ -732,7 +732,7 @@ export function NewTaskForm({
       {inline && (
         <>
           <label className="mb-5 block space-y-1.5">
-            <span className="text-sm font-medium">任務標題</span>
+            <span className="text-base font-medium">任務標題</span>
             <input
               ref={titleRef}
               name="task-title"
@@ -740,7 +740,7 @@ export function NewTaskForm({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：實作登入頁面"
-              className={cn(F, 'text-base')}
+              className={cn(F, 'text-lg')}
             />
           </label>
 
@@ -754,7 +754,7 @@ export function NewTaskForm({
             {/* Right: description */}
             <div className="flex h-full flex-col gap-4">
               <label className="flex min-h-0 flex-1 flex-col gap-1.5">
-                <span className="text-sm font-medium">詳細描述（選填）</span>
+                <span className="text-base font-medium">詳細描述（選填）</span>
                 <textarea
                   name="task-description"
                   autoComplete="off"
@@ -767,7 +767,7 @@ export function NewTaskForm({
               </label>
 
               {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
                   {error}
                 </p>
               )}
@@ -789,7 +789,7 @@ export function NewTaskForm({
           {step === 2 && (
             <div className="space-y-4">
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium">任務標題</span>
+                <span className="text-base font-medium">任務標題</span>
                 <input
                   ref={titleRef}
                   name="task-title"
@@ -802,7 +802,7 @@ export function NewTaskForm({
               </label>
 
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium">詳細描述（選填）</span>
+                <span className="text-base font-medium">詳細描述（選填）</span>
                 <textarea
                   value={description}
                   name="task-description"
@@ -819,7 +819,7 @@ export function NewTaskForm({
               {advancedSettingsBlock}
 
               {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
                   {error}
                 </p>
               )}
@@ -832,7 +832,7 @@ export function NewTaskForm({
       {inline ? (
         <div className="mt-6 space-y-2 pb-10">
           {!isProjectReady && title.trim().length > 0 && (
-            <p className="text-right text-xs text-muted-foreground">
+            <p className="text-right text-sm text-muted-foreground">
               請先在左側選擇專案資料夾
             </p>
           )}

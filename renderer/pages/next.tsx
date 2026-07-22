@@ -9,7 +9,7 @@ export default function NextPage() {
       <Head>
         <title>Next - Nextron (with-tailwindcss)</title>
       </Head>
-      <div className="grid grid-col-1 text-2xl w-full text-center">
+      <div className="grid grid-col-1 text-3xl w-full text-center">
         <div>
           <Image
             className="ml-auto mr-auto"

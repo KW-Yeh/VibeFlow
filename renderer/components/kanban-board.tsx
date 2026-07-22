@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Settings, Smartphone, Users } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import { IconButton } from '@/components/ui/icon-button'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import {
   TaskWorkspacePanel,
@@ -39,21 +36,16 @@ import type {
 interface KanbanBoardProps {
   board: BoardState
   onBoardChange: (board: BoardState) => void
-  onNewTask: () => void
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   /** Global Auto Mode: auto-run a card's Claude execution on entering In Progress. */
   autoMode: boolean
-  onToggleAutoMode: () => void
   /** Custom system prompt for launches ('' = use the built-in default). */
   systemPrompt: string
-  onOpenSettings: () => void
   /** Roles available for assignment / display. */
   roles: Role[]
   onManageRoles: () => void
-  onRemoteShare?: () => void
-  remoteActive?: boolean
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in pipeline view). */
@@ -98,18 +90,13 @@ function reviewSessionKey(taskId: string): string {
 export function KanbanBoard({
   board,
   onBoardChange,
-  onNewTask,
   onEditTask,
   onTaskDone,
   onDeleteTask,
   autoMode,
-  onToggleAutoMode,
   systemPrompt,
-  onOpenSettings,
   roles,
   onManageRoles,
-  onRemoteShare,
-  remoteActive,
   subAgents,
   selectedTaskId,
   initialProjectPath,
@@ -431,73 +418,6 @@ export function KanbanBoard({
   const completeTask = (task: Task) => moveTask(task, 'done')
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center gap-4 border-b border-border px-6 py-4">
-        <span className="mr-auto text-[15px] font-semibold tracking-tight text-foreground">
-          VibeFlow
-        </span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={autoMode}
-          onClick={onToggleAutoMode}
-          title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
-          className="flex items-center gap-2 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-        >
-          <span
-            className={cn(
-              'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
-              autoMode ? 'bg-primary' : 'bg-border'
-            )}
-          >
-            <span
-              className={cn(
-                'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform',
-                autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
-              )}
-            />
-          </span>
-          Auto Mode
-        </button>
-        <div className="flex items-center gap-1">
-          <IconButton
-            aria-label="管理角色"
-            onClick={onManageRoles}
-            title="管理角色"
-          >
-            <Users className="size-4" />
-          </IconButton>
-          {onRemoteShare && (
-            <IconButton
-              aria-label="遠端控制"
-              onClick={onRemoteShare}
-              title="遠端控制"
-              className={cn(
-                remoteActive
-                  ? 'text-primary hover:text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <Smartphone className="size-4" />
-            </IconButton>
-          )}
-          <IconButton
-            aria-label="設定 System Prompt"
-            onClick={onOpenSettings}
-            title="設定（System Prompt）"
-          >
-            <Settings className="size-4" />
-          </IconButton>
-        </div>
-        <Button
-          size="sm"
-          className="rounded-full active:scale-95"
-          onClick={onNewTask}
-        >
-          <Plus />
-          新增任務
-        </Button>
-      </header>
-
       <main className="min-h-0 flex-1">
         {(() => {
           const allTasks: { task: Task; column: ColumnId }[] = [

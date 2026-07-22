@@ -232,20 +232,20 @@ export function EditTaskDialog({
       }
     >
       {confirmClose && (
-        <div className="mb-4 flex items-center justify-between rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+        <div className="mb-4 flex items-center justify-between rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-base">
           <span className="text-warning">有未儲存的變更，確定要離開？</span>
           <div className="flex gap-1.5">
             <button
               type="button"
               onClick={() => setConfirmClose(false)}
-              className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent"
+              className="rounded px-2 py-0.5 text-sm text-muted-foreground hover:bg-accent"
             >
               繼續編輯
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded px-2 py-0.5 text-xs text-destructive hover:bg-destructive/15"
+              className="rounded px-2 py-0.5 text-sm text-destructive hover:bg-destructive/15"
             >
               放棄離開
             </button>
@@ -255,7 +255,7 @@ export function EditTaskDialog({
 
       <div className="space-y-4">
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium">任務標題</span>
+          <span className="text-base font-medium">任務標題</span>
           <input
             autoFocus
             name="edit-task-title"
@@ -268,7 +268,7 @@ export function EditTaskDialog({
         </label>
 
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium">詳細描述（選填）</span>
+          <span className="text-base font-medium">詳細描述（選填）</span>
           <textarea
             name="edit-task-description"
             autoComplete="off"
@@ -282,7 +282,7 @@ export function EditTaskDialog({
 
         {/* Project folder — editable only before the task has launched. */}
         <div className="space-y-1.5">
-          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted-foreground">
             <FolderOpen className="size-3" />
             專案資料夾
           </span>
@@ -295,24 +295,24 @@ export function EditTaskDialog({
                 onPick={handlePickFolder}
               />
               {loadingInfo && (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-3 animate-spin" />
                   偵測 Git 狀態中…
                 </p>
               )}
               {projectChanged && !loadingInfo && !isRepo && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs">
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
                   這個資料夾不是 Git repository，請改選一個 Git 專案。
                 </p>
               )}
               {projectChanged && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   更換專案會在新專案重建 worktree（此任務尚未開始，無變更會遺失）。
                 </p>
               )}
               {projectChanged && isRepo && hasRemote && (
                 <label className="block space-y-1.5 pt-1">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                     <GitBranch className="size-3" />
                     基準分支 (Base Branch)
                   </span>
@@ -334,10 +334,10 @@ export function EditTaskDialog({
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
               <Lock className="size-4 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-sm" title={task.projectPath}>
+              <span className="flex-1 truncate text-base" title={task.projectPath}>
                 {task.projectName ?? (task.projectPath ? basename(task.projectPath) : '—')}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">任務已開始，鎖定</span>
+              <span className="shrink-0 text-sm text-muted-foreground">任務已開始，鎖定</span>
             </div>
           )}
         </div>
@@ -347,7 +347,7 @@ export function EditTaskDialog({
           <button
             type="button"
             onClick={() => setAdvancedOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <span>Advanced</span>
             <ChevronDown
@@ -384,27 +384,27 @@ export function EditTaskDialog({
 
               <div className="space-y-3 rounded-lg border border-border/50 p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     角色設定
                   </p>
                   {onManageRoles && (
                     <button
                       type="button"
                       onClick={onManageRoles}
-                      className="text-xs text-primary hover:underline"
+                      className="text-sm text-primary hover:underline"
                     >
                       管理角色
                     </button>
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                     <UserRound className="size-3" />
                     指派角色
                   </span>
                   <div className="flex items-center gap-2">
                     {selectedRole && (
-                      <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-[10px]" />
+                      <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-xs" />
                     )}
                     <select
                       name="edit-task-role"
@@ -420,7 +420,7 @@ export function EditTaskDialog({
                       ))}
                     </select>
                   </div>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <ShieldCheck className="size-3" />
                     完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
                   </p>
@@ -431,7 +431,7 @@ export function EditTaskDialog({
         </div>
 
         {error && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
             {error}
           </p>
         )}

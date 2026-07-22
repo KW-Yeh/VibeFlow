@@ -41,7 +41,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Smartphone className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">遠端控制</h2>
+            <h2 className="text-base font-semibold">遠端控制</h2>
           </div>
           <IconButton
             aria-label="關閉遠端控制"
@@ -58,19 +58,19 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
             <img src={qrDataUrl} alt="QR Code" width={200} height={200} className="rounded-md" />
           ) : (
             <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-muted">
-              <span className="text-xs text-muted-foreground">生成中…</span>
+              <span className="text-sm text-muted-foreground">生成中…</span>
             </div>
           )}
         </div>
 
         {/* Room code */}
         <div className="mb-3 text-center">
-          <p className="mb-1 text-xs text-muted-foreground">Room Code</p>
+          <p className="mb-1 text-sm text-muted-foreground">Room Code</p>
           <p className="font-mono text-3xl font-bold tracking-widest">{roomCode}</p>
         </div>
 
         {/* Connection status */}
-        <div className="mb-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+        <div className="mb-4 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
           <Wifi className="size-3" />
           <span>{peerCount > 0 ? `${peerCount} 台裝置已連線` : '等待裝置連線…'}</span>
         </div>
@@ -79,7 +79,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
         <div className="flex gap-2">
           <button
             onClick={handleCopy}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             {copied ? '已複製' : '複製連結'}

@@ -13,9 +13,14 @@ import {
   Plus,
   RefreshCw,
   Rocket,
+  Settings,
+  Smartphone,
   Trash2,
+  Users,
+  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import type {
   BoardState,
@@ -35,6 +40,13 @@ interface SideMenuProps {
   onNewTaskForProject: (projectPath: string | null) => void
   /** Delete an entire project: every listed task (worktree + branch + conversation). */
   onDeleteProject: (name: string, taskIds: string[]) => void
+  /** Global Auto Mode: auto-run a card's execution on entering In Progress. */
+  autoMode: boolean
+  onToggleAutoMode: () => void
+  onManageRoles: () => void
+  onRemoteShare?: () => void
+  remoteActive?: boolean
+  onOpenSettings: () => void
   remoteUpdate: RemoteUpdateSnapshot | null
   onCheckForUpdate: () => void
   onDownloadUpdate: () => void
@@ -50,8 +62,7 @@ type ProjectGroup = {
   key: string
   name: string
   path: string | null
-  active: TaskEntry[]
-  done: TaskEntry[]
+  tasks: TaskEntry[]
   total: number
   hasSelected: boolean
 }
@@ -92,17 +103,21 @@ function groupTasksByProject(
         key,
         name: projectName(entry.task),
         path: entry.task.projectPath ?? null,
-        active: [],
-        done: [],
+        tasks: [],
         total: 0,
         hasSelected: false,
       }
 
-    if (entry.column === 'done') group.done.push(entry)
-    else group.active.push(entry)
+    group.tasks.push(entry)
     group.total += 1
     group.hasSelected ||= entry.task.id === selectedTaskId
     groups.set(key, group)
+  }
+
+  // Backlog / in-progress / done now share one list per project, ordered by
+  // creation time so a task keeps its place regardless of its current column.
+  for (const group of groups.values()) {
+    group.tasks.sort((a, b) => (a.task.createdAt ?? 0) - (b.task.createdAt ?? 0))
   }
 
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
@@ -120,6 +135,7 @@ function projectInitials(name: string): string {
 function taskStatus(entry: TaskEntry): {
   label: string
   className: string
+  pillClassName: string
   icon: ReactNode
 } {
   const stage = entry.task.pipeline?.stage
@@ -128,6 +144,7 @@ function taskStatus(entry: TaskEntry): {
     return {
       label: 'Done',
       className: 'text-primary',
+      pillClassName: 'bg-primary/10 text-primary',
       icon: <span className="size-1.5 rounded-full bg-primary" />,
     }
   }
@@ -136,6 +153,7 @@ function taskStatus(entry: TaskEntry): {
     return {
       label: 'Blocked',
       className: 'text-destructive',
+      pillClassName: 'bg-destructive/10 text-destructive',
       icon: <AlertTriangle className="size-3 shrink-0" />,
     }
   }
@@ -144,6 +162,7 @@ function taskStatus(entry: TaskEntry): {
     return {
       label: 'Reviewing',
       className: 'text-warning',
+      pillClassName: 'bg-warning/10 text-warning',
       icon: <Eye className="size-3 shrink-0" />,
     }
   }
@@ -152,6 +171,7 @@ function taskStatus(entry: TaskEntry): {
     return {
       label: 'Revising',
       className: 'text-warning',
+      pillClassName: 'bg-warning/10 text-warning',
       icon: <Hammer className="size-3 shrink-0" />,
     }
   }
@@ -161,6 +181,7 @@ function taskStatus(entry: TaskEntry): {
     return {
       label: planning ? 'Planning' : 'Running',
       className: 'text-warning',
+      pillClassName: 'bg-warning/10 text-warning',
       icon: (
         <span className="flex size-3 shrink-0 items-center justify-center">
           <span className="size-1.5 rounded-full bg-warning animate-pulse" />
@@ -172,6 +193,7 @@ function taskStatus(entry: TaskEntry): {
   return {
     label: 'Backlog',
     className: 'text-muted-foreground',
+    pillClassName: 'bg-muted-foreground/10 text-muted-foreground',
     icon: <span className="size-1.5 rounded-full bg-muted-foreground/60" />,
   }
 }
@@ -192,7 +214,7 @@ function TaskRow({
       type="button"
       onClick={() => onSelectTask(entry.task.id)}
       className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         selected
           ? 'bg-primary/15 font-medium text-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -203,7 +225,12 @@ function TaskRow({
         {status.icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
-      <span className={cn('shrink-0 text-[11px]', status.className)}>
+      <span
+        className={cn(
+          'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
+          status.pillClassName
+        )}
+      >
         {status.label}
       </span>
     </button>
@@ -317,10 +344,10 @@ function UpdateBanner({
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-foreground">
+            <p className="text-sm font-medium text-foreground">
               {update.status === 'error' ? '更新暫時不可用' : 'VibeFlow 更新'}
             </p>
-            <p className="mt-0.5 break-words text-xs text-muted-foreground">
+            <p className="mt-0.5 break-words text-sm text-muted-foreground">
               {message}
             </p>
           </div>
@@ -339,11 +366,128 @@ function UpdateBanner({
           type="button"
           disabled={!action}
           onClick={action}
-          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {update.status === 'downloading' && <RefreshCw className="size-3 animate-spin" />}
           {buttonLabel}
         </button>
+      </div>
+    </div>
+  )
+}
+
+/** Settings-related controls docked at the bottom of the sidebar. */
+function SettingsDock({
+  collapsed,
+  autoMode,
+  onToggleAutoMode,
+  onManageRoles,
+  onRemoteShare,
+  remoteActive,
+  onOpenSettings,
+}: {
+  collapsed: boolean
+  autoMode: boolean
+  onToggleAutoMode: () => void
+  onManageRoles: () => void
+  onRemoteShare?: () => void
+  remoteActive?: boolean
+  onOpenSettings: () => void
+}) {
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-1 border-t border-border p-2">
+        <IconButton
+          aria-label={autoMode ? '關閉 Auto Mode' : '開啟 Auto Mode'}
+          title="Auto Mode：移至 In Progress 時自動執行 Agent"
+          onClick={onToggleAutoMode}
+          className={cn('size-8', autoMode && 'text-primary hover:text-primary')}
+        >
+          <Zap className={cn('size-4', autoMode && 'fill-current')} />
+        </IconButton>
+        <IconButton
+          aria-label="管理角色"
+          onClick={onManageRoles}
+          title="管理角色"
+          className="size-8"
+        >
+          <Users className="size-4" />
+        </IconButton>
+        {onRemoteShare && (
+          <IconButton
+            aria-label="遠端控制"
+            onClick={onRemoteShare}
+            title="遠端控制"
+            className={cn(
+              'size-8',
+              remoteActive && 'text-primary hover:text-primary'
+            )}
+          >
+            <Smartphone className="size-4" />
+          </IconButton>
+        )}
+        <IconButton
+          aria-label="設定 System Prompt"
+          onClick={onOpenSettings}
+          title="設定（System Prompt）"
+          className="size-8"
+        >
+          <Settings className="size-4" />
+        </IconButton>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1 border-t border-border p-2">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={autoMode}
+        onClick={onToggleAutoMode}
+        title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+      >
+        <span
+          className={cn(
+            'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors',
+            autoMode ? 'bg-primary' : 'bg-border'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform',
+              autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
+            )}
+          />
+        </span>
+        Auto Mode
+      </button>
+      <div className="flex items-center gap-1 px-1">
+        <IconButton aria-label="管理角色" onClick={onManageRoles} title="管理角色">
+          <Users className="size-4" />
+        </IconButton>
+        {onRemoteShare && (
+          <IconButton
+            aria-label="遠端控制"
+            onClick={onRemoteShare}
+            title="遠端控制"
+            className={cn(
+              remoteActive
+                ? 'text-primary hover:text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Smartphone className="size-4" />
+          </IconButton>
+        )}
+        <IconButton
+          aria-label="設定 System Prompt"
+          onClick={onOpenSettings}
+          title="設定（System Prompt）"
+        >
+          <Settings className="size-4" />
+        </IconButton>
       </div>
     </div>
   )
@@ -358,13 +502,18 @@ export function SideMenu({
   onNewTask,
   onNewTaskForProject,
   onDeleteProject,
+  autoMode,
+  onToggleAutoMode,
+  onManageRoles,
+  onRemoteShare,
+  remoteActive,
+  onOpenSettings,
   remoteUpdate,
   onCheckForUpdate,
   onDownloadUpdate,
   onInstallUpdate,
 }: SideMenuProps) {
   const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
-  const [doneExpanded, setDoneExpanded] = useState<Record<string, boolean>>({})
   const projects = groupTasksByProject(board, selectedTaskId)
 
   return (
@@ -374,8 +523,18 @@ export function SideMenu({
         collapsed ? 'w-12' : 'w-80'
       )}
     >
-      {/* Header */}
-      <div className="flex h-12 items-center justify-end border-b border-border px-3">
+      {/* Top: app name + collapse toggle */}
+      <div
+        className={cn(
+          'flex h-12 shrink-0 items-center border-b border-border px-3',
+          collapsed ? 'justify-center' : 'justify-between'
+        )}
+      >
+        {!collapsed && (
+          <span className="text-[15px] font-semibold tracking-tight text-foreground">
+            VibeFlow
+          </span>
+        )}
         <IconButton
           aria-label={collapsed ? '展開選單' : '收合選單'}
           onClick={onToggleCollapse}
@@ -390,22 +549,37 @@ export function SideMenu({
         </IconButton>
       </div>
 
+      {/* New task */}
+      <div className={cn('shrink-0 px-2 pt-3', collapsed && 'flex justify-center')}>
+        {collapsed ? (
+          <IconButton
+            aria-label="新增任務"
+            onClick={onNewTask}
+            title="新增任務"
+            className="size-8 p-1.5"
+          >
+            <Plus className="size-4" />
+          </IconButton>
+        ) : (
+          <Button
+            size="sm"
+            className="w-full rounded-md active:scale-95"
+            onClick={onNewTask}
+          >
+            <Plus />
+            新增任務
+          </Button>
+        )}
+      </div>
+
       {/* Scrollable content */}
       <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Projects section */}
         <div className="px-2">
           {collapsed ? (
             <div className="space-y-1">
-              <IconButton
-                aria-label="新增任務"
-                onClick={onNewTask}
-                title="新增任務"
-                className="mx-auto size-8 p-1.5"
-              >
-                <Plus className="size-4" />
-              </IconButton>
               {projects.map((project) => {
-                const firstTask = project.active[0]?.task ?? project.done[0]?.task
+                const firstTask = project.tasks[0]?.task
                 const selected = project.hasSelected
                 return (
                   <button
@@ -416,7 +590,7 @@ export function SideMenu({
                     disabled={!firstTask}
                     onClick={() => firstTask && onSelectTask(firstTask.id)}
                     className={cn(
-                      'mx-auto flex size-8 items-center justify-center rounded-md text-[11px] font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
+                      'mx-auto flex size-8 items-center justify-center rounded-md text-xs font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
                       selected
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -429,36 +603,27 @@ export function SideMenu({
             </div>
           ) : (
             <>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="mb-1 flex items-center px-1">
+                <span className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Projects
                 </span>
-                <IconButton
-                  aria-label="新增任務"
-                  onClick={onNewTask}
-                  title="新增任務"
-                  className="p-1"
-                >
-                  <Plus className="size-3" />
-                </IconButton>
               </div>
 
               <div className="space-y-2">
                 {projects.length === 0 ? (
-                  <p className="px-2 py-1 text-xs text-muted-foreground">
+                  <p className="px-2 py-1 text-sm text-muted-foreground">
                     尚無任務
                   </p>
                 ) : (
                   projects.map((project) => {
                     const expanded =
-                      projectsExpanded[project.key] ?? (project.hasSelected || project.active.length > 0)
-                    const doneOpen = doneExpanded[project.key] ?? false
+                      projectsExpanded[project.key] ?? (project.hasSelected || project.tasks.length > 0)
 
                     return (
                       <div key={project.key} className="rounded-md">
                         <div
                           className={cn(
-                            'group flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground',
+                            'group flex items-center gap-1 rounded px-1 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground',
                             project.hasSelected && 'text-foreground'
                           )}
                         >
@@ -500,10 +665,10 @@ export function SideMenu({
                               title="刪除整個專案（含所有任務）"
                               tone="danger"
                               onClick={() =>
-                                onDeleteProject(project.name, [
-                                  ...project.active.map((e) => e.task.id),
-                                  ...project.done.map((e) => e.task.id),
-                                ])
+                                onDeleteProject(
+                                  project.name,
+                                  project.tasks.map((e) => e.task.id)
+                                )
                               }
                               className="p-0.5"
                             >
@@ -514,12 +679,12 @@ export function SideMenu({
 
                         {expanded && (
                           <div className="ml-3 space-y-0.5">
-                            {project.active.length === 0 ? (
-                              <p className="px-2 py-0.5 text-xs text-muted-foreground/60">
-                                無進行中任務
+                            {project.tasks.length === 0 ? (
+                              <p className="px-2 py-0.5 text-sm text-muted-foreground/60">
+                                尚無任務
                               </p>
                             ) : (
-                              project.active.map((entry) => (
+                              project.tasks.map((entry) => (
                                 <TaskRow
                                   key={entry.task.id}
                                   entry={entry}
@@ -527,41 +692,6 @@ export function SideMenu({
                                   onSelectTask={onSelectTask}
                                 />
                               ))
-                            )}
-
-                            {project.done.length > 0 && (
-                              <div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDoneExpanded((prev) => ({
-                                      ...prev,
-                                      [project.key]: !doneOpen,
-                                    }))
-                                  }
-                                  className="mt-1 flex w-full items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                >
-                                  {doneOpen ? (
-                                    <ChevronDown className="size-3 shrink-0" />
-                                  ) : (
-                                    <ChevronRight className="size-3 shrink-0" />
-                                  )}
-                                  <span className="flex-1 text-left">Done</span>
-                                  <span className="tabular-nums">{project.done.length}</span>
-                                </button>
-                                {doneOpen && (
-                                  <div className="space-y-0.5">
-                                    {project.done.map((entry) => (
-                                      <TaskRow
-                                        key={entry.task.id}
-                                        entry={entry}
-                                        selected={entry.task.id === selectedTaskId}
-                                        onSelectTask={onSelectTask}
-                                      />
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
                             )}
                           </div>
                         )}
@@ -574,6 +704,16 @@ export function SideMenu({
           )}
         </div>
       </div>
+
+      <SettingsDock
+        collapsed={collapsed}
+        autoMode={autoMode}
+        onToggleAutoMode={onToggleAutoMode}
+        onManageRoles={onManageRoles}
+        onRemoteShare={onRemoteShare}
+        remoteActive={remoteActive}
+        onOpenSettings={onOpenSettings}
+      />
 
       <UpdateBanner
         update={remoteUpdate}
