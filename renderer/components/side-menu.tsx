@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { compareTasksByNewestFirst } from '@/lib/task-order'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import type {
@@ -114,10 +115,10 @@ function groupTasksByProject(
     groups.set(key, group)
   }
 
-  // Backlog / in-progress / done now share one list per project, ordered by
-  // creation time so a task keeps its place regardless of its current column.
+  // Backlog / in-progress / done now share one list per project, ordered newest
+  // to oldest so a task keeps its place regardless of its current column.
   for (const group of groups.values()) {
-    group.tasks.sort((a, b) => (a.task.createdAt ?? 0) - (b.task.createdAt ?? 0))
+    group.tasks.sort((a, b) => compareTasksByNewestFirst(a.task, b.task))
   }
 
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
