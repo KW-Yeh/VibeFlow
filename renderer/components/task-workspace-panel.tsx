@@ -15,7 +15,6 @@ import {
   FileDiff,
   GitBranch,
   GitCompare,
-  Hammer,
   History,
   Layers,
   Lightbulb,
@@ -74,7 +73,6 @@ interface TaskWorkspacePanelProps {
   task: Task
   column: ColumnId
   role: Role | null
-  reviewerRole: Role | null
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
   onRun: (task: Task) => void
@@ -82,7 +80,6 @@ interface TaskWorkspacePanelProps {
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
-  onOpenReviewPanel?: (taskId: string) => void
   onOpenSubAgents: (taskId: string) => void
 }
 
@@ -115,18 +112,16 @@ function TaskInfo({
   task,
   column,
   role,
-  reviewerRole,
   subAgents,
   onOpenSubAgents,
 }: Pick<
   TaskWorkspacePanelProps,
-  'task' | 'column' | 'role' | 'reviewerRole' | 'subAgents' | 'onOpenSubAgents'
+  'task' | 'column' | 'role' | 'subAgents' | 'onOpenSubAgents'
 >) {
   const progress = task.progress
   const steps = progress?.steps ?? []
   const doneSteps = steps.filter((step) => step.done).length
   const complete = isTaskComplete(task)
-  const stage = task.pipeline?.stage
 
   return (
     <div className="space-y-4 text-base">
@@ -138,11 +133,6 @@ function TaskInfo({
           {complete && (
             <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
               complete
-            </span>
-          )}
-          {stage && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              {stage}
             </span>
           )}
         </div>
@@ -170,19 +160,12 @@ function TaskInfo({
         )}
       </div>
 
-      {(role || reviewerRole) && (
+      {role && (
         <div className="flex flex-wrap gap-1.5">
-          {role && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-xs font-medium text-secondary-foreground">
-              <RoleAvatar role={role} className="size-4 text-[10px]" />
-              {role.name}
-            </span>
-          )}
-          {reviewerRole && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
-              reviewer: {reviewerRole.name}
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-xs font-medium text-secondary-foreground">
+            <RoleAvatar role={role} className="size-4 text-[10px]" />
+            {role.name}
+          </span>
         </div>
       )}
 
@@ -715,7 +698,6 @@ export function TaskWorkspacePanel({
   task,
   column,
   role,
-  reviewerRole,
   subAgents,
   launch,
   onRun,
@@ -723,7 +705,6 @@ export function TaskWorkspacePanel({
   onComplete,
   onEdit,
   onDelete,
-  onOpenReviewPanel,
   onOpenSubAgents,
 }: TaskWorkspacePanelProps) {
   const [activeTaskTab, setActiveTaskTab] = useState<'task' | 'plan'>('task')
@@ -765,16 +746,6 @@ export function TaskWorkspacePanel({
         <IconButton aria-label="編輯任務" title="編輯任務" onClick={() => onEdit(task.id)}>
           <Pencil className="size-4" />
         </IconButton>
-        {task.pipeline?.stage === 'reviewing' && column !== 'done' && (
-          <IconButton
-            aria-label="查看 Reviewer 終端"
-            title="查看 Reviewer 終端"
-            className="text-warning hover:text-warning/80"
-            onClick={() => onOpenReviewPanel?.(task.id)}
-          >
-            <Hammer className="size-4" />
-          </IconButton>
-        )}
         {confirmDelete ? (
           <div className="flex items-center gap-1">
             <button
@@ -857,7 +828,6 @@ export function TaskWorkspacePanel({
                 task={task}
                 column={column}
                 role={role}
-                reviewerRole={reviewerRole}
                 subAgents={subAgents}
                 onOpenSubAgents={onOpenSubAgents}
               />

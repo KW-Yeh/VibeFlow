@@ -201,12 +201,7 @@ interface WatchEntry {
   sync: () => void
 }
 
-/**
- * Active sub-agent watchers keyed by session key.
- * Executor session key = taskId; reviewer session key = `${taskId}:review`.
- * Reviewer sessions do not install sub-agent hooks, so only executor sessions
- * will ever receive updates — but the key structure is consistent with pty.ts.
- */
+/** Active sub-agent watchers keyed by session key (= taskId). */
 const watchers = new Map<string, WatchEntry>()
 
 /**

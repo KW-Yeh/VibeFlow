@@ -180,7 +180,6 @@ export async function createTask(payload: {
   executionAgentCli?: AgentCliId
   executionModel?: string
   roleId?: string
-  reviewerRoleId?: string
   attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
@@ -192,7 +191,6 @@ export async function updateTask(payload: {
   title: string
   description?: string
   roleId?: string
-  reviewerRoleId?: string
   agentCli?: AgentCliId
   model?: string
   executionAgentCli?: AgentCliId
@@ -393,10 +391,7 @@ export function onChatPhase(callback: (phase: ChatPhase) => void): () => void {
 
 // --- Terminal API wrappers (sessionKey-aware) ---
 
-/**
- * Start a PTY session. `sessionKey` defaults to `taskId` (executor session).
- * Pass `${taskId}:review` for the independent reviewer PTY.
- */
+/** Start a PTY session. `sessionKey` defaults to `taskId`. */
 export async function termStart(
   taskId: string,
   cwd: string,
@@ -417,10 +412,7 @@ export function termResize(sessionKey: string, cols: number, rows: number): void
   bridge()?.term.resize(sessionKey, cols, rows)
 }
 
-/**
- * Kill a session. Pass a plain taskId to tear down both executor and reviewer
- * sessions; pass `${taskId}:review` to kill only the reviewer session.
- */
+/** Kill a task's PTY session (tears down the session and its watchers). */
 export function termKill(sessionKey: string): void {
   bridge()?.term.kill(sessionKey)
 }

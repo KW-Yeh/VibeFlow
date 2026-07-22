@@ -14,7 +14,6 @@ type RemoteTask = {
     summary?: string
     steps: TaskProgressStep[]
   }
-  pipeline?: { stage: NonNullable<Task['pipeline']>['stage']; round: number }
   launchedAt?: number
   plan?: { html: string }
   checkpoints?: MemoryCheckpoint[]
@@ -29,9 +28,6 @@ async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask
     column,
     progress: task.progress
       ? { summary: task.progress.summary, steps: task.progress.steps }
-      : undefined,
-    pipeline: task.pipeline
-      ? { stage: task.pipeline.stage, round: task.pipeline.round }
       : undefined,
     launchedAt: task.launchedAt,
   }

@@ -10,18 +10,14 @@ import {
   TaskWorkspacePanel,
   buildWorkspaceLaunchCommand,
 } from '@/components/task-workspace-panel'
-import { ReviewTerminalPanel } from '@/components/review-terminal-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
-  buildReviseCommand,
-  buildReviewCommand,
   executorSessionId,
   isTaskComplete,
   planningSessionId,
   PLANNING_ROLE,
-  REVIEWER_ROLE,
 } from '@/lib/claude'
-import { getMemoryLaunchInfo, termKill, termSessionExists } from '@/lib/api'
+import { getMemoryLaunchInfo, termSessionExists } from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
@@ -33,7 +29,6 @@ import type {
   ColumnId,
   GitInfo,
   MemoryLaunchInfo,
-  ReviewVerdict,
   Role,
   SubAgentRun,
   Task,
@@ -54,7 +49,7 @@ interface KanbanBoardProps {
   onManageRoles: () => void
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
-  /** Currently selected task id (shown in pipeline view). */
+  /** Currently selected task id (shown in the workspace panel). */
   selectedTaskId?: string | null
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
@@ -78,7 +73,6 @@ interface KanbanBoardProps {
     model: string,
     executionModel: string,
     roleId: string,
-    reviewerRoleId: string,
     attachments: AttachmentInput[]
   ) => void
 }
@@ -130,11 +124,6 @@ function WorkspaceSurface({
   )
 }
 
-/** Derive the reviewer session key from a task id (mirrors main/helpers/pty.ts). */
-function reviewSessionKey(taskId: string): string {
-  return `${taskId}:review`
-}
-
 export function KanbanBoard({
   board,
   onBoardChange,
@@ -161,11 +150,10 @@ export function KanbanBoard({
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
 
-  // Auto-assigned personas: prefer the user's (editable) store role by id so
-  // edits in the role manager take effect; fall back to the built-in preset
-  // when the store lacks it (e.g. users predating the seeded 6-role set).
+  // Auto-assigned planning persona: prefer the user's (editable) store role by
+  // id so edits in the role manager take effect; fall back to the built-in
+  // preset when the store lacks it (e.g. users predating the seeded role set).
   const planningRole = (): Role => roleById(PLANNING_ROLE.id) ?? PLANNING_ROLE
-  const reviewerRole = (): Role => roleById(REVIEWER_ROLE.id) ?? REVIEWER_ROLE
 
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
@@ -179,11 +167,6 @@ export function KanbanBoard({
   // latest terminalLaunch without depending on a stale closure.
   const terminalLaunchRef = useRef(terminalLaunch)
   terminalLaunchRef.current = terminalLaunch
-  // Per-task armed reviewer launch command (PTY-based, unchanged).
-  const [reviewerLaunch, setReviewerLaunch] = useState<Record<string, LaunchEntry>>({})
-  // Reviewer side panel state.
-  const [reviewPanelTaskId, setReviewPanelTaskId] = useState<string | null>(null)
-  const [activeReviewerIds, setActiveReviewerIds] = useState<Set<string>>(new Set())
   const executionStartedRef = useRef<Set<string>>(new Set())
   const reducedMotion = useReducedMotion() ?? false
   const surfaceEnterVariants = createEnterVariants({
@@ -247,133 +230,10 @@ export function KanbanBoard({
   }
 
 
-  // --- Auto-assign pipeline orchestration ---
-  //
-  // Every task drives the executor → reviewer → (revise → reviewer)* → approve
-  // loop; the reviewer persona is always the fixed 測試工程師 (REVIEWER_ROLE).
-  // `firedRef` dedupes by a (stage, allDone, verdict, round) signature.
-  const firedRef = useRef<Map<string, string>>(new Map())
-  // Tracks the previous board so we can detect allDone transitions within the
-  // current session and skip auto-review advances on app restart.
-  const prevBoardRef = useRef<typeof board | null>(null)
-  // Same idea for the planning→execution handoff: only auto-start execution when
-  // planDone flips within this session, never on app reopen.
+  // Tracks the previous board for the planning→execution handoff: only
+  // auto-start execution when planDone flips within this session, never on
+  // app reopen.
   const prevExecBoardRef = useRef<typeof board | null>(null)
-
-  const killReviewerSession = (taskId: string) => {
-    termKill(reviewSessionKey(taskId))
-    setReviewerLaunch((prev) => {
-      if (!prev[taskId]) return prev
-      const next = { ...prev }
-      delete next[taskId]
-      return next
-    })
-    setActiveReviewerIds((prev) => {
-      if (!prev.has(taskId)) return prev
-      const next = new Set(prev)
-      next.delete(taskId)
-      return next
-    })
-    setReviewPanelTaskId((prev) => (prev === taskId ? null : prev))
-  }
-
-  const armReviewer = (task: Task) => {
-    markMounted(task.id)
-    setReviewerLaunch((prev) => ({
-      ...prev,
-      [task.id]: {
-        command: buildReviewCommand(
-          task,
-          task.workspacePath,
-          reviewerRole(),
-          autoMode
-        ),
-        nonce: (prev[task.id]?.nonce ?? 0) + 1,
-      },
-    }))
-    setActiveReviewerIds((prev) =>
-      prev.has(task.id) ? prev : new Set(prev).add(task.id)
-    )
-  }
-
-  const openReviewPanel = (taskId: string) => {
-    setActiveReviewerIds((prev) =>
-      prev.has(taskId) ? prev : new Set(prev).add(taskId)
-    )
-    setReviewPanelTaskId(taskId)
-  }
-
-  const advanceToReview = (task: Task) => {
-    const next = { ...task.pipeline!, stage: 'reviewing' as const }
-    patchTask(task.id, { pipeline: next })
-    armReviewer(task)
-    setReviewPanelTaskId(task.id)
-  }
-
-  const advanceToRevise = (task: Task, review: ReviewVerdict) => {
-    const next = {
-      ...task.pipeline!,
-      stage: 'revising' as const,
-      round: task.pipeline!.round + 1,
-      lastReview: review,
-    }
-    patchTask(task.id, { pipeline: next })
-    killReviewerSession(task.id)
-    armTerminalCommand(
-      task.id,
-      buildReviseCommand(
-        task,
-        roleById(task.roleId) ?? undefined,
-        review.comments,
-        task.workspacePath,
-        autoMode
-      )
-    )
-  }
-
-  useEffect(() => {
-    if (!autoMode) return
-    const prevBoard = prevBoardRef.current
-    prevBoardRef.current = board
-    for (const task of board.in_progress) {
-      const p = task.pipeline
-      if (!p) continue
-      if (p.stage === 'approved' || p.stage === 'blocked') continue
-
-      const allDone = isTaskComplete(task)
-      const review = task.progress?.review
-      const sig = `${p.stage}|${allDone}|${review?.verdict ?? 'none'}|${p.round}`
-      if (firedRef.current.get(task.id) === sig) continue
-
-      if ((p.stage === 'developing' || p.stage === 'revising') && allDone && !review) {
-        // Only advance to review when allDone just became true in this session.
-        // On app restart prevBoard is null/empty, so tasks already done in a prior
-        // session are skipped — preventing a spurious re-review on reopen.
-        const prevTask = prevBoard?.in_progress.find((t) => t.id === task.id)
-        if (!prevTask || isTaskComplete(prevTask)) continue
-        firedRef.current.set(task.id, sig)
-        advanceToReview(task)
-        break
-      }
-      if (p.stage === 'reviewing' && review) {
-        firedRef.current.set(task.id, sig)
-        if (review.verdict === 'approve') {
-          killReviewerSession(task.id)
-          patchTask(task.id, {
-            pipeline: { ...p, stage: 'approved', lastReview: review },
-          })
-        } else if (p.round + 1 > p.maxRounds) {
-          killReviewerSession(task.id)
-          patchTask(task.id, {
-            pipeline: { ...p, stage: 'blocked', lastReview: review },
-          })
-        } else {
-          advanceToRevise(task, review)
-        }
-        break
-      }
-    }
-  }, [board, autoMode, systemPrompt, roles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-mount the selected task terminal so TaskWorkspacePanel renders it immediately.
   useEffect(() => {
@@ -541,7 +401,6 @@ export function KanbanBoard({
                       task={entry.task}
                       column={entry.column}
                       role={roleById(entry.task.roleId)}
-                      reviewerRole={reviewerRole()}
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
                       onRun={runTask}
@@ -549,7 +408,6 @@ export function KanbanBoard({
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}
-                      onOpenReviewPanel={openReviewPanel}
                       onOpenSubAgents={setSubAgentTaskId}
                     />
                   </WorkspaceSurface>
@@ -594,37 +452,6 @@ export function KanbanBoard({
         runs={subAgentDrawerSnapshot?.runs ?? []}
         onClose={() => setSubAgentTaskId(null)}
       />
-
-      {/* Reviewer terminal side panel — keeps PTY alive for all activeReviewerIds,
-          visibleTaskId controls which one is shown. */}
-      {(() => {
-        const allTasks = Object.values(board).flat()
-        const entries = Array.from(activeReviewerIds).flatMap((id) => {
-          const task = allTasks.find((t) => t.id === id)
-          if (!task) return []
-          return [
-            {
-              task,
-              sessionKey: reviewSessionKey(id),
-              cwd: task.worktreePath ?? task.projectPath ?? null,
-              launchCommand: reviewerLaunch[id]?.command,
-              launchNonce: reviewerLaunch[id]?.nonce,
-              reviewerRoleName: reviewerRole().name,
-            },
-          ]
-        })
-        return (
-          <ReviewTerminalPanel
-            entries={entries}
-            visibleTaskId={reviewPanelTaskId}
-            onClose={() => setReviewPanelTaskId(null)}
-            onLaunchRequest={(taskId) => {
-              const task = allTasks.find((t) => t.id === taskId)
-              if (task) armReviewer(task)
-            }}
-          />
-        )
-      })()}
     </div>
   )
 }

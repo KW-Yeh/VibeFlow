@@ -29,7 +29,6 @@ export interface EditTaskPayload {
   title: string
   description: string
   roleId: string
-  reviewerRoleId: string
   agentCli: AgentCliId
   model: string
   executionAgentCli: AgentCliId
@@ -199,8 +198,6 @@ export function EditTaskDialog({
       title: title.trim(),
       description: description.trim(),
       roleId,
-      // Reviewer is fixed (測試工程師) and always on; no per-task selection.
-      reviewerRoleId: '',
       agentCli,
       model,
       executionAgentCli,

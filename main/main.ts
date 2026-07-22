@@ -17,11 +17,9 @@ import {
   setSettings,
   updateRole,
   updateTask,
-  DEFAULT_MAX_REVIEW_ROUNDS,
   type AppSettings,
   type BoardState,
   type ConnectableAgentId,
-  type PipelineRun,
   type Role,
   type Task,
 } from './helpers/store'
@@ -61,21 +59,16 @@ import {
   killAllSessions,
   killSession,
   resizeSession,
-  reviewSessionKey,
   startSession,
   writeSession,
 } from './helpers/pty'
 import {
   agentPlanPath,
   agentProgressPath,
-  agentReviewPath,
   deleteAgentFiles,
   unwatchAllProgress,
-  unwatchAllReview,
   unwatchProgress,
-  unwatchReview,
   watchProgress,
-  watchReview,
 } from './helpers/progress'
 import {
   unwatchAllSubAgents,
@@ -118,18 +111,13 @@ function generateShortId(): string {
 }
 
 /**
- * Tear down a task's live sessions: stop both the executor PTY and the reviewer
- * PTY (if any), and stop their associated watchers.
+ * Tear down a task's live session: stop the PTY and its associated watchers.
  * The watcher runs a final sync on its way out.
  */
 function teardownSession(taskId: string): void {
   killSession(taskId)
   unwatchProgress(taskId)
   unwatchSubAgents(taskId)
-  // Also tear down the reviewer session (independent PTY + progress watcher).
-  const reviewKey = reviewSessionKey(taskId)
-  killSession(reviewKey)
-  unwatchProgress(reviewKey)
 }
 
 function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -305,7 +293,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         executionAgentCli?: AgentCliId
         executionModel?: string
         roleId?: string
-        reviewerRoleId?: string
         attachments?: AttachmentInput[]
       }
     ) => {
@@ -335,7 +322,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         title: string
         description?: string
         roleId?: string
-        reviewerRoleId?: string
         agentCli?: AgentCliId
         model?: string
         executionAgentCli?: AgentCliId
@@ -344,17 +330,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         baseBranch?: string | null
       }
     ) => {
-      const reviewerRoleId = payload.reviewerRoleId || undefined
       const existing = findTask(payload.taskId)
-      // Reconcile pipeline state with the (edited) reviewer assignment: adding a
-      // reviewer seeds a fresh loop; removing it drops the pipeline. An existing
-      // in-flight pipeline is preserved when the reviewer is unchanged.
-      let pipeline: PipelineRun | undefined = existing?.pipeline
-      if (!reviewerRoleId) {
-        pipeline = undefined
-      } else if (!pipeline) {
-        pipeline = { stage: 'developing', round: 0, maxRounds: DEFAULT_MAX_REVIEW_ROUNDS }
-      }
 
       // Re-provision the worktree only when the project folder or base branch
       // actually changed. Guarded so a started task's work can never be lost.
@@ -424,12 +400,10 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         title: payload.title.trim() || `Task ${payload.taskId}`,
         description: payload.description?.trim() || undefined,
         roleId: payload.roleId || undefined,
-        reviewerRoleId,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
         executionModel: payload.executionModel || undefined,
-        pipeline,
         ...gitPatch,
       })
       return getState()
@@ -467,75 +441,44 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         taskId: string
         cwd: string
         command?: string
-        /**
-         * Optional composite session key. Defaults to `taskId` (executor
-         * session). Pass `${taskId}:review` for the reviewer PTY so both
-         * can run concurrently without colliding in the session Maps.
-         */
-        sessionKey?: string
         /** Initial terminal dimensions from xterm.js. Avoids the 80×24 default causing layout artifacts. */
         cols?: number
         rows?: number
       }
     ) => {
-      const sessionKey = payload.sessionKey ?? payload.taskId
       const taskId = payload.taskId
       const result = startSession(
-        sessionKey,
+        taskId,
         payload.cwd,
         event.sender,
         payload.command,
         // Session ended (natural exit included) — nothing can write the
-        // progress / review / sub-agent files anymore, so stop all watchers.
+        // progress / sub-agent files anymore, so stop all watchers.
         () => {
-          unwatchProgress(sessionKey)
-          unwatchReview(sessionKey)
-          // Sub-agent watcher is only installed for executor sessions.
-          if (sessionKey === taskId) unwatchSubAgents(taskId)
+          unwatchProgress(taskId)
+          unwatchSubAgents(taskId)
         },
         payload.cols,
         payload.rows
       )
-      // Progress / review files live in the task's workspace folder — the
-      // worktree's parent (dirname of cwd) — named by the worktree folder, not
-      // inside the worktree itself. Watch them there.
+      // Progress file lives in the task's workspace folder — the worktree's
+      // parent (dirname of cwd) — named by the worktree folder, not inside the
+      // worktree itself. Watch it there and mirror into the store.
       const agentFilesDir = path.dirname(payload.cwd)
-      if (sessionKey === taskId) {
-        // Executor session: mirror the full progress file into the store.
-        watchProgress(sessionKey, agentProgressPath(agentFilesDir, payload.cwd), (progress) => {
-          updateTask(taskId, { progress })
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('progress:update', { taskId, progress })
-          }
-        })
-      } else {
-        // Reviewer session: watch only the review verdict file and merge the
-        // verdict into the executor's existing progress — never overwrite steps.
-        watchReview(sessionKey, agentReviewPath(agentFilesDir, payload.cwd), (review) => {
-          const current = findTask(taskId)?.progress
-          const merged = {
-            ...(current ?? { steps: [], updatedAt: Date.now() }),
-            review,
-            updatedAt: Date.now(),
-          }
-          updateTask(taskId, { progress: merged })
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('progress:update', { taskId, progress: merged })
-          }
-        })
-      }
-      // Sub-agent hooks are only installed for executor sessions (reviewer does
-      // not get --settings). Only watch for the executor session.
-      if (sessionKey === taskId) {
-        watchSubAgents(taskId, payload.cwd, (subAgents) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('subagents:update', {
-              taskId,
-              subAgents,
-            })
-          }
-        })
-      }
+      watchProgress(taskId, agentProgressPath(agentFilesDir, payload.cwd), (progress) => {
+        updateTask(taskId, { progress })
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('progress:update', { taskId, progress })
+        }
+      })
+      watchSubAgents(taskId, payload.cwd, (subAgents) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('subagents:update', {
+            taskId,
+            subAgents,
+          })
+        }
+      })
       return result
     }
   )
@@ -573,15 +516,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
   )
 
-  ipcMain.on('pty:kill', (_event, sessionKey: string) => {
-    // If this is a taskId (executor session), teardown both executor + reviewer.
-    // If this is a composite reviewer key, only kill that reviewer session.
-    if (sessionKey.includes(':')) {
-      killSession(sessionKey)
-      unwatchProgress(sessionKey)
-    } else {
-      teardownSession(sessionKey)
-    }
+  ipcMain.on('pty:kill', (_event, taskId: string) => {
+    teardownSession(taskId)
   })
 
   // --- Review & finalize (Phase 4) ---
@@ -868,7 +804,6 @@ app.on('window-all-closed', () => {
   killAllSessions()
   cancelAllChatSends()
   unwatchAllProgress()
-  unwatchAllReview()
   unwatchAllSubAgents()
   storeWatcher?.close()
   app.quit()
@@ -878,7 +813,6 @@ app.on('before-quit', () => {
   killAllSessions()
   cancelAllChatSends()
   unwatchAllProgress()
-  unwatchAllReview()
   unwatchAllSubAgents()
   storeWatcher?.close()
   stopUpdateWatcher()

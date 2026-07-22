@@ -10,8 +10,6 @@ export type {
   AgentConnections,
   ConnectableAgentId,
   VibeFlowState,
-  PipelineStage,
-  PipelineRun,
 } from '../../main/helpers/store'
 export type { GitInfo, DiffFile, FinalizeResult, PrStatus } from '../../main/helpers/git'
 export type {
@@ -34,7 +32,6 @@ export type {
 export type {
   TaskProgress,
   TaskProgressStep,
-  ReviewVerdict,
 } from '../../main/helpers/progress'
 export type {
   SubAgentRun,

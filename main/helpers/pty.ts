@@ -4,11 +4,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 import { buildEnv } from './env'
 
-/**
- * Active PTY sessions keyed by session key.
- * Executor session key = taskId; reviewer session key = `${taskId}:review`.
- * This lets each task have two concurrent PTY sessions without collision.
- */
+/** Active PTY sessions keyed by session key (= taskId). */
 const sessions = new Map<string, nodePty.IPty>()
 
 // Procs we tore down on purpose (session kill / phase switch). node-pty's
@@ -69,7 +65,7 @@ export interface StartResult {
  * Start (or restart) a PTY session for the given session key. When `command`
  * is provided it is run inside a login shell (full PATH); otherwise an
  * interactive login shell is started so the user can drive the CLI.
- * `sessionKey` is taskId for the executor, `${taskId}:review` for the reviewer.
+ * `sessionKey` is the taskId.
  * `onExit` fires when this session ends for any reason (natural exit included),
  * unless it has already been replaced by a newer session for the same key.
  */
@@ -165,9 +161,4 @@ export function killAllSessions(): void {
   for (const key of Array.from(sessions.keys())) {
     killSession(key)
   }
-}
-
-/** Derive the reviewer session key from a task id. */
-export function reviewSessionKey(taskId: string): string {
-  return `${taskId}:review`
 }

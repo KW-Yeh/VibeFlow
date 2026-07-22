@@ -5,9 +5,7 @@ import {
   getStore,
   getStoreAtPath,
   resolveWorkstationPath,
-  DEFAULT_MAX_REVIEW_ROUNDS,
   type ColumnId,
-  type PipelineRun,
   type Task,
 } from './store'
 import { generateBranchName } from './branch-name'
@@ -28,7 +26,6 @@ export interface CreateTaskInput {
   executionAgentCli?: AgentCliId
   executionModel?: string
   roleId?: string
-  reviewerRoleId?: string
   attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
   storePath?: string
@@ -102,14 +99,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     ? [baseDescription, attachmentLines.join('\n')].filter(Boolean).join('\n\n')
     : baseDescription || undefined
 
-  // Every task runs the review pipeline: the executor's completion auto-triggers
-  // the fixed 測試工程師 reviewer pass (see kanban-board orchestration).
-  const pipeline: PipelineRun = {
-    stage: 'developing',
-    round: 0,
-    maxRounds: DEFAULT_MAX_REVIEW_ROUNDS,
-  }
-
   const task: Task = {
     id: taskId,
     title: input.title.trim() || `Task ${taskId}`,
@@ -130,8 +119,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       (input.executionAgentCli ? undefined : input.model) ||
       undefined,
     roleId: input.roleId || undefined,
-    reviewerRoleId: input.reviewerRoleId || undefined,
-    pipeline,
   }
 
   try {
