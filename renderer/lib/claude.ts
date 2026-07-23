@@ -483,7 +483,7 @@ function assembleCommand(
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const mcpFlag = buildMemoryMcpFlag(opts?.memory)
-    const flags = `--permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}${mcpFlag}`
+    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}${mcpFlag}`
     const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)

@@ -8,10 +8,10 @@ import {
   watchProgress,
   unwatchProgress,
   agentProgressPath,
-  agentReviewPath,
+  agentPlanPath,
   deleteAgentFiles,
   PROGRESS_FILE,
-  REVIEW_FILE,
+  PLAN_FILE,
 } from '../main/helpers/progress.ts'
 
 async function tmpDir() {
@@ -144,102 +144,7 @@ test('readProgressFile — drops a non-string summary', async () => {
   }
 })
 
-test('readProgressFile — review absent when the field is missing', async () => {
-  const dir = await tmpDir()
-  try {
-    await writeProgress(
-      dir,
-      JSON.stringify({ steps: [{ text: 'a', done: true }] })
-    )
-    const p = readProgressFile(path.join(dir, PROGRESS_FILE))
-    assert.equal(p.review, undefined)
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('readProgressFile — parses an approve verdict', async () => {
-  const dir = await tmpDir()
-  try {
-    await writeProgress(
-      dir,
-      JSON.stringify({
-        steps: [{ text: 'a', done: true }],
-        review: { verdict: 'approve', summary: 'looks good', comments: [] },
-      })
-    )
-    const p = readProgressFile(path.join(dir, PROGRESS_FILE))
-    assert.deepEqual(p.review, {
-      verdict: 'approve',
-      summary: 'looks good',
-      comments: [],
-    })
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('readProgressFile — parses request_changes and keeps only string comments', async () => {
-  const dir = await tmpDir()
-  try {
-    await writeProgress(
-      dir,
-      JSON.stringify({
-        steps: [{ text: 'a', done: true }],
-        review: {
-          verdict: 'request_changes',
-          comments: ['fix the off-by-one', 42, null, 'handle null input'],
-        },
-      })
-    )
-    const p = readProgressFile(path.join(dir, PROGRESS_FILE))
-    assert.equal(p.review.verdict, 'request_changes')
-    assert.deepEqual(p.review.comments, ['fix the off-by-one', 'handle null input'])
-    assert.equal(p.review.summary, undefined)
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('readProgressFile — drops review with an unknown verdict', async () => {
-  const dir = await tmpDir()
-  try {
-    for (const review of [
-      { verdict: 'maybe', comments: [] },
-      { comments: ['x'] },
-      'not-an-object',
-      42,
-    ]) {
-      await writeProgress(
-        dir,
-        JSON.stringify({ steps: [{ text: 'a', done: true }], review })
-      )
-      const p = readProgressFile(path.join(dir, PROGRESS_FILE))
-      assert.equal(p.review, undefined, `review ${JSON.stringify(review)} should be dropped`)
-    }
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('readProgressFile — defaults comments to [] when not an array', async () => {
-  const dir = await tmpDir()
-  try {
-    await writeProgress(
-      dir,
-      JSON.stringify({
-        steps: [{ text: 'a', done: true }],
-        review: { verdict: 'approve', comments: 'oops' },
-      })
-    )
-    const p = readProgressFile(path.join(dir, PROGRESS_FILE))
-    assert.deepEqual(p.review.comments, [])
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('agentProgressPath / agentReviewPath — compose <baseDir>/<workspace><suffix>', () => {
+test('agentProgressPath / agentPlanPath — compose <baseDir>/<workspace><suffix>', () => {
   const base = '/Users/x/Library/Application Support/VibeFlow'
   const wt = '/Users/x/Desktop/proj-workspace/feature-WR-5105'
   assert.equal(
@@ -247,19 +152,20 @@ test('agentProgressPath / agentReviewPath — compose <baseDir>/<workspace><suff
     path.join(base, `feature-WR-5105${PROGRESS_FILE}`)
   )
   assert.equal(
-    agentReviewPath(base, wt),
-    path.join(base, `feature-WR-5105${REVIEW_FILE}`)
+    agentPlanPath(base, wt),
+    path.join(base, `feature-WR-5105.${PLAN_FILE}`)
   )
 })
 
-test('deleteAgentFiles — removes both files and is a no-op when absent', async () => {
+test('deleteAgentFiles — removes progress and plan files and is a no-op when absent', async () => {
   const base = await tmpDir()
   const wt = '/anywhere/feature-xyz'
   try {
     await fs.writeFile(agentProgressPath(base, wt), '{}', 'utf8')
-    await fs.writeFile(agentReviewPath(base, wt), '{}', 'utf8')
+    await fs.writeFile(agentPlanPath(base, wt), '# plan', 'utf8')
     deleteAgentFiles(base, wt)
     assert.equal(readProgressFile(agentProgressPath(base, wt)), null, 'progress removed')
+    await assert.rejects(fs.access(agentPlanPath(base, wt)), { code: 'ENOENT' })
     // Second call on already-absent files must not throw.
     deleteAgentFiles(base, wt)
   } finally {

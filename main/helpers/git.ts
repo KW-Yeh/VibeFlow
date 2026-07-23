@@ -408,7 +408,7 @@ async function copyIgnoredEntry(
 async function copySmallIgnoredFiles(
   projectPath: string,
   worktreePath: string
-): Promise<void> {
+): Promise<string[]> {
   const entries = await listIgnoredCopyEntries(projectPath)
 
   await Promise.all(
@@ -423,6 +423,7 @@ async function copySmallIgnoredFiles(
       }
     })
   )
+  return entries
 }
 
 /**
@@ -432,13 +433,13 @@ async function copySmallIgnoredFiles(
  */
 function copyIgnoredDependenciesInBackground(
   projectPath: string,
-  worktreePath: string
+  worktreePath: string,
+  entries: string[]
 ): void {
   void (async () => {
-    const entries = (await listIgnoredCopyEntries(projectPath))
-      .filter(shouldCopyIgnoredEntryInBackground)
+    const dependencyEntries = entries.filter(shouldCopyIgnoredEntryInBackground)
 
-    for (const entry of entries) {
+    for (const entry of dependencyEntries) {
       try {
         await copyIgnoredEntry(projectPath, worktreePath, entry)
       } catch (err) {
@@ -512,7 +513,7 @@ export async function provisionWorktree(
     throw err
   }
 
-  const [pushed] = await Promise.all([
+  const [pushed, ignoredEntries] = await Promise.all([
     (async () => {
       if (!info.hasRemote) return false
       try {
@@ -525,7 +526,7 @@ export async function provisionWorktree(
     copySmallIgnoredFiles(projectPath, worktreePath),
   ])
 
-  copyIgnoredDependenciesInBackground(projectPath, worktreePath)
+  copyIgnoredDependenciesInBackground(projectPath, worktreePath, ignoredEntries)
 
   return { branch, worktreePath, pushed, baseBranch: base }
 }

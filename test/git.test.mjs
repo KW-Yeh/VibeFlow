@@ -5,7 +5,6 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import {
   getGitInfo,
-  ensureGitignore,
   ensureLocalExclude,
   provisionWorktree,
   removeWorktree,
@@ -20,9 +19,20 @@ import {
   makeRepo,
   git,
   writeFile,
-  readFileOrNull,
   exists,
 } from './support/repo.mjs'
+
+async function provision(projectPath, taskId, baseBranch, preferredBranch) {
+  const workspacePath = path.join(path.dirname(projectPath), 'workspace')
+  await fs.mkdir(workspacePath, { recursive: true })
+  return provisionWorktree(
+    projectPath,
+    workspacePath,
+    taskId,
+    baseBranch,
+    preferredBranch
+  )
+}
 
 // --- getGitInfo ---
 
@@ -83,49 +93,6 @@ test('getGitInfo — defaultBase prefers main over the current branch', async ()
   }
 })
 
-// --- ensureGitignore ---
-
-test('ensureGitignore — adds .vibeflow/ and is idempotent', async () => {
-  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
-  try {
-    await ensureGitignore(projectPath)
-    let content = await readFileOrNull(projectPath, '.gitignore')
-    assert.ok(content.includes('.vibeflow/'))
-
-    await ensureGitignore(projectPath)
-    content = await readFileOrNull(projectPath, '.gitignore')
-    const occurrences = content.split('.vibeflow/').length - 1
-    assert.equal(occurrences, 1, 'must not duplicate the entry')
-  } finally {
-    await cleanup()
-  }
-})
-
-test('ensureGitignore — preserves existing content', async () => {
-  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
-  try {
-    await writeFile(projectPath, '.gitignore', 'node_modules\n')
-    await ensureGitignore(projectPath)
-    const content = await readFileOrNull(projectPath, '.gitignore')
-    assert.ok(content.includes('node_modules'))
-    assert.ok(content.includes('.vibeflow/'))
-  } finally {
-    await cleanup()
-  }
-})
-
-test('ensureGitignore — respects an existing .vibeflow (no slash) entry', async () => {
-  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
-  try {
-    await writeFile(projectPath, '.gitignore', '.vibeflow\n')
-    await ensureGitignore(projectPath)
-    const content = await readFileOrNull(projectPath, '.gitignore')
-    assert.ok(!content.includes('.vibeflow/'), 'must not add a redundant slashed entry')
-  } finally {
-    await cleanup()
-  }
-})
-
 // --- ensureLocalExclude ---
 
 test('ensureLocalExclude — adds the progress file to .git/info/exclude (idempotent)', async () => {
@@ -151,9 +118,12 @@ test('ensureLocalExclude — adds the progress file to .git/info/exclude (idempo
 test('provisionWorktree — creates a flattened worktree and pushes', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/my-test')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/my-test')
     assert.equal(res.branch, 'feature/my-test')
-    assert.equal(res.relativePath, path.join('.vibeflow', 'feature-my-test'))
+    assert.equal(
+      res.worktreePath,
+      path.join(path.dirname(projectPath), 'workspace', 'feature-my-test')
+    )
     assert.equal(res.baseBranch, 'main')
     assert.equal(res.pushed, true)
     assert.ok(await exists(res.worktreePath))
@@ -168,7 +138,7 @@ test('provisionWorktree — creates a flattened worktree and pushes', async () =
 test('provisionWorktree — without a remote, still creates worktree (pushed=false)', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/local-only')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/local-only')
     assert.equal(res.pushed, false)
     assert.ok(await exists(res.worktreePath))
   } finally {
@@ -179,10 +149,13 @@ test('provisionWorktree — without a remote, still creates worktree (pushed=fal
 test('provisionWorktree — suffixes the task id when the branch is taken', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/dup')
-    const second = await provisionWorktree(projectPath, 'def67890', 'main', 'feature/dup')
+    await provision(projectPath, 'abc12345', 'main', 'feature/dup')
+    const second = await provision(projectPath, 'def67890', 'main', 'feature/dup')
     assert.equal(second.branch, 'feature/dup-def67890')
-    assert.equal(second.relativePath, path.join('.vibeflow', 'feature-dup-def67890'))
+    assert.equal(
+      second.worktreePath,
+      path.join(path.dirname(projectPath), 'workspace', 'feature-dup-def67890')
+    )
   } finally {
     await cleanup()
   }
@@ -191,7 +164,7 @@ test('provisionWorktree — suffixes the task id when the branch is taken', asyn
 test('provisionWorktree — falls back to vf-<id> when no name is given', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', null)
+    const res = await provision(projectPath, 'abc12345', 'main', null)
     assert.equal(res.branch, 'vf-abc12345')
   } finally {
     await cleanup()
@@ -201,7 +174,7 @@ test('provisionWorktree — falls back to vf-<id> when no name is given', async 
 test('provisionWorktree — falls back to vf-<id> for an invalid ref name', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'bad branch name')
+    const res = await provision(projectPath, 'abc12345', 'main', 'bad branch name')
     assert.equal(res.branch, 'vf-abc12345')
   } finally {
     await cleanup()
@@ -211,7 +184,7 @@ test('provisionWorktree — falls back to vf-<id> for an invalid ref name', asyn
 test('provisionWorktree — base null resolves to the default base', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', null, 'feature/auto-base')
+    const res = await provision(projectPath, 'abc12345', null, 'feature/auto-base')
     assert.equal(res.baseBranch, 'main')
   } finally {
     await cleanup()
@@ -223,10 +196,10 @@ test('provisionWorktree — base null resolves to the default base', async () =>
 test('removeWorktree + deleteBranch — tear down a provisioned worktree', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/teardown')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/teardown')
     assert.ok(await exists(res.worktreePath))
 
-    await removeWorktree(projectPath, res.branch)
+    await removeWorktree(projectPath, res.worktreePath)
     assert.equal(await exists(res.worktreePath), false)
 
     await deleteBranch(projectPath, res.branch)
@@ -237,10 +210,13 @@ test('removeWorktree + deleteBranch — tear down a provisioned worktree', async
   }
 })
 
-test('removeWorktree — is a no-op for an unknown branch', async () => {
+test('removeWorktree — is a no-op for an unknown path', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   try {
-    await removeWorktree(projectPath, 'feature/never-existed') // must not throw
+    await removeWorktree(
+      projectPath,
+      path.join(path.dirname(projectPath), 'workspace', 'never-existed')
+    )
   } finally {
     await cleanup()
   }
@@ -279,7 +255,7 @@ test('syncBaseBranch — without an upstream, pulled is false', async () => {
 test('getWorktreeDiff — reports untracked, modified, and deleted files', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/diff')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/diff')
     const wt = res.worktreePath
 
     await writeFile(wt, 'added.txt', 'brand new\n')
@@ -309,7 +285,7 @@ test('getWorktreeDiff — reports untracked, modified, and deleted files', async
 test('getWorktreeDiff — includes committed changes vs the base', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/committed')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/committed')
     const wt = res.worktreePath
     await writeFile(wt, 'feature.txt', 'shipped\n')
     await git(wt, 'add', '-A')
@@ -325,7 +301,7 @@ test('getWorktreeDiff — includes committed changes vs the base', async () => {
 test('getWorktreeDiff — excludes the agent progress file', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/no-progress')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/no-progress')
     const wt = res.worktreePath
     await writeFile(wt, PROGRESS_FILE, '{"summary":"x","steps":[]}')
     await writeFile(wt, 'real.txt', 'real\n')
@@ -341,9 +317,9 @@ test('getWorktreeDiff — excludes the agent progress file', async () => {
 test('getWorktreeDiff — truncates oversized file content', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/big')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/big')
     const wt = res.worktreePath
-    await writeFile(wt, 'big.txt', 'x'.repeat(210 * 1024))
+    await writeFile(wt, 'big.txt', 'x'.repeat(1024 * 1024 + 1))
 
     const diff = await getWorktreeDiff(wt, 'main')
     const big = diff.find((d) => d.path === 'big.txt')
@@ -360,7 +336,7 @@ test('getWorktreeDiff — truncates oversized file content', async () => {
 test('commitAndPush — stages, commits, and pushes the worktree branch', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/finalize')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/finalize')
     const wt = res.worktreePath
     await writeFile(wt, 'shipit.txt', 'done\n')
 
@@ -388,7 +364,7 @@ test(
   async () => {
     const { projectPath, cleanup } = await makeRepo({ withRemote: true })
     try {
-      const res = await provisionWorktree(
+      const res = await provision(
         projectPath,
         'abc12345',
         'main',
@@ -412,7 +388,7 @@ test(
 test('commitAndPush — clean tree commits nothing', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
-    const res = await provisionWorktree(projectPath, 'abc12345', 'main', 'feature/clean')
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/clean')
     const fin = await commitAndPush(res.worktreePath, 'noop')
     assert.equal(fin.committed, false)
   } finally {
