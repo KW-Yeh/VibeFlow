@@ -1,10 +1,12 @@
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Download,
   FolderOpen,
   PanelLeftClose,
@@ -12,10 +14,12 @@ import {
   Plus,
   RefreshCw,
   Rocket,
+  Search,
   Settings,
   Smartphone,
   Trash2,
   Users,
+  X,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -95,6 +99,36 @@ function taskEntries(board: BoardState): TaskEntry[] {
   ]
 }
 
+// In-progress first, then backlog, then done; newest-first within each group so
+// the task the user is most likely acting on floats to the top of the project.
+const COLUMN_RANK: Record<ColumnId, number> = { in_progress: 0, backlog: 1, done: 2 }
+
+function sortTasksWithinProject(entries: TaskEntry[]): TaskEntry[] {
+  return [...entries].sort((a, b) => {
+    const rank = COLUMN_RANK[a.column] - COLUMN_RANK[b.column]
+    return rank !== 0 ? rank : compareTasksByNewestFirst(a.task, b.task)
+  })
+}
+
+if (process.env.NODE_ENV !== 'production') {
+  const t = (id: string, column: ColumnId, createdAt: number): TaskEntry => ({
+    column,
+    task: { id, createdAt } as Task,
+  })
+  const ordered = sortTasksWithinProject([
+    t('old-done', 'done', 1),
+    t('new-backlog', 'backlog', 3),
+    t('old-inprog', 'in_progress', 2),
+    t('new-inprog', 'in_progress', 4),
+  ]).map((e) => e.task.id)
+  console.assert(
+    JSON.stringify(ordered) ===
+      JSON.stringify(['new-inprog', 'old-inprog', 'new-backlog', 'old-done']),
+    'sortTasksWithinProject: expected in_progress→backlog→done, newest-first within group, got',
+    ordered
+  )
+}
+
 function groupTasksByProject(
   board: BoardState,
   selectedTaskId: string | null
@@ -120,10 +154,8 @@ function groupTasksByProject(
     groups.set(key, group)
   }
 
-  // Backlog / in-progress / done now share one list per project, ordered newest
-  // to oldest so a task keeps its place regardless of its current column.
   for (const group of groups.values()) {
-    group.tasks.sort((a, b) => compareTasksByNewestFirst(a.task, b.task))
+    group.tasks = sortTasksWithinProject(group.tasks)
   }
 
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
@@ -186,6 +218,7 @@ function TaskRow({
 
   return (
     <motion.button
+      data-selected-task={selected || undefined}
       type="button"
       onClick={() => onSelectTask(entry.task.id)}
       whileTap={reducedMotion ? undefined : { scale: 0.99, opacity: 0.9 }}
@@ -194,7 +227,7 @@ function TaskRow({
         ease: MOTION_EASING.enter,
       }}
       className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 rounded px-2 py-1 text-left text-sm transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        'flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         selected
           ? 'bg-primary/15 font-medium text-primary'
           : entry.column === 'done'
@@ -203,11 +236,16 @@ function TaskRow({
       )}
       title={entry.task.title}
     >
-      {visual ? (
-        <span className={cn('flex size-3 shrink-0 items-center justify-center', visual.className)}>
-          {visual.icon}
-        </span>
-      ) : null}
+      {/* Fixed leading slot keeps every row's title aligned; done rows render an
+          empty placeholder instead of dropping the column (A1 left-edge alignment). */}
+      <span
+        className={cn(
+          'flex size-3 shrink-0 items-center justify-center',
+          visual?.className
+        )}
+      >
+        {visual?.icon}
+      </span>
       <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
       {visual ? (
         <span
@@ -289,10 +327,10 @@ function ProjectDisclosure({
   const contentId = useId()
 
   return (
-    <div className="rounded-md">
+    <div>
       <div
         className={cn(
-          'group flex items-center gap-1 rounded px-1 py-1 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:text-foreground',
+          'group flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground',
           project.hasSelected && 'text-foreground'
         )}
       >
@@ -301,7 +339,7 @@ function ProjectDisclosure({
           aria-expanded={expanded}
           aria-controls={contentId}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           title={project.path ?? project.name}
         >
           {expanded ? (
@@ -312,8 +350,8 @@ function ProjectDisclosure({
           <FolderOpen className="size-3 shrink-0" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
         </button>
-        <span className="shrink-0 tabular-nums text-muted-foreground group-hover:hidden">
-          {project.total}
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground group-hover:hidden">
+          {project.tasks.length}
         </span>
         <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
           <IconButton
@@ -480,7 +518,7 @@ function UpdateBanner({
     <SidebarModeContent mode="expanded" className="border-t border-border p-3">
       <div className="rounded-md border border-primary/25 bg-primary/10 p-3">
         <div className="flex items-start gap-2">
-          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
+          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
             {update.status === 'downloaded' ? (
               <CheckCircle2 className="size-4" />
             ) : update.status === 'error' ? (
@@ -512,7 +550,7 @@ function UpdateBanner({
           type="button"
           disabled={!action}
           onClick={action}
-          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors motion-reduce:transition-none hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors motion-reduce:transition-none hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {update.status === 'downloading' && <RefreshCw className="size-3 animate-spin" />}
           {buttonLabel}
@@ -645,6 +683,45 @@ function SettingsDock({
   )
 }
 
+function SidebarSearch({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (next: string) => void
+}) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && value) {
+            event.preventDefault()
+            onChange('')
+          }
+        }}
+        placeholder="搜尋任務"
+        aria-label="搜尋任務"
+        className="h-8 w-full rounded-md border border-border bg-background pl-7 pr-7 text-sm text-foreground outline-none transition-colors motion-reduce:transition-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      />
+      {value ? (
+        <button
+          type="button"
+          aria-label="清除搜尋"
+          title="清除搜尋"
+          onClick={() => onChange('')}
+          className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 export function SideMenu({
   collapsed,
   onToggleCollapse,
@@ -666,12 +743,49 @@ export function SideMenu({
   onInstallUpdate,
 }: SideMenuProps) {
   const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
+  const [query, setQuery] = useState('')
   const reducedMotion = useReducedMotion() ?? false
-  const projects = groupTasksByProject(board, selectedTaskId)
   const contentVariants = createEnterVariants({
     timing: 'micro',
     reducedMotion,
   })
+
+  const q = query.trim().toLowerCase()
+  const searching = !collapsed && q.length > 0
+  let projects = groupTasksByProject(board, selectedTaskId)
+  if (searching) {
+    projects = projects
+      .map((project) => ({
+        ...project,
+        tasks: project.tasks.filter((entry) =>
+          entry.task.title.toLowerCase().includes(q)
+        ),
+      }))
+      .filter((project) => project.tasks.length > 0)
+  }
+
+  // When searching, every matching project is force-expanded so hits are always
+  // visible; clearing the query restores the user's manual expansion state.
+  const isExpanded = (project: ProjectGroup) =>
+    searching ||
+    (projectsExpanded[project.key] ?? (project.hasSelected || project.tasks.length > 0))
+  const allExpanded =
+    projects.length > 0 && projects.every((project) => isExpanded(project))
+  const toggleAll = () => {
+    const next = !allExpanded
+    setProjectsExpanded((prev) => {
+      const updated = { ...prev }
+      for (const project of projects) updated[project.key] = next
+      return updated
+    })
+  }
+
+  // Keep the selected task in view when selection changes programmatically
+  // (e.g. remote control) even if it sits below the fold.
+  useEffect(() => {
+    const row = document.querySelector<HTMLElement>('aside [data-selected-task]')
+    row?.scrollIntoView({ block: 'nearest' })
+  }, [selectedTaskId])
 
   return (
     <motion.aside
@@ -743,6 +857,13 @@ export function SideMenu({
         )}
       </SidebarModeContent>
 
+      {/* Search / filter (expanded only) */}
+      {!collapsed && (
+        <SidebarModeContent mode="expanded" className="shrink-0 px-2 pt-2">
+          <SidebarSearch value={query} onChange={setQuery} />
+        </SidebarModeContent>
+      )}
+
       {/* Scrollable content */}
       <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Projects section */}
@@ -785,21 +906,34 @@ export function SideMenu({
               animate="visible"
               variants={contentVariants}
             >
-              <div className="mb-1 flex items-center px-1">
-                <span className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="mb-1 flex items-center gap-1 px-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Projects
                 </span>
+                {!searching && projects.length > 0 && (
+                  <IconButton
+                    aria-label={allExpanded ? '全部收合' : '全部展開'}
+                    title={allExpanded ? '全部收合' : '全部展開'}
+                    onClick={toggleAll}
+                    className="ml-auto p-0.5"
+                  >
+                    {allExpanded ? (
+                      <ChevronsDownUp className="size-3.5" />
+                    ) : (
+                      <ChevronsUpDown className="size-3.5" />
+                    )}
+                  </IconButton>
+                )}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {projects.length === 0 ? (
                   <p className="px-2 py-1 text-sm text-muted-foreground">
-                    尚無任務
+                    {searching ? '找不到符合的任務' : '尚無任務'}
                   </p>
                 ) : (
                   projects.map((project) => {
-                    const expanded =
-                      projectsExpanded[project.key] ?? (project.hasSelected || project.tasks.length > 0)
+                    const expanded = isExpanded(project)
 
                     return (
                       <ProjectDisclosure
