@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
 import { ChevronDown, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react'
 
 import { AvatarCropDialog } from '@/components/avatar-crop-dialog'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { fieldClass } from '@/components/ui/field'
 import { PRESET_ROLES } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { Role } from '@/lib/types'
@@ -95,6 +96,7 @@ export function RolesDialog({
   const [showPresets, setShowPresets] = useState(false)
   const [cropSrc, setCropSrc] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const presetListId = useId()
 
   // Reset to the list view whenever the dialog (re-)opens.
   useEffect(() => {
@@ -302,8 +304,10 @@ export function RolesDialog({
             <div className="relative">
               <button
                 type="button"
+                aria-expanded={showPresets}
+                aria-controls={presetListId}
                 onClick={() => setShowPresets((v) => !v)}
-                className="flex w-full items-center justify-between rounded-md border border-dashed border-border/60 px-3 py-2 text-base text-muted-foreground hover:border-border hover:text-foreground"
+                className="flex w-full items-center justify-between rounded-md border border-dashed border-border/60 px-3 py-2 text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:border-border hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <span>從預設角色選擇</span>
                 <ChevronDown
@@ -314,13 +318,13 @@ export function RolesDialog({
                 />
               </button>
               {showPresets && (
-                <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-md">
+                <ul id={presetListId} className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-md">
                   {PRESET_ROLES.map((preset) => (
                     <li key={preset.name}>
                       <button
                         type="button"
                         onClick={() => applyPreset(preset)}
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent"
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
                       >
                         <RoleAvatar role={preset} className="size-7 text-base" />
                         <div className="min-w-0">
@@ -382,7 +386,7 @@ export function RolesDialog({
                   }
                   placeholder="或輸入 emoji / 縮寫"
                   disabled={isImageAvatar(form.avatar)}
-                  className="w-40 rounded-md border bg-background px-2.5 py-1.5 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+                  className={cn(fieldClass, 'w-40 px-2.5 py-1.5 disabled:opacity-50')}
                 />
               </div>
             </div>
@@ -401,7 +405,7 @@ export function RolesDialog({
                   setForm((f) => ({ ...f, name: e.target.value }))
                 }
                 placeholder="例如：資深前端工程師"
-                className="w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={fieldClass}
               />
             </label>
 
@@ -416,7 +420,7 @@ export function RolesDialog({
                 }
                 rows={2}
                 placeholder="這個角色是誰、站在什麼立場思考…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={cn(fieldClass, 'resize-y')}
               />
             </label>
 
@@ -431,7 +435,7 @@ export function RolesDialog({
                 }
                 rows={3}
                 placeholder="這個角色負責哪些事情…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={cn(fieldClass, 'resize-y')}
               />
             </label>
 
@@ -446,7 +450,7 @@ export function RolesDialog({
                 }
                 rows={3}
                 placeholder="這個角色應該 / 不應該做什麼、有哪些限制…"
-                className="w-full resize-y rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={cn(fieldClass, 'resize-y')}
               />
             </label>
 

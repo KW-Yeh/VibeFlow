@@ -15,6 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
@@ -70,9 +71,9 @@ export interface NewTaskFormProps {
   initialProjectPath?: string | null
 }
 
-// Shared field class — uniform height, subtle border, smooth focus ring
-export const F =
-  'w-full rounded-md border bg-background px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-shadow motion-reduce:transition-none'
+// Shared field class now lives in ui/field.tsx (single source of truth).
+// Re-exported as `F` for backwards-compatible imports (e.g. edit-task-dialog).
+export const F = fieldClass
 
 function InlineEnterSurface({
   show,
@@ -196,7 +197,7 @@ function ProjectTypeToggle({
           onClick={() => onChange(m)}
           disabled={disabled}
           className={cn(
-            'flex-1 rounded-full px-3 py-1 text-base transition-colors motion-reduce:transition-none disabled:opacity-50',
+            'flex-1 rounded-full px-3 py-1 text-base outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
             mode === m
               ? 'bg-primary font-medium text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -232,7 +233,7 @@ export function FolderPickerZone({
           type="button"
           onClick={onPick}
           disabled={disabled}
-          className="shrink-0 text-sm text-primary hover:underline disabled:opacity-50"
+          className="shrink-0 rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
         >
           更換
         </button>
@@ -244,7 +245,7 @@ export function FolderPickerZone({
       type="button"
       onClick={onPick}
       disabled={disabled}
-      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <FolderOpen className="size-5" />
       <span className="text-sm">
@@ -303,7 +304,7 @@ export function AgentModelFields({
               <button
                 type="button"
                 onClick={onRetry}
-                className="text-sm text-primary underline hover:no-underline"
+                className="rounded-sm text-sm text-primary underline outline-none hover:no-underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 重新偵測
               </button>
@@ -615,7 +616,7 @@ export function NewTaskForm({
         <button
           type="button"
           onClick={onManageRoles}
-          className="text-sm text-primary hover:underline"
+          className="rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           管理角色
         </button>
@@ -731,7 +732,7 @@ export function NewTaskForm({
           }
         }}
         className={cn(
-          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
           isDraggingAttachment && 'border-primary/70 bg-primary/5 text-foreground'
         )}
       >

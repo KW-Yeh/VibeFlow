@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Smartphone, X, Copy, Check, Wifi } from 'lucide-react'
+import { Copy, Check, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { IconButton } from '@/components/ui/icon-button'
 
 // Update this URL once you deploy VibeFlow-remote to Vercel.
 const REMOTE_APP_BASE_URL = 'https://vibe-flow-remote.vercel.app'
@@ -36,22 +35,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
   }
 
   return (
-    <DialogShell title="遠端控制" onClose={onClose} contentClassName="max-w-xs p-5">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Smartphone className="size-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold">遠端控制</h2>
-          </div>
-          <IconButton
-            aria-label="關閉遠端控制"
-            onClick={onClose}
-            className="p-1"
-          >
-            <X className="size-4" />
-          </IconButton>
-        </div>
-
+    <DialogShell title="遠端控制" onClose={onClose} showHeader contentClassName="max-w-xs">
         {/* QR Code */}
         <div className="mb-4 flex justify-center">
           {qrDataUrl ? (
@@ -78,8 +62,9 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
         {/* Actions */}
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={handleCopy}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             {copied ? '已複製' : '複製連結'}
