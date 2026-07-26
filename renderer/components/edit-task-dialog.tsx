@@ -246,14 +246,14 @@ export function EditTaskDialog({
             <button
               type="button"
               onClick={() => setConfirmClose(false)}
-              className="rounded px-2 py-0.5 text-sm text-muted-foreground hover:bg-accent"
+              className="rounded-md px-2 py-0.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               繼續編輯
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded px-2 py-0.5 text-sm text-destructive hover:bg-destructive/15"
+              className="rounded-md px-2 py-0.5 text-sm text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               放棄離開
             </button>
@@ -399,7 +399,7 @@ export function EditTaskDialog({
                     <button
                       type="button"
                       onClick={onManageRoles}
-                      className="text-sm text-primary hover:underline"
+                      className="rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     >
                       管理角色
                     </button>

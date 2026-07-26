@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useId, useState } from 'react'
 import type { DiffMethod } from 'react-diff-viewer-continued'
 import remarkGfm from 'remark-gfm'
 
@@ -31,6 +31,7 @@ import {
 import { TaskTerminal } from '@/components/task-terminal'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { SECTION_LABEL } from '@/components/ui/section-label'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   buildAgentCommand,
@@ -88,18 +89,24 @@ function InfoSection({
   icon,
   children,
   actions,
+  count,
 }: {
   title: string
   icon: React.ReactNode
   children: React.ReactNode
   actions?: React.ReactNode
+  /** Optional item count shown beside the title (discoverability, PLAN E1). */
+  count?: number
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col border-b border-border last:border-b-0">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-4">
-        <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold uppercase text-muted-foreground">
+        <h2 className={cn(SECTION_LABEL, 'flex min-w-0 items-center gap-2')}>
           {icon}
           <span className="truncate">{title}</span>
+          {count !== undefined && count > 0 && (
+            <span className="shrink-0 tabular-nums text-muted-foreground/80">{count}</span>
+          )}
         </h2>
         {actions}
       </div>
@@ -127,11 +134,11 @@ function TaskInfo({
     <div className="space-y-4 text-base">
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+          <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
             {column === 'in_progress' ? 'In Progress' : column === 'done' ? 'Done' : 'Backlog'}
           </span>
           {complete && (
-            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
+            <span className="rounded-xs bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
               complete
             </span>
           )}
@@ -209,7 +216,7 @@ function TaskInfo({
         <button
           type="button"
           onClick={() => onOpenSubAgents(task.id)}
-          className="flex w-full items-center justify-between rounded-md border border-border/70 px-2.5 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex w-full items-center justify-between rounded-md border border-border/70 px-2.5 py-2 text-left text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <span>{subAgents.length} sub-agent runs</span>
           <span>View</span>
@@ -245,7 +252,7 @@ function MarkdownContent({
             code: ({ children, className, ...props }) => (
               <code
                 {...props}
-                className={cn('break-words rounded bg-background/70 px-1 py-0.5', className)}
+                className={cn('break-words rounded-xs bg-background/70 px-1 py-0.5', className)}
               >
                 {children}
               </code>
@@ -369,7 +376,7 @@ function MemorySection({ taskId }: { taskId: string }) {
               className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm"
             >
               <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
+                <span className="rounded-xs bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
                   #{cp.seq}
                 </span>
                 <span className="tabular-nums">{formatCheckpointTime(cp.createdAt)}</span>
@@ -421,7 +428,7 @@ function MemorySection({ taskId }: { taskId: string }) {
 
         {related.length > 0 && (
           <div>
-            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <h3 className={cn(SECTION_LABEL, 'mb-2 flex items-center gap-1.5')}>
               <Layers className="size-3.5" />
               相關任務
             </h3>
@@ -436,7 +443,7 @@ function MemorySection({ taskId }: { taskId: string }) {
                       {r.title}
                     </span>
                     {r.status && (
-                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
+                      <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
                         {r.status}
                       </span>
                     )}
@@ -454,7 +461,7 @@ function MemorySection({ taskId }: { taskId: string }) {
 
         {links.length > 0 && (
           <div>
-            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <h3 className={cn(SECTION_LABEL, 'mb-2 flex items-center gap-1.5')}>
               <GitBranch className="size-3.5" />
               關聯
             </h3>
@@ -464,7 +471,7 @@ function MemorySection({ taskId }: { taskId: string }) {
                   key={`${l.direction}-${l.otherId}-${l.relation}-${i}`}
                   className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-sm"
                 >
-                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
+                  <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
                     {l.direction === 'outgoing' ? l.relation : `← ${l.relation}`}
                   </span>
                   <span className="min-w-0 flex-1 break-words">
@@ -486,7 +493,7 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
   return (
     <div className="overflow-hidden rounded-md border border-border/70">
       <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
-        <span className="rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+        <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
           {STATUS_LABEL[file.status] ?? file.status}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
@@ -618,6 +625,7 @@ function DiffSection({ taskId }: { taskId: string }) {
     <InfoSection
       title="Git diff"
       icon={<GitCompare className="size-3.5" />}
+      count={files.length}
       actions={
         <div className="flex items-center gap-1">
           <IconButton
@@ -709,7 +717,24 @@ export function TaskWorkspacePanel({
 }: TaskWorkspacePanelProps) {
   const [activeTaskTab, setActiveTaskTab] = useState<'task' | 'plan'>('task')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const tabBaseId = useId()
+  const tabPanelId = `${tabBaseId}-panel`
+  const tabId = (tab: 'task' | 'plan') => `${tabBaseId}-tab-${tab}`
   const cwd = task.worktreePath ?? task.projectPath ?? null
+
+  // Inline delete confirmation is dismissible with Esc, matching the dialog
+  // affordance elsewhere (the row is not a modal, so DialogShell doesn't cover it).
+  useEffect(() => {
+    if (!confirmDelete) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      // Defer to a modal dialog's own Esc handling if one is open above the row.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      setConfirmDelete(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmDelete])
   const canLaunch = column === 'backlog' || (column === 'in_progress' && !!task.launchedAt)
   const launchCommand = launch?.command
   const launchNonce = launch?.nonce ?? 0
@@ -751,14 +776,14 @@ export function TaskWorkspacePanel({
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="rounded px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent"
+              className="rounded-md px-1.5 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               取消
             </button>
             <button
               type="button"
               onClick={() => onDelete(task.id)}
-              className="rounded px-1.5 py-1 text-sm text-destructive hover:bg-destructive/15"
+              className="rounded-md px-1.5 py-1 text-sm text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               確認刪除
             </button>
@@ -801,7 +826,11 @@ export function TaskWorkspacePanel({
             title="任務內容"
             icon={<FileDiff className="size-3.5" />}
             actions={
-              <div className="flex rounded-md border border-border/70 p-0.5">
+              <div
+                role="tablist"
+                aria-label="任務內容檢視"
+                className="flex rounded-md border border-border/70 p-0.5"
+              >
                 {([
                   ['task', '任務'],
                   ['plan', 'Plan'],
@@ -809,9 +838,13 @@ export function TaskWorkspacePanel({
                   <button
                     key={tab}
                     type="button"
+                    role="tab"
+                    id={tabId(tab)}
+                    aria-selected={activeTaskTab === tab}
+                    aria-controls={tabPanelId}
                     onClick={() => setActiveTaskTab(tab)}
                     className={cn(
-                      'rounded-sm px-2 py-0.5 text-xs',
+                      'rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                       activeTaskTab === tab
                         ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:text-foreground'
@@ -823,17 +856,19 @@ export function TaskWorkspacePanel({
               </div>
             }
           >
-            {activeTaskTab === 'task' ? (
-              <TaskInfo
-                task={task}
-                column={column}
-                role={role}
-                subAgents={subAgents}
-                onOpenSubAgents={onOpenSubAgents}
-              />
-            ) : (
-              <PlanContent taskId={task.id} />
-            )}
+            <div role="tabpanel" id={tabPanelId} aria-labelledby={tabId(activeTaskTab)}>
+              {activeTaskTab === 'task' ? (
+                <TaskInfo
+                  task={task}
+                  column={column}
+                  role={role}
+                  subAgents={subAgents}
+                  onOpenSubAgents={onOpenSubAgents}
+                />
+              ) : (
+                <PlanContent taskId={task.id} />
+              )}
+            </div>
           </InfoSection>
 
           <DiffSection taskId={task.id} />

@@ -16,6 +16,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { fieldClass } from '@/components/ui/field'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/claude'
 import {
   cancelGithubAuthLogin,
@@ -327,7 +328,7 @@ export function SettingsDialog({
             type="button"
             onClick={() => void closeGithubPage()}
             disabled={githubBusy && githubPhase !== 'success'}
-            className="inline-flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-sm text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
           >
             <ArrowLeft className="size-4" />
             返回設定
@@ -378,7 +379,7 @@ export function SettingsDialog({
                   <button
                     type="button"
                     onClick={() => void copyGithubCode()}
-                    className="flex h-9 items-center gap-1.5 px-3 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    className="flex h-9 items-center gap-1.5 rounded-r-md px-3 text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset disabled:opacity-50"
                     disabled={!githubCode}
                   >
                     <Clipboard className="size-4" />
@@ -398,7 +399,7 @@ export function SettingsDialog({
                   <button
                     type="button"
                     onClick={() => void openExternal(githubUrl)}
-                    className="flex h-9 items-center gap-1.5 px-3 text-base text-muted-foreground hover:text-foreground"
+                    className="flex h-9 items-center gap-1.5 rounded-r-md px-3 text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
                   >
                     <ExternalLink className="size-4" />
                     開啟
@@ -414,7 +415,7 @@ export function SettingsDialog({
             type="button"
             onClick={() => setAgentPage(null)}
             disabled={connecting}
-            className="inline-flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-sm text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
           >
             <ArrowLeft className="size-4" />
             返回設定
@@ -428,7 +429,7 @@ export function SettingsDialog({
             <button
               type="button"
               onClick={() => void openExternal(agentPage.keyUrl)}
-              className="inline-flex items-center gap-1.5 text-base text-primary hover:underline"
+              className="inline-flex items-center gap-1.5 rounded-sm text-base text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               前往 {agentPage.platform}
               <ExternalLink className="size-3.5" />
@@ -450,7 +451,7 @@ export function SettingsDialog({
               <button
                 type="button"
                 onClick={() => setShowKey((v) => !v)}
-                className="flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
+                className="flex w-9 items-center justify-center rounded-r-md text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
                 aria-label={showKey ? '隱藏 API key' : '顯示 API key'}
               >
                 {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -472,7 +473,7 @@ export function SettingsDialog({
                 工作站資料夾
                 <span
                   className={cn(
-                    'ml-2 rounded px-1.5 py-0.5 text-xs font-medium',
+                    'ml-2 rounded-xs px-1.5 py-0.5 text-xs font-medium',
                     workstation.trim() === ''
                       ? 'bg-secondary text-secondary-foreground'
                       : 'bg-primary/15 text-primary'
@@ -490,7 +491,7 @@ export function SettingsDialog({
                 value={workstation}
                 placeholder="~/Desktop"
                 onChange={(e) => setWorkstation(e.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={cn(fieldClass, 'font-mono text-sm')}
               />
               <Button
                 variant="outline"
@@ -512,7 +513,7 @@ export function SettingsDialog({
                 System Prompt
                 <span
                   className={cn(
-                    'ml-2 rounded px-1.5 py-0.5 text-xs font-medium',
+                    'ml-2 rounded-xs px-1.5 py-0.5 text-xs font-medium',
                     isDefault
                       ? 'bg-secondary text-secondary-foreground'
                       : 'bg-primary/15 text-primary'
@@ -539,7 +540,7 @@ export function SettingsDialog({
               onChange={(e) => setText(e.target.value)}
               rows={10}
               spellCheck={false}
-              className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm leading-5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className={cn(fieldClass, 'resize-y font-mono text-sm leading-5')}
             />
             <p className="text-sm text-muted-foreground">
               啟動 Agent 時會以此 prompt 作為 system prompt；進度追蹤協議會隨任務內容自動附加。

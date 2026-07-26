@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { compareTasksByNewestFirst } from '@/lib/task-order'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
+import { SECTION_LABEL } from '@/components/ui/section-label'
 import {
   createEnterVariants,
   createPresenceVariants,
@@ -538,9 +539,9 @@ function UpdateBanner({
         </div>
 
         {update.status === 'downloading' && (
-          <div className="mt-3 h-1.5 overflow-hidden rounded bg-background/80">
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background/80">
             <div
-              className="h-full rounded bg-primary transition-[width] motion-reduce:transition-none"
+              className="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
               style={{ width: formatPercent(update.percent) }}
             />
           </div>
@@ -550,7 +551,7 @@ function UpdateBanner({
           type="button"
           disabled={!action}
           onClick={action}
-          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-sm font-medium text-primary-foreground transition-colors motion-reduce:transition-none hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-sm font-medium text-primary-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {update.status === 'downloading' && <RefreshCw className="size-3 animate-spin" />}
           {buttonLabel}
@@ -636,7 +637,7 @@ function SettingsDock({
         aria-checked={autoMode}
         onClick={onToggleAutoMode}
         title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-accent/60 hover:text-foreground"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span
           className={cn(
@@ -907,7 +908,7 @@ export function SideMenu({
               variants={contentVariants}
             >
               <div className="mb-1 flex items-center gap-1 px-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className={SECTION_LABEL}>
                   Projects
                 </span>
                 {!searching && projects.length > 0 && (
