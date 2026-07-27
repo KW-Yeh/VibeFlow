@@ -11,6 +11,8 @@ import {
   deleteBranch,
   syncBaseBranch,
   getWorktreeDiff,
+  getWorktreeDiffEntries,
+  getWorktreeDiffFile,
   commitAndPush,
 } from '../main/helpers/git.ts'
 import { PROGRESS_FILE } from '../main/helpers/progress.ts'
@@ -326,6 +328,129 @@ test('getWorktreeDiff — truncates oversized file content', async () => {
     assert.ok(big)
     assert.equal(big.truncated, true)
     assert.ok(big.newValue.endsWith('… (truncated)'))
+  } finally {
+    await cleanup()
+  }
+})
+
+// --- getWorktreeDiffEntries / getWorktreeDiffFile ---
+
+test('getWorktreeDiffEntries — lists changed files without any content', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/entries')
+    const wt = res.worktreePath
+    await writeFile(wt, 'added.txt', 'brand new\n')
+    await writeFile(wt, 'README.md', '# sandbox\nline a\nline b\n')
+
+    const entries = await getWorktreeDiffEntries(wt, 'main')
+    const byPath = Object.fromEntries(entries.map((e) => [e.path, e]))
+
+    assert.equal(byPath['added.txt'].status, '?')
+    assert.equal(byPath['README.md'].status, 'M')
+    // The entry shape must not carry file bodies — that is the whole point.
+    for (const entry of entries) {
+      assert.equal(entry.oldValue, undefined)
+      assert.equal(entry.newValue, undefined)
+    }
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffEntries — reports numstat line counts for tracked files', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/numstat')
+    const wt = res.worktreePath
+    // README.md starts as '# sandbox\n', so this is exactly two added lines.
+    await writeFile(wt, 'README.md', '# sandbox\nline a\nline b\n')
+
+    const entries = await getWorktreeDiffEntries(wt, 'main')
+    const readme = entries.find((e) => e.path === 'README.md')
+    assert.equal(readme.additions, 2)
+    assert.equal(readme.deletions, 0)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffEntries — untracked files report zero line counts', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/untracked-numstat')
+    const wt = res.worktreePath
+    await writeFile(wt, 'fresh.txt', 'a\nb\nc\n')
+
+    const entries = await getWorktreeDiffEntries(wt, 'main')
+    const fresh = entries.find((e) => e.path === 'fresh.txt')
+    assert.equal(fresh.status, '?')
+    assert.equal(fresh.additions, 0)
+    assert.equal(fresh.deletions, 0)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffEntries — { fetch: false } works with no remote at all', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/no-fetch')
+    const wt = res.worktreePath
+    await writeFile(wt, 'local.txt', 'local only\n')
+
+    const entries = await getWorktreeDiffEntries(wt, 'main', { fetch: false })
+    assert.ok(entries.some((e) => e.path === 'local.txt'))
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffEntries — excludes the agent progress file', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/entries-hidden')
+    const wt = res.worktreePath
+    await writeFile(wt, PROGRESS_FILE, '{"summary":"x","steps":[]}')
+    await writeFile(wt, 'real.txt', 'real\n')
+
+    const entries = await getWorktreeDiffEntries(wt, 'main')
+    assert.ok(!entries.some((e) => e.path === PROGRESS_FILE))
+    assert.ok(entries.some((e) => e.path === 'real.txt'))
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffFile — returns the same body getWorktreeDiff would', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/single')
+    const wt = res.worktreePath
+    await writeFile(wt, 'README.md', '# changed\n')
+
+    const single = await getWorktreeDiffFile(wt, 'main', 'README.md')
+    const fromFull = (await getWorktreeDiff(wt, 'main')).find(
+      (d) => d.path === 'README.md'
+    )
+    assert.deepEqual(single, fromFull)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffFile — null for a path that is not part of the diff', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/not-in-diff')
+    const wt = res.worktreePath
+    await writeFile(wt, 'changed.txt', 'yes\n')
+
+    // Unchanged tracked file, an absent path, and an escape attempt must all be
+    // refused — the renderer can only read what the diff already lists.
+    for (const p of ['README.md', 'nope.txt', '../../../etc/hosts']) {
+      assert.equal(await getWorktreeDiffFile(wt, 'main', p), null, `must refuse ${p}`)
+    }
   } finally {
     await cleanup()
   }

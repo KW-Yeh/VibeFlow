@@ -13,6 +13,7 @@ import {
   PROGRESS_FILE,
   PLAN_FILE,
 } from '../main/helpers/progress.ts'
+import { agentArtifactsPath } from '../main/helpers/artifacts.ts'
 
 async function tmpDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'vf-progress-'))
@@ -168,6 +169,21 @@ test('deleteAgentFiles — removes progress and plan files and is a no-op when a
     await assert.rejects(fs.access(agentPlanPath(base, wt)), { code: 'ENOENT' })
     // Second call on already-absent files must not throw.
     deleteAgentFiles(base, wt)
+  } finally {
+    await fs.rm(base, { recursive: true, force: true })
+  }
+})
+
+test('deleteAgentFiles — also removes the task artifacts directory', async () => {
+  const base = await tmpDir()
+  const wt = '/anywhere/feature-xyz'
+  try {
+    const artifactsDir = agentArtifactsPath(base, wt)
+    await fs.mkdir(path.join(artifactsDir, 'shots'), { recursive: true })
+    await fs.writeFile(path.join(artifactsDir, 'shots', 'home.png'), 'not-really-a-png')
+
+    deleteAgentFiles(base, wt)
+    await assert.rejects(fs.access(artifactsDir), { code: 'ENOENT' })
   } finally {
     await fs.rm(base, { recursive: true, force: true })
   }

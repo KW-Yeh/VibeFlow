@@ -646,10 +646,24 @@ export async function refreshWorktreeBase(
 
 // --- Review & finalize (Phase 4) ---
 
-export interface DiffFile {
+/**
+ * One changed file, without content — enough to render a file list. Cheap to
+ * compute (no blobs are read), so it is safe to poll.
+ */
+export interface DiffEntry {
   path: string
   /** Single-letter git status: A(dded) M(odified) D(eleted) R(enamed) ?(untracked) */
   status: string
+  /**
+   * Changed line counts from `git diff --numstat <base>` — base → working tree,
+   * matching what the diff viewer renders. Both are 0 for binary files and for
+   * untracked files (git reports no numstat for either).
+   */
+  additions: number
+  deletions: number
+}
+
+export interface DiffFile extends DiffEntry {
   oldValue: string
   newValue: string
   /** True if content was truncated for display. */
@@ -657,7 +671,8 @@ export interface DiffFile {
 }
 
 const MAX_BYTES = 1024 * 1024 // per-side content cap for the diff viewer
-const MAX_FILES = 80
+/** Cap on files reported per diff. Exported so the UI can flag truncation. */
+export const MAX_DIFF_FILES = 80
 
 function clip(content: string): { value: string; truncated: boolean } {
   if (content.length > MAX_BYTES) {
@@ -685,26 +700,27 @@ async function resolveBaseRef(
   }
 }
 
-/**
- * Compute the set of changed files in a worktree relative to its base branch,
- * returning full old/new file contents suitable for a side-by-side diff viewer.
- */
-export async function getWorktreeDiff(
-  worktreePath: string,
-  baseBranch: string
-): Promise<DiffFile[]> {
-  // Refresh origin/<baseBranch> so the diff is always against the latest remote.
+/** `git fetch origin <base>` so the diff is against the latest remote. */
+async function fetchBase(worktreePath: string, baseBranch: string): Promise<void> {
   try {
     await git(worktreePath, ['fetch', 'origin', baseBranch])
   } catch {
     // fetch failure (e.g. offline) is non-fatal — use local cache
   }
-  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+}
 
-  type Entry = { status: string; path: string }
+/**
+ * Changed files in a worktree vs `baseRef`, without reading any blob content.
+ * Committed changes first, then working-tree changes (which override, so the
+ * newest state wins), then untracked files.
+ */
+async function collectDiffEntries(
+  worktreePath: string,
+  baseRef: string
+): Promise<DiffEntry[]> {
   // Use a Map so dirty-status entries (working tree) override committed entries
   // for the same file — giving priority to the most up-to-date state.
-  const entryMap = new Map<string, Entry>()
+  const entryMap = new Map<string, DiffEntry>()
 
   function parseNameStatus(output: string): void {
     for (const line of output.split('\n').map((l) => l.trim()).filter(Boolean)) {
@@ -712,7 +728,24 @@ export async function getWorktreeDiff(
       const code = parts[0]?.[0] ?? 'M'
       // For renames (R100\told\tnew) use the new path.
       const filePath = parts[parts.length - 1]
-      entryMap.set(filePath, { status: code, path: filePath })
+      entryMap.set(filePath, {
+        path: filePath,
+        status: code,
+        additions: 0,
+        deletions: 0,
+      })
+    }
+  }
+
+  /** `-\t-\tpath` marks a binary file — leave those at 0 changed lines. */
+  function parseNumstat(output: string): void {
+    for (const line of output.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      const parts = line.split('\t')
+      if (parts.length < 3) continue
+      const entry = entryMap.get(parts[parts.length - 1])
+      if (!entry) continue
+      entry.additions = Number.parseInt(parts[0], 10) || 0
+      entry.deletions = Number.parseInt(parts[1], 10) || 0
     }
   }
 
@@ -727,57 +760,121 @@ export async function getWorktreeDiff(
     await git(worktreePath, ['diff', '--name-status', 'HEAD']).catch(() => '')
   )
 
-  // 3. Untracked files (not yet added).
+  // 3. Line counts, base → working tree (two-dot, so uncommitted edits count).
+  //    That is exactly the range the diff viewer renders, so the numbers match
+  //    the content shown. Runs after both name-status passes, which reset them.
+  parseNumstat(
+    await git(worktreePath, ['diff', '--numstat', baseRef]).catch(() => '')
+  )
+
+  // 4. Untracked files (not yet added). git reports no numstat for these.
   const untracked = await git(worktreePath, [
     'ls-files',
     '--others',
     '--exclude-standard',
   ]).catch(() => '')
   for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    if (!entryMap.has(p)) entryMap.set(p, { status: '?', path: p })
+    if (!entryMap.has(p)) {
+      entryMap.set(p, { path: p, status: '?', additions: 0, deletions: 0 })
+    }
   }
-
-  const entries = Array.from(entryMap.values())
 
   // The agent-maintained progress file, plan file, and sub-agent event log are
   // VibeFlow metadata, not changes to review — keep them out of the diff viewer.
-  const limited = entries
-    .filter(
-      (e) =>
-        e.path !== PROGRESS_FILE &&
-        e.path !== PLAN_FILE &&
-        e.path !== SUBAGENTS_DIR &&
-        !e.path.startsWith(`${SUBAGENTS_DIR}/`)
-    )
-    .slice(0, MAX_FILES)
+  return Array.from(entryMap.values()).filter(
+    (e) =>
+      e.path !== PROGRESS_FILE &&
+      e.path !== PLAN_FILE &&
+      e.path !== SUBAGENTS_DIR &&
+      !e.path.startsWith(`${SUBAGENTS_DIR}/`)
+  )
+}
+
+/** Old/new content for one entry, clipped to MAX_BYTES per side. */
+async function readDiffFile(
+  worktreePath: string,
+  baseRef: string,
+  entry: DiffEntry
+): Promise<DiffFile> {
+  let oldValue = ''
+  if (entry.status !== 'A' && entry.status !== '?') {
+    oldValue = await git(worktreePath, [
+      'show',
+      `${baseRef}:${entry.path}`,
+    ]).catch(() => '')
+  }
+  let newValue = ''
+  if (entry.status !== 'D') {
+    // Prefer working-tree content so uncommitted modifications are visible.
+    // Fall back to HEAD for files that exist in git but are absent on disk.
+    try {
+      newValue = await fs.readFile(path.join(worktreePath, entry.path), 'utf8')
+    } catch {
+      newValue = await git(worktreePath, ['show', `HEAD:${entry.path}`]).catch(() => '')
+    }
+  }
+  const oldClip = clip(oldValue)
+  const newClip = clip(newValue)
+  return {
+    ...entry,
+    oldValue: oldClip.value,
+    newValue: newClip.value,
+    truncated: oldClip.truncated || newClip.truncated,
+  }
+}
+
+/**
+ * Changed-file list for a worktree — metadata only, no blob content, so this is
+ * cheap enough to poll. `opts.fetch` defaults to true (matching
+ * getWorktreeDiff); pass false to stay entirely local and skip the network.
+ */
+export async function getWorktreeDiffEntries(
+  worktreePath: string,
+  baseBranch: string,
+  opts?: { fetch?: boolean }
+): Promise<DiffEntry[]> {
+  if (opts?.fetch !== false) await fetchBase(worktreePath, baseBranch)
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+  return (await collectDiffEntries(worktreePath, baseRef)).slice(0, MAX_DIFF_FILES)
+}
+
+/**
+ * Old/new content for a single changed file. Never fetches — the entry list owns
+ * that. Returns null when `filePath` is not part of the current diff, so a stale
+ * renderer request cannot read arbitrary files out of the worktree.
+ */
+export async function getWorktreeDiffFile(
+  worktreePath: string,
+  baseBranch: string,
+  filePath: string
+): Promise<DiffFile | null> {
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+  const entry = (await collectDiffEntries(worktreePath, baseRef)).find(
+    (e) => e.path === filePath
+  )
+  return entry ? readDiffFile(worktreePath, baseRef, entry) : null
+}
+
+/**
+ * Compute the set of changed files in a worktree relative to its base branch,
+ * returning full old/new file contents suitable for a side-by-side diff viewer.
+ * Backs the full-screen diff view; the sidebar file list uses
+ * getWorktreeDiffEntries + getWorktreeDiffFile instead, so it never pays for
+ * content it is not showing.
+ */
+export async function getWorktreeDiff(
+  worktreePath: string,
+  baseBranch: string
+): Promise<DiffFile[]> {
+  await fetchBase(worktreePath, baseBranch)
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+  const limited = (await collectDiffEntries(worktreePath, baseRef)).slice(
+    0,
+    MAX_DIFF_FILES
+  )
   const files: DiffFile[] = []
   for (const entry of limited) {
-    let oldValue = ''
-    if (entry.status !== 'A' && entry.status !== '?') {
-      oldValue = await git(worktreePath, [
-        'show',
-        `${baseRef}:${entry.path}`,
-      ]).catch(() => '')
-    }
-    let newValue = ''
-    if (entry.status !== 'D') {
-      // Prefer working-tree content so uncommitted modifications are visible.
-      // Fall back to HEAD for files that exist in git but are absent on disk.
-      try {
-        newValue = await fs.readFile(path.join(worktreePath, entry.path), 'utf8')
-      } catch {
-        newValue = await git(worktreePath, ['show', `HEAD:${entry.path}`]).catch(() => '')
-      }
-    }
-    const oldClip = clip(oldValue)
-    const newClip = clip(newValue)
-    files.push({
-      path: entry.path,
-      status: entry.status,
-      oldValue: oldClip.value,
-      newValue: newClip.value,
-      truncated: oldClip.truncated || newClip.truncated,
-    })
+    files.push(await readDiffFile(worktreePath, baseRef, entry))
   }
   return files
 }

@@ -62,6 +62,19 @@ const PROGRESS_FILE = '.vibeflow-progress.json'
  */
 const PLAN_FILE = 'PLAN.md'
 
+/**
+ * Temporary-artifact directory suffix. The agent writes screenshots, reports and
+ * logs to `<workspacePath>/<worktree-dir>.artifacts/` (see agentFilePaths) —
+ * outside the worktree so git never sees it — falling back to this bare,
+ * cwd-relative name only when paths are unknown. Must match
+ * ARTIFACTS_DIR_SUFFIX in main/helpers/artifacts.ts (string literal duplicated
+ * because the renderer cannot runtime-import main-process modules).
+ */
+const ARTIFACTS_DIR_SUFFIX = '.artifacts'
+
+/** cwd-relative fallback used when the workspace/worktree paths are unknown. */
+const ARTIFACTS_FALLBACK_DIR = '.vibeflow-artifacts'
+
 /** Last path segment, tolerant of both separators and a trailing slash. */
 function pathBasename(p: string): string {
   const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -80,14 +93,27 @@ function pathBasename(p: string): string {
 function agentFilePaths(
   worktreePath: string | undefined,
   workspacePath: string | undefined
-): { progress: string; plan: string } | null {
+): { progress: string; plan: string; artifacts: string } | null {
   if (!worktreePath || !workspacePath) return null
   const dir = toShellPath(workspacePath)
   const ws = pathBasename(worktreePath)
   return {
     progress: `${dir}/${ws}${PROGRESS_FILE}`,
     plan: `${dir}/${ws}.${PLAN_FILE}`,
+    artifacts: `${dir}/${ws}${ARTIFACTS_DIR_SUFFIX}`,
   }
+}
+
+/**
+ * The task's temporary-artifact directory, for display in the UI (the empty
+ * Artifacts state tells the user where the agent is expected to write). Null
+ * when the workspace or worktree path is unknown.
+ */
+export function taskArtifactsDir(
+  worktreePath: string | undefined,
+  workspacePath: string | undefined
+): string | null {
+  return agentFilePaths(worktreePath, workspacePath)?.artifacts ?? null
 }
 
 /**
@@ -97,7 +123,11 @@ function agentFilePaths(
  * view, and resume-on-rerun. Kept separate from DEFAULT_SYSTEM_PROMPT so editing
  * the workflow prompt cannot break progress tracking.
  */
-function buildProgressProtocolLines(progressFile: string, planFile: string): string {
+function buildProgressProtocolLines(
+  progressFile: string,
+  planFile: string,
+  artifactsDir: string
+): string {
   return [
     '進度追蹤協議（務必遵守）：',
     `1. 規劃階段：先把執行計劃寫入 ${planFile}（Markdown 格式，包含任務目標、執行步驟、預期成果）。`,
@@ -108,30 +138,37 @@ function buildProgressProtocolLines(progressFile: string, planFile: string): str
     `6. 進度檔（${progressFile}）與計劃檔（${planFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
     '7. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
     '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
+    `9. 暫存產物（UI 驗證截圖、比對報告、log 等「非最終交付物」）一律寫入 ${artifactsDir}/（目錄不存在請先建立）。做 UI 相關驗證時務必把截圖存到這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視，不必自行開 dev server。此目錄在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
   ].join('\n')
 }
 
 /**
- * Fixed progress-tracking protocol. `progressFile` / `planFile` are the paths
- * the agent writes to — absolute workspace-folder paths when known (see
- * agentFilePaths), else the legacy cwd-relative filenames. Exported const uses
+ * Fixed progress-tracking protocol. `progressFile` / `planFile` / `artifactsDir`
+ * are the paths the agent writes to — absolute workspace-folder paths when known
+ * (see agentFilePaths), else the legacy cwd-relative names. Exported const uses
  * the relative fallbacks for backward-compatible callers/tests.
  */
 export function buildProgressProtocol(
   progressFile: string = PROGRESS_FILE,
-  planFile: string = PLAN_FILE
+  planFile: string = PLAN_FILE,
+  artifactsDir: string = ARTIFACTS_FALLBACK_DIR
 ): string {
-  return buildProgressProtocolLines(progressFile, planFile)
+  return buildProgressProtocolLines(progressFile, planFile, artifactsDir)
 }
 
-export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(PROGRESS_FILE, PLAN_FILE)
+export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(
+  PROGRESS_FILE,
+  PLAN_FILE,
+  ARTIFACTS_FALLBACK_DIR
+)
 
 function appendProgressProtocol(
   prompt: string,
   progressFile?: string,
-  planFile?: string
+  planFile?: string,
+  artifactsDir?: string
 ): string {
-  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile)}`
+  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile, artifactsDir)}`
 }
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -443,7 +480,12 @@ export function buildClaudeCommand(
   const basePrompt = isExecution
     ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
-  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
+  const prompt = appendProgressProtocol(
+    basePrompt,
+    files?.progress,
+    files?.plan,
+    files?.artifacts
+  )
   const model = task.model || DEFAULT_MODELS.claude
   const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
   return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
@@ -611,7 +653,12 @@ export function buildAgentCommand(
       ? buildResumePrompt(task)
       : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
-  const prompt = appendProgressProtocol(basePrompt, files?.progress, files?.plan)
+  const prompt = appendProgressProtocol(
+    basePrompt,
+    files?.progress,
+    files?.plan,
+    files?.artifacts
+  )
   const sessionId = agent === 'claude'
     ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
     : undefined

@@ -11,7 +11,18 @@ export type {
   ConnectableAgentId,
   VibeFlowState,
 } from '../../main/helpers/store'
-export type { GitInfo, DiffFile, FinalizeResult, PrStatus } from '../../main/helpers/git'
+export type {
+  GitInfo,
+  DiffEntry,
+  DiffFile,
+  FinalizeResult,
+  PrStatus,
+} from '../../main/helpers/git'
+export type {
+  ArtifactContent,
+  ArtifactKind,
+  TaskArtifact,
+} from '../../main/helpers/artifacts'
 export type {
   MemoryCheckpoint,
   MemoryDecision,

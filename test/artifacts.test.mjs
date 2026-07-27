@@ -1,0 +1,254 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import os from 'node:os'
+import path from 'node:path'
+import fs from 'node:fs/promises'
+import {
+  agentArtifactsPath,
+  listArtifacts,
+  readArtifact,
+  deleteArtifacts,
+  ARTIFACTS_DIR_SUFFIX,
+  MAX_ARTIFACTS,
+} from '../main/helpers/artifacts.ts'
+
+async function tmpDir() {
+  return fs.mkdtemp(path.join(os.tmpdir(), 'vf-artifacts-'))
+}
+
+/** A tiny but structurally valid PNG (1x1, transparent). */
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYGD4DwABBAEAX+I4bwAAAABJRU5ErkJggg==',
+  'base64'
+)
+
+// --- agentArtifactsPath ---
+
+test('agentArtifactsPath — composes <baseDir>/<worktree-name>.artifacts', () => {
+  assert.equal(
+    agentArtifactsPath('/ws/proj', '/ws/proj/feature-x'),
+    path.join('/ws/proj', `feature-x${ARTIFACTS_DIR_SUFFIX}`)
+  )
+})
+
+// --- listArtifacts ---
+
+test('listArtifacts — empty for a missing directory', () => {
+  assert.deepEqual(listArtifacts('/definitely/not/here'), [])
+})
+
+test('listArtifacts — classifies images, text, and binary', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'shot.png'), PNG_BYTES)
+    await fs.writeFile(path.join(dir, 'report.md'), '# parity\n', 'utf8')
+    // A NUL byte in the head is what marks a file unpreviewable.
+    await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([1, 2, 0, 3]))
+
+    const byName = Object.fromEntries(listArtifacts(dir).map((a) => [a.name, a]))
+
+    assert.equal(byName['shot.png'].kind, 'image')
+    assert.equal(byName['shot.png'].mime, 'image/png')
+    assert.equal(byName['shot.png'].size, PNG_BYTES.byteLength)
+    assert.equal(typeof byName['shot.png'].modifiedAt, 'number')
+
+    assert.equal(byName['report.md'].kind, 'text')
+    assert.equal(byName['report.md'].mime, undefined)
+
+    assert.equal(byName['blob.bin'].kind, 'binary')
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — recurses into subdirectories using slash-joined names', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.mkdir(path.join(dir, 'shots'), { recursive: true })
+    await fs.writeFile(path.join(dir, 'shots', 'home.png'), PNG_BYTES)
+
+    const names = listArtifacts(dir).map((a) => a.name)
+    assert.deepEqual(names, ['shots/home.png'])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — stops descending past the depth cap', async () => {
+  const dir = await tmpDir()
+  try {
+    // Depth cap is 3, so a file at the 4th level must not be reported.
+    const deep = path.join(dir, 'a', 'b', 'c')
+    await fs.mkdir(deep, { recursive: true })
+    await fs.writeFile(path.join(deep, 'too-deep.txt'), 'x', 'utf8')
+    await fs.writeFile(path.join(dir, 'a', 'b', 'ok.txt'), 'x', 'utf8')
+
+    const names = listArtifacts(dir).map((a) => a.name)
+    assert.deepEqual(names, ['a/b/ok.txt'])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — caps the number of entries', async () => {
+  const dir = await tmpDir()
+  try {
+    await Promise.all(
+      Array.from({ length: MAX_ARTIFACTS + 10 }, (_, i) =>
+        fs.writeFile(path.join(dir, `f${i}.txt`), 'x', 'utf8')
+      )
+    )
+    assert.equal(listArtifacts(dir).length, MAX_ARTIFACTS)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — newest first', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'old.txt'), 'x', 'utf8')
+    await fs.writeFile(path.join(dir, 'new.txt'), 'x', 'utf8')
+    // mtime resolution can tie on fast filesystems — set them explicitly.
+    await fs.utimes(path.join(dir, 'old.txt'), new Date(1000), new Date(1000))
+    await fs.utimes(path.join(dir, 'new.txt'), new Date(9000), new Date(9000))
+
+    assert.deepEqual(listArtifacts(dir).map((a) => a.name), ['new.txt', 'old.txt'])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — skips symlinks', async () => {
+  const dir = await tmpDir()
+  try {
+    const outside = path.join(dir, '..', `outside-${path.basename(dir)}.txt`)
+    await fs.writeFile(outside, 'secret', 'utf8')
+    await fs.mkdir(path.join(dir, 'inner'), { recursive: true })
+    await fs.symlink(outside, path.join(dir, 'inner', 'link.txt'))
+
+    assert.deepEqual(listArtifacts(dir), [])
+    await fs.rm(outside, { force: true })
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+// --- readArtifact ---
+
+test('readArtifact — image comes back as a data URL', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'shot.png'), PNG_BYTES)
+    const content = readArtifact(dir, 'shot.png')
+    assert.equal(content.kind, 'image')
+    assert.equal(
+      content.dataUrl,
+      `data:image/png;base64,${PNG_BYTES.toString('base64')}`
+    )
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — text comes back verbatim and untruncated', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'log.txt'), 'hello\nworld\n', 'utf8')
+    const content = readArtifact(dir, 'log.txt')
+    assert.equal(content.kind, 'text')
+    assert.equal(content.text, 'hello\nworld\n')
+    assert.equal(content.truncated, false)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — oversized text is truncated and flagged', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'big.log'), 'x'.repeat(256 * 1024 + 10), 'utf8')
+    const content = readArtifact(dir, 'big.log')
+    assert.equal(content.kind, 'text')
+    assert.equal(content.truncated, true)
+    assert.equal(content.text.length, 256 * 1024)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — binary reports kind only, no content', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([1, 0, 2]))
+    const content = readArtifact(dir, 'blob.bin')
+    assert.equal(content.kind, 'binary')
+    assert.equal(content.text, undefined)
+    assert.equal(content.dataUrl, undefined)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — null for a missing file', async () => {
+  const dir = await tmpDir()
+  try {
+    assert.equal(readArtifact(dir, 'nope.txt'), null)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — refuses to escape the artifacts directory', async () => {
+  const dir = await tmpDir()
+  try {
+    const outside = path.join(dir, '..', `escape-${path.basename(dir)}.txt`)
+    await fs.writeFile(outside, 'secret', 'utf8')
+    const escapes = [
+      `../${path.basename(outside)}`,
+      `../../${path.basename(path.dirname(outside))}/${path.basename(outside)}`,
+      '/etc/hosts',
+    ]
+    for (const name of escapes) {
+      assert.equal(readArtifact(dir, name), null, `must refuse ${name}`)
+    }
+    await fs.rm(outside, { force: true })
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — refuses a symlink pointing outside the directory', async () => {
+  const dir = await tmpDir()
+  try {
+    const outside = path.join(dir, '..', `linked-${path.basename(dir)}.txt`)
+    await fs.writeFile(outside, 'secret', 'utf8')
+    await fs.symlink(outside, path.join(dir, 'link.txt'))
+
+    assert.equal(readArtifact(dir, 'link.txt'), null)
+    await fs.rm(outside, { force: true })
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+// --- deleteArtifacts ---
+
+test('deleteArtifacts — removes the directory and is a no-op when absent', async () => {
+  const base = await tmpDir()
+  try {
+    const worktree = path.join(base, 'feature-x')
+    const artifactsDir = agentArtifactsPath(base, worktree)
+    await fs.mkdir(path.join(artifactsDir, 'nested'), { recursive: true })
+    await fs.writeFile(path.join(artifactsDir, 'nested', 'shot.png'), PNG_BYTES)
+
+    deleteArtifacts(base, worktree)
+    assert.equal(listArtifacts(artifactsDir).length, 0)
+    await assert.rejects(() => fs.stat(artifactsDir))
+
+    // Second call must not throw.
+    deleteArtifacts(base, worktree)
+  } finally {
+    await fs.rm(base, { recursive: true, force: true })
+  }
+})

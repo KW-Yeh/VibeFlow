@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { deleteArtifacts } from './artifacts'
 
 /** One step in a task's execution plan, maintained by the Claude agent. */
 export interface TaskProgressStep {
@@ -73,10 +74,13 @@ export function agentPlanPath(baseDir: string, worktreePath: string): string {
 }
 
 /**
- * Best-effort removal of a task's progress + plan files. Called when
- * the task's worktree is torn down (cleanup / delete / re-provision) so these
- * runtime files share the worktree's lifecycle. The preserved plan.html is NOT
- * removed here — it outlives the task.
+ * Best-effort removal of a task's progress + plan files and its temporary
+ * artifact directory. Called when the task's worktree is torn down (cleanup /
+ * delete / re-provision) so these runtime files share the worktree's lifecycle.
+ * The preserved plan.html is NOT removed here — it outlives the task.
+ *
+ * Artifacts are cleaned here rather than at each teardown call site so a future
+ * teardown path cannot forget them.
  */
 export function deleteAgentFiles(baseDir: string, worktreePath: string): void {
   for (const p of [
@@ -89,6 +93,7 @@ export function deleteAgentFiles(baseDir: string, worktreePath: string): void {
       // best-effort — a missing file or unlink race must not fail teardown
     }
   }
+  deleteArtifacts(baseDir, worktreePath)
 }
 
 /** Parse + validate raw file content; null when malformed (e.g. mid-write). */

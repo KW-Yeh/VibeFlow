@@ -8,8 +8,15 @@ import type {
   VibeFlowState,
 } from './helpers/store'
 import type { AgentCli, AgentCliId } from './helpers/agents'
-import type { DiffFile, FinalizeResult, GitInfo, PrStatus } from './helpers/git'
+import type {
+  DiffEntry,
+  DiffFile,
+  FinalizeResult,
+  GitInfo,
+  PrStatus,
+} from './helpers/git'
 import type { TaskProgress } from './helpers/progress'
+import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
 import type {
   MemoryCheckpoint,
   MemoryLaunchInfo,
@@ -166,11 +173,24 @@ const vibeflow = {
     ipcRenderer.invoke('vibeflow:removeTask', taskId),
 
   // Review & finalize (Phase 4).
+  /** Full diff with content for every changed file — backs the full-screen view. */
   getDiff: (taskId: string): Promise<DiffFile[]> =>
     ipcRenderer.invoke('git:getDiff', taskId),
+  /** Changed-file list without content. Pass `{ fetch: false }` when polling. */
+  getDiffEntries: (taskId: string, opts?: { fetch?: boolean }): Promise<DiffEntry[]> =>
+    ipcRenderer.invoke('git:getDiffEntries', taskId, opts),
+  /** Content for one changed file, loaded when its row is expanded. */
+  getDiffFile: (taskId: string, filePath: string): Promise<DiffFile | null> =>
+    ipcRenderer.invoke('git:getDiffFile', taskId, filePath),
   /** Read the task's runtime PLAN.md artifact, when present. */
   getPlan: (taskId: string): Promise<string | null> =>
     ipcRenderer.invoke('task:getPlan', taskId),
+  /** Temporary artifacts the agent wrote for this task (metadata only). */
+  listArtifacts: (taskId: string): Promise<TaskArtifact[]> =>
+    ipcRenderer.invoke('task:listArtifacts', taskId),
+  /** Content of one artifact, by its name relative to the artifacts dir. */
+  readArtifact: (taskId: string, name: string): Promise<ArtifactContent | null> =>
+    ipcRenderer.invoke('task:readArtifact', taskId, name),
   /** Convert PLAN.md to plan.html and return the HTML string. */
   getPlanHtml: (taskId: string): Promise<string | null> =>
     ipcRenderer.invoke('task:getPlanHtml', taskId),

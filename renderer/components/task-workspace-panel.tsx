@@ -1,4 +1,5 @@
-import { lazy, memo, Suspense, useEffect, useId, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import type { DiffMethod } from 'react-diff-viewer-continued'
 import remarkGfm from 'remark-gfm'
 
@@ -11,11 +12,14 @@ const ReactMarkdown = lazy(() =>
 import {
   Check,
   CheckCircle2,
+  ChevronRight,
   Circle,
   FileDiff,
+  FileText,
   GitBranch,
   GitCompare,
   History,
+  Image as ImageIcon,
   Layers,
   Lightbulb,
   ListTodo,
@@ -30,23 +34,32 @@ import {
 
 import { TaskTerminal } from '@/components/task-terminal'
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { RoleAvatar } from '@/components/roles-dialog'
 import {
   buildAgentCommand,
   isTaskComplete,
+  taskArtifactsDir,
 } from '@/lib/claude'
 import {
   getCheckpoints,
   getDiff,
+  getDiffEntries,
+  getDiffFile,
   getPlanHtml,
   getRelatedTasks,
   getTaskLinks,
+  listArtifacts,
+  readArtifact,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
+  ArtifactContent,
+  ArtifactKind,
   ColumnId,
+  DiffEntry,
   DiffFile,
   MemoryCheckpoint,
   MemoryLaunchInfo,
@@ -55,6 +68,7 @@ import type {
   Role,
   SubAgentRun,
   Task,
+  TaskArtifact,
 } from '@/lib/types'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -63,6 +77,32 @@ const STATUS_LABEL: Record<string, string> = {
   D: '刪除',
   R: '更名',
   '?': '未追蹤',
+}
+
+const ARTIFACT_KIND_LABEL: Record<ArtifactKind, string> = {
+  image: '截圖',
+  text: '文字',
+  binary: '二進位',
+}
+
+/**
+ * Poll interval for the artifact list and the diff file list. Both reads are
+ * local (the diff poll passes `fetch: false`), so this costs a readdir and a few
+ * local git calls per tick.
+ */
+const POLL_INTERVAL_MS = 3000
+
+/**
+ * Cap the diff list is truncated at, so the UI can say so instead of silently
+ * showing a short list. Must match MAX_DIFF_FILES in main/helpers/git.ts (value
+ * duplicated because the renderer cannot runtime-import main-process modules).
+ */
+const MAX_DIFF_FILES = 80
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 interface LaunchEntry {
@@ -489,22 +529,218 @@ function MemorySection({ taskId }: { taskId: string }) {
   )
 }
 
-const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }) {
-  return (
-    <div className="overflow-hidden rounded-md border border-border/70">
-      <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
-        <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-          {STATUS_LABEL[file.status] ?? file.status}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
-          {file.path}
-        </span>
-        {file.truncated && (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            已截斷
-          </span>
-        )}
+/**
+ * Thumbnail for an image artifact. Each tile fetches its own data URL, so
+ * listing a directory of screenshots costs nothing until it is displayed.
+ * `modifiedAt` is a dep so an overwritten screenshot reloads on the next poll.
+ */
+function ArtifactThumb({ taskId, artifact }: { taskId: string; artifact: TaskArtifact }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    setDataUrl(null)
+    readArtifact(taskId, artifact.name)
+      .then((content) => {
+        if (active) setDataUrl(content?.dataUrl ?? null)
+      })
+      .catch(() => {
+        if (active) setDataUrl(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [taskId, artifact.name, artifact.modifiedAt])
+
+  if (!dataUrl) {
+    return (
+      <div className="flex h-24 items-center justify-center rounded-md border border-border/70 bg-card">
+        <ImageIcon className="size-5 text-muted-foreground" />
       </div>
+    )
+  }
+  return (
+    <img
+      src={dataUrl}
+      alt={artifact.name}
+      className="h-24 w-full rounded-md border border-border/70 bg-card object-contain"
+    />
+  )
+}
+
+/** Full-size artifact view. Images render inline; anything else falls back to text. */
+function ArtifactPreview({
+  taskId,
+  artifact,
+  onClose,
+}: {
+  taskId: string
+  artifact: TaskArtifact
+  onClose: () => void
+}) {
+  const [content, setContent] = useState<ArtifactContent | null | undefined>(undefined)
+
+  useEffect(() => {
+    let active = true
+    setContent(undefined)
+    readArtifact(taskId, artifact.name)
+      .then((next) => {
+        if (active) setContent(next)
+      })
+      .catch(() => {
+        if (active) setContent(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [taskId, artifact.name, artifact.modifiedAt])
+
+  return (
+    <DialogShell
+      title={artifact.name}
+      description={`${ARTIFACT_KIND_LABEL[artifact.kind]} · ${formatBytes(artifact.size)}`}
+      onClose={onClose}
+      showHeader
+      contentClassName="max-w-5xl"
+      bodyClassName="p-4"
+    >
+      {content === undefined ? (
+        <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          讀取中…
+        </div>
+      ) : content === null ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          讀不到這個檔案，可能已被刪除。
+        </p>
+      ) : content.kind === 'image' && content.dataUrl ? (
+        <img
+          src={content.dataUrl}
+          alt={artifact.name}
+          className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md"
+        />
+      ) : content.kind === 'binary' ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          二進位檔案（{formatBytes(artifact.size)}），不提供預覽。
+        </p>
+      ) : (
+        <>
+          <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs">
+            {content.text}
+          </pre>
+          {content.truncated && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              內容過長，僅顯示開頭 256 KB。
+            </p>
+          )}
+        </>
+      )}
+    </DialogShell>
+  )
+}
+
+/**
+ * Temporary artifacts the agent produced for this task — screenshots from UI
+ * verification, comparison reports, logs. The list is owned by the panel so the
+ * tab badge stays live even while this tab is closed.
+ */
+function ArtifactsContent({
+  taskId,
+  artifacts,
+  artifactsDir,
+}: {
+  taskId: string
+  artifacts: TaskArtifact[]
+  artifactsDir: string | null
+}) {
+  const [preview, setPreview] = useState<TaskArtifact | null>(null)
+
+  return (
+    <>
+      {artifacts.length === 0 ? (
+        <div className="space-y-2 py-8 text-center">
+          <p className="text-sm text-muted-foreground">還沒有暫存產物。</p>
+          <p className="text-xs leading-5 text-muted-foreground/80">
+            Agent 會把驗證截圖與報告寫進
+            {artifactsDir ? (
+              <code className="mx-1 break-all rounded-xs bg-muted/40 px-1 py-0.5 font-mono">
+                {artifactsDir}
+              </code>
+            ) : (
+              '任務的 artifacts 目錄'
+            )}
+            ，完成任務時會一併清除。
+          </p>
+        </div>
+      ) : (
+        <ul className="grid grid-cols-2 gap-2">
+          {artifacts.map((artifact) => (
+            <li key={artifact.name}>
+              <button
+                type="button"
+                onClick={() => setPreview(artifact)}
+                title={artifact.name}
+                className="w-full rounded-md border border-border/70 bg-muted/20 p-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                {artifact.kind === 'image' ? (
+                  <ArtifactThumb taskId={taskId} artifact={artifact} />
+                ) : (
+                  <div className="flex h-24 items-center justify-center rounded-md border border-border/70 bg-card">
+                    <FileText className="size-5 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    {artifact.name}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {formatBytes(artifact.size)}
+                  </span>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <AnimatePresence>
+        {preview && (
+          <ArtifactPreview
+            key={`artifact-${taskId}-${preview.name}`}
+            taskId={taskId}
+            artifact={preview}
+            onClose={() => setPreview(null)}
+          />
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
+
+const DiffFileViewer = memo(function DiffFileViewer({
+  file,
+  /** False inside the sidebar accordion, whose row already shows status + path. */
+  showHeader = true,
+}: {
+  file: DiffFile
+  showHeader?: boolean
+}) {
+  return (
+    <div className={cn('overflow-hidden', showHeader && 'rounded-md border border-border/70')}>
+      {showHeader && (
+        <div className="flex items-center gap-2 border-b border-border/70 bg-muted/30 px-2 py-1.5">
+          <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+            {STATUS_LABEL[file.status] ?? file.status}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
+            {file.path}
+          </span>
+          {file.truncated && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              已截斷
+            </span>
+          )}
+        </div>
+      )}
       <div className="min-w-0 max-w-full overflow-x-auto text-xs [&_.diff-content]:whitespace-pre-wrap [&_.diff-content]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_table]:min-w-full [&_table]:table-fixed [&_td]:min-w-0 [&_td]:align-top">
         <Suspense fallback={null}>
           <ReactDiffViewer
@@ -595,52 +831,176 @@ const DiffFileViewer = memo(function DiffFileViewer({ file }: { file: DiffFile }
   )
 })
 
+/**
+ * A cached file body is only reusable while the entry it came from is unchanged.
+ * Untracked files carry no numstat (see DiffEntry), so an edit to one is
+ * invisible here — those are treated as always stale by the caller.
+ */
+function sameEntry(a: DiffEntry, b: DiffEntry): boolean {
+  return (
+    a.status === b.status &&
+    a.additions === b.additions &&
+    a.deletions === b.deletions
+  )
+}
+
+/**
+ * Changed files as a collapsible list. The list itself is polled cheaply
+ * (`fetch: false`, metadata only); a file's body is loaded when its row is
+ * opened, and the full-screen view still loads everything at once.
+ */
 function DiffSection({ taskId }: { taskId: string }) {
-  const [files, setFiles] = useState<DiffFile[]>([])
+  const [entries, setEntries] = useState<DiffEntry[]>([])
+  /** path → body; a `null` value records "asked, not available" so it is not refetched. */
+  const [contents, setContents] = useState<Record<string, DiffFile | null>>({})
+  const [openPaths, setOpenPaths] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
   const [refreshNonce, setRefreshNonce] = useState(0)
 
+  const [expanded, setExpanded] = useState(false)
+  const [fullFiles, setFullFiles] = useState<DiffFile[] | null>(null)
+
+  const prevEntriesRef = useRef<DiffEntry[]>([])
+  const pendingRef = useRef<Set<string>>(new Set())
+
+  /** Adopt a fresh entry list, dropping cached bodies the list invalidates. */
+  const applyEntries = useCallback((next: DiffEntry[]) => {
+    const prevByPath = new Map(prevEntriesRef.current.map((e) => [e.path, e]))
+    prevEntriesRef.current = next
+    setEntries(next)
+    setContents((cache) => {
+      const kept: Record<string, DiffFile | null> = {}
+      for (const entry of next) {
+        if (!(entry.path in cache)) continue
+        if (entry.status === '?') continue
+        const before = prevByPath.get(entry.path)
+        if (!before || !sameEntry(before, entry)) continue
+        kept[entry.path] = cache[entry.path]
+      }
+      return kept
+    })
+  }, [])
+
+  // Reset per-task view state when switching tasks.
+  useEffect(() => {
+    setOpenPaths([])
+    setContents({})
+    setEntries([])
+    prevEntriesRef.current = []
+    pendingRef.current.clear()
+  }, [taskId])
+
+  // First load does a full remote refresh (matching the old behaviour); the
+  // self-rescheduling poll that follows stays local, so it never hits the
+  // network and cannot overlap with itself.
   useEffect(() => {
     let active = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const tick = async (withFetch: boolean) => {
+      try {
+        const next = await getDiffEntries(taskId, { fetch: withFetch })
+        if (!active) return
+        applyEntries(next)
+        setError(null)
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (active) {
+          setLoading(false)
+          timer = setTimeout(() => void tick(false), POLL_INTERVAL_MS)
+        }
+      }
+    }
+
     setLoading(true)
-    setError(null)
+    void tick(true)
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [taskId, refreshNonce, applyEntries])
+
+  // Load the body of any open row that has none.
+  useEffect(() => {
+    const missing = openPaths.filter(
+      (p) => !(p in contents) && !pendingRef.current.has(p)
+    )
+    if (missing.length === 0) return
+    let active = true
+    for (const filePath of missing) {
+      pendingRef.current.add(filePath)
+      getDiffFile(taskId, filePath)
+        .then((file) => {
+          if (active) setContents((c) => ({ ...c, [filePath]: file }))
+        })
+        .catch(() => {
+          if (active) setContents((c) => ({ ...c, [filePath]: null }))
+        })
+        .finally(() => {
+          pendingRef.current.delete(filePath)
+        })
+    }
+    return () => {
+      active = false
+    }
+  }, [taskId, openPaths, contents])
+
+  // The full-screen view keeps the original single-shot path: every file with
+  // its content, fetched fresh each time it opens.
+  useEffect(() => {
+    if (!expanded) return
+    let active = true
     getDiff(taskId)
       .then((next) => {
-        if (active) setFiles(next)
+        if (active) setFullFiles(next)
       })
       .catch((err) => {
         if (active) setError(err instanceof Error ? err.message : String(err))
       })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
     return () => {
       active = false
     }
-  }, [taskId, refreshNonce])
+  }, [expanded, taskId])
+
+  const closeExpanded = () => {
+    setExpanded(false)
+    setFullFiles(null)
+  }
+
+  const manualRefresh = () => {
+    setContents({})
+    prevEntriesRef.current = []
+    setRefreshNonce((n) => n + 1)
+  }
+
+  const toggle = (filePath: string) => {
+    setOpenPaths((open) =>
+      open.includes(filePath) ? open.filter((p) => p !== filePath) : [...open, filePath]
+    )
+  }
 
   return (
     <InfoSection
       title="Git diff"
       icon={<GitCompare className="size-3.5" />}
-      count={files.length}
+      count={entries.length}
       actions={
         <div className="flex items-center gap-1">
           <IconButton
             aria-label="重新整理 Git diff"
-            title="重新整理"
+            title="重新整理（含 fetch origin）"
             className="p-1"
             disabled={loading}
-            onClick={() => setRefreshNonce((n) => n + 1)}
+            onClick={manualRefresh}
           >
             <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
           </IconButton>
-          {files.length > 0 && (
+          {entries.length > 0 && (
             <IconButton
               aria-label="放大檢視 Git diff"
-              title="放大檢視"
+              title="放大檢視（全部展開）"
               className="p-1"
               onClick={() => setExpanded(true)}
             >
@@ -650,7 +1010,7 @@ function DiffSection({ taskId }: { taskId: string }) {
         </div>
       }
     >
-      {loading ? (
+      {loading && entries.length === 0 ? (
         <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           讀取 diff 中…
@@ -659,16 +1019,75 @@ function DiffSection({ taskId }: { taskId: string }) {
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
           {error}
         </div>
-      ) : files.length === 0 ? (
+      ) : entries.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
           與基準分支相比沒有變更。
         </p>
       ) : (
-        <div className="space-y-3">
-          {files.map((file) => (
-            <DiffFileViewer key={file.path} file={file} />
-          ))}
-        </div>
+        <>
+          <ul className="space-y-1">
+            {entries.map((entry) => {
+              const open = openPaths.includes(entry.path)
+              const body = entry.path in contents ? contents[entry.path] : undefined
+              return (
+                <li
+                  key={entry.path}
+                  className="overflow-hidden rounded-md border border-border/70"
+                >
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => toggle(entry.path)}
+                    className="flex w-full items-center gap-2 bg-muted/30 px-2 py-1.5 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
+                        open && 'rotate-90'
+                      )}
+                    />
+                    <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                      {STATUS_LABEL[entry.status] ?? entry.status}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-xs"
+                      title={entry.path}
+                    >
+                      {entry.path}
+                    </span>
+                    {(entry.additions > 0 || entry.deletions > 0) && (
+                      <span className="shrink-0 font-mono text-xs tabular-nums">
+                        <span className="text-success">+{entry.additions}</span>
+                        <span className="ml-1 text-destructive">−{entry.deletions}</span>
+                      </span>
+                    )}
+                  </button>
+                  {open && (
+                    <div className="border-t border-border/70">
+                      {body === undefined ? (
+                        <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          讀取內容中…
+                        </div>
+                      ) : body === null ? (
+                        <p className="py-4 text-center text-xs text-muted-foreground">
+                          讀不到這個檔案的內容。
+                        </p>
+                      ) : (
+                        <DiffFileViewer file={body} showHeader={false} />
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          {entries.length >= MAX_DIFF_FILES && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              變更檔案超過 {MAX_DIFF_FILES} 個，僅顯示前 {MAX_DIFF_FILES} 個。
+            </p>
+          )}
+        </>
       )}
       {expanded && (
         <div className="fixed inset-0 z-50 flex bg-background/95 text-foreground">
@@ -677,22 +1096,27 @@ function DiffSection({ taskId }: { taskId: string }) {
               <div className="min-w-0">
                 <h2 className="text-base font-semibold">Git diff</h2>
                 <p className="text-sm text-muted-foreground">
-                  {files.length} changed {files.length === 1 ? 'file' : 'files'}
+                  {entries.length} changed {entries.length === 1 ? 'file' : 'files'}
                 </p>
               </div>
               <IconButton
                 aria-label="關閉 diff 放大檢視"
                 title="關閉"
-                onClick={() => setExpanded(false)}
+                onClick={closeExpanded}
               >
                 <X className="size-4" />
               </IconButton>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <div className="mx-auto w-full max-w-6xl space-y-4">
-                {files.map((file) => (
-                  <DiffFileViewer key={file.path} file={file} />
-                ))}
+                {fullFiles === null ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    讀取全部 diff 內容中…
+                  </div>
+                ) : (
+                  fullFiles.map((file) => <DiffFileViewer key={file.path} file={file} />)
+                )}
               </div>
             </div>
           </div>
@@ -715,12 +1139,44 @@ export function TaskWorkspacePanel({
   onDelete,
   onOpenSubAgents,
 }: TaskWorkspacePanelProps) {
-  const [activeTaskTab, setActiveTaskTab] = useState<'task' | 'plan'>('task')
+  type TaskTab = 'task' | 'plan' | 'artifacts'
+  const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('task')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
   const tabBaseId = useId()
   const tabPanelId = `${tabBaseId}-panel`
-  const tabId = (tab: 'task' | 'plan') => `${tabBaseId}-tab-${tab}`
+  const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
   const cwd = task.worktreePath ?? task.projectPath ?? null
+  const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
+
+  // Polled here rather than inside ArtifactsContent so the tab's count stays
+  // live while the tab is closed. A completed task has no artifacts left (the
+  // directory is cleaned with its worktree), so skip the poll entirely there.
+  useEffect(() => {
+    if (column === 'done') {
+      setArtifacts([])
+      return
+    }
+    let active = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const tick = async () => {
+      try {
+        const next = await listArtifacts(task.id)
+        if (active) setArtifacts(next)
+      } catch {
+        // a failed listing just leaves the previous snapshot in place
+      } finally {
+        if (active) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
+      }
+    }
+
+    void tick()
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [task.id, column])
 
   // Inline delete confirmation is dismissible with Esc, matching the dialog
   // affordance elsewhere (the row is not a modal, so DialogShell doesn't cover it).
@@ -834,6 +1290,7 @@ export function TaskWorkspacePanel({
                 {([
                   ['task', '任務'],
                   ['plan', 'Plan'],
+                  ['artifacts', 'Artifacts'],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -851,6 +1308,11 @@ export function TaskWorkspacePanel({
                     )}
                   >
                     {label}
+                    {tab === 'artifacts' && artifacts.length > 0 && (
+                      <span className="ml-1 tabular-nums text-muted-foreground/80">
+                        {artifacts.length}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -865,8 +1327,14 @@ export function TaskWorkspacePanel({
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
-              ) : (
+              ) : activeTaskTab === 'plan' ? (
                 <PlanContent taskId={task.id} />
+              ) : (
+                <ArtifactsContent
+                  taskId={task.id}
+                  artifacts={artifacts}
+                  artifactsDir={artifactsDir}
+                />
               )}
             </div>
           </InfoSection>

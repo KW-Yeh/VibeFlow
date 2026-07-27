@@ -41,6 +41,8 @@ import {
   getGithubCompareUrl,
   getPrStatus,
   getWorktreeDiff,
+  getWorktreeDiffEntries,
+  getWorktreeDiffFile,
   initRepository,
   provisionWorktree,
   refreshWorktreeBase,
@@ -70,6 +72,11 @@ import {
   unwatchProgress,
   watchProgress,
 } from './helpers/progress'
+import {
+  agentArtifactsPath,
+  listArtifacts,
+  readArtifact,
+} from './helpers/artifacts'
 import {
   unwatchAllSubAgents,
   unwatchSubAgents,
@@ -349,9 +356,13 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
           throw new Error('任務已開始執行，無法更換專案資料夾或基準分支')
         }
         if (existing.worktreePath) {
-          const diff = await getWorktreeDiff(
+          // Only the count matters here, so use the entry list — it reads no
+          // blob content and skips the network fetch, keeping this dialog path
+          // off both.
+          const diff = await getWorktreeDiffEntries(
             existing.worktreePath,
-            existing.baseBranch ?? 'HEAD'
+            existing.baseBranch ?? 'HEAD',
+            { fetch: false }
           )
           if (diff.length > 0) {
             throw new Error('目前 worktree 已有變更，無法更換專案資料夾或基準分支')
@@ -536,6 +547,27 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getWorktreeDiff(task.worktreePath, task.baseBranch ?? 'HEAD')
   })
 
+  /**
+   * Changed-file list without content — cheap enough for the sidebar to poll.
+   * The renderer passes `fetch: false` when polling so a 3s tick never hits the
+   * network; the manual refresh button omits it to get a full remote refresh.
+   */
+  ipcMain.handle(
+    'git:getDiffEntries',
+    async (_event, taskId: string, opts?: { fetch?: boolean }) => {
+      const task = findTask(taskId)
+      if (!task?.worktreePath) return []
+      return getWorktreeDiffEntries(task.worktreePath, task.baseBranch ?? 'HEAD', opts)
+    }
+  )
+
+  /** Content for one changed file, fetched when its row is expanded. */
+  ipcMain.handle('git:getDiffFile', async (_event, taskId: string, filePath: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) return null
+    return getWorktreeDiffFile(task.worktreePath, task.baseBranch ?? 'HEAD', filePath)
+  })
+
   ipcMain.handle('task:getPlan', async (_event, taskId: string) => {
     const task = findTask(taskId)
     if (!task?.worktreePath || !task.workspacePath) return null
@@ -547,6 +579,26 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     } catch {
       return null
     }
+  })
+
+  /**
+   * Temporary artifacts (screenshots, reports, logs) the agent wrote for this
+   * task. Metadata only — bytes come from task:readArtifact per item. Empty once
+   * the worktree is gone, since the artifact dir is cleaned along with it.
+   */
+  ipcMain.handle('task:listArtifacts', (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath || !task.workspacePath) return []
+    return listArtifacts(agentArtifactsPath(task.workspacePath, task.worktreePath))
+  })
+
+  ipcMain.handle('task:readArtifact', (_event, taskId: string, name: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath || !task.workspacePath) return null
+    return readArtifact(
+      agentArtifactsPath(task.workspacePath, task.worktreePath),
+      name
+    )
   })
 
   /**

@@ -2,6 +2,7 @@ import type {
   AgentCli,
   AgentCliId,
   AppSettings,
+  ArtifactContent,
   AttachmentInput,
   BoardState,
   ChatChunk,
@@ -9,6 +10,7 @@ import type {
   ChatPhase,
   Conversation,
   ConnectableAgentId,
+  DiffEntry,
   DiffFile,
   FinalizeResult,
   GitInfo,
@@ -23,6 +25,7 @@ import type {
   Role,
   SubAgentRun,
   Task,
+  TaskArtifact,
   TaskProgress,
   VibeFlowState,
 } from '@/lib/types'
@@ -232,6 +235,35 @@ export async function removeTask(taskId: string): Promise<VibeFlowState | null> 
 export async function getDiff(taskId: string): Promise<DiffFile[]> {
   const b = bridge()
   return b ? b.getDiff(taskId) : []
+}
+
+export async function getDiffEntries(
+  taskId: string,
+  opts?: { fetch?: boolean }
+): Promise<DiffEntry[]> {
+  const b = bridge()
+  return b ? b.getDiffEntries(taskId, opts) : []
+}
+
+export async function getDiffFile(
+  taskId: string,
+  filePath: string
+): Promise<DiffFile | null> {
+  const b = bridge()
+  return b ? b.getDiffFile(taskId, filePath) : null
+}
+
+export async function listArtifacts(taskId: string): Promise<TaskArtifact[]> {
+  const b = bridge()
+  return b ? b.listArtifacts(taskId) : []
+}
+
+export async function readArtifact(
+  taskId: string,
+  name: string
+): Promise<ArtifactContent | null> {
+  const b = bridge()
+  return b ? b.readArtifact(taskId, name) : null
 }
 
 export async function getPlan(taskId: string): Promise<string | null> {
