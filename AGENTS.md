@@ -42,11 +42,18 @@ the project folder is chosen **per task** at creation time (there is no global
 | Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev app store and omit it for the packaged app store |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
+| Tests | `npm test` | `node --test` over `test/**/*.test.mjs` with TS type-stripping, so tests import `main/helpers/*.ts` directly. Headless — no Electron, no dev server. |
+| One test file | `NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" node --test ./test/git.test.mjs` | Same harness, single file — use while iterating |
 | Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app`. Uses the default Turbopack compiler for local development. |
 | Renderer build only (restricted runner) | `npm run build:renderer:webpack` | Same renderer build but forces `next build --webpack`; use this in Codex sandbox, Docker, or CI when Turbopack IPC / port binding is blocked. |
 
-There is **no lint or test runner configured** (no ESLint/Jest/Vitest). Do not invent
-one unless asked. "Lint" in the global playbook maps to **typecheck** here.
+There is **no linter configured** (no ESLint/Biome/Prettier). Do not invent one unless
+asked. "Lint" in the global playbook maps to **typecheck** here.
+
+There **is** a test runner: `npm test` drives Node's built-in `node --test` (no
+Jest/Vitest). Run it for any change under `main/helpers/` — that is where the existing
+coverage lives. See "Runtime verification" below for what belongs in a test versus what
+has to be checked in the live app.
 
 ### CLI task creation
 
@@ -141,8 +148,10 @@ A change is done only when, on the affected scope:
 
 1. `npx tsc --noEmit -p tsconfig.json` — clean (if `main/` touched).
 2. `npx tsc --noEmit -p renderer/tsconfig.json` — clean (if `renderer/` touched).
-3. `cd renderer && NODE_ENV=production npx next build` — succeeds for local renderer changes. In Docker, sandbox, or CI-like restricted runners, use `npm run build:renderer:webpack` instead.
-4. For behavioral changes, a **runtime check** in the live app (see below).
+3. `npm test` — green. Add cases for new `main/helpers/` behaviour; the `ui-consistency`
+   suite also guards renderer class conventions, so renderer changes can trip it.
+4. `cd renderer && NODE_ENV=production npx next build` — succeeds for local renderer changes. In Docker, sandbox, or CI-like restricted runners, use `npm run build:renderer:webpack` instead.
+5. For behavioral changes, a **runtime check** in the live app (see below).
 
 If you packaged (`npm run build`), confirm the `.app` boots without a crash loop.
 
@@ -150,13 +159,18 @@ If you packaged (`npm run build`), confirm the `.app` boots without a crash loop
 
 ## Runtime verification (how this repo is tested)
 
-There is no unit test harness, so verify behavior directly:
+Two layers: `npm test` covers anything reachable without Electron; everything else is
+driven in the live app over CDP.
 
-- **Git helpers** can be tested headless against a throwaway repo with Node's
-  type-stripping — no Electron needed:
-  `node --experimental-strip-types <test>.mts` importing from `main/helpers/git.ts`.
-  Set up a temp repo (and a bare remote for push paths) and assert on results.
-- **IPC / app behavior**: run `npm run dev`, then drive the renderer over the Chrome
+- **`main/helpers/*` logic** belongs in `test/<helper>.test.mjs` (`node:test` +
+  `node:assert/strict`). The harness strips types, so tests import the `.ts` helper
+  directly. `test/support/repo.mjs` provides `makeRepo()` for a throwaway repo with an
+  optional bare remote, plus `git()` / `writeFile()` / `exists()` — use it instead of
+  hand-rolling git fixtures. `test/ui-consistency.test.mjs` is the odd one out: it greps
+  renderer sources for design-system violations (radius ladder, `focus-visible:ring-[3px]`
+  on hand-written buttons, `DialogShell` headers) rather than executing anything.
+- **IPC / app behavior** cannot be unit-tested (it needs `ipcMain` + a window): run
+  `npm run dev`, then drive the renderer over the Chrome
   DevTools Protocol on `ws://localhost:5858` (the `/home` page target). Note the CDP
   `Runtime.evaluate` response is nested: `msg.result.result.value`. Use
   `awaitPromise: true, returnByValue: true` and call `window.vibeflow.*` directly.
