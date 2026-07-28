@@ -113,7 +113,7 @@ export default function HomePage() {
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
 
   // Side menu state
-  const [sideMenuCollapsed, setSideMenuCollapsed] = useState(false)
+  const [sideMenuCollapsed, setSideMenuCollapsed] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
@@ -144,6 +144,18 @@ export default function HomePage() {
       active = false
     }
   }, [])
+
+  // Unfinished work is the reason the sidebar exists, so it opens itself when
+  // there is any and steps out of the way when there is none. Keying off the
+  // *count* (not a boolean) means adding a task to an already-busy board still
+  // re-opens a manually collapsed sidebar, while moving a card between Backlog
+  // and In Progress leaves the count — and the user's manual choice — alone.
+  const openTaskCount = board.in_progress.length + board.backlog.length
+
+  useEffect(() => {
+    if (!loaded) return
+    setSideMenuCollapsed(openTaskCount === 0)
+  }, [loaded, openTaskCount])
 
   // Mirror live progress updates (pushed from main while sessions run) into
   // the local board copy. Main already persisted them — no persistBoard here.
