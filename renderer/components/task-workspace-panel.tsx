@@ -353,10 +353,12 @@ function PlanContent({ taskId }: { taskId: string }) {
   }
 
   return (
+    // Bleeds over InfoSection's p-4 so the rendered plan reaches the section
+    // edges; the offsets must stay in step with that padding.
     <iframe
       srcDoc={html}
-      className="-m-3 block border-0"
-      style={{ width: 'calc(100% + 1.5rem)', height: 'calc(100% + 1.5rem)' }}
+      className="-m-4 block border-0"
+      style={{ width: 'calc(100% + 2rem)', height: 'calc(100% + 2rem)' }}
       title="Plan"
     />
   )
@@ -1318,7 +1320,15 @@ export function TaskWorkspacePanel({
               </div>
             }
           >
-            <div role="tabpanel" id={tabPanelId} aria-labelledby={tabId(activeTaskTab)}>
+            {/* h-full gives the panel a definite height so a tab that fills its
+                space (the Plan iframe) can resolve a percentage height; taller
+                tabs still overflow into the section's own scroll container. */}
+            <div
+              role="tabpanel"
+              id={tabPanelId}
+              aria-labelledby={tabId(activeTaskTab)}
+              className="h-full"
+            >
               {activeTaskTab === 'task' ? (
                 <TaskInfo
                   task={task}

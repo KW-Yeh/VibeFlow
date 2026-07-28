@@ -162,6 +162,13 @@ function groupTasksByProject(
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
+// Default expansion the first time a project shows up: open it when there is
+// something left to do (or the selected task lives there). Seeded once and then
+// frozen, so a project does not collapse under the user as its tasks finish.
+function defaultProjectExpanded(project: ProjectGroup): boolean {
+  return project.hasSelected || project.tasks.some((entry) => entry.column !== 'done')
+}
+
 function projectInitials(name: string): string {
   return name
     .split(/[\s._-]+/)
@@ -753,23 +760,42 @@ export function SideMenu({
 
   const q = query.trim().toLowerCase()
   const searching = !collapsed && q.length > 0
-  let projects = groupTasksByProject(board, selectedTaskId)
-  if (searching) {
-    projects = projects
-      .map((project) => ({
-        ...project,
-        tasks: project.tasks.filter((entry) =>
-          entry.task.title.toLowerCase().includes(q)
-        ),
-      }))
-      .filter((project) => project.tasks.length > 0)
-  }
+  // Seeding reads the unfiltered list so a transient search filter can never
+  // freeze a project's default at "no matching tasks".
+  const allProjects = groupTasksByProject(board, selectedTaskId)
+  const projects = searching
+    ? allProjects
+        .map((project) => ({
+          ...project,
+          tasks: project.tasks.filter((entry) =>
+            entry.task.title.toLowerCase().includes(q)
+          ),
+        }))
+        .filter((project) => project.tasks.length > 0)
+    : allProjects
+
+  const projectKeys = allProjects.map((project) => project.key).join(' ')
+  useEffect(() => {
+    setProjectsExpanded((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const project of allProjects) {
+        if (project.key in next) continue
+        next[project.key] = defaultProjectExpanded(project)
+        changed = true
+      }
+      return changed ? next : prev
+    })
+    // `allProjects` is a fresh array every render; the key signature is what
+    // actually decides whether the project set changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectKeys])
 
   // When searching, every matching project is force-expanded so hits are always
   // visible; clearing the query restores the user's manual expansion state.
+  // The fallback covers the first frame before the seeding effect commits.
   const isExpanded = (project: ProjectGroup) =>
-    searching ||
-    (projectsExpanded[project.key] ?? (project.hasSelected || project.tasks.length > 0))
+    searching || (projectsExpanded[project.key] ?? defaultProjectExpanded(project))
   const allExpanded =
     projects.length > 0 && projects.every((project) => isExpanded(project))
   const toggleAll = () => {
