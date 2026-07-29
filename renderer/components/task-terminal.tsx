@@ -248,19 +248,31 @@ export function TaskTerminal({
       // CR for both Enter and Shift+Enter, so the CLI running in the PTY (e.g.
       // Claude Code) can't tell them apart and submits early. We intercept
       // Shift+Enter and forward ESC+CR — the same sequence Option+Enter produces,
-      // which these TUIs interpret as「insert newline」— then suppress xterm's
-      // default CR so the line isn't also submitted.
+      // which these TUIs interpret as「insert newline」on macOS and Windows alike,
+      // since the CLI parses the bytes itself rather than the host's key events.
+      //
+      // Returning false is not enough to suppress xterm's own CR: its _keyDown
+      // bails before calling cancel(), so _keyDownHandled stays false, the
+      // browser still fires keypress, and xterm turns that into `\r` — the PTY
+      // then got ESC+CR *and* CR, i.e. a newline immediately followed by submit.
+      // preventDefault on keydown is what stops the keypress (and the hidden
+      // textarea from inserting the newline itself).
       term.attachCustomKeyEventHandler((event) => {
-        if (
-          event.type === 'keydown' &&
+        // Only plain Shift+Enter: Alt+Enter already sends ESC+CR natively on
+        // Windows, and Ctrl/Cmd+Enter belong to whatever is running in the PTY.
+        const isShiftEnter =
           event.key === 'Enter' &&
           event.shiftKey &&
-          !readOnlyRef.current
-        ) {
-          api.term.input(sessionKey, '\x1b\r')
-          return false
-        }
-        return true
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey
+        // Mid-composition Enter commits the IME candidate (CJK input on both
+        // platforms); swallowing it there would break text entry.
+        if (!isShiftEnter || event.isComposing || readOnlyRef.current) return true
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.type === 'keydown') api.term.input(sessionKey, '\x1b\r')
+        return false
       })
 
       // Forward keystrokes only while the card is interactive (not Done).
