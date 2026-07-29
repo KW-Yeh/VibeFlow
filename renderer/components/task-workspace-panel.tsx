@@ -38,6 +38,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { RoleAvatar } from '@/components/roles-dialog'
+import { ZoomableImage } from '@/components/zoomable-image'
 import {
   buildAgentCommand,
   isTaskComplete,
@@ -637,11 +638,7 @@ function ArtifactPreview({
           讀不到這個檔案，可能已被刪除。
         </p>
       ) : content.kind === 'image' && content.dataUrl ? (
-        <img
-          src={content.dataUrl}
-          alt={artifact.name}
-          className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md"
-        />
+        <ZoomableImage src={content.dataUrl} alt={artifact.name} />
       ) : content.kind === 'binary' ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
           二進位檔案（{formatBytes(artifact.size)}），不提供預覽。
@@ -909,6 +906,57 @@ const DiffFileViewer = memo(function DiffFileViewer({
 })
 
 /**
+ * One changed file's diff, on its own. Opening a file from the list lands here
+ * rather than expanding it in place — a diff needs the width and the scroll
+ * height, both of which the sidebar list denies it.
+ */
+function DiffFileModal({
+  entry,
+  file,
+  onClose,
+}: {
+  entry: DiffEntry
+  /** `undefined` while the body loads, `null` when it could not be read. */
+  file: DiffFile | null | undefined
+  onClose: () => void
+}) {
+  return (
+    <DialogShell
+      title={entry.path}
+      description={
+        <span className="flex items-center gap-2">
+          <span>{STATUS_LABEL[entry.status] ?? entry.status}</span>
+          {(entry.additions > 0 || entry.deletions > 0) && (
+            <span className="font-mono tabular-nums">
+              <span className="text-success">+{entry.additions}</span>
+              <span className="ml-1 text-destructive">−{entry.deletions}</span>
+            </span>
+          )}
+          {file?.truncated && <span>· 已截斷</span>}
+        </span>
+      }
+      onClose={onClose}
+      showHeader
+      contentClassName="max-w-6xl"
+      bodyClassName="p-4"
+    >
+      {file === undefined ? (
+        <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          讀取內容中…
+        </div>
+      ) : file === null ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          讀不到這個檔案的內容。
+        </p>
+      ) : (
+        <DiffFileViewer file={file} showHeader={false} />
+      )}
+    </DialogShell>
+  )
+}
+
+/**
  * A cached file body is only reusable while the entry it came from is unchanged.
  * Untracked files carry no numstat (see DiffEntry), so an edit to one is
  * invisible here — those are treated as always stale by the caller.
@@ -922,15 +970,15 @@ function sameEntry(a: DiffEntry, b: DiffEntry): boolean {
 }
 
 /**
- * Changed files as a collapsible list. The list itself is polled cheaply
- * (`fetch: false`, metadata only); a file's body is loaded when its row is
- * opened, and the full-screen view still loads everything at once.
+ * Changed files as a flat list. The list itself is polled cheaply
+ * (`fetch: false`, metadata only); a file's body is loaded when its row opens
+ * the single-file modal, and the full-screen view still loads everything at once.
  */
 function DiffSection({ taskId }: { taskId: string }) {
   const [entries, setEntries] = useState<DiffEntry[]>([])
   /** path → body; a `null` value records "asked, not available" so it is not refetched. */
   const [contents, setContents] = useState<Record<string, DiffFile | null>>({})
-  const [openPaths, setOpenPaths] = useState<string[]>([])
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshNonce, setRefreshNonce] = useState(0)
@@ -961,7 +1009,7 @@ function DiffSection({ taskId }: { taskId: string }) {
 
   // Reset per-task view state when switching tasks.
   useEffect(() => {
-    setOpenPaths([])
+    setSelectedPath(null)
     setContents({})
     setEntries([])
     prevEntriesRef.current = []
@@ -999,30 +1047,34 @@ function DiffSection({ taskId }: { taskId: string }) {
     }
   }, [taskId, refreshNonce, applyEntries])
 
-  // Load the body of any open row that has none.
+  // Load the open file's body if the cache has none.
   useEffect(() => {
-    const missing = openPaths.filter(
-      (p) => !(p in contents) && !pendingRef.current.has(p)
-    )
-    if (missing.length === 0) return
+    const filePath = selectedPath
+    if (!filePath || filePath in contents || pendingRef.current.has(filePath)) return
     let active = true
-    for (const filePath of missing) {
-      pendingRef.current.add(filePath)
-      getDiffFile(taskId, filePath)
-        .then((file) => {
-          if (active) setContents((c) => ({ ...c, [filePath]: file }))
-        })
-        .catch(() => {
-          if (active) setContents((c) => ({ ...c, [filePath]: null }))
-        })
-        .finally(() => {
-          pendingRef.current.delete(filePath)
-        })
-    }
+    pendingRef.current.add(filePath)
+    getDiffFile(taskId, filePath)
+      .then((file) => {
+        if (active) setContents((c) => ({ ...c, [filePath]: file }))
+      })
+      .catch(() => {
+        if (active) setContents((c) => ({ ...c, [filePath]: null }))
+      })
+      .finally(() => {
+        pendingRef.current.delete(filePath)
+      })
     return () => {
       active = false
     }
-  }, [taskId, openPaths, contents])
+  }, [taskId, selectedPath, contents])
+
+  // A poll can retire the open file (committed, reverted, or deleted); there is
+  // nothing left to show for it, so close instead of stranding a stale diff.
+  useEffect(() => {
+    if (selectedPath && !entries.some((entry) => entry.path === selectedPath)) {
+      setSelectedPath(null)
+    }
+  }, [entries, selectedPath])
 
   // The full-screen view keeps the original single-shot path: every file with
   // its content, fetched fresh each time it opens.
@@ -1052,11 +1104,7 @@ function DiffSection({ taskId }: { taskId: string }) {
     setRefreshNonce((n) => n + 1)
   }
 
-  const toggle = (filePath: string) => {
-    setOpenPaths((open) =>
-      open.includes(filePath) ? open.filter((p) => p !== filePath) : [...open, filePath]
-    )
-  }
+  const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? null
 
   return (
     <InfoSection
@@ -1103,61 +1151,33 @@ function DiffSection({ taskId }: { taskId: string }) {
       ) : (
         <>
           <ul className="space-y-1">
-            {entries.map((entry) => {
-              const open = openPaths.includes(entry.path)
-              const body = entry.path in contents ? contents[entry.path] : undefined
-              return (
-                <li
-                  key={entry.path}
-                  className="overflow-hidden rounded-md border border-border/70"
+            {entries.map((entry) => (
+              <li key={entry.path}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPath(entry.path)}
+                  title={`檢視 ${entry.path} 的 diff`}
+                  className="flex w-full items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-2 py-1.5 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 >
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => toggle(entry.path)}
-                    className="flex w-full items-center gap-2 bg-muted/30 px-2 py-1.5 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                    {STATUS_LABEL[entry.status] ?? entry.status}
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate font-mono text-xs"
+                    title={entry.path}
                   >
-                    <ChevronRight
-                      className={cn(
-                        'size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
-                        open && 'rotate-90'
-                      )}
-                    />
-                    <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                      {STATUS_LABEL[entry.status] ?? entry.status}
+                    {entry.path}
+                  </span>
+                  {(entry.additions > 0 || entry.deletions > 0) && (
+                    <span className="shrink-0 font-mono text-xs tabular-nums">
+                      <span className="text-success">+{entry.additions}</span>
+                      <span className="ml-1 text-destructive">−{entry.deletions}</span>
                     </span>
-                    <span
-                      className="min-w-0 flex-1 truncate font-mono text-xs"
-                      title={entry.path}
-                    >
-                      {entry.path}
-                    </span>
-                    {(entry.additions > 0 || entry.deletions > 0) && (
-                      <span className="shrink-0 font-mono text-xs tabular-nums">
-                        <span className="text-success">+{entry.additions}</span>
-                        <span className="ml-1 text-destructive">−{entry.deletions}</span>
-                      </span>
-                    )}
-                  </button>
-                  {open && (
-                    <div className="border-t border-border/70">
-                      {body === undefined ? (
-                        <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
-                          <Loader2 className="size-3.5 animate-spin" />
-                          讀取內容中…
-                        </div>
-                      ) : body === null ? (
-                        <p className="py-4 text-center text-xs text-muted-foreground">
-                          讀不到這個檔案的內容。
-                        </p>
-                      ) : (
-                        <DiffFileViewer file={body} showHeader={false} />
-                      )}
-                    </div>
                   )}
-                </li>
-              )
-            })}
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+            ))}
           </ul>
           {entries.length >= MAX_DIFF_FILES && (
             <p className="mt-2 text-xs text-muted-foreground">
@@ -1166,6 +1186,18 @@ function DiffSection({ taskId }: { taskId: string }) {
           )}
         </>
       )}
+      <AnimatePresence>
+        {selectedEntry && (
+          <DiffFileModal
+            key={`diff-${taskId}-${selectedEntry.path}`}
+            entry={selectedEntry}
+            file={
+              selectedEntry.path in contents ? contents[selectedEntry.path] : undefined
+            }
+            onClose={() => setSelectedPath(null)}
+          />
+        )}
+      </AnimatePresence>
       {expanded && (
         <div className="fixed inset-0 z-50 flex bg-background/95 text-foreground">
           <div className="flex min-h-0 w-full flex-col">
