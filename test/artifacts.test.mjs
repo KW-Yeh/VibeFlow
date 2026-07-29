@@ -10,6 +10,7 @@ import {
   deleteArtifacts,
   ARTIFACTS_DIR_SUFFIX,
   MAX_ARTIFACTS,
+  SCRATCH_DIR_NAME,
 } from '../main/helpers/artifacts.ts'
 
 async function tmpDir() {
@@ -114,6 +115,66 @@ test('listArtifacts — newest first', async () => {
     await fs.utimes(path.join(dir, 'new.txt'), new Date(9000), new Date(9000))
 
     assert.deepEqual(listArtifacts(dir).map((a) => a.name), ['new.txt', 'old.txt'])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — flags the scratch subtree and keeps its slash-joined names', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.mkdir(path.join(dir, SCRATCH_DIR_NAME, 'logs'), { recursive: true })
+    await fs.writeFile(path.join(dir, 'shot.png'), PNG_BYTES)
+    await fs.writeFile(path.join(dir, SCRATCH_DIR_NAME, 'probe.sh'), 'echo hi\n', 'utf8')
+    await fs.writeFile(path.join(dir, SCRATCH_DIR_NAME, 'logs', 'run.log'), 'x\n', 'utf8')
+
+    const byName = Object.fromEntries(listArtifacts(dir).map((a) => [a.name, a]))
+
+    assert.equal(byName['shot.png'].scratch, false)
+    assert.equal(byName[`${SCRATCH_DIR_NAME}/probe.sh`].scratch, true)
+    assert.equal(byName[`${SCRATCH_DIR_NAME}/logs/run.log`].scratch, true)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — scratch files never crowd user-facing ones out of the cap', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.mkdir(path.join(dir, SCRATCH_DIR_NAME), { recursive: true })
+    await Promise.all(
+      Array.from({ length: MAX_ARTIFACTS }, (_, i) =>
+        fs.writeFile(path.join(dir, SCRATCH_DIR_NAME, `tmp${i}.sh`), 'x', 'utf8')
+      )
+    )
+    await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        fs.writeFile(path.join(dir, `shot${i}.png`), PNG_BYTES)
+      )
+    )
+
+    const listed = listArtifacts(dir)
+    assert.equal(listed.length, MAX_ARTIFACTS)
+    const shots = listed.filter((a) => !a.scratch).map((a) => a.name).sort()
+    assert.deepEqual(shots, ['shot0.png', 'shot1.png', 'shot2.png', 'shot3.png', 'shot4.png'])
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — scratch files sort after user-facing ones regardless of mtime', async () => {
+  const dir = await tmpDir()
+  try {
+    await fs.mkdir(path.join(dir, SCRATCH_DIR_NAME), { recursive: true })
+    await fs.writeFile(path.join(dir, 'report.md'), 'x', 'utf8')
+    await fs.writeFile(path.join(dir, SCRATCH_DIR_NAME, 'fresh.log'), 'x', 'utf8')
+    await fs.utimes(path.join(dir, 'report.md'), new Date(1000), new Date(1000))
+    await fs.utimes(path.join(dir, SCRATCH_DIR_NAME, 'fresh.log'), new Date(9000), new Date(9000))
+
+    assert.deepEqual(
+      listArtifacts(dir).map((a) => a.name),
+      ['report.md', `${SCRATCH_DIR_NAME}/fresh.log`]
+    )
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }

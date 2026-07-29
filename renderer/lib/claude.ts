@@ -72,6 +72,14 @@ const PLAN_FILE = 'PLAN.md'
  */
 const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 
+/**
+ * Subdirectory the agent keeps its own working files in, so the Artifacts view
+ * can separate them from the screenshots and reports meant for the user. Must
+ * match SCRATCH_DIR_NAME in main/helpers/artifacts.ts (string literal duplicated
+ * because the renderer cannot runtime-import main-process modules).
+ */
+const SCRATCH_DIR_NAME = 'scratch'
+
 /** cwd-relative fallback used when the workspace/worktree paths are unknown. */
 const ARTIFACTS_FALLBACK_DIR = '.vibeflow-artifacts'
 
@@ -138,7 +146,10 @@ function buildProgressProtocolLines(
     `6. 進度檔（${progressFile}）與計劃檔（${planFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
     '7. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
     '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
-    `9. 暫存產物（UI 驗證截圖、比對報告、log 等「非最終交付物」）一律寫入 ${artifactsDir}/（目錄不存在請先建立）。做 UI 相關驗證時務必把截圖存到這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視，不必自行開 dev server。此目錄在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
+    `9. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
+    `9a. 要給使用者看的驗證證據（UI 驗證截圖、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把截圖存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視，不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
+    `9b. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
+    `9c. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
   ].join('\n')
 }
 

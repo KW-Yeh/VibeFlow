@@ -10,6 +10,16 @@ import path from 'path'
  */
 export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 
+/**
+ * Subdirectory the agent is told to keep its own working files in (one-off
+ * scripts, logs, intermediate output) as opposed to the screenshots and reports
+ * it produces for the user. It stays inside the artifacts dir so cleanup is
+ * unchanged, but every entry below it is flagged, which lets the listing budget
+ * favour user-facing files and lets the UI fold the rest away. Mirrors
+ * SCRATCH_DIR_NAME in renderer/lib/claude.ts.
+ */
+export const SCRATCH_DIR_NAME = 'scratch'
+
 /** How an artifact is presented: rendered inline, as plain text, or not at all. */
 export type ArtifactKind = 'image' | 'text' | 'binary'
 
@@ -24,6 +34,8 @@ export interface TaskArtifact {
   kind: ArtifactKind
   /** Images only — the MIME the data URL is built with. */
   mime?: string
+  /** True for the agent's own working files (under SCRATCH_DIR_NAME). */
+  scratch: boolean
 }
 
 export interface ArtifactContent {
@@ -110,15 +122,19 @@ function resolveInside(dir: string, name: string): string | null {
 }
 
 /**
- * Artifacts in `dir`, newest first. Metadata only — bytes are fetched per item
- * by readArtifact, so listing a directory of screenshots costs no image data.
+ * Artifacts in `dir`: user-facing files first, then the agent's scratch files,
+ * each group newest first. Metadata only — bytes are fetched per item by
+ * readArtifact, so listing a directory of screenshots costs no image data.
  * Returns [] when the directory is absent, which is the common case (the agent
  * has not produced anything yet).
+ *
+ * The scratch subtree is walked in a second pass so a task that wrote a hundred
+ * throwaway scripts cannot push its screenshots past MAX_ARTIFACTS.
  */
 export function listArtifacts(dir: string): TaskArtifact[] {
   const found: TaskArtifact[] = []
 
-  const walk = (current: string, prefix: string, depth: number): void => {
+  const walk = (current: string, prefix: string, depth: number, scratch: boolean): void => {
     if (found.length >= MAX_ARTIFACTS) return
     let dirents: fs.Dirent[]
     try {
@@ -131,7 +147,8 @@ export function listArtifacts(dir: string): TaskArtifact[] {
       const name = prefix ? `${prefix}/${dirent.name}` : dirent.name
       const full = path.join(current, dirent.name)
       if (dirent.isDirectory()) {
-        if (depth < MAX_DEPTH) walk(full, name, depth + 1)
+        if (!scratch && depth === 1 && dirent.name === SCRATCH_DIR_NAME) continue
+        if (depth < MAX_DEPTH) walk(full, name, depth + 1, scratch)
         continue
       }
       // Regular files only — symlinks, sockets and fifos are not artifacts.
@@ -150,12 +167,16 @@ export function listArtifacts(dir: string): TaskArtifact[] {
         modifiedAt: stat.mtimeMs,
         kind: mime ? 'image' : sniffKind(full),
         mime,
+        scratch,
       })
     }
   }
 
-  walk(dir, '', 1)
-  return found.sort((a, b) => b.modifiedAt - a.modifiedAt)
+  walk(dir, '', 1, false)
+  walk(path.join(dir, SCRATCH_DIR_NAME), SCRATCH_DIR_NAME, 2, true)
+  return found.sort(
+    (a, b) => Number(a.scratch) - Number(b.scratch) || b.modifiedAt - a.modifiedAt
+  )
 }
 
 /** Content of one artifact; null when absent, not a regular file, or escaping `dir`. */

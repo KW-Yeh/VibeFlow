@@ -105,6 +105,25 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/** Coarse "how fresh is this" label for the folded artifact rows. */
+function formatAge(modifiedAt: number): string {
+  const minutes = Math.floor((Date.now() - modifiedAt) / 60_000)
+  if (minutes < 1) return '剛剛'
+  if (minutes < 60) return `${minutes} 分前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小時前`
+  return `${Math.floor(hours / 24)} 天前`
+}
+
+/**
+ * Whether an artifact is verification evidence the user is meant to look at.
+ * Everything else — reports, scripts, logs, and anything the agent parked in its
+ * scratch subdirectory — is noise in the gallery and gets folded away instead.
+ */
+function isVerificationShot(artifact: TaskArtifact): boolean {
+  return artifact.kind === 'image' && !artifact.scratch
+}
+
 interface LaunchEntry {
   command: string
   nonce: number
@@ -600,7 +619,9 @@ function ArtifactPreview({
   return (
     <DialogShell
       title={artifact.name}
-      description={`${ARTIFACT_KIND_LABEL[artifact.kind]} · ${formatBytes(artifact.size)}`}
+      description={`${ARTIFACT_KIND_LABEL[artifact.kind]} · ${formatBytes(artifact.size)}${
+        artifact.scratch ? ' · 工作暫存' : ''
+      }`}
       onClose={onClose}
       showHeader
       contentClassName="max-w-5xl"
@@ -642,9 +663,12 @@ function ArtifactPreview({
 }
 
 /**
- * Temporary artifacts the agent produced for this task — screenshots from UI
- * verification, comparison reports, logs. The list is owned by the panel so the
- * tab badge stays live even while this tab is closed.
+ * Temporary artifacts the agent produced for this task. Verification screenshots
+ * get the gallery — they are what the tab exists for — while reports, scripts,
+ * logs and the agent's scratch files are folded into one collapsed list, since a
+ * task routinely writes a hundred of those and the user opens almost none. The
+ * list is owned by the panel so the tab badge stays live even while this tab is
+ * closed.
  */
 function ArtifactsContent({
   taskId,
@@ -656,6 +680,9 @@ function ArtifactsContent({
   artifactsDir: string | null
 }) {
   const [preview, setPreview] = useState<TaskArtifact | null>(null)
+  const [showOthers, setShowOthers] = useState(false)
+  const shots = artifacts.filter(isVerificationShot)
+  const others = artifacts.filter((artifact) => !isVerificationShot(artifact))
 
   return (
     <>
@@ -671,38 +698,86 @@ function ArtifactsContent({
             ) : (
               '任務的 artifacts 目錄'
             )}
+            ，工作暫存放其下的 <code className="rounded-xs bg-muted/40 px-1 py-0.5 font-mono">scratch/</code>
             ，完成任務時會一併清除。
           </p>
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-2">
-          {artifacts.map((artifact) => (
-            <li key={artifact.name}>
+        <div className="space-y-2">
+          {shots.length > 0 ? (
+            <ul className="grid grid-cols-2 gap-2">
+              {shots.map((artifact) => (
+                <li key={artifact.name}>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(artifact)}
+                    title={artifact.name}
+                    className="w-full rounded-md border border-border/70 bg-muted/20 p-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <ArtifactThumb taskId={taskId} artifact={artifact} />
+                    <div className="mt-1.5 flex items-baseline gap-1.5">
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                        {artifact.name}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {formatBytes(artifact.size)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              還沒有驗證截圖。
+            </p>
+          )}
+
+          {others.length > 0 && (
+            <div className="rounded-md border border-border/70">
               <button
                 type="button"
-                onClick={() => setPreview(artifact)}
-                title={artifact.name}
-                className="w-full rounded-md border border-border/70 bg-muted/20 p-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                onClick={() => setShowOthers((open) => !open)}
+                aria-expanded={showOthers}
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
-                {artifact.kind === 'image' ? (
-                  <ArtifactThumb taskId={taskId} artifact={artifact} />
-                ) : (
-                  <div className="flex h-24 items-center justify-center rounded-md border border-border/70 bg-card">
-                    <FileText className="size-5 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="mt-1.5 flex items-baseline gap-1.5">
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                    {artifact.name}
-                  </span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {formatBytes(artifact.size)}
-                  </span>
-                </div>
+                <ChevronRight
+                  className={cn(
+                    'size-3.5 shrink-0 transition-transform motion-reduce:transition-none',
+                    showOthers && 'rotate-90'
+                  )}
+                />
+                其他 {others.length} 個檔案（報告、script、log）
               </button>
-            </li>
-          ))}
-        </ul>
+              {showOthers && (
+                <ul className="border-t border-border/70">
+                  {others.map((artifact) => (
+                    <li key={artifact.name}>
+                      <button
+                        type="button"
+                        onClick={() => setPreview(artifact)}
+                        title={artifact.name}
+                        className="flex w-full items-center gap-2 px-2 py-1 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        {artifact.kind === 'image' ? (
+                          <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                          {artifact.name}
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/80">
+                          {formatAge(artifact.modifiedAt)} · {formatBytes(artifact.size)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       )}
       <AnimatePresence>
         {preview && (
@@ -1150,6 +1225,9 @@ export function TaskWorkspacePanel({
   const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
+  // Badge counts verification screenshots only — a count that included the
+  // agent's scripts and logs said nothing about whether there was anything to see.
+  const shotCount = artifacts.filter(isVerificationShot).length
 
   // Polled here rather than inside ArtifactsContent so the tab's count stays
   // live while the tab is closed. A completed task has no artifacts left (the
@@ -1310,9 +1388,9 @@ export function TaskWorkspacePanel({
                     )}
                   >
                     {label}
-                    {tab === 'artifacts' && artifacts.length > 0 && (
+                    {tab === 'artifacts' && shotCount > 0 && (
                       <span className="ml-1 tabular-nums text-muted-foreground/80">
-                        {artifacts.length}
+                        {shotCount}
                       </span>
                     )}
                   </button>
