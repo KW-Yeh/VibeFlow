@@ -176,6 +176,19 @@ try {
   fail(`Failed to spawn a process through node-pty for ${platformArch}.`, error)
 }
 
-console.log(
-  `[node-pty] OK: source=${source}; helper=${helper}; mode=${helperMode}; smoke=${smokeToken}; Electron rebuild skipped.`
+// Force the process down instead of letting the event loop drain.
+//
+// The smoke test leaves node-pty's conout worker thread and its pipe handles
+// ref'd on Windows: `ConoutConnection.dispose()` is only reached from `kill()`,
+// which a child that exits on its own never triggers, so nothing releases them.
+// Calling `kill()` post-exit does release them, but it spawns node-pty's
+// console-list agent, which prints `AttachConsole failed` and adds ~6s. Nothing
+// here is meant to outlive the check, and the `fail()` paths already exit hard;
+// without the same on success, `npm postinstall` hangs forever on Windows.
+//
+// The exit waits for the write to flush — stdout is async when it points at a
+// Windows TTY, so a bare `process.exit()` can truncate the line.
+process.stdout.write(
+  `[node-pty] OK: source=${source}; helper=${helper}; mode=${helperMode}; smoke=${smokeToken}; Electron rebuild skipped.\n`,
+  () => process.exit(0)
 )
