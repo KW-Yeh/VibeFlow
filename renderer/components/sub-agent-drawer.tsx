@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { MarkdownContent } from '@/components/markdown-content'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import type { SubAgentRun, SubAgentStatus } from '@/lib/types'
 
@@ -59,15 +60,24 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-/** Collapsible labeled text block (prompt / result), monospace + scrollable. */
+/**
+ * Collapsible labeled text block, scrollable.
+ *
+ * `markdown` renders the body as GFM — right for a sub-agent's result, which is
+ * prose written for a human. It is deliberately NOT used for the prompt: that is
+ * the verbatim string the sub-agent received, its whitespace is significant, and
+ * the copy button beside it has to hand back exactly what is on screen.
+ */
 function TextBlock({
   label,
   text,
   defaultOpen,
+  markdown = false,
 }: {
   label: string
   text: string
   defaultOpen?: boolean
+  markdown?: boolean
 }) {
   const [open, setOpen] = useState(!!defaultOpen)
   const contentId = useId()
@@ -90,14 +100,23 @@ function TextBlock({
         </button>
         {open && <CopyButton text={text} />}
       </div>
-      {open && (
-        <pre
-          id={contentId}
-          className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 px-2.5 py-2 text-xs leading-relaxed text-foreground/90"
-        >
-          {text}
-        </pre>
-      )}
+      {open &&
+        (markdown ? (
+          <div id={contentId} className="border-t border-border/40">
+            <MarkdownContent
+              source={text}
+              compact
+              className="max-h-60 overflow-auto bg-transparent px-2.5 py-2 text-foreground/90"
+            />
+          </div>
+        ) : (
+          <pre
+            id={contentId}
+            className="max-h-60 overflow-auto whitespace-pre-wrap break-words border-t border-border/40 px-2.5 py-2 text-xs leading-relaxed text-foreground/90"
+          >
+            {text}
+          </pre>
+        ))}
     </div>
   )
 }
@@ -128,7 +147,7 @@ function RunItem({ run, index }: { run: SubAgentRun; index: number }) {
       <div className="space-y-2">
         <TextBlock label="Prompt" text={run.prompt} defaultOpen={promptDefaultOpen} />
         {run.status !== 'running' && run.result != null && (
-          <TextBlock label="結果" text={run.result} />
+          <TextBlock label="結果" text={run.result} markdown />
         )}
       </div>
     </li>

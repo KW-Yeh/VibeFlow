@@ -139,6 +139,17 @@ renderer/                  Next.js app (Pages Router)
   the target project's `.gitignore`.
 - **Dark theme**: the app wraps content in `<div className="dark">`; style with the
   shadcn token classes (`bg-background`, `text-muted-foreground`, etc.), not raw colors.
+- **Markdown renders in two places and they must agree.** The main process turns
+  PLAN.md into a standalone HTML document (`main/helpers/markdown.ts` → `plan-html.ts`,
+  consumed by the Plan tab's iframe and the mobile remote); the renderer renders
+  everything else through `components/markdown-content.tsx` → `markdown-body.tsx`.
+  They cannot share code — the renderer must not import main at runtime — so three
+  things are deliberately duplicated and have to change together: the remark/rehype
+  plugin set, the highlight.js language list (`main/helpers/markdown.ts` ↔
+  `renderer/lib/markdown-plugins.ts`), and the CSS (`plan-html.ts`'s inlined styles ↔
+  the `.prose`/`.hljs-*` blocks in `renderer/styles/globals.css`). Raw HTML is
+  disabled on both sides; see `MARKDOWN_RENDERING_PLAN.md` §6 before enabling it.
+  Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.
 
 ---
 

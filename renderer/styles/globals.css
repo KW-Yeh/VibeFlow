@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin "@tailwindcss/typography";
 
 :root {
   /* Notion-after-dark token set. Single fixed dark theme (no light/dark
@@ -90,4 +91,156 @@
     touch-action: manipulation;
     font-family: var(--font-sans);
   }
+}
+
+/* ── Rendered markdown ──────────────────────────────────────────────────────
+   Unlayered on purpose: these must beat the typography plugin's own utilities,
+   and unlayered CSS always wins over @layer'd CSS.
+
+   The app is a single fixed dark theme (see :root above), so instead of
+   `prose-invert` — which swaps to typography's generic dark greys — every
+   --tw-prose-* var is bound to the Notion-after-dark token set. Keep this in
+   step with the standalone plan document's CSS in main/helpers/plan-html.ts;
+   the two render the same markdown and must not drift apart. */
+.prose {
+  --tw-prose-body: var(--muted-foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-lead: var(--muted-foreground);
+  --tw-prose-links: var(--primary);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-counters: var(--muted-foreground);
+  --tw-prose-bullets: var(--muted-foreground);
+  --tw-prose-hr: var(--border);
+  --tw-prose-quotes: var(--muted-foreground);
+  --tw-prose-quote-borders: var(--border);
+  --tw-prose-captions: var(--muted-foreground);
+  --tw-prose-code: var(--foreground);
+  --tw-prose-pre-code: var(--foreground);
+  --tw-prose-pre-bg: var(--background);
+  --tw-prose-th-borders: var(--input);
+  --tw-prose-td-borders: var(--border);
+}
+
+/* Typography ships sm/base/lg/… but no xs step, and the compact variant needs
+   one denser than prose-sm. Prose's internal spacing is em-based, so setting
+   the container font-size scales the whole scale with it. */
+.prose-xs {
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+/* react-markdown renders GFM task lists as a plain <ul> carrying
+   `contains-task-list`; strip the marker the bullet would otherwise add. */
+.prose ul.contains-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+.prose li.task-list-item {
+  padding-left: 0;
+}
+.prose li.task-list-item::marker {
+  content: none;
+}
+.prose li.task-list-item input[type='checkbox'] {
+  accent-color: var(--primary);
+  margin-right: 0.4em;
+  vertical-align: baseline;
+}
+/* Checked-off work reads as struck through. Not a GFM behaviour — remark-gfm
+   only emits the checkbox state — so it is expressed in CSS off :has(). */
+.prose li.task-list-item:has(input[type='checkbox']:checked) {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* Scroll wide tables instead of letting them push the panel sideways. */
+.prose table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+/* Typography rules tables with horizontal lines only (a bottom border on thead
+   and on each body row). Agent-written tables are dense and technical, so give
+   them the same full grid the standalone plan document uses — keep these in step
+   with the table CSS in main/helpers/plan-html.ts. */
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 0.45em 0.65em;
+  text-align: left;
+  vertical-align: top;
+}
+.prose thead th {
+  background: #242424;
+  color: var(--foreground);
+  font-weight: 600;
+}
+.prose tbody tr:nth-child(even) {
+  background: rgb(255 255 255 / 0.025);
+}
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+/* GFM footnotes land in a trailing <section class="footnotes">. */
+.prose .footnotes {
+  border-top: 1px solid var(--border);
+  margin-top: 1.5em;
+  font-size: 0.9em;
+}
+
+/* ── highlight.js token colours ─────────────────────────────────────────────
+   rehype-highlight emits highlight.js class names; no upstream theme is
+   installed so the palette is built from the app's own tokens (blue/green/
+   amber/red) to stay inside the design system. The literal hex equivalents are
+   duplicated in main/helpers/plan-html.ts for the standalone plan document —
+   change both together. */
+.hljs-comment,
+.hljs-quote {
+  color: #7f7f7f;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--primary);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attr,
+.hljs-attr-value {
+  color: var(--success);
+}
+.hljs-number,
+.hljs-type,
+.hljs-built_in,
+.hljs-class .hljs-title,
+.hljs-params {
+  color: var(--warning);
+}
+.hljs-title,
+.hljs-name,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-symbol,
+.hljs-bullet {
+  color: #9bd0ff;
+}
+.hljs-deletion {
+  color: var(--destructive);
+}
+.hljs-meta {
+  color: var(--muted-foreground);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
 }

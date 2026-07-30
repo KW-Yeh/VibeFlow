@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { agentPlanPath } from './progress'
+import { renderMarkdownToHtml } from './markdown'
 
 /**
  * Filesystem-safe name for the preserved plan.html: `<title>-<createdAt>.html`.
@@ -17,239 +18,18 @@ export function planHtmlFileName(title: string, createdAt: number): string {
   return `${safe}-${createdAt}.html`
 }
 
-// ── Inline-level markdown transforms ─────────────────────────────────────────
-
-function escHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-function inline(raw: string): string {
-  // Escape HTML first, then apply markdown patterns.
-  let s = escHtml(raw)
-  // Bold
-  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  // Italic (only single asterisk)
-  s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
-  // Inline code – already escaped
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>')
-  // Strikethrough
-  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>')
-  // Links [text](url)
-  s = s.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener">$1</a>'
-  )
-  return s
-}
-
-type TableAlignment = 'left' | 'center' | 'right' | null
-
-function splitTableRow(line: string): string[] {
-  const cells: string[] = []
-  let cell = ''
-  let inCode = false
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    if (char === '\\' && line[index + 1] === '|') {
-      cell += '|'
-      index += 1
-    } else if (char === '`') {
-      inCode = !inCode
-      cell += char
-    } else if (char === '|' && !inCode) {
-      cells.push(cell.trim())
-      cell = ''
-    } else {
-      cell += char
-    }
-  }
-  cells.push(cell.trim())
-
-  if (cells[0] === '') cells.shift()
-  if (cells.at(-1) === '') cells.pop()
-  return cells
-}
-
-function tableAlignments(line: string): TableAlignment[] | null {
-  const cells = splitTableRow(line)
-  if (cells.length === 0) return null
-
-  const alignments: TableAlignment[] = []
-  for (const cell of cells) {
-    if (!/^:?-{3,}:?$/.test(cell)) return null
-    alignments.push(
-      cell.startsWith(':') && cell.endsWith(':')
-        ? 'center'
-        : cell.endsWith(':')
-          ? 'right'
-          : cell.startsWith(':')
-            ? 'left'
-            : null
-    )
-  }
-  return alignments
-}
-
-function tableCell(tag: 'th' | 'td', value: string, alignment: TableAlignment): string {
-  const alignAttr = alignment ? ` style="text-align: ${alignment}"` : ''
-  return `<${tag}${alignAttr}>${inline(value)}</${tag}>`
-}
-
-// ── Block-level conversion ────────────────────────────────────────────────────
-
-function mdToHtml(md: string): string {
-  const lines = md.split('\n')
-  const out: string[] = []
-
-  let inCode = false
-  let codeLang = ''
-  let codeLines: string[] = []
-
-  let inUl = false       // plain unordered list
-  let inTaskUl = false   // task-list unordered list
-  let inOl = false
-
-  const closeList = () => {
-    if (inUl) { out.push('</ul>'); inUl = false }
-    if (inTaskUl) { out.push('</ul>'); inTaskUl = false }
-    if (inOl) { out.push('</ol>'); inOl = false }
-  }
-
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex]
-    // ── Fenced code block ──────────────────────────────────────────────────
-    if (/^```/.test(line)) {
-      if (inCode) {
-        const escaped = codeLines.map(escHtml).join('\n')
-        const langAttr = codeLang ? ` class="language-${escHtml(codeLang)}"` : ''
-        out.push(`<pre><code${langAttr}>${escaped}</code></pre>`)
-        inCode = false
-        codeLang = ''
-        codeLines = []
-      } else {
-        closeList()
-        codeLang = line.slice(3).trim()
-        inCode = true
-      }
-      continue
-    }
-
-    if (inCode) {
-      codeLines.push(line)
-      continue
-    }
-
-    // ── GFM table ────────────────────────────────────────────────────────
-    const headerCells = line.includes('|') ? splitTableRow(line) : []
-    const alignments = lines[lineIndex + 1]
-      ? tableAlignments(lines[lineIndex + 1])
-      : null
-    if (
-      headerCells.length > 0 &&
-      alignments &&
-      alignments.length === headerCells.length
-    ) {
-      closeList()
-      const header = headerCells
-        .map((cell, index) => tableCell('th', cell, alignments[index]))
-        .join('')
-      const rows: string[] = []
-      lineIndex += 2
-
-      while (lineIndex < lines.length && lines[lineIndex].trim()) {
-        const cells = splitTableRow(lines[lineIndex])
-        if (!lines[lineIndex].includes('|') || cells.length === 0) break
-        while (cells.length < headerCells.length) cells.push('')
-        const row = cells
-          .slice(0, headerCells.length)
-          .map((cell, index) => tableCell('td', cell, alignments[index]))
-          .join('')
-        rows.push(`<tr>${row}</tr>`)
-        lineIndex += 1
-      }
-      lineIndex -= 1
-
-      out.push(
-        `<div class="table-scroll"><table><thead><tr>${header}</tr></thead>${
-          rows.length ? `<tbody>${rows.join('')}</tbody>` : ''
-        }</table></div>`
-      )
-      continue
-    }
-
-    // ── ATX heading ───────────────────────────────────────────────────────
-    const hm = line.match(/^(#{1,6})\s+(.+)/)
-    if (hm) {
-      closeList()
-      const lvl = Math.min(hm[1].length, 6)
-      out.push(`<h${lvl}>${inline(hm[2].trim())}</h${lvl}>`)
-      continue
-    }
-
-    // ── Horizontal rule ───────────────────────────────────────────────────
-    if (/^[-*_]{3,}\s*$/.test(line.trim())) {
-      closeList()
-      out.push('<hr>')
-      continue
-    }
-
-    // ── Task list item ────────────────────────────────────────────────────
-    const taskm = line.match(/^(\s*)-\s+\[([x ])\]\s?(.*)/)
-    if (taskm) {
-      if (inUl) { out.push('</ul>'); inUl = false }
-      if (inOl) { out.push('</ol>'); inOl = false }
-      if (!inTaskUl) { out.push('<ul class="task-list">'); inTaskUl = true }
-      const done = taskm[2] === 'x'
-      const cls = done ? ' class="done"' : ''
-      const chk = done ? ' checked' : ''
-      out.push(
-        `<li${cls}><input type="checkbox" disabled${chk}><span>${inline(taskm[3])}</span></li>`
-      )
-      continue
-    }
-
-    // ── Unordered list ────────────────────────────────────────────────────
-    const ulm = line.match(/^(\s*)-\s+(.*)/)
-    if (ulm) {
-      if (inTaskUl) { out.push('</ul>'); inTaskUl = false }
-      if (inOl) { out.push('</ol>'); inOl = false }
-      if (!inUl) { out.push('<ul>'); inUl = true }
-      out.push(`<li>${inline(ulm[2])}</li>`)
-      continue
-    }
-
-    // ── Ordered list ──────────────────────────────────────────────────────
-    const olm = line.match(/^\d+\.\s+(.*)/)
-    if (olm) {
-      if (inUl) { out.push('</ul>'); inUl = false }
-      if (inTaskUl) { out.push('</ul>'); inTaskUl = false }
-      if (!inOl) { out.push('<ol>'); inOl = true }
-      out.push(`<li>${inline(olm[1])}</li>`)
-      continue
-    }
-
-    // ── Blank line ────────────────────────────────────────────────────────
-    if (!line.trim()) {
-      closeList()
-      continue
-    }
-
-    // ── Paragraph ─────────────────────────────────────────────────────────
-    closeList()
-    out.push(`<p>${inline(line)}</p>`)
-  }
-
-  closeList()
-  return out.join('\n')
-}
-
 // ── Full HTML document ────────────────────────────────────────────────────────
 
+/**
+ * Wrap a rendered markdown fragment in a self-contained document.
+ *
+ * The CSS is inlined because this file is written to the workspace as a durable
+ * record that has to open standalone, and is also shipped verbatim to the mobile
+ * remote viewer. Class names here follow what remark-gfm/rehype-highlight emit —
+ * `contains-task-list`, `task-list-item`, `footnotes`, `hljs-*` — so they must
+ * change in step with the pipeline. The token colours mirror the renderer's
+ * globals.css; change both together.
+ */
 function wrapDocument(body: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-TW">
@@ -284,20 +64,29 @@ h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
 p { margin: 0.5em 0; }
 ul, ol { margin: 0.4em 0; padding-left: 1.4em; }
 li { margin: 0.2em 0; }
-ul.task-list { list-style: none; padding-left: 0; }
-ul.task-list li {
+/* Nested lists sit tighter than the top level so depth reads structurally. */
+li > ul, li > ol { margin: 0.2em 0; }
+img { max-width: 100%; height: auto; border-radius: 5px; }
+/* GFM task lists: remark-gfm marks the list "contains-task-list" and each item
+   "task-list-item". Striking through completed items is not part of GFM — only
+   the checkbox state is emitted — so it is expressed here off :has(). */
+ul.contains-task-list { list-style: none; padding-left: 0; }
+li.task-list-item {
   display: flex;
   align-items: baseline;
   gap: 0.45em;
   padding: 0.1em 0;
 }
-ul.task-list li input[type="checkbox"] {
+li.task-list-item input[type="checkbox"] {
   accent-color: #4c9bf5;
   flex-shrink: 0;
   margin: 0;
   cursor: default;
 }
-ul.task-list li.done span { color: #a1a1a1; text-decoration: line-through; }
+li.task-list-item:has(input[type="checkbox"]:checked) {
+  color: #a1a1a1;
+  text-decoration: line-through;
+}
 code {
   background: #212121;
   border: 1px solid rgba(255,255,255,0.09);
@@ -332,15 +121,15 @@ blockquote {
   padding: 0.25em 0.75em;
   color: #a1a1a1;
 }
-.table-scroll {
+/* Scroll wide tables instead of letting them push the page sideways. */
+table {
+  display: block;
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
-  margin: 0.75em 0;
-}
-table {
-  width: 100%;
   border-collapse: collapse;
   font-size: 0.95em;
+  margin: 0.75em 0;
 }
 th, td {
   border: 1px solid rgba(255,255,255,0.12);
@@ -354,6 +143,42 @@ th {
   font-weight: 600;
 }
 tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
+/* GFM footnotes: a trailing <section class="footnotes"> whose heading carries
+   Tailwind's sr-only class — not available here, so hide it explicitly. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.footnotes {
+  border-top: 1px solid rgba(255,255,255,0.09);
+  margin-top: 1.75em;
+  padding-top: 0.5em;
+  font-size: 0.92em;
+  color: #a1a1a1;
+}
+sup a { text-decoration: none; }
+/* highlight.js tokens — palette built from the app's own accent/status colours
+   so highlighted code stays inside the design system. Mirrored in
+   renderer/styles/globals.css. */
+.hljs-comment, .hljs-quote { color: #7f7f7f; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag,
+.hljs-meta .hljs-keyword { color: #4c9bf5; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attr, .hljs-attr-value { color: #4ec98a; }
+.hljs-number, .hljs-type, .hljs-built_in, .hljs-class .hljs-title,
+.hljs-params { color: #e2b341; }
+.hljs-title, .hljs-name, .hljs-attribute, .hljs-variable, .hljs-template-variable,
+.hljs-symbol, .hljs-bullet { color: #9bd0ff; }
+.hljs-deletion { color: #d43a3f; }
+.hljs-meta { color: #a1a1a1; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -385,7 +210,7 @@ export async function generatePlanHtml(
   }
   if (!md.trim()) return null
 
-  const html = wrapDocument(mdToHtml(md))
+  const html = wrapDocument(await renderMarkdownToHtml(md))
   await fs.writeFile(
     path.join(workspacePath, planHtmlFileName(title, createdAt)),
     html,

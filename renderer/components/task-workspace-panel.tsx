@@ -1,13 +1,9 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
 import type { DiffMethod } from 'react-diff-viewer-continued'
-import remarkGfm from 'remark-gfm'
 
 const ReactDiffViewer = lazy(() =>
   import('react-diff-viewer-continued').then((m) => ({ default: m.default }))
-)
-const ReactMarkdown = lazy(() =>
-  import('react-markdown').then((m) => ({ default: m.default }))
 )
 import {
   Check,
@@ -32,6 +28,7 @@ import {
   X,
 } from 'lucide-react'
 
+import { MarkdownContent } from '@/components/markdown-content'
 import { TaskTerminal } from '@/components/task-terminal'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -84,6 +81,15 @@ const ARTIFACT_KIND_LABEL: Record<ArtifactKind, string> = {
   image: '截圖',
   text: '文字',
   binary: '二進位',
+}
+
+/**
+ * Whether a text artifact should be rendered as markdown rather than verbatim.
+ * Decided from the filename because ArtifactKind ('image' | 'text' | 'binary')
+ * crosses IPC as a public type and is not worth widening for a preview detail.
+ */
+function isMarkdownArtifact(name: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(name)
 }
 
 /**
@@ -286,57 +292,6 @@ function TaskInfo({
   )
 }
 
-function MarkdownContent({
-  source,
-  compact = false,
-}: {
-  source: string
-  compact?: boolean
-}) {
-  return (
-    <div
-      className={cn(
-        'prose prose-invert max-w-none break-words rounded-md bg-muted/30 p-3 text-muted-foreground',
-        compact ? 'prose-xs text-xs leading-snug' : 'prose-sm'
-      )}
-    >
-      <Suspense fallback={null}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            a: ({ children, ...props }) => (
-              <a {...props} className="break-words text-primary underline underline-offset-2">
-                {children}
-              </a>
-            ),
-            code: ({ children, className, ...props }) => (
-              <code
-                {...props}
-                className={cn('break-words rounded-xs bg-background/70 px-1 py-0.5', className)}
-              >
-                {children}
-              </code>
-            ),
-            pre: ({ children, ...props }) => (
-              <pre
-                {...props}
-                className={cn(
-                  'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
-                  compact ? 'text-xs leading-snug' : 'text-sm'
-                )}
-              >
-                {children}
-              </pre>
-            ),
-          }}
-        >
-          {source}
-        </ReactMarkdown>
-      </Suspense>
-    </div>
-  )
-}
-
 function PlanContent({ taskId }: { taskId: string }) {
   const [html, setHtml] = useState<string | null | undefined>(undefined)
 
@@ -377,6 +332,11 @@ function PlanContent({ taskId }: { taskId: string }) {
     // edges; the offsets must stay in step with that padding.
     <iframe
       srcDoc={html}
+      // A srcDoc frame is same-origin by default, which would put the plan
+      // document in reach of this window and its preload bridge. The plan is
+      // inert content — no scripts, no navigation — so drop every capability
+      // rather than rely on the pipeline never emitting raw HTML.
+      sandbox=""
       className="-m-4 block border-0"
       style={{ width: 'calc(100% + 2rem)', height: 'calc(100% + 2rem)' }}
       title="Plan"
@@ -444,9 +404,11 @@ function MemorySection({ taskId }: { taskId: string }) {
                 <span className="tabular-nums">{formatCheckpointTime(cp.createdAt)}</span>
               </div>
               {cp.outcome && (
-                <p className="whitespace-pre-wrap break-words text-foreground">
-                  {cp.outcome}
-                </p>
+                <MarkdownContent
+                  source={cp.outcome}
+                  compact
+                  className="bg-transparent p-0"
+                />
               )}
               {cp.decisions.length > 0 && (
                 <ul className="mt-2 space-y-1">
@@ -645,9 +607,16 @@ function ArtifactPreview({
         </p>
       ) : (
         <>
-          <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs">
-            {content.text}
-          </pre>
+          {isMarkdownArtifact(artifact.name) ? (
+            <MarkdownContent
+              source={content.text ?? ''}
+              className="max-h-[70vh] overflow-auto"
+            />
+          ) : (
+            <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs">
+              {content.text}
+            </pre>
+          )}
           {content.truncated && (
             <p className="mt-2 text-xs text-muted-foreground">
               內容過長，僅顯示開頭 256 KB。
