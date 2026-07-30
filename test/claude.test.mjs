@@ -74,6 +74,17 @@ test('buildAgentCommand — carries progress protocol in prompt body', () => {
   assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
 })
 
+test('buildAgentCommand — tells Codex to promote temporary screenshots into task artifacts', () => {
+  const workspacePath = '/workspace/project'
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, workspacePath)
+  const artifactsDir = `${workspacePath}/vf-abc123.artifacts`
+
+  assert.ok(cmd.includes('/private/tmp'), 'must cover screenshot tools that return system temp paths')
+  assert.ok(cmd.includes(`複製到 ${artifactsDir}/ 根目錄`), 'must name the task artifacts destination')
+  assert.ok(cmd.includes('並確認目標檔案存在'), 'must require verifying the promoted screenshot')
+  assert.ok(cmd.includes('只回報或保留 tmp 路徑不算完成'), 'must reject temp-only evidence')
+})
+
 test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {
   const task = {
     ...CODEX_TASK,
