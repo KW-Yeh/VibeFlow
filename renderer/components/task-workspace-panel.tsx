@@ -42,6 +42,12 @@ import {
   taskArtifactsDir,
 } from '@/lib/claude'
 import {
+  retainExistingDiffContents,
+  sameDiffEntry,
+  sameDiffFile,
+  stabilizeDiffEntries,
+} from '@/lib/diff-state'
+import {
   getCheckpoints,
   getDiff,
   getDiffEntries,
@@ -926,19 +932,6 @@ function DiffFileModal({
 }
 
 /**
- * A cached file body is only reusable while the entry it came from is unchanged.
- * Untracked files carry no numstat (see DiffEntry), so an edit to one is
- * invisible here — those are treated as always stale by the caller.
- */
-function sameEntry(a: DiffEntry, b: DiffEntry): boolean {
-  return (
-    a.status === b.status &&
-    a.additions === b.additions &&
-    a.deletions === b.deletions
-  )
-}
-
-/**
  * Changed files as a flat list. The list itself is polled cheaply
  * (`fetch: false`, metadata only); a file's body is loaded when its row opens
  * the single-file modal, and the full-screen view still loads everything at once.
@@ -955,35 +948,60 @@ function DiffSection({ taskId }: { taskId: string }) {
   const [expanded, setExpanded] = useState(false)
   const [fullFiles, setFullFiles] = useState<DiffFile[] | null>(null)
 
-  const prevEntriesRef = useRef<DiffEntry[]>([])
-  const pendingRef = useRef<Set<string>>(new Set())
+  const loadedEntriesRef = useRef<Map<string, DiffEntry>>(new Map())
 
-  /** Adopt a fresh entry list, dropping cached bodies the list invalidates. */
+  /** Adopt a fresh list without repainting when a poll reports no changes. */
   const applyEntries = useCallback((next: DiffEntry[]) => {
-    const prevByPath = new Map(prevEntriesRef.current.map((e) => [e.path, e]))
-    prevEntriesRef.current = next
-    setEntries(next)
-    setContents((cache) => {
-      const kept: Record<string, DiffFile | null> = {}
-      for (const entry of next) {
-        if (!(entry.path in cache)) continue
-        if (entry.status === '?') continue
-        const before = prevByPath.get(entry.path)
-        if (!before || !sameEntry(before, entry)) continue
-        kept[entry.path] = cache[entry.path]
-      }
-      return kept
-    })
+    const paths = new Set(next.map((entry) => entry.path))
+    for (const filePath of loadedEntriesRef.current.keys()) {
+      if (!paths.has(filePath)) loadedEntriesRef.current.delete(filePath)
+    }
+    setEntries((current) => stabilizeDiffEntries(current, next))
+    setContents((current) => retainExistingDiffContents(current, next))
   }, [])
 
-  // Reset per-task view state when switching tasks.
+  const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? null
+
+  /**
+   * Load a selected body in the background. If its revision changes, keep the
+   * previous body visible until the replacement is ready instead of flashing a
+   * loading state between polling snapshots.
+   */
   useEffect(() => {
-    setSelectedPath(null)
-    setContents({})
-    setEntries([])
-    prevEntriesRef.current = []
-    pendingRef.current.clear()
-  }, [taskId])
+    const entry = selectedEntry
+    if (!entry) return
+    const filePath = entry.path
+    const loadedEntry = loadedEntriesRef.current.get(filePath)
+    if (
+      filePath in contents &&
+      loadedEntry &&
+      sameDiffEntry(loadedEntry, entry)
+    ) {
+      return
+    }
+
+    let active = true
+    getDiffFile(taskId, filePath)
+      .then((file) => {
+        if (!active) return
+        loadedEntriesRef.current.set(filePath, entry)
+        setContents((current) =>
+          sameDiffFile(current[filePath], file)
+            ? current
+            : { ...current, [filePath]: file }
+        )
+      })
+      .catch(() => {
+        if (!active) return
+        loadedEntriesRef.current.set(filePath, entry)
+        setContents((current) =>
+          current[filePath] === null ? current : { ...current, [filePath]: null }
+        )
+      })
+    return () => {
+      active = false
+    }
+  }, [taskId, selectedEntry, contents])
 
   // First load does a full remote refresh (matching the old behaviour); the
   // self-rescheduling poll that follows stays local, so it never hits the
@@ -1015,27 +1033,6 @@ function DiffSection({ taskId }: { taskId: string }) {
       if (timer) clearTimeout(timer)
     }
   }, [taskId, refreshNonce, applyEntries])
-
-  // Load the open file's body if the cache has none.
-  useEffect(() => {
-    const filePath = selectedPath
-    if (!filePath || filePath in contents || pendingRef.current.has(filePath)) return
-    let active = true
-    pendingRef.current.add(filePath)
-    getDiffFile(taskId, filePath)
-      .then((file) => {
-        if (active) setContents((c) => ({ ...c, [filePath]: file }))
-      })
-      .catch(() => {
-        if (active) setContents((c) => ({ ...c, [filePath]: null }))
-      })
-      .finally(() => {
-        pendingRef.current.delete(filePath)
-      })
-    return () => {
-      active = false
-    }
-  }, [taskId, selectedPath, contents])
 
   // A poll can retire the open file (committed, reverted, or deleted); there is
   // nothing left to show for it, so close instead of stranding a stale diff.
@@ -1069,11 +1066,9 @@ function DiffSection({ taskId }: { taskId: string }) {
 
   const manualRefresh = () => {
     setContents({})
-    prevEntriesRef.current = []
+    loadedEntriesRef.current.clear()
     setRefreshNonce((n) => n + 1)
   }
-
-  const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? null
 
   return (
     <InfoSection
@@ -1428,7 +1423,7 @@ export function TaskWorkspacePanel({
             </div>
           </InfoSection>
 
-          <DiffSection taskId={task.id} />
+          <DiffSection key={task.id} taskId={task.id} />
         </aside>
       </main>
       )}

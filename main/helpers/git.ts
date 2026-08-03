@@ -661,6 +661,12 @@ export interface DiffEntry {
    */
   additions: number
   deletions: number
+  /**
+   * Cheap working-tree fingerprint used by the renderer to tell real file
+   * edits from identical polling snapshots. Unlike numstat, this also changes
+   * for untracked, binary, and same-line-count edits.
+   */
+  revision: string
 }
 
 export interface DiffFile extends DiffEntry {
@@ -733,6 +739,7 @@ async function collectDiffEntries(
         status: code,
         additions: 0,
         deletions: 0,
+        revision: '',
       })
     }
   }
@@ -775,19 +782,40 @@ async function collectDiffEntries(
   ]).catch(() => '')
   for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
     if (!entryMap.has(p)) {
-      entryMap.set(p, { path: p, status: '?', additions: 0, deletions: 0 })
+      entryMap.set(p, {
+        path: p,
+        status: '?',
+        additions: 0,
+        deletions: 0,
+        revision: '',
+      })
     }
   }
 
   // The agent-maintained progress file, plan file, and sub-agent event log are
   // VibeFlow metadata, not changes to review — keep them out of the diff viewer.
-  return Array.from(entryMap.values()).filter(
+  const entries = Array.from(entryMap.values()).filter(
     (e) =>
       e.path !== PROGRESS_FILE &&
       e.path !== PLAN_FILE &&
       e.path !== SUBAGENTS_DIR &&
       !e.path.startsWith(`${SUBAGENTS_DIR}/`)
   )
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      try {
+        const stat = await fs.stat(path.join(worktreePath, entry.path))
+        entry.revision = `${stat.mtimeMs}:${stat.size}`
+      } catch {
+        // Deleted files have no working-tree stat. Their git metadata above is
+        // enough to keep a stable identity until they leave the diff.
+        entry.revision = `${entry.status}:${entry.additions}:${entry.deletions}`
+      }
+    })
+  )
+
+  return entries
 }
 
 /** Old/new content for one entry, clipped to MAX_BYTES per side. */

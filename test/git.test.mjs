@@ -387,6 +387,33 @@ test('getWorktreeDiffEntries — untracked files report zero line counts', async
     assert.equal(fresh.status, '?')
     assert.equal(fresh.additions, 0)
     assert.equal(fresh.deletions, 0)
+    assert.notEqual(fresh.revision, '')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('getWorktreeDiffEntries — revision changes for same-line-count edits', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/revision')
+    const wt = res.worktreePath
+    const filePath = path.join(wt, 'README.md')
+    await writeFile(wt, 'README.md', '# first\n')
+    const before = (await getWorktreeDiffEntries(wt, 'main')).find(
+      (entry) => entry.path === 'README.md'
+    )
+
+    await writeFile(wt, 'README.md', '# later\n')
+    const future = new Date(Date.now() + 2_000)
+    await fs.utimes(filePath, future, future)
+    const after = (await getWorktreeDiffEntries(wt, 'main')).find(
+      (entry) => entry.path === 'README.md'
+    )
+
+    assert.equal(before.additions, after.additions)
+    assert.equal(before.deletions, after.deletions)
+    assert.notEqual(before.revision, after.revision)
   } finally {
     await cleanup()
   }
