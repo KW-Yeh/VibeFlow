@@ -44,6 +44,33 @@ test('buildAgentCommand — planning uses planning agent and does not inject exe
   assert.ok(cmd.includes('若需求足夠明確'), 'planning must include planning instructions')
 })
 
+test('buildAgentCommand — passes task effort to Claude Code', () => {
+  const cmd = buildAgentCommand({ ...TASK, effort: 'high' })
+  assert.ok(cmd.includes('--effort high'), 'Claude must receive the task effort as a session flag')
+})
+
+test('buildAgentCommand — maps task effort to a session-scoped Codex config override', () => {
+  const cmd = buildAgentCommand({ ...CODEX_TASK, effort: 'xhigh' })
+  assert.ok(
+    cmd.startsWith(`codex -c 'model_reasoning_effort="xhigh"' --model gpt-5.5 `),
+    'Codex must receive a TOML config override without changing the user config file'
+  )
+})
+
+test('buildAgentCommand — leaves Gemini unchanged when a task has effort metadata', () => {
+  const cmd = buildAgentCommand({
+    ...TASK,
+    agentCli: /** @type {'gemini'} */ ('gemini'),
+    model: 'gemini-2.5-flash',
+    executionAgentCli: /** @type {'gemini'} */ ('gemini'),
+    executionModel: 'gemini-2.5-flash',
+    effort: 'high',
+  })
+  assert.ok(cmd.startsWith('gemini --yolo -i --model gemini-2.5-flash '))
+  assert.ok(!cmd.includes('--effort'))
+  assert.ok(!cmd.includes('model_reasoning_effort'))
+})
+
 test('buildAgentCommand — execution uses execution role after PLAN is done', () => {
   const task = {
     ...CODEX_TASK,

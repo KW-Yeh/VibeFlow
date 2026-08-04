@@ -43,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { createEnterVariants } from '@/lib/motion'
 import type {
   AgentCliId,
+  AgentEffort,
   AgentConnections,
   AttachmentInput,
   BoardState,
@@ -311,6 +312,7 @@ export default function HomePage() {
     executionAgentCli: AgentCliId,
     model: string,
     executionModel: string,
+    effort: AgentEffort,
     roleId: string,
     attachments: AttachmentInput[]
   ) => {
@@ -327,6 +329,7 @@ export default function HomePage() {
         model: model || undefined,
         executionAgentCli,
         executionModel: executionModel || undefined,
+        effort,
         roleId: roleId || undefined,
         attachments,
       })
@@ -360,6 +363,7 @@ export default function HomePage() {
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
         executionModel: payload.executionModel || undefined,
+        effort: payload.effort,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
       })

@@ -1,7 +1,7 @@
 import Store from 'electron-store'
 import { homedir } from 'os'
 import { join } from 'path'
-import type { AgentCliId } from './agents'
+import type { AgentCliId, AgentEffort } from './agents'
 import type { TaskProgress } from './progress'
 // Shared single source with renderer's PRESET_ROLES (renderer/lib/claude.ts).
 // Import attribute is required so the CLI path (main run via node --experimental-strip-types) loads it.
@@ -73,6 +73,8 @@ export interface Task {
   executionAgentCli?: AgentCliId
   /** Execution model id. Absent = execution agent's default model. */
   executionModel?: string
+  /** Reasoning depth for both planning and execution. Absent = provider/model default. */
+  effort?: AgentEffort
   /** Assigned executor role id. Absent = no role (default agent behavior). */
   roleId?: string
   /** Epoch ms when the card was created. Used to name the preserved plan.html. */

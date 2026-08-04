@@ -18,6 +18,10 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
 import { RoleAvatar } from '@/components/roles-dialog'
+import {
+  DEFAULT_TASK_EFFORT,
+  TaskEffortSlider,
+} from '@/components/task-effort-slider'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -25,6 +29,7 @@ import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
+  AgentEffort,
   AgentConnections,
   AttachmentInput,
   GitInfo,
@@ -58,6 +63,7 @@ export interface NewTaskFormProps {
     executionAgentCli: AgentCliId,
     model: string,
     executionModel: string,
+    effort: AgentEffort,
     roleId: string,
     attachments: AttachmentInput[]
   ) => void
@@ -393,6 +399,7 @@ export function NewTaskForm({
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [executionModel, setExecutionModel] = useState('')
+  const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
   const [roleId, setRoleId] = useState('')
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -507,6 +514,7 @@ export function NewTaskForm({
       executionAgentCli,
       model,
       executionModel,
+      effort,
       roleId,
       attachments.map(({ input }) => input)
     )
@@ -884,6 +892,12 @@ export function NewTaskForm({
                 />
               </label>
 
+              <TaskEffortSlider
+                value={effort}
+                onChange={setEffort}
+                disabled={creating}
+              />
+
               {error && (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
                   {error}
@@ -931,6 +945,12 @@ export function NewTaskForm({
                   className={cn(F, 'resize-y')}
                 />
               </label>
+
+              <TaskEffortSlider
+                value={effort}
+                onChange={setEffort}
+                disabled={creating}
+              />
 
               {attachmentsBlock}
 

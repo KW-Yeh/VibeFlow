@@ -11,7 +11,7 @@ import {
 import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
 import { projectWorkstationPath } from './workspace'
-import type { AgentCliId } from './agents'
+import type { AgentCliId, AgentEffort } from './agents'
 import { writeAttachments, type AttachmentInput } from './attachments'
 
 export interface CreateTaskInput {
@@ -25,6 +25,7 @@ export interface CreateTaskInput {
   model?: string
   executionAgentCli?: AgentCliId
   executionModel?: string
+  effort?: AgentEffort
   roleId?: string
   attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
@@ -118,6 +119,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       input.executionModel ||
       (input.executionAgentCli ? undefined : input.model) ||
       undefined,
+    effort: input.effort,
     roleId: input.roleId || undefined,
   }
 

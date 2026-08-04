@@ -7,6 +7,13 @@ const pexec = promisify(execFile)
 /** Agent CLIs VibeFlow knows how to launch inside a task's PTY. */
 export type AgentCliId = 'claude' | 'codex' | 'gemini'
 
+/**
+ * Provider-neutral reasoning depth stored on a task. Claude Code and Codex
+ * share these four levels; the launch builder translates them to each CLI's
+ * session-scoped flag. Gemini currently ignores the setting.
+ */
+export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh'
+
 export interface AgentModel {
   /** Value passed to the CLI's --model flag. */
   id: string

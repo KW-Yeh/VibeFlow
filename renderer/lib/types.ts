@@ -31,7 +31,7 @@ export type {
   MemoryTaskLink,
   RelatedTask,
 } from '../../main/helpers/memory'
-export type { AgentCli, AgentCliId } from '../../main/helpers/agents'
+export type { AgentCli, AgentCliId, AgentEffort } from '../../main/helpers/agents'
 export type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,

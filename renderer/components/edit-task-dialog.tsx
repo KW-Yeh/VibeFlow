@@ -14,11 +14,16 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
+import {
+  DEFAULT_TASK_EFFORT,
+  TaskEffortSlider,
+} from '@/components/task-effort-slider'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
+  AgentEffort,
   AgentConnections,
   GitInfo,
   Role,
@@ -33,6 +38,7 @@ export interface EditTaskPayload {
   model: string
   executionAgentCli: AgentCliId
   executionModel: string
+  effort: AgentEffort
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
   baseBranch?: string | null
@@ -74,6 +80,7 @@ export function EditTaskDialog({
   const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
   const [executionModel, setExecutionModel] = useState('')
+  const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
@@ -102,6 +109,7 @@ export function EditTaskDialog({
     setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
     setExecutionModel(task.executionModel ?? '')
+    setEffort(task.effort ?? DEFAULT_TASK_EFFORT)
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
     setGitInfo(null)
@@ -144,6 +152,7 @@ export function EditTaskDialog({
     model !== (displayedTask.model ?? '') ||
     executionAgentCli !== (displayedTask.executionAgentCli ?? displayedTask.agentCli ?? 'claude') ||
     executionModel !== (displayedTask.executionModel ?? '') ||
+    effort !== (displayedTask.effort ?? DEFAULT_TASK_EFFORT) ||
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '')
 
@@ -202,6 +211,7 @@ export function EditTaskDialog({
       model,
       executionAgentCli,
       executionModel,
+      effort,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
         : {}),
@@ -287,6 +297,12 @@ export function EditTaskDialog({
             className={cn(F, 'resize-y')}
           />
         </label>
+
+        <TaskEffortSlider
+          value={effort}
+          onChange={setEffort}
+          disabled={saving}
+        />
 
         {/* Project folder — editable only before the task has launched. */}
         <div className="space-y-1.5">

@@ -24,7 +24,7 @@ import {
   type Task,
 } from './helpers/store'
 import { projectWorkstationPath } from './helpers/workspace'
-import { detectAgents, type AgentCliId } from './helpers/agents'
+import { detectAgents, type AgentCliId, type AgentEffort } from './helpers/agents'
 import { fetchAgentModels } from './helpers/agent-connections'
 import {
   cancelGitHubCliLogin,
@@ -299,6 +299,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model?: string
         executionAgentCli?: AgentCliId
         executionModel?: string
+        effort?: AgentEffort
         roleId?: string
         attachments?: AttachmentInput[]
       }
@@ -333,6 +334,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model?: string
         executionAgentCli?: AgentCliId
         executionModel?: string
+        effort?: AgentEffort
         projectPath?: string
         baseBranch?: string | null
       }
@@ -415,6 +417,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
         executionModel: payload.executionModel || undefined,
+        effort: payload.effort,
         ...gitPatch,
       })
       return getState()

@@ -1,6 +1,7 @@
 import type {
   AgentCli,
   AgentCliId,
+  AgentEffort,
   AppSettings,
   ArtifactContent,
   AttachmentInput,
@@ -182,6 +183,7 @@ export async function createTask(payload: {
   model?: string
   executionAgentCli?: AgentCliId
   executionModel?: string
+  effort?: AgentEffort
   roleId?: string
   attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
@@ -198,6 +200,7 @@ export async function updateTask(payload: {
   model?: string
   executionAgentCli?: AgentCliId
   executionModel?: string
+  effort?: AgentEffort
   projectPath?: string
   baseBranch?: string | null
 }): Promise<VibeFlowState | null> {

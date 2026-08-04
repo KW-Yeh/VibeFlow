@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import type {
   AgentCli,
   AgentCliId,
+  AgentEffort,
   AgentConnections,
   AttachmentInput,
   BoardState,
@@ -72,6 +73,7 @@ interface KanbanBoardProps {
     executionAgentCli: AgentCliId,
     model: string,
     executionModel: string,
+    effort: AgentEffort,
     roleId: string,
     attachments: AttachmentInput[]
   ) => void

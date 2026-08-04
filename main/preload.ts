@@ -7,7 +7,7 @@ import type {
   Task,
   VibeFlowState,
 } from './helpers/store'
-import type { AgentCli, AgentCliId } from './helpers/agents'
+import type { AgentCli, AgentCliId, AgentEffort } from './helpers/agents'
 import type {
   DiffEntry,
   DiffFile,
@@ -138,6 +138,7 @@ const vibeflow = {
     model?: string
     executionAgentCli?: AgentCliId
     executionModel?: string
+    effort?: AgentEffort
     roleId?: string
     attachments?: AttachmentInput[]
   }): Promise<{ state: VibeFlowState; task: Task }> =>
@@ -151,6 +152,7 @@ const vibeflow = {
     model?: string
     executionAgentCli?: AgentCliId
     executionModel?: string
+    effort?: AgentEffort
     projectPath?: string
     baseBranch?: string | null
   }): Promise<VibeFlowState> =>

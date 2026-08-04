@@ -480,7 +480,7 @@ export interface LaunchOptions {
  * same id that the planning phase already used.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
@@ -500,7 +500,17 @@ export function buildClaudeCommand(
   )
   const model = task.model || DEFAULT_MODELS.claude
   const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
-  return assembleCommand('claude', sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
+  return assembleCommand(
+    'claude',
+    sys,
+    prompt,
+    model,
+    task.effort,
+    opts,
+    task.worktreePath,
+    sessionId,
+    workspacePath
+  )
 }
 
 /**
@@ -519,6 +529,7 @@ function assembleCommand(
   systemPrompt: string,
   prompt: string,
   model: string,
+  effort?: Task['effort'],
   opts?: LaunchOptions,
   worktreePath?: string,
   sessionId?: string,
@@ -536,8 +547,9 @@ function assembleCommand(
       ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
+    const effortFlag = effort ? ` --effort ${effort}` : ''
     const mcpFlag = buildMemoryMcpFlag(opts?.memory)
-    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${settings}${addDir}${mcpFlag}`
+    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${mcpFlag}`
     const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)
@@ -545,10 +557,13 @@ function assembleCommand(
   } else {
     // Codex / Gemini have no separate system-prompt flag — fold it into the body.
     const combined = `${systemPrompt}\n\n${prompt}`
+    const codexEffortFlag = effort
+      ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
+      : ''
     cmd = agent === 'codex'
       // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
       // interactive mode (waits for the user to approve each step).
-      ? `codex ${codexAutoFlag(opts?.autoMode)}--model ${model} ${shellQuote(combined)}\r`
+      ? `codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model} ${shellQuote(combined)}\r`
       // gemini: --yolo auto-approves tool calls; -i stays interactive
       : `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
   }
@@ -645,6 +660,7 @@ export function buildAgentCommand(
     | 'model'
     | 'executionAgentCli'
     | 'executionModel'
+    | 'effort'
     | 'worktreePath'
   >,
   systemPrompt?: string | null,
@@ -674,5 +690,15 @@ export function buildAgentCommand(
   const sessionId = agent === 'claude'
     ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
     : undefined
-  return assembleCommand(agent, sys, prompt, model, opts, task.worktreePath, sessionId, workspacePath)
+  return assembleCommand(
+    agent,
+    sys,
+    prompt,
+    model,
+    task.effort,
+    opts,
+    task.worktreePath,
+    sessionId,
+    workspacePath
+  )
 }
