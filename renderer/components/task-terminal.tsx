@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Sparkles } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -22,12 +22,8 @@ interface TaskTerminalProps {
    * Sent at most once per distinct `launchNonce` value.
    */
   launchCommand?: string | null
-  /** Bump to request a (re-)launch of `launchCommand`. */
+  /** Bump when a new task phase needs to launch `launchCommand`. */
   launchNonce?: number
-  /** Fired when the user clicks the in-terminal launch button. */
-  onLaunchRequest?: () => void
-  /** Launch-button label; defaults to 啟動 Agent when a launch action is available. */
-  launchLabel?: string
   /**
    * When true (card is Done), the terminal is view-only: no PTY is started,
    * keystrokes are not forwarded, and the launch affordance is hidden. Existing
@@ -42,8 +38,6 @@ export function TaskTerminal({
   cwd,
   launchCommand,
   launchNonce = 0,
-  onLaunchRequest,
-  launchLabel,
   readOnly = false,
 }: TaskTerminalProps) {
   // Effective session key: use the prop when provided, else fall back to taskId.
@@ -54,6 +48,7 @@ export function TaskTerminal({
   const dragDepthRef = useRef(0)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
+  const [isRestarting, setIsRestarting] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
   // PTY-start flow and the nonce effect read the latest values without
@@ -84,8 +79,8 @@ export function TaskTerminal({
       const startCwd = cwdRef.current
       const term = termRef.current
       if (!startCwd) return
-      // scrollback is intentionally ignored here: maybeLaunch() restarts an
-      // already-mounted terminal (new command = new phase = fresh buffer).
+      // scrollback is intentionally ignored here: a new task phase replaces
+      // the already-mounted terminal and starts with a fresh buffer.
       readyRef.current = false
       runningCommandRef.current = true
       void window.vibeflow?.term
@@ -113,15 +108,49 @@ export function TaskTerminal({
       })
   }, [taskId, sessionKey])
 
+  const openFreshInteractiveShell = useCallback(() => {
+    const startCwd = cwdRef.current
+    const term = termRef.current
+    const api = typeof window !== 'undefined' ? window.vibeflow : undefined
+    if (!startCwd || !term || !api || readOnlyRef.current) return
+
+    readyRef.current = false
+    runningCommandRef.current = false
+    setIsRestarting(true)
+    // Clear both xterm's visible buffer and the main-process scrollback. The
+    // latter prevents output from the closed PTY from returning after a panel
+    // remounts later in the app session.
+    term.reset()
+    term.clear()
+    void api.term
+      .start(
+        taskId,
+        startCwd,
+        undefined,
+        sessionKey,
+        term.cols,
+        term.rows,
+        true
+      )
+      .then(() => {
+        readyRef.current = true
+        term.focus()
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        term.writeln(`\r\n⚠️  重開 Terminal 失敗：${message}`)
+      })
+      .finally(() => setIsRestarting(false))
+  }, [taskId, sessionKey])
+
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
     const cmd = launchCmdRef.current
     if (!cmd) return
     const nonce = launchNonceRef.current
     // The initial command is spawned by the init effect, which marks its nonce —
-    // so this no-ops at mount. A new nonce on a still-mounted component (e.g. a
-    // re-run) restarts the PTY; suppress the exit blip from killing the prior
-    // process.
+    // so this no-ops at mount. A new nonce on a still-mounted component denotes
+    // a phase transition and replaces the prior PTY.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
     launchWithCommand(cmd)
@@ -223,12 +252,10 @@ export function TaskTerminal({
       })
       offExit = api.term.onExit(({ sessionKey: id, exitCode, intentional }) => {
         if (id !== sessionKey) return
-        // A kill we initiated (phase switch / teardown) — node-pty's SIGHUP
-        // makes the shell exit 129; that's expected, not a crash.
-        if (intentional) {
-          term.writeln('\r\n⏳  切換至下一階段...')
-          return
-        }
+        // A kill we initiated (phase switch, fresh terminal, or teardown) —
+        // node-pty's SIGHUP makes the shell exit 129. It belongs to the replaced
+        // PTY and must not add status text to the new terminal's clean buffer.
+        if (intentional) return
         const wasCommand = runningCommandRef.current
         runningCommandRef.current = false
         if (!wasCommand) {
@@ -321,7 +348,7 @@ export function TaskTerminal({
     }
   }, [taskId, sessionKey, maybeLaunch, restartInteractiveShell])
 
-  // Re-launch when the parent bumps the nonce while already mounted.
+  // Launch a new task phase when the parent bumps the nonce while mounted.
   useEffect(() => {
     maybeLaunch()
   }, [launchCommand, launchNonce, maybeLaunch])
@@ -391,17 +418,19 @@ export function TaskTerminal({
           <span className="shrink-0 px-2 text-xs uppercase tracking-wide text-muted-foreground">
             唯讀
           </span>
-        ) : onLaunchRequest ? (
+        ) : (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 shrink-0 px-2 text-xs"
-            onClick={onLaunchRequest}
+            onClick={openFreshInteractiveShell}
+            disabled={!cwd || isRestarting}
+            title="關閉目前 session 並開啟乾淨的 Terminal"
           >
-            <Sparkles className="size-3" />
-            {launchLabel ?? '啟動 Agent'}
+            <RefreshCw className={cn('size-3', isRestarting && 'animate-spin')} />
+            {isRestarting ? '重開中…' : '重開 Terminal'}
           </Button>
-        ) : null}
+        )}
       </div>
       <div
         ref={containerRef}

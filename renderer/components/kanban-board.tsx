@@ -161,7 +161,7 @@ export function KanbanBoard({
   // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
   // in the DOM (just hidden) so PTY state survives switching tasks.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
-  // Per-task armed terminal launch command; bumping `nonce` (re-)fires it.
+  // Per-task armed terminal launch command; bumping `nonce` fires a new phase.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
   // Always-current ref so async callbacks (termSessionExists .then) read the
   // latest terminalLaunch without depending on a stale closure.
@@ -216,20 +216,6 @@ export function KanbanBoard({
     )
   }
 
-  // Merge a patch into a task across all columns and persist.
-  const patchTask = (taskId: string, patch: Partial<Task>) => {
-    onBoardChange({
-      backlog: board.backlog.map((t) =>
-        t.id === taskId ? { ...t, ...patch } : t
-      ),
-      in_progress: board.in_progress.map((t) =>
-        t.id === taskId ? { ...t, ...patch } : t
-      ),
-      done: board.done.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
-    })
-  }
-
-
   // Tracks the previous board for the planning→execution handoff: only
   // auto-start execution when planDone flips within this session, never on
   // app reopen.
@@ -250,7 +236,7 @@ export function KanbanBoard({
     if (!cwd) return
     // Selecting a task must not start a fresh run. Auto-resume only when the
     // pinned conversation actually exists on disk; otherwise leave it for the
-    // user to press 重跑.
+    // user with an interactive terminal for manual commands.
     const isExecution = task.progress?.planDone === true
     const sessionId = isExecution
       ? executorSessionId(task.id)
@@ -277,7 +263,7 @@ export function KanbanBoard({
       if (executionStartedRef.current.has(task.id)) continue
       // Only auto-start execution when planning JUST completed in this session
       // (planDone flipped false→true). On app reopen there is no prior board, so
-      // an already-planDone task is left for the user to press 重跑.
+      // an already-planDone task is left with its interactive terminal.
       const prevTask = prev?.in_progress.find((t) => t.id === task.id)
       if (!prevTask || prevTask.progress?.planDone === true) continue
       executionStartedRef.current.add(task.id)
@@ -285,11 +271,6 @@ export function KanbanBoard({
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const runTask = (task: Task) => {
-    if (!task.launchedAt) patchTask(task.id, { launchedAt: Date.now() })
-    armLaunch(task, { resume: wasLaunched(task) })
-  }
 
   const moveTask = (
     task: Task,
@@ -403,7 +384,6 @@ export function KanbanBoard({
                       role={roleById(entry.task.roleId)}
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
-                      onRun={runTask}
                       onStart={startTask}
                       onComplete={completeTask}
                       onEdit={onEditTask}

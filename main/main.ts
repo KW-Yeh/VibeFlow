@@ -452,6 +452,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         taskId: string
         cwd: string
         command?: string
+        /** Clear buffered output when replacing the current interactive shell. */
+        fresh?: boolean
         /** Initial terminal dimensions from xterm.js. Avoids the 80×24 default causing layout artifacts. */
         cols?: number
         rows?: number
@@ -470,7 +472,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
           unwatchSubAgents(taskId)
         },
         payload.cols,
-        payload.rows
+        payload.rows,
+        payload.fresh
       )
       // Progress file lives in the task's workspace folder — the worktree's
       // parent (dirname of cwd) — named by the worktree folder, not inside the
@@ -511,7 +514,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Does a pinned Claude conversation already exist on disk? Claude stores each
   // session at ~/.claude/projects/<cwd-with-non-alphanumerics-as-dashes>/<id>.jsonl.
   // Used to decide whether selecting a task may auto-resume (session present) or
-  // must wait for the user to press 重跑 (no session yet).
+  // should leave the interactive terminal available for manual commands.
   ipcMain.handle(
     'claude:sessionExists',
     (_event, payload: { cwd: string; sessionId: string }) => {

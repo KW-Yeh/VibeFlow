@@ -64,7 +64,9 @@ export interface StartResult {
 /**
  * Start (or restart) a PTY session for the given session key. When `command`
  * is provided it is run inside a login shell (full PATH); otherwise an
- * interactive login shell is started so the user can drive the CLI.
+ * interactive login shell is started so the user can drive the CLI. Set
+ * `fresh` when the caller is explicitly replacing the terminal session and
+ * does not want output from the previous PTY replayed on a later remount.
  * `sessionKey` is the taskId.
  * `onExit` fires when this session ends for any reason (natural exit included),
  * unless it has already been replaced by a newer session for the same key.
@@ -76,13 +78,16 @@ export function startSession(
   command?: string,
   onExit?: () => void,
   cols = 80,
-  rows = 24
+  rows = 24,
+  fresh = false
 ): StartResult {
   // Capture scrollback before the old PTY is killed. A new command means a new
-  // phase (planning → execution), so clear the buffer; otherwise preserve it so
-  // a remounting terminal can replay what it missed while unmounted.
-  const scrollback = command ? null : (scrollbacks.get(sessionKey) ?? null)
-  if (command) scrollbacks.delete(sessionKey)
+  // phase (planning → execution), and an explicitly fresh interactive shell
+  // is a new terminal session. Both start with an empty buffer; ordinary
+  // remounts preserve output that arrived while the renderer was unmounted.
+  const clearScrollback = Boolean(command) || fresh
+  const scrollback = clearScrollback ? null : (scrollbacks.get(sessionKey) ?? null)
+  if (clearScrollback) scrollbacks.delete(sessionKey)
 
   killSession(sessionKey)
 

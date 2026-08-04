@@ -148,7 +148,6 @@ interface TaskWorkspacePanelProps {
   role: Role | null
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
-  onRun: (task: Task) => void
   onStart: (task: Task) => void
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
@@ -1205,7 +1204,6 @@ export function TaskWorkspacePanel({
   role,
   subAgents,
   launch,
-  onRun,
   onStart,
   onComplete,
   onEdit,
@@ -1267,14 +1265,11 @@ export function TaskWorkspacePanel({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [confirmDelete])
-  const canLaunch = column === 'backlog' || (column === 'in_progress' && !!task.launchedAt)
+  const canLaunch = column === 'backlog'
   const launchCommand = launch?.command
   const launchNonce = launch?.nonce ?? 0
 
-  const requestLaunch = () => {
-    if (column === 'backlog') onStart(task)
-    else onRun(task)
-  }
+  const requestLaunch = () => onStart(task)
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
@@ -1289,7 +1284,7 @@ export function TaskWorkspacePanel({
         {canLaunch && (
           <Button size="sm" variant="outline" onClick={requestLaunch} disabled={!cwd}>
             <Play className="size-3.5" />
-            {task.launchedAt ? '重跑' : '開始'}
+            開始
           </Button>
         )}
         {column === 'in_progress' && (
@@ -1347,8 +1342,6 @@ export function TaskWorkspacePanel({
             cwd={cwd}
             launchCommand={launchCommand}
             launchNonce={launchNonce}
-            launchLabel={task.launchedAt ? '重跑' : '開始任務'}
-            onLaunchRequest={canLaunch ? requestLaunch : undefined}
             readOnly={false}
           />
         </div>
