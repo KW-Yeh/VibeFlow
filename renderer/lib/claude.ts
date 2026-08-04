@@ -300,7 +300,7 @@ const SUBAGENTS_DIR = '.vibeflow-subagents'
  * shell that actually runs the hook.
  */
 function buildClaudeSettings(worktreePath?: string): string {
-  const settings: Record<string, unknown> = { theme: 'light' }
+  const settings: Record<string, unknown> = { theme: 'dark' }
   if (worktreePath) {
     const dir = `${toShellPath(worktreePath)}/${SUBAGENTS_DIR}`
     const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
@@ -537,7 +537,7 @@ function assembleCommand(
 ): string {
   let cmd: string
   if (agent === 'claude') {
-    // Inline --settings: light theme always, sub-agent recording hooks only
+    // Inline --settings: dark theme always, sub-agent recording hooks only
     // when the worktree path is known (session-only, never touches the repo).
     const settings = ` --settings ${shellQuote(buildClaudeSettings(worktreePath))}`
     // Grant the agent write access to the workspace folder (the worktree's

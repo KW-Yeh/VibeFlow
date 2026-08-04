@@ -49,6 +49,12 @@ test('buildAgentCommand — passes task effort to Claude Code', () => {
   assert.ok(cmd.includes('--effort high'), 'Claude must receive the task effort as a session flag')
 })
 
+test('buildAgentCommand — pins Claude to a dark theme that matches xterm', () => {
+  const cmd = buildAgentCommand(TASK)
+  assert.ok(cmd.includes('"theme":"dark"'), 'Claude must render for VibeFlow’s dark terminal')
+  assert.ok(!cmd.includes('"theme":"light"'), 'light theme makes question text unreadable')
+})
+
 test('buildAgentCommand — maps task effort to a session-scoped Codex config override', () => {
   const cmd = buildAgentCommand({ ...CODEX_TASK, effort: 'xhigh' })
   assert.ok(
