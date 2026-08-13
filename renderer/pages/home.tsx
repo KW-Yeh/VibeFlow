@@ -7,6 +7,11 @@ import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dia
 import { SettingsDialog } from '@/components/settings-dialog'
 import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
+import {
+  TerminalTabBar,
+  type TerminalTab,
+  type TerminalTabEntry,
+} from '@/components/terminal-tab-bar'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -62,6 +67,8 @@ const FALLBACK_BOARD: BoardState = {
   done: [],
 }
 
+const TAB_COLUMN_ORDER = ['in_progress', 'backlog', 'done'] as const
+
 function findTask(board: BoardState, taskId: string): Task | null {
   for (const column of Object.values(board)) {
     const found = column.find((t) => t.id === taskId)
@@ -116,6 +123,9 @@ export default function HomePage() {
   // Side menu state
   const [sideMenuCollapsed, setSideMenuCollapsed] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  // Open terminal tabs, in bar order. Session-only by design — nothing here is
+  // persisted, so a restart starts from an empty bar.
+  const [tabs, setTabs] = useState<TerminalTab[]>([])
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
@@ -210,6 +220,19 @@ export default function HomePage() {
     })
   }, [])
 
+  // Drop tabs whose task no longer exists. Deletions made in this window are
+  // handled by closeTabs (which also picks the next tab); this covers tasks
+  // removed by the CLI or another writer, where there is no local handler.
+  useEffect(() => {
+    const ids = new Set(Object.values(board).flat().map((t) => t.id))
+    setTabs((prev) =>
+      prev.every((t) => ids.has(t.taskId))
+        ? prev
+        : prev.filter((t) => ids.has(t.taskId))
+    )
+    setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
+  }, [board])
+
   const handleRelaunch = () => {
     setRelaunching(true)
     void relaunchApp()
@@ -234,6 +257,53 @@ export default function HomePage() {
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
     void persistBoard(next)
+  }
+
+  // Open (or focus) a task's tab. A preview tab replaces the existing preview
+  // tab in place — VSCode's single-click behaviour — while a pinned open always
+  // gets its own slot at the end of the bar.
+  const openTab = (taskId: string, opts?: { pin?: boolean }) => {
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.taskId === taskId)
+      if (existing) {
+        if (!opts?.pin || !existing.preview) return prev
+        return prev.map((t) => (t.taskId === taskId ? { ...t, preview: false } : t))
+      }
+      const next: TerminalTab = { taskId, preview: opts?.pin !== true }
+      const previewIndex = prev.findIndex((t) => t.preview)
+      if (next.preview && previewIndex !== -1) {
+        const copy = [...prev]
+        copy[previewIndex] = next
+        return copy
+      }
+      return [...prev, next]
+    })
+    setSelectedTaskId(taskId)
+  }
+
+  const pinTab = (taskId: string) => {
+    setTabs((prev) =>
+      prev.some((t) => t.taskId === taskId && t.preview)
+        ? prev.map((t) => (t.taskId === taskId ? { ...t, preview: false } : t))
+        : prev
+    )
+  }
+
+  // Closing is purely a bar operation: the TaskWorkspacePanel stays mounted
+  // (see kanban-board's `mounted` set), so a running agent's PTY is untouched
+  // and reopening the tab shows the full scrollback.
+  const closeTabs = (taskIds: string[]) => {
+    const removing = new Set(taskIds)
+    if (selectedTaskId && removing.has(selectedTaskId)) {
+      const index = tabs.findIndex((t) => t.taskId === selectedTaskId)
+      const after = tabs.slice(index + 1).find((t) => !removing.has(t.taskId))
+      const before = tabs
+        .slice(0, Math.max(index, 0))
+        .reverse()
+        .find((t) => !removing.has(t.taskId))
+      setSelectedTaskId(after?.taskId ?? before?.taskId ?? null)
+    }
+    setTabs((prev) => prev.filter((t) => !removing.has(t.taskId)))
   }
 
   const handleOpenNewTask = () => {
@@ -335,7 +405,9 @@ export default function HomePage() {
       })
       if (result) {
         setBoard(result.state.board)
-        setSelectedTaskId(result.task.id)
+        // A task the user just created is never throwaway — open it pinned so
+        // the next single-click elsewhere can't discard it.
+        openTab(result.task.id, { pin: true })
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err))
@@ -385,7 +457,7 @@ export default function HomePage() {
     const state = await deleteTask(taskId)
     if (state) {
       setBoard(state.board)
-      if (taskId === selectedTaskId) setSelectedTaskId(null)
+      closeTabs([taskId])
     }
   }
 
@@ -475,14 +547,22 @@ export default function HomePage() {
         if (state) latest = state.board
       }
       if (latest) setBoard(latest)
-      if (selectedTaskId && deleteProjectTarget.taskIds.includes(selectedTaskId)) {
-        setSelectedTaskId(null)
-      }
+      closeTabs(deleteProjectTarget.taskIds)
       setDeleteProjectTarget(null)
     } finally {
       setDeletingProject(false)
     }
   }
+
+  // Titles/status are read from the board each render, so editing a task or
+  // moving its card updates the tab without any tab-state bookkeeping.
+  const tabEntries: TerminalTabEntry[] = tabs.flatMap((tab) => {
+    for (const column of TAB_COLUMN_ORDER) {
+      const task = board[column].find((t) => t.id === tab.taskId)
+      if (task) return [{ ...tab, title: task.title, column }]
+    }
+    return []
+  })
 
   const remoteHost = useRemoteHost({
     board,
@@ -507,7 +587,7 @@ export default function HomePage() {
                 onToggleCollapse={() => setSideMenuCollapsed((v) => !v)}
                 board={board}
                 selectedTaskId={selectedTaskId}
-                onSelectTask={setSelectedTaskId}
+                onSelectTask={openTab}
                 onNewTask={handleOpenNewTask}
                 onNewTaskForProject={handleNewTaskForProject}
                 onDeleteProject={handleDeleteProject}
@@ -528,7 +608,15 @@ export default function HomePage() {
                 onDownloadUpdate={handleDownloadRemoteUpdate}
                 onInstallUpdate={handleInstallRemoteUpdate}
               />
-              <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <TerminalTabBar
+                  entries={tabEntries}
+                  activeTaskId={selectedTaskId}
+                  onSelect={openTab}
+                  onPin={pinTab}
+                  onClose={(taskId) => closeTabs([taskId])}
+                />
+                <div className="min-h-0 flex-1">
                 <KanbanBoard
                   board={board}
                   onBoardChange={handleBoardChange}
@@ -541,6 +629,8 @@ export default function HomePage() {
                   onManageRoles={handleOpenRoles}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
+                  onTaskInteract={pinTab}
+                  openTabIds={tabs.map((t) => t.taskId)}
                   initialProjectPath={newTaskInitialProject}
                   newTaskNonce={newTaskNonce}
                   creating={creating}
@@ -552,6 +642,7 @@ export default function HomePage() {
                   agentConnections={agentConnections}
                   onCreateTask={handleCreateTask}
                 />
+                </div>
               </div>
             </div>
             <EditTaskDialog

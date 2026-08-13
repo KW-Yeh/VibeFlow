@@ -52,6 +52,10 @@ interface KanbanBoardProps {
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in the workspace panel). */
   selectedTaskId?: string | null
+  /** Real user interaction with a task's workspace — pins its preview tab. */
+  onTaskInteract?: (taskId: string) => void
+  /** Task ids that currently have an open terminal tab. */
+  openTabIds: string[]
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
   newTaskNonce: number
@@ -138,6 +142,8 @@ export function KanbanBoard({
   onManageRoles,
   subAgents,
   selectedTaskId,
+  onTaskInteract,
+  openTabIds,
   initialProjectPath,
   newTaskNonce,
   creating,
@@ -160,8 +166,9 @@ export function KanbanBoard({
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
   const subAgentDrawerSnapshotRef = useRef<SubAgentDrawerSnapshot | null>(null)
-  // Tasks whose terminal has ever been opened. Once mounted, TaskTerminal stays
-  // in the DOM (just hidden) so PTY state survives switching tasks.
+  // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
+  // the DOM (just hidden) so PTY state survives switching tasks; it is dropped
+  // only when its tab closes — and only for tasks that are not in progress.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed terminal launch command; bumping `nonce` fires a new phase.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
@@ -367,9 +374,22 @@ export function KanbanBoard({
             ? allTasks.find(({ task }) => task.id === selectedTaskId)
             : null
 
-          // Keep all previously mounted panels in the DOM (hidden when not selected)
-          // so PTY sessions survive switching tasks or deselecting to the new-task form.
-          const renderIds = new Set(mounted)
+          // A mounted panel stays in the DOM (hidden when not selected) so its
+          // PTY survives switching tasks or deselecting to the new-task form.
+          // Closing its tab drops it — which kills the PTY and stops the two
+          // 3s pollers every panel runs — except while the task is in progress,
+          // where an agent may still be working in that terminal. Scrollback is
+          // kept by the main process (killSession leaves it), so reopening the
+          // tab replays the history under a fresh shell.
+          const openTabs = new Set(openTabIds)
+          const renderIds = new Set<string>()
+          for (const taskId of mounted) {
+            const entry = allTasks.find(({ task }) => task.id === taskId)
+            if (!entry) continue
+            if (openTabs.has(taskId) || entry.column === 'in_progress') {
+              renderIds.add(taskId)
+            }
+          }
           if (selected) renderIds.add(selected.task.id)
 
           return (
@@ -391,6 +411,9 @@ export function KanbanBoard({
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}
                       onOpenSubAgents={setSubAgentTaskId}
+                      onInteract={
+                        onTaskInteract ? () => onTaskInteract(taskId) : undefined
+                      }
                     />
                   </WorkspaceSurface>
                 )

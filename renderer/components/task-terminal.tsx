@@ -30,6 +30,11 @@ interface TaskTerminalProps {
    * scrollback from the live session is preserved for review.
    */
   readOnly?: boolean
+  /**
+   * Called on real user interaction (keystrokes, file drop, restart) so the
+   * host can pin a preview tab. Read through a ref — see `onInteractRef`.
+   */
+  onInteract?: () => void
 }
 
 export function TaskTerminal({
@@ -39,6 +44,7 @@ export function TaskTerminal({
   launchCommand,
   launchNonce = 0,
   readOnly = false,
+  onInteract,
 }: TaskTerminalProps) {
   // Effective session key: use the prop when provided, else fall back to taskId.
   const sessionKey = sessionKeyProp ?? taskId
@@ -66,6 +72,11 @@ export function TaskTerminal({
   const cwdRef = useRef<string | null>(cwd)
   cwdRef.current = cwd
   const readOnlyRef = useRef(readOnly)
+  // Kept in a ref for the same reason: the init effect must not re-run (and
+  // dispose the xterm buffer + respawn the shell) just because the host passed
+  // a new callback identity.
+  const onInteractRef = useRef(onInteract)
+  onInteractRef.current = onInteract
 
   // Run the launch command AS the login shell's argument (`zsh -lic <cmd>`)
   // rather than typing it into the interactive line editor. The command is often
@@ -114,6 +125,7 @@ export function TaskTerminal({
     const api = typeof window !== 'undefined' ? window.vibeflow : undefined
     if (!startCwd || !term || !api || readOnlyRef.current) return
 
+    onInteractRef.current?.()
     readyRef.current = false
     runningCommandRef.current = false
     setIsRestarting(true)
@@ -298,13 +310,18 @@ export function TaskTerminal({
         if (!isShiftEnter || event.isComposing || readOnlyRef.current) return true
         event.preventDefault()
         event.stopPropagation()
-        if (event.type === 'keydown') api.term.input(sessionKey, '\x1b\r')
+        if (event.type === 'keydown') {
+          onInteractRef.current?.()
+          api.term.input(sessionKey, '\x1b\r')
+        }
         return false
       })
 
       // Forward keystrokes only while the card is interactive (not Done).
       term.onData((data) => {
-        if (!readOnlyRef.current) api.term.input(sessionKey, data)
+        if (readOnlyRef.current) return
+        onInteractRef.current?.()
+        api.term.input(sessionKey, data)
       })
 
       resizeObs = new ResizeObserver(() => {
@@ -355,6 +372,7 @@ export function TaskTerminal({
 
   const handleFileDrop = async (files: FileList) => {
     if (readOnlyRef.current || !readyRef.current || files.length === 0) return
+    onInteractRef.current?.()
     setIsAttaching(true)
     try {
       const inputs = await filesToAttachmentInputs(files)

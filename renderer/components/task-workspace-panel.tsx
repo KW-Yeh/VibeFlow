@@ -153,6 +153,8 @@ interface TaskWorkspacePanelProps {
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
   onOpenSubAgents: (taskId: string) => void
+  /** Real user interaction with this workspace — pins its preview tab. */
+  onInteract?: () => void
 }
 
 function InfoSection({
@@ -1209,6 +1211,7 @@ export function TaskWorkspacePanel({
   onEdit,
   onDelete,
   onOpenSubAgents,
+  onInteract,
 }: TaskWorkspacePanelProps) {
   type TaskTab = 'task' | 'plan' | 'artifacts'
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('task')
@@ -1269,7 +1272,15 @@ export function TaskWorkspacePanel({
   const launchCommand = launch?.command
   const launchNonce = launch?.nonce ?? 0
 
-  const requestLaunch = () => onStart(task)
+  const requestLaunch = () => {
+    onInteract?.()
+    onStart(task)
+  }
+
+  const selectTaskTab = (tab: TaskTab) => {
+    onInteract?.()
+    setActiveTaskTab(tab)
+  }
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
@@ -1289,13 +1300,27 @@ export function TaskWorkspacePanel({
         )}
         {column === 'in_progress' && (
           <>
-            <Button size="sm" onClick={() => onComplete(task)} title="標記完成後會清理 PTY 與 worktree">
+            <Button
+              size="sm"
+              onClick={() => {
+                onInteract?.()
+                onComplete(task)
+              }}
+              title="標記完成後會清理 PTY 與 worktree"
+            >
               <Check className="size-3.5" />
               完成
             </Button>
           </>
         )}
-        <IconButton aria-label="編輯任務" title="編輯任務" onClick={() => onEdit(task.id)}>
+        <IconButton
+          aria-label="編輯任務"
+          title="編輯任務"
+          onClick={() => {
+            onInteract?.()
+            onEdit(task.id)
+          }}
+        >
           <Pencil className="size-4" />
         </IconButton>
         {confirmDelete ? (
@@ -1343,6 +1368,7 @@ export function TaskWorkspacePanel({
             launchCommand={launchCommand}
             launchNonce={launchNonce}
             readOnly={false}
+            onInteract={onInteract}
           />
         </div>
 
@@ -1368,7 +1394,7 @@ export function TaskWorkspacePanel({
                     id={tabId(tab)}
                     aria-selected={activeTaskTab === tab}
                     aria-controls={tabPanelId}
-                    onClick={() => setActiveTaskTab(tab)}
+                    onClick={() => selectTaskTab(tab)}
                     className={cn(
                       'rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                       activeTaskTab === tab
