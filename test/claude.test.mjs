@@ -107,15 +107,32 @@ test('buildAgentCommand — carries progress protocol in prompt body', () => {
   assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
 })
 
-test('buildAgentCommand — tells Codex to promote temporary screenshots into task artifacts', () => {
+test('buildAgentCommand — tells Codex to promote temporary evidence into task artifacts', () => {
   const workspacePath = '/workspace/project'
   const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, workspacePath)
   const artifactsDir = `${workspacePath}/vf-abc123.artifacts`
 
   assert.ok(cmd.includes('/private/tmp'), 'must cover screenshot tools that return system temp paths')
+  assert.ok(cmd.includes('~/Downloads'), 'must cover the browser download dir gif_creator exports to')
   assert.ok(cmd.includes(`複製到 ${artifactsDir}/ 根目錄`), 'must name the task artifacts destination')
-  assert.ok(cmd.includes('並確認目標檔案存在'), 'must require verifying the promoted screenshot')
-  assert.ok(cmd.includes('只回報或保留 tmp 路徑不算完成'), 'must reject temp-only evidence')
+  assert.ok(cmd.includes('並確認目標檔案存在'), 'must require verifying the promoted file')
+  assert.ok(cmd.includes('只回報或保留原路徑不算完成'), 'must reject evidence left at its source path')
+})
+
+test('buildAgentCommand — requires a GIF recording when the change is interactive', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, '/workspace/project')
+
+  assert.ok(cmd.includes('gif_creator'), 'must name the recording tool')
+  assert.ok(
+    cmd.includes('能不能用一張靜態圖看出通過或失敗'),
+    'must give the judgement test that decides screenshot vs recording'
+  )
+  assert.ok(
+    cmd.includes('純樣式、文案、靜態版面改動不需要錄'),
+    'must scope recording to interactive changes only'
+  )
+  assert.ok(cmd.includes('start_recording'), 'must spell out the recording sequence')
+  assert.ok(cmd.includes('stop_recording'), 'must spell out the recording sequence')
 })
 
 test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {
