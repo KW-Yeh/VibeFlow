@@ -13,6 +13,40 @@ export interface AttachmentInput {
 
 export const ATTACHMENTS_DIR = '.vibeflow-attachments'
 
+/**
+ * Extension → mime for the file kinds a task attachment realistically carries
+ * (screenshots, logs, specs). Anything else falls back to octet-stream, which
+ * writeAttachments stores verbatim — the mime is metadata, never a gate.
+ */
+const MIME_BY_EXTENSION: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf',
+  '.json': 'application/json',
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.log': 'text/plain',
+  '.csv': 'text/csv',
+}
+
+/**
+ * Build an AttachmentInput from a file on disk — the CLI's counterpart to the
+ * renderer's FileReader path (renderer/lib/file-attachments.ts).
+ */
+export function fileToAttachmentInput(filePath: string): AttachmentInput {
+  const bytes = fs.readFileSync(filePath)
+  const extension = path.extname(filePath).toLowerCase()
+  return {
+    name: path.basename(filePath),
+    mime: MIME_BY_EXTENSION[extension] ?? 'application/octet-stream',
+    dataBase64: bytes.toString('base64'),
+  }
+}
+
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 const MAX_FILENAME_BYTES = 200
 

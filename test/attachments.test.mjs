@@ -5,6 +5,7 @@ import fs from 'node:fs/promises'
 
 import {
   ATTACHMENTS_DIR,
+  fileToAttachmentInput,
   writeAttachments,
 } from '../main/helpers/attachments.ts'
 import { git, makeRepo } from './support/repo.mjs'
@@ -41,6 +42,38 @@ test('writeAttachments rejects an invalid batch before writing any files', async
       /附件格式無效/
     )
     await assert.rejects(fs.access(path.join(projectPath, ATTACHMENTS_DIR)))
+  } finally {
+    await cleanup()
+  }
+})
+
+test('fileToAttachmentInput reads bytes off disk and names a mime the CLI can pass on', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  try {
+    const bytes = Buffer.from([137, 80, 78, 71, 0, 255])
+    const source = path.join(projectPath, 'shot.PNG')
+    await fs.writeFile(source, bytes)
+
+    const input = fileToAttachmentInput(source)
+    assert.equal(input.name, 'shot.PNG')
+    assert.equal(input.mime, 'image/png')
+    assert.deepEqual(Buffer.from(input.dataBase64, 'base64'), bytes)
+
+    // The pair round-trips: what the CLI reads is what the worktree receives.
+    const [written] = writeAttachments(projectPath, [input])
+    assert.deepEqual(await fs.readFile(written.path), bytes)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('fileToAttachmentInput falls back to octet-stream for unknown extensions', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  try {
+    const source = path.join(projectPath, 'dump.weird')
+    await fs.writeFile(source, 'x')
+    assert.equal(fileToAttachmentInput(source).mime, 'application/octet-stream')
+    assert.throws(() => fileToAttachmentInput(path.join(projectPath, 'nope.txt')), /ENOENT/)
   } finally {
     await cleanup()
   }

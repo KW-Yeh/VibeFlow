@@ -14,6 +14,17 @@ export type AgentCliId = 'claude' | 'codex' | 'gemini'
  */
 export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh'
 
+/** Every valid effort level, ordered shallow → deep. Backs input validation. */
+export const AGENT_EFFORTS: readonly AgentEffort[] = ['low', 'medium', 'high', 'xhigh']
+
+/**
+ * Effort a task gets when the caller does not pick one. Applied at task
+ * creation (helpers/tasks.ts) so the UI and the CLI produce identical cards.
+ * The renderer cannot import main at runtime, so the slider's default is a
+ * deliberate duplicate — test/agents.test.mjs asserts the two literals agree.
+ */
+export const DEFAULT_TASK_EFFORT: AgentEffort = 'medium'
+
 export interface AgentModel {
   /** Value passed to the CLI's --model flag. */
   id: string

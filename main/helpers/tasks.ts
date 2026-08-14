@@ -11,7 +11,7 @@ import {
 import { generateBranchName } from './branch-name'
 import { getGitInfo, initRepository, provisionWorktree } from './git'
 import { projectWorkstationPath } from './workspace'
-import type { AgentCliId, AgentEffort } from './agents'
+import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
 import { writeAttachments, type AttachmentInput } from './attachments'
 
 export interface CreateTaskInput {
@@ -119,7 +119,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       input.executionModel ||
       (input.executionAgentCli ? undefined : input.model) ||
       undefined,
-    effort: input.effort,
+    effort: input.effort ?? DEFAULT_TASK_EFFORT,
     roleId: input.roleId || undefined,
   }
 

@@ -13,6 +13,11 @@ const EFFORT_OPTIONS: ReadonlyArray<{
   { value: 'xhigh', label: '極致', description: '適合高複雜度、長鏈推理或高風險變更。' },
 ]
 
+/**
+ * Mirror of DEFAULT_TASK_EFFORT in main/helpers/agents.ts. The renderer must
+ * not import main at runtime, so the value is duplicated on purpose — change
+ * both together (test/agents.test.mjs guards the pair).
+ */
 export const DEFAULT_TASK_EFFORT: AgentEffort = 'medium'
 
 export function TaskEffortSlider({
