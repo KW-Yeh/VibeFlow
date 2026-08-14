@@ -58,6 +58,7 @@ export interface NewTaskFormProps {
     description: string,
     projectPath: string,
     baseBranch: string | null,
+    branch: string,
     mode: ProjectMode,
     agentCli: AgentCliId,
     executionAgentCli: AgentCliId,
@@ -391,6 +392,7 @@ export function NewTaskForm({
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
+  const [branch, setBranch] = useState('')
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
@@ -509,6 +511,7 @@ export function NewTaskForm({
       description.trim(),
       projectPath,
       mode === 'existing' && hasRemote ? baseBranch || null : null,
+      branch.trim(),
       mode,
       agentCli,
       executionAgentCli,
@@ -611,6 +614,27 @@ export function NewTaskForm({
           此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
           為基準建立本地 worktree。
         </p>
+      </InlineEnterSurface>
+
+      <InlineEnterSurface show={isRepo} enabled={inline}>
+        <label className="block space-y-1.5">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+            <GitBranch className="size-3" />
+            分支名稱 (選填)
+          </span>
+          <input
+            name="branch"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="留空則自動命名，例如 feature/login-fix"
+            className={F}
+          />
+          <span className="block text-sm text-muted-foreground">
+            {hasRemote
+              ? '填寫後會建立同名分支；若 remote 已有這個分支，則直接取回並接續上面的工作。'
+              : '填寫後會建立同名分支。'}
+          </span>
+        </label>
       </InlineEnterSurface>
     </div>
   )

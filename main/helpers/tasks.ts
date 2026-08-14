@@ -9,7 +9,12 @@ import {
   type Task,
 } from './store'
 import { generateBranchName } from './branch-name'
-import { getGitInfo, initRepository, provisionWorktree } from './git'
+import {
+  assertBranchAvailable,
+  getGitInfo,
+  initRepository,
+  provisionWorktree,
+} from './git'
 import { projectWorkstationPath } from './workspace'
 import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
 import { writeAttachments, type AttachmentInput } from './attachments'
@@ -20,6 +25,12 @@ export interface CreateTaskInput {
   description?: string
   status?: ColumnId
   baseBranch?: string | null
+  /**
+   * Branch name chosen by the user. Absent/blank = derive one from the card
+   * (branch-name.ts). A name given here is created verbatim, or — when origin
+   * already publishes it — checked out so the card continues that work.
+   */
+  branch?: string
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   model?: string
@@ -57,7 +68,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   }
 
   const taskId = randomUUID().slice(0, 8)
-  const preferredBranch = await generateBranchName(input.title, input.description)
+  const explicitBranch = input.branch?.trim() || null
 
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
 
@@ -72,6 +83,15 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   )
   await fs.mkdir(workspacePath, { recursive: true })
 
+  // Vet the user's name before provisioning so a bad one surfaces as its own
+  // error instead of a generic "worktree 建立失敗". Generating a name is skipped
+  // entirely when one was given — it can cost a headless `claude -p` call.
+  if (explicitBranch) {
+    await assertBranchAvailable(projectPath, workspacePath, explicitBranch)
+  }
+  const preferredBranch =
+    explicitBranch ?? (await generateBranchName(input.title, input.description))
+
   let provisionResult
   try {
     provisionResult = await provisionWorktree(
@@ -79,7 +99,8 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       workspacePath,
       taskId,
       input.baseBranch ?? null,
-      preferredBranch
+      preferredBranch,
+      { explicitBranch: Boolean(explicitBranch) }
     )
   } catch (err) {
     throw Object.assign(

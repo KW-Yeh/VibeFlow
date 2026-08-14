@@ -178,6 +178,7 @@ export async function createTask(payload: {
   description?: string
   projectPath: string
   baseBranch: string | null
+  branch?: string
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   model?: string

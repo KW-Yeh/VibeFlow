@@ -242,6 +242,43 @@ async function branchExists(
   return false
 }
 
+/** Whether `branch` exists as a local ref (an already-checked-out task owns it). */
+async function localBranchExists(
+  projectPath: string,
+  branch: string
+): Promise<boolean> {
+  try {
+    await git(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether origin publishes `branch`. Asks the remote directly so a branch
+ * pushed by someone else — never fetched into this clone — is still found;
+ * falls back to the local remote-tracking cache when the network is down.
+ */
+export async function remoteBranchExists(
+  projectPath: string,
+  branch: string
+): Promise<boolean> {
+  try {
+    const out = await git(projectPath, ['ls-remote', '--heads', 'origin', branch])
+    return out.trim().length > 0
+  } catch {
+    try {
+      await git(projectPath, [
+        'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`,
+      ])
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
 /**
  * Legacy branch name used when no meaningful name can be derived from a card.
  * Shared so worktree provisioning and later cleanup/delete resolve the same
@@ -249,6 +286,48 @@ async function branchExists(
  */
 export function fallbackBranchName(taskId: string): string {
   return `vf-${taskId}`
+}
+
+/**
+ * Vet a branch name the user typed themselves, before it reaches
+ * `provisionWorktree`. The generated-name path is deliberately forgiving —
+ * invalid falls back to `vf-<id>`, taken gets a `-<id>` suffix — but a name
+ * someone chose by hand must be created verbatim or not at all, so the two
+ * failure modes are surfaced as errors instead of quietly renaming the branch.
+ */
+export async function assertBranchAvailable(
+  projectPath: string,
+  workspacePath: string,
+  branch: string
+): Promise<void> {
+  try {
+    await git(projectPath, ['check-ref-format', '--branch', branch])
+  } catch {
+    throw Object.assign(
+      new Error(`分支名稱不合法：${branch}`),
+      { code: 'INVALID_BRANCH_NAME' }
+    )
+  }
+
+  // Only a LOCAL collision is fatal: a branch that exists just on origin is
+  // adopted by provisionWorktree (fetched and checked out) rather than recreated.
+  if (await localBranchExists(projectPath, branch)) {
+    throw Object.assign(
+      new Error(`本地已有同名分支：${branch}`),
+      { code: 'BRANCH_ALREADY_EXISTS' }
+    )
+  }
+
+  const dirTaken = await fs
+    .access(path.join(workspacePath, worktreeDirName(branch)))
+    .then(() => true)
+    .catch(() => false)
+  if (dirTaken) {
+    throw Object.assign(
+      new Error(`工作區資料夾已存在：${worktreeDirName(branch)}`),
+      { code: 'WORKTREE_DIR_EXISTS' }
+    )
+  }
 }
 
 /**
@@ -450,6 +529,46 @@ function copyIgnoredDependenciesInBackground(
 }
 
 /**
+ * Check an existing origin branch out into the task's worktree as a local
+ * tracking branch. Used when the card names a branch that is already published
+ * — the work continues on it, so nothing is branched off the base and nothing
+ * is pushed (the upstream already holds these commits).
+ */
+async function adoptRemoteBranch(
+  projectPath: string,
+  worktreePath: string,
+  branch: string,
+  base: string
+): Promise<ProvisionResult> {
+  try {
+    await git(projectPath, ['fetch', 'origin', branch])
+  } catch {
+    // offline — fall back to whatever origin/<branch> this clone already cached
+  }
+
+  try {
+    await git(projectPath, [
+      'worktree',
+      'add',
+      '--track',
+      '-b',
+      branch,
+      worktreePath,
+      `origin/${branch}`,
+    ])
+  } catch (err) {
+    await removeWorktree(projectPath, worktreePath)
+    await deleteBranch(projectPath, branch)
+    throw err
+  }
+
+  const ignoredEntries = await copySmallIgnoredFiles(projectPath, worktreePath)
+  copyIgnoredDependenciesInBackground(projectPath, worktreePath, ignoredEntries)
+
+  return { branch, worktreePath, pushed: true, baseBranch: base }
+}
+
+/**
  * Create an isolated worktree for a task under `<workspacePath>/<branch-dir>` on
  * a new branch, and (when a remote exists) push the branch upstream. The branch
  * is named from `preferredBranch` (e.g. feature/WR-4832, fix/WCL260522-0002,
@@ -462,15 +581,27 @@ export async function provisionWorktree(
   workspacePath: string,
   taskId: string,
   baseBranch: string | null,
-  preferredBranch?: string | null
+  preferredBranch?: string | null,
+  opts: { explicitBranch?: boolean } = {}
 ): Promise<ProvisionResult> {
   await ensureLocalExclude(projectPath)
 
-  const branch = await resolveBranchName(projectPath, workspacePath, taskId, preferredBranch)
+  // A user-typed name is used verbatim — assertBranchAvailable has already
+  // vetted it, and silently suffixing it would defeat the point of typing one.
+  const branch =
+    opts.explicitBranch && preferredBranch
+      ? preferredBranch
+      : await resolveBranchName(projectPath, workspacePath, taskId, preferredBranch)
   const worktreePath = path.join(workspacePath, worktreeDirName(branch))
 
   const info = await getGitInfo(projectPath)
   const base = baseBranch || info.defaultBase || info.currentBranch || 'HEAD'
+
+  // Naming an existing remote branch means "continue that work", so check it
+  // out as a tracking branch instead of starting an unrelated one from base.
+  if (opts.explicitBranch && info.hasRemote && (await remoteBranchExists(projectPath, branch))) {
+    return adoptRemoteBranch(projectPath, worktreePath, branch, base)
+  }
 
   // Prefer origin/<base> as the start point when it exists on the remote.
   // Pull the local base branch first so history is up-to-date before branching.

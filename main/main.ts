@@ -294,6 +294,8 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description?: string
         projectPath: string
         baseBranch: string | null
+        /** User-chosen branch name; blank/absent = derive one from the card. */
+        branch?: string
         mode?: 'existing' | 'new'
         agentCli?: AgentCliId
         model?: string

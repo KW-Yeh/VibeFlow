@@ -5,6 +5,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import {
   getGitInfo,
+  assertBranchAvailable,
   ensureLocalExclude,
   provisionWorktree,
   removeWorktree,
@@ -24,7 +25,7 @@ import {
   exists,
 } from './support/repo.mjs'
 
-async function provision(projectPath, taskId, baseBranch, preferredBranch) {
+async function provision(projectPath, taskId, baseBranch, preferredBranch, opts) {
   const workspacePath = path.join(path.dirname(projectPath), 'workspace')
   await fs.mkdir(workspacePath, { recursive: true })
   return provisionWorktree(
@@ -32,8 +33,26 @@ async function provision(projectPath, taskId, baseBranch, preferredBranch) {
     workspacePath,
     taskId,
     baseBranch,
-    preferredBranch
+    preferredBranch,
+    opts
   )
+}
+
+/** Workspace dir the `provision` helper provisions into. */
+function workspaceOf(projectPath) {
+  return path.join(path.dirname(projectPath), 'workspace')
+}
+
+/** Publish `branch` on origin and drop it locally, leaving a remote-only branch. */
+async function pushRemoteOnlyBranch(projectPath, branch, file) {
+  await git(projectPath, 'checkout', '-b', branch)
+  await writeFile(projectPath, file, 'from the remote branch')
+  await git(projectPath, 'add', '-A')
+  await git(projectPath, 'commit', '-m', `feat: ${branch}`)
+  await git(projectPath, 'push', '-u', 'origin', branch)
+  await git(projectPath, 'checkout', 'main')
+  await git(projectPath, 'branch', '-D', branch)
+  await git(projectPath, 'update-ref', '-d', `refs/remotes/origin/${branch}`)
 }
 
 // --- getGitInfo ---
@@ -543,6 +562,106 @@ test('commitAndPush — clean tree commits nothing', async () => {
     const res = await provision(projectPath, 'abc12345', 'main', 'feature/clean')
     const fin = await commitAndPush(res.worktreePath, 'noop')
     assert.equal(fin.committed, false)
+  } finally {
+    await cleanup()
+  }
+})
+
+// --- explicit (user-typed) branch names ---
+
+test('assertBranchAvailable — accepts a free, well-formed name', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const workspacePath = workspaceOf(projectPath)
+    await fs.mkdir(workspacePath, { recursive: true })
+    await assertBranchAvailable(projectPath, workspacePath, 'feature/typed-by-hand')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('assertBranchAvailable — rejects a malformed name and a local collision', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const workspacePath = workspaceOf(projectPath)
+    await fs.mkdir(workspacePath, { recursive: true })
+
+    await assert.rejects(
+      () => assertBranchAvailable(projectPath, workspacePath, 'bad branch name'),
+      (err) => err.code === 'INVALID_BRANCH_NAME'
+    )
+
+    await git(projectPath, 'branch', 'feature/taken')
+    await assert.rejects(
+      () => assertBranchAvailable(projectPath, workspacePath, 'feature/taken'),
+      (err) => err.code === 'BRANCH_ALREADY_EXISTS'
+    )
+  } finally {
+    await cleanup()
+  }
+})
+
+test('assertBranchAvailable — rejects a name whose worktree dir is occupied', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const workspacePath = workspaceOf(projectPath)
+    await fs.mkdir(path.join(workspacePath, 'feature-occupied'), { recursive: true })
+    await assert.rejects(
+      () => assertBranchAvailable(projectPath, workspacePath, 'feature/occupied'),
+      (err) => err.code === 'WORKTREE_DIR_EXISTS'
+    )
+  } finally {
+    await cleanup()
+  }
+})
+
+test('assertBranchAvailable — a branch that exists only on origin is not a collision', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const workspacePath = workspaceOf(projectPath)
+    await fs.mkdir(workspacePath, { recursive: true })
+    await pushRemoteOnlyBranch(projectPath, 'feature/published', 'remote-only.txt')
+
+    // It is adopted rather than recreated, so provisioning must not be blocked.
+    await assertBranchAvailable(projectPath, workspacePath, 'feature/published')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('provisionWorktree — an explicit name is used verbatim, never suffixed', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  try {
+    await provision(projectPath, 'abc12345', 'main', 'feature/exact')
+    // The auto path would suffix the second card; the explicit path must not.
+    const second = await provision(projectPath, 'def67890', 'main', 'feature/exact-2', {
+      explicitBranch: true,
+    })
+    assert.equal(second.branch, 'feature/exact-2')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('provisionWorktree — an explicit name matching an origin branch checks it out', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    await pushRemoteOnlyBranch(projectPath, 'feature/published', 'remote-only.txt')
+
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/published', {
+      explicitBranch: true,
+    })
+
+    assert.equal(res.branch, 'feature/published')
+    assert.equal(res.pushed, true)
+    // The remote branch's work is present — nothing was branched off main.
+    assert.ok(await exists(path.join(res.worktreePath, 'remote-only.txt')))
+    const head = await git(res.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')
+    assert.equal(head, 'feature/published')
+    const upstream = await git(
+      res.worktreePath, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'
+    )
+    assert.equal(upstream, 'origin/feature/published')
   } finally {
     await cleanup()
   }

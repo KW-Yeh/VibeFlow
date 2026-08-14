@@ -25,6 +25,9 @@ task create options:
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
   --base-branch <name>   Branch the worktree is created from (default: repo's current branch)
+  --branch <name>        Branch to create for the task (default: derived from the title).
+                         If origin already publishes it, the branch is fetched and
+                         checked out instead of being created.
   --mode <mode>          ${MODES.join(' | ')}  (default: existing; "new" runs git init first)
   --agent <id>           Planning/review agent: ${AGENT_IDS.join(' | ')}  (default: claude)
   --model <id>           Planning/review model (default: the agent's own default)
@@ -111,6 +114,7 @@ try {
       prompt:        { type: 'string' },
       status:        { type: 'string' },
       'base-branch': { type: 'string' },
+      branch:        { type: 'string' },
       mode:          { type: 'string' },
       agent:         { type: 'string' },
       model:         { type: 'string' },
@@ -194,6 +198,7 @@ try {
     description: values.prompt,
     status: values.status ?? 'backlog',
     baseBranch: values['base-branch'] ?? null,
+    branch: values.branch,
     mode: values.mode ?? 'existing',
     agentCli: values.agent,
     model: values.model,

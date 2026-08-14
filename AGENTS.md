@@ -78,10 +78,17 @@ npm run vibeflow -- task create \
   happens when a card is moved in the app — so leave CLI-created cards in backlog
   unless you intend to start them from the UI.
 - Every other creation option the new-task dialog offers has a flag:
-  `--base-branch`, `--mode existing|new` (`new` runs `git init` first),
+  `--base-branch`, `--branch`, `--mode existing|new` (`new` runs `git init` first),
   `--agent` / `--model` (planning & review), `--exec-agent` / `--exec-model`
   (execution), `--effort low|medium|high|xhigh`, `--role <id|name>`, and
   `--attach <path>` (repeat per file; the CLI reads the bytes and infers the mime).
+- `--branch` is the branch the task runs on. Left out, the name is derived from
+  the card (`branch-name.ts`) and quietly de-duplicated; given explicitly, it is
+  created verbatim or the call fails (`INVALID_BRANCH_NAME`,
+  `BRANCH_ALREADY_EXISTS` for a local collision, `WORKTREE_DIR_EXISTS`). A name
+  that already exists **on origin only** is not an error: the branch is fetched
+  and checked out so the card continues that work instead of starting a new
+  branch off the base. Same field, same rules, in the new-task dialog.
 - `--effort` defaults to `medium`, matching the UI. The default lives in
   `main/helpers/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.

@@ -72,6 +72,7 @@ interface KanbanBoardProps {
     description: string,
     projectPath: string,
     baseBranch: string | null,
+    branch: string,
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
     executionAgentCli: AgentCliId,
