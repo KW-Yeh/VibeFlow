@@ -4,6 +4,7 @@ import type { Terminal as XTerm } from '@xterm/xterm'
 import { Button } from '@/components/ui/button'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
+import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
 import { RefreshCw } from 'lucide-react'
 
@@ -223,7 +224,20 @@ export function TaskTerminal({
       const fit = new FitAddon()
       term.loadAddon(fit)
       term.open(containerRef.current)
-      fit.fit()
+      const fitToVisibleViewport = () => {
+        fit.fit()
+        const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
+        const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
+        if (!screen || !viewport) return
+
+        const safeCols = fitColumnsWithinViewport(
+          term.cols,
+          screen.getBoundingClientRect().width,
+          viewport.clientWidth
+        )
+        if (safeCols !== term.cols) term.resize(safeCols, term.rows)
+      }
+      fitToVisibleViewport()
       termRef.current = term
 
       const api = typeof window !== 'undefined' ? window.vibeflow : undefined
@@ -326,7 +340,7 @@ export function TaskTerminal({
 
       resizeObs = new ResizeObserver(() => {
         try {
-          fit.fit()
+          fitToVisibleViewport()
           api.term.resize(sessionKey, term.cols, term.rows)
         } catch {
           // ignore transient resize errors
@@ -342,7 +356,7 @@ export function TaskTerminal({
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (disposed || termRef.current !== term) return
-          fit.fit()
+          fitToVisibleViewport()
           api.term.resize(sessionKey, term.cols, term.rows)
         })
       })
