@@ -828,8 +828,15 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // Watch the electron-store backing file for external writes (e.g. CLI) and
   // push fresh state to the renderer so the board refreshes automatically.
+  //
+  // Watch the containing directory, not the file: conf writes through
+  // `atomically`, which renames a temp file over the target and so replaces the
+  // inode on every save. A watcher bound to the file stops receiving events
+  // after the first external write; the directory's inode is stable.
+  const storeFile = path.basename(getStorePath())
   let storeWatchDebounce: ReturnType<typeof setTimeout> | null = null
-  storeWatcher = fs.watch(getStorePath(), () => {
+  storeWatcher = fs.watch(path.dirname(getStorePath()), (_event, filename) => {
+    if (filename !== storeFile) return
     if (storeWatchDebounce) clearTimeout(storeWatchDebounce)
     storeWatchDebounce = setTimeout(() => {
       if (!mainWindow.webContents.isDestroyed()) {
