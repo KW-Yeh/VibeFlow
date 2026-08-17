@@ -452,7 +452,10 @@ export function TaskTerminal({
       </div>
       <div
         ref={containerRef}
-        className="min-h-0 w-full flex-1 overflow-hidden p-1"
+        // FitAddon subtracts padding from xterm's element, but not from this
+        // observed parent. Keep the inset on `.xterm` so its proposed column
+        // count matches the viewport's actual visible width.
+        className="min-h-0 w-full flex-1 overflow-hidden [&_.xterm]:p-1"
       />
     </div>
   )

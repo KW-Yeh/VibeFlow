@@ -175,3 +175,13 @@ test('I6 — drawers/dialogs use DialogShell headers, not hand-written <h2>', ()
     `Hand-written <h2> found (use DialogShell showHeader):\n${violations.join('\n')}`
   )
 })
+
+test('terminal inset is applied where FitAddon includes it in width calculations', () => {
+  const terminal = read(join(rendererRoot, 'components/task-terminal.tsx'))
+  assert.ok(
+    terminal.includes(
+      'className="min-h-0 w-full flex-1 overflow-hidden [&_.xterm]:p-1"'
+    ),
+    'Keep terminal padding on `.xterm`, not its observed parent, or the rightmost column is clipped'
+  )
+})
