@@ -454,11 +454,36 @@ async function listIgnoredCopyEntries(projectPath: string): Promise<string[]> {
     return []
   }
 
-  return listing
-    .split('\n')
-    .map((line) => line.replace(/\/$/, '').trim())
-    .filter((entry) => entry && !entry.startsWith('.git') && !RUNTIME_ARTIFACT_DENYLIST.has(entry))
-    .filter((entry, index, all) => all.indexOf(entry) === index)
+  return dropCoveredEntries(
+    listing
+      .split('\n')
+      .map((line) => line.replace(/\/$/, '').trim())
+      .filter((entry) => entry && !entry.startsWith('.git') && !RUNTIME_ARTIFACT_DENYLIST.has(entry))
+      .filter((entry, index, all) => all.indexOf(entry) === index)
+  )
+}
+
+/**
+ * Drop entries whose ancestor directory is already in the list.
+ *
+ * `git ls-files --directory` can report a fully-ignored directory *and* the
+ * files inside it. Copying both schedules two writers over the same
+ * destination tree, and they race inside `fs.cp`: the recursive copy replaces a
+ * file while the single-file copy is chmod'ing it, which surfaces as a
+ * spurious `ENOENT: chmod` failure even though the copy succeeded. The
+ * ancestor already covers its descendants, so one writer per tree is enough.
+ *
+ * Matching is per path segment — `cert` must not swallow `certificates/key`.
+ */
+export function dropCoveredEntries(entries: string[]): string[] {
+  const all = new Set(entries)
+  return entries.filter((entry) => {
+    const parts = entry.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      if (all.has(parts.slice(0, i).join('/'))) return false
+    }
+    return true
+  })
 }
 
 async function copyIgnoredEntry(

@@ -15,6 +15,7 @@ import {
   getWorktreeDiffEntries,
   getWorktreeDiffFile,
   commitAndPush,
+  dropCoveredEntries,
 } from '../main/helpers/git.ts'
 import { PROGRESS_FILE } from '../main/helpers/progress.ts'
 import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
@@ -665,4 +666,34 @@ test('provisionWorktree — an explicit name matching an origin branch checks it
   } finally {
     await cleanup()
   }
+})
+
+test('dropCoveredEntries — a directory entry absorbs the files inside it', () => {
+  // What `git ls-files --others --ignored --exclude-standard --directory`
+  // actually returns for a repo with an ignored `certificates/` folder.
+  assert.deepEqual(
+    dropCoveredEntries([
+      '.next',
+      'certificates',
+      'certificates/localhost-key.pem',
+      'certificates/localhost.pem',
+      'next-env.d.ts',
+      'node_modules',
+    ]),
+    ['.next', 'certificates', 'next-env.d.ts', 'node_modules']
+  )
+})
+
+test('dropCoveredEntries — matches whole path segments, not string prefixes', () => {
+  assert.deepEqual(
+    dropCoveredEntries(['cert', 'certificates/localhost.pem']),
+    ['cert', 'certificates/localhost.pem']
+  )
+})
+
+test('dropCoveredEntries — drops a descendant nested several levels down', () => {
+  assert.deepEqual(
+    dropCoveredEntries(['a', 'a/b/c/d.txt', 'a2/b.txt']),
+    ['a', 'a2/b.txt']
+  )
 })
