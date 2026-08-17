@@ -450,13 +450,12 @@ export function TaskTerminal({
           </Button>
         )}
       </div>
-      <div
-        ref={containerRef}
-        // FitAddon subtracts padding from xterm's element, but not from this
-        // observed parent. Keep the inset on `.xterm` so its proposed column
-        // count matches the viewport's actual visible width.
-        className="min-h-0 w-full flex-1 overflow-hidden [&_.xterm]:p-1"
-      />
+      <div className="min-h-0 w-full flex-1 overflow-hidden bg-background p-1">
+        {/* Keep visual padding outside the element FitAddon measures. Padding
+            on this inner host overcounts columns; padding on `.xterm` exposes
+            its black viewport along the right and bottom edges. */}
+        <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      </div>
     </div>
   )
 }
