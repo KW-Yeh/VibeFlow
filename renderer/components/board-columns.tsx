@@ -1,10 +1,4 @@
 import {
-  DragDropContext,
-  Draggable,
-  Droppable,
-  type DropResult,
-} from '@hello-pangea/dnd'
-import {
   Check,
   ChevronDown,
   CircleCheckBig,
@@ -91,19 +85,15 @@ const MENU_HEIGHT = 224
 
 function CardMenu({
   task,
-  column,
   anchor,
-  onMove,
   onEdit,
   onDelete,
   onClose,
 }: {
   task: Task
-  column: ColumnId
-  /** Viewport rect of the trigger. The menu is fixed-positioned because the
+  /** Viewport rect of the card. The menu is fixed-positioned because the
       column it lives in scrolls, and an absolute menu would be clipped. */
   anchor: { top: number; right: number }
-  onMove: (to: ColumnId) => void
   onEdit: () => void
   onDelete: () => void
   onClose: () => void
@@ -121,33 +111,6 @@ function CardMenu({
       style={{ top, left }}
       className="fixed z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
     >
-      <span className={cn(SECTION_LABEL, 'block px-2 pb-1 pt-1.5')}>移動到</span>
-      {COLUMNS.map((target) => (
-        <button
-          key={target}
-          type="button"
-          role="menuitem"
-          disabled={target === column}
-          onClick={() => {
-            onMove(target)
-            onClose()
-          }}
-          className={cn(
-            'focus-visible:ring-[3px] focus-visible:ring-ring/50',
-            MENU_ITEM,
-            target === column
-              ? 'text-muted-foreground'
-              : 'hover:bg-accent hover:text-accent-foreground'
-          )}
-        >
-          <span className={cn('size-1.5 shrink-0 rounded-full', COLUMN_DOT[target])} />
-          <span className="flex-1">{COLUMN_LABEL[target]}</span>
-          {target === column && <Check className="size-3 shrink-0" />}
-        </button>
-      ))}
-
-      <span className="my-1 block h-px bg-border" />
-
       <button
         type="button"
         role="menuitem"
@@ -203,10 +166,8 @@ function TaskCard({
   role,
   subAgentCount,
   selected,
-  dragging,
   now,
   onSelect,
-  onMove,
   onEdit,
   onDelete,
 }: {
@@ -215,10 +176,8 @@ function TaskCard({
   role: Role | null
   subAgentCount: number
   selected: boolean
-  dragging: boolean
   now: number
   onSelect: () => void
-  onMove: (to: ColumnId) => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -241,7 +200,6 @@ function TaskCard({
       className={cn(
         'relative rounded-md border bg-card p-3 transition-colors motion-reduce:transition-none',
         done && 'bg-card/60',
-        dragging && 'shadow-lg',
         selected
           ? 'border-primary shadow-[0_0_0_2px] shadow-primary/20'
           : stage === 'needs-input' && running
@@ -390,9 +348,7 @@ function TaskCard({
       {menuAnchor && (
         <CardMenu
           task={task}
-          column={column}
           anchor={menuAnchor}
-          onMove={onMove}
           onEdit={onEdit}
           onDelete={onDelete}
           onClose={() => setMenuAnchor(null)}
@@ -460,10 +416,6 @@ export interface BoardColumnsProps {
   subAgents: Record<string, SubAgentRun[]>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
-  /** Move a card to another column, landing at `index` (dnd drop position). */
-  onMove: (task: Task, to: ColumnId, index: number) => void
-  /** Replace one column's order with `orderedIds` (same members, new order). */
-  onReorder: (column: ColumnId, orderedIds: string[]) => void
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onNewTask: () => void
@@ -475,8 +427,6 @@ export function BoardColumns({
   subAgents,
   selectedTaskId,
   onSelectTask,
-  onMove,
-  onReorder,
   onEditTask,
   onDeleteTask,
   onNewTask,
@@ -504,44 +454,6 @@ export function BoardColumns({
   const roleById = (id?: string): Role | null =>
     (id && roles.find((r) => r.id === id)) || null
 
-  const onDragEnd = (result: DropResult) => {
-    const { source, destination } = result
-    if (!destination) return
-    const from = source.droppableId as ColumnId
-    const to = destination.droppableId as ColumnId
-    if (from === to && source.index === destination.index) return
-
-    // Drop indices are positions in the *filtered* list. Translate them back to
-    // the real board array so a project filter never scrambles the stored order.
-    const fromList = visible(from)
-    const task = fromList[source.index]
-    if (!task) return
-
-    if (from === to) {
-      const filteredIds = fromList.map((t) => t.id)
-      const reordered = [...filteredIds]
-      const [moved] = reordered.splice(source.index, 1)
-      reordered.splice(destination.index, 0, moved)
-      // The filtered cards keep the slots they already occupy in the real
-      // column; only their order within those slots changes.
-      const nextIds = board[from].map((t) => t.id)
-      const slots = nextIds
-        .map((id, index) => (filteredIds.includes(id) ? index : -1))
-        .filter((index) => index >= 0)
-      slots.forEach((slot, i) => {
-        nextIds[slot] = reordered[i]
-      })
-      onReorder(from, nextIds)
-      return
-    }
-
-    const anchor = visible(to)[destination.index]
-    const realIndex = anchor
-      ? board[to].findIndex((t) => t.id === anchor.id)
-      : board[to].length
-    onMove(task, to, realIndex === -1 ? board[to].length : realIndex)
-  }
-
   const total = allTasks.length
 
   return (
@@ -557,92 +469,60 @@ export function BoardColumns({
         </span>
       </div>
 
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
-          {COLUMNS.map((column) => {
-            const tasks = visible(column)
-            return (
-              <section key={column} className="flex min-h-0 flex-col gap-2">
-                <div className="flex shrink-0 items-center gap-2 px-1">
-                  <span
-                    className={cn('size-1.5 shrink-0 rounded-full', COLUMN_DOT[column])}
+      <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
+        {COLUMNS.map((column) => {
+          const tasks = visible(column)
+          return (
+            <section key={column} className="flex min-h-0 flex-col gap-2">
+              <div className="flex shrink-0 items-center gap-2 px-1">
+                <span
+                  className={cn('size-1.5 shrink-0 rounded-full', COLUMN_DOT[column])}
+                />
+                <h2
+                  className={cn(SECTION_LABEL, column === 'in_progress' && 'text-warning')}
+                >
+                  {COLUMN_LABEL[column]}
+                </h2>
+                <span className="text-xs tabular-nums text-muted-foreground/80">
+                  {tasks.length}
+                </span>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
+                {tasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    column={column}
+                    role={roleById(task.roleId)}
+                    subAgentCount={(subAgents[task.id] ?? []).length}
+                    selected={task.id === selectedTaskId}
+                    now={now}
+                    onSelect={() => onSelectTask(task.id)}
+                    onEdit={() => onEditTask(task.id)}
+                    onDelete={() => onDeleteTask(task.id)}
                   />
-                  <h2
-                    className={cn(
-                      SECTION_LABEL,
-                      column === 'in_progress' && 'text-warning'
-                    )}
+                ))}
+
+                {column === 'backlog' && (
+                  <button
+                    type="button"
+                    onClick={onNewTask}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    {COLUMN_LABEL[column]}
-                  </h2>
-                  <span className="text-xs tabular-nums text-muted-foreground/80">
-                    {tasks.length}
-                  </span>
-                </div>
+                    <Plus className="size-3.5" />
+                    新增任務
+                  </button>
+                )}
 
-                <Droppable droppableId={column}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={cn(
-                        'min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1 transition-colors motion-reduce:transition-none',
-                        snapshot.isDraggingOver && 'bg-accent/40'
-                      )}
-                    >
-                      {tasks.map((task, index) => (
-                        <Draggable key={task.id} draggableId={task.id} index={index}>
-                          {(dragProvided, dragSnapshot) => (
-                            <div
-                              ref={dragProvided.innerRef}
-                              {...dragProvided.draggableProps}
-                              {...dragProvided.dragHandleProps}
-                            >
-                              <TaskCard
-                                task={task}
-                                column={column}
-                                role={roleById(task.roleId)}
-                                subAgentCount={(subAgents[task.id] ?? []).length}
-                                selected={task.id === selectedTaskId}
-                                dragging={dragSnapshot.isDragging}
-                                now={now}
-                                onSelect={() => onSelectTask(task.id)}
-                                onMove={(to) =>
-                                  onMove(task, to, 0)
-                                }
-                                onEdit={() => onEditTask(task.id)}
-                                onDelete={() => onDeleteTask(task.id)}
-                              />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-
-                      {column === 'backlog' && (
-                        <button
-                          type="button"
-                          onClick={onNewTask}
-                          className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        >
-                          <Plus className="size-3.5" />
-                          新增任務
-                        </button>
-                      )}
-
-                      {tasks.length === 0 && column !== 'backlog' && (
-                        <p className="px-2 py-1 text-sm text-muted-foreground/60">
-                          尚無任務
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </Droppable>
-              </section>
-            )
-          })}
-        </div>
-      </DragDropContext>
+                {tasks.length === 0 && column !== 'backlog' && (
+                  <p className="px-2 py-1 text-sm text-muted-foreground/60">尚無任務</p>
+                )}
+              </div>
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }
