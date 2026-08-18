@@ -3,8 +3,9 @@ import {
   useAnimationControls,
   useReducedMotion,
 } from 'motion/react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 
+import { BoardColumns } from '@/components/board-columns'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import {
   TaskWorkspacePanel,
@@ -52,6 +53,12 @@ interface KanbanBoardProps {
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in the workspace panel). */
   selectedTaskId?: string | null
+  /** Select a task from the board (opens its terminal tab). */
+  onSelectTask: (taskId: string) => void
+  /** Clear the selection and show a blank new-task form in the lower pane. */
+  onNewTask: () => void
+  /** Terminal tab bar, rendered at the top of the lower (workspace) pane. */
+  tabBar?: ReactNode
   /** Real user interaction with a task's workspace — pins its preview tab. */
   onTaskInteract?: (taskId: string) => void
   /** Task ids that currently have an open terminal tab. */
@@ -87,6 +94,19 @@ interface KanbanBoardProps {
 interface LaunchEntry {
   command: string
   nonce: number
+}
+
+/** Height of the board pane, in px. Renderer-local UI state — deliberately not
+    in the electron store, so it needs no schema migration. */
+const SPLIT_STORAGE_KEY = 'vibeflow:board-split-px'
+const DEFAULT_BOARD_HEIGHT = 340
+const MIN_BOARD_HEIGHT = 180
+const MIN_WORKSPACE_HEIGHT = 260
+
+function readStoredBoardHeight(): number {
+  if (typeof window === 'undefined') return DEFAULT_BOARD_HEIGHT
+  const raw = Number(window.localStorage.getItem(SPLIT_STORAGE_KEY))
+  return Number.isFinite(raw) && raw >= MIN_BOARD_HEIGHT ? raw : DEFAULT_BOARD_HEIGHT
 }
 
 interface SubAgentDrawerSnapshot {
@@ -143,6 +163,9 @@ export function KanbanBoard({
   onManageRoles,
   subAgents,
   selectedTaskId,
+  onSelectTask,
+  onNewTask,
+  tabBar,
   onTaskInteract,
   openTabIds,
   initialProjectPath,
@@ -285,7 +308,7 @@ export function KanbanBoard({
   const moveTask = (
     task: Task,
     to: ColumnId,
-    opts?: { forceLaunch?: boolean }
+    opts?: { forceLaunch?: boolean; index?: number }
   ) => {
     const willLaunch =
       to === 'in_progress' &&
@@ -301,7 +324,8 @@ export function KanbanBoard({
       in_progress: board.in_progress.filter((t) => t.id !== task.id),
       done: board.done.filter((t) => t.id !== task.id),
     }
-    next[to] = [toInsert, ...next[to]]
+    const at = Math.min(Math.max(opts?.index ?? 0, 0), next[to].length)
+    next[to] = [...next[to].slice(0, at), toInsert, ...next[to].slice(at)]
     onBoardChange(next)
 
     if (to === 'done') {
@@ -323,6 +347,56 @@ export function KanbanBoard({
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
+
+  // Dropping a Backlog card into In Progress is as explicit as pressing 開始,
+  // so it launches regardless of Auto Mode (which governs launches the user did
+  // not ask for). Dropping into Done runs the same cleanup as the 完成 button.
+  const dropTask = (task: Task, to: ColumnId, index: number) =>
+    moveTask(task, to, { forceLaunch: to === 'in_progress', index })
+
+  const reorderColumn = (column: ColumnId, orderedIds: string[]) => {
+    const byId = new Map(board[column].map((task) => [task.id, task]))
+    const reordered = orderedIds
+      .map((id) => byId.get(id))
+      .filter((task): task is Task => task !== undefined)
+    if (reordered.length !== board[column].length) return
+    onBoardChange({ ...board, [column]: reordered })
+  }
+
+  // ── Board / workspace splitter ────────────────────────────────────────────
+  const splitRef = useRef<HTMLDivElement>(null)
+  const dragOriginRef = useRef<{ y: number; height: number } | null>(null)
+  const [boardHeight, setBoardHeight] = useState(readStoredBoardHeight)
+
+  const clampBoardHeight = (next: number) => {
+    const available = splitRef.current?.clientHeight ?? 0
+    const max = available > 0 ? available - MIN_WORKSPACE_HEIGHT : next
+    return Math.max(MIN_BOARD_HEIGHT, Math.min(next, Math.max(MIN_BOARD_HEIGHT, max)))
+  }
+
+  const onSplitterDown = (event: PointerEvent<HTMLDivElement>) => {
+    dragOriginRef.current = { y: event.clientY, height: boardHeight }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const onSplitterMove = (event: PointerEvent<HTMLDivElement>) => {
+    const origin = dragOriginRef.current
+    if (!origin) return
+    setBoardHeight(clampBoardHeight(origin.height + (event.clientY - origin.y)))
+  }
+
+  const onSplitterUp = () => {
+    if (!dragOriginRef.current) return
+    dragOriginRef.current = null
+    window.localStorage.setItem(SPLIT_STORAGE_KEY, String(boardHeight))
+  }
+
+  const nudgeSplitter = (delta: number) => {
+    const next = clampBoardHeight(boardHeight + delta)
+    setBoardHeight(next)
+    window.localStorage.setItem(SPLIT_STORAGE_KEY, String(next))
+  }
+
   const subAgentTask = subAgentTaskId
     ? Object.values(board)
         .flat()
@@ -353,8 +427,54 @@ export function KanbanBoard({
     liveSubAgentDrawer ?? subAgentDrawerSnapshotRef.current
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
-      <main className="min-h-0 flex-1">
+    <div
+      ref={splitRef}
+      className="flex h-full flex-col overflow-hidden bg-background text-foreground"
+    >
+      <div
+        style={{ height: boardHeight }}
+        className="min-h-0 shrink-0 overflow-hidden border-b border-border"
+      >
+        <BoardColumns
+          board={board}
+          roles={roles}
+          subAgents={subAgents}
+          selectedTaskId={selectedTaskId ?? null}
+          onSelectTask={onSelectTask}
+          onMove={dropTask}
+          onReorder={reorderColumn}
+          onEditTask={onEditTask}
+          onDeleteTask={onDeleteTask}
+          onNewTask={onNewTask}
+        />
+      </div>
+
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="調整看板與工作區的高度"
+        tabIndex={0}
+        onPointerDown={onSplitterDown}
+        onPointerMove={onSplitterMove}
+        onPointerUp={onSplitterUp}
+        onPointerCancel={onSplitterUp}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            nudgeSplitter(-24)
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            nudgeSplitter(24)
+          }
+        }}
+        className="flex h-2.5 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        <span className="h-0.5 w-12 rounded-full bg-input" />
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {tabBar}
+        <main className="min-h-0 flex-1">
         {(() => {
           const allTasks: { task: Task; column: ColumnId }[] = [
             ...board.in_progress.map((t) => ({
@@ -449,7 +569,8 @@ export function KanbanBoard({
             </>
           )
         })()}
-      </main>
+        </main>
+      </div>
 
       <SubAgentDrawer
         open={subAgentTaskId !== null}

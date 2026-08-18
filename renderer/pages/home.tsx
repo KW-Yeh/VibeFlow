@@ -156,17 +156,9 @@ export default function HomePage() {
     }
   }, [])
 
-  // Unfinished work is the reason the sidebar exists, so it opens itself when
-  // there is any and steps out of the way when there is none. Keying off the
-  // *count* (not a boolean) means adding a task to an already-busy board still
-  // re-opens a manually collapsed sidebar, while moving a card between Backlog
-  // and In Progress leaves the count — and the user's manual choice — alone.
-  const openTaskCount = board.in_progress.length + board.backlog.length
-
-  useEffect(() => {
-    if (!loaded) return
-    setSideMenuCollapsed(openTaskCount === 0)
-  }, [loaded, openTaskCount])
+  // The sidebar no longer auto-opens: the board's three columns already list
+  // every task, so an expanded sidebar would repeat them. It stays collapsed to
+  // its icon rail (projects, Auto Mode, roles, settings) until opened by hand.
 
   // Mirror live progress updates (pushed from main while sessions run) into
   // the local board copy. Main already persisted them — no persistBoard here.
@@ -611,15 +603,19 @@ export default function HomePage() {
                 onInstallUpdate={handleInstallRemoteUpdate}
               />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                <TerminalTabBar
-                  entries={tabEntries}
-                  activeTaskId={selectedTaskId}
-                  onSelect={openTab}
-                  onPin={pinTab}
-                  onClose={(taskId) => closeTabs([taskId])}
-                />
                 <div className="min-h-0 flex-1">
                 <KanbanBoard
+                  tabBar={
+                    <TerminalTabBar
+                      entries={tabEntries}
+                      activeTaskId={selectedTaskId}
+                      onSelect={openTab}
+                      onPin={pinTab}
+                      onClose={(taskId) => closeTabs([taskId])}
+                    />
+                  }
+                  onSelectTask={openTab}
+                  onNewTask={handleOpenNewTask}
                   board={board}
                   onBoardChange={handleBoardChange}
                   onEditTask={handleOpenEditTask}
