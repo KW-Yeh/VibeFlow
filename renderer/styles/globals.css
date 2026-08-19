@@ -91,6 +91,14 @@
     touch-action: manipulation;
     font-family: var(--font-sans);
   }
+  /* Tailwind v4's preflight dropped v3's `cursor: pointer` on buttons, so every
+     control in the app reads as non-interactive. Restore it here rather than
+     per-component; layered under `base`, so a `cursor-*` utility still wins. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary {
+    cursor: pointer;
+  }
 }
 
 /* ── Rendered markdown ──────────────────────────────────────────────────────

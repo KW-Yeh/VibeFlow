@@ -109,6 +109,8 @@ function CardMenu({
       ref={ref}
       role="menu"
       style={{ top, left }}
+      // The menu is a DOM child of the card, which is itself clickable.
+      onClick={(event) => event.stopPropagation()}
       className="fixed z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
     >
       <button
@@ -197,8 +199,20 @@ function TaskCard({
   return (
     <div
       ref={cardRef}
+      role="button"
+      tabIndex={0}
+      aria-label={`開啟任務：${task.title}`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        // Only when the card itself has focus — Enter on the actions menu
+        // inside it must not also open the task.
+        if (event.target !== event.currentTarget) return
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onSelect()
+      }}
       className={cn(
-        'relative rounded-md border bg-card p-3 transition-colors motion-reduce:transition-none',
+        'relative cursor-pointer rounded-md border bg-card p-3 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         done && 'bg-card/60',
         selected
           ? 'border-primary shadow-[0_0_0_2px] shadow-primary/20'
@@ -231,7 +245,8 @@ function TaskCard({
             <IconButton
               aria-label={`任務選項：${task.title}`}
               title="移動、編輯或刪除"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation()
                 if (menuOpen) {
                   setMenuAnchor(null)
                   return
@@ -254,12 +269,7 @@ function TaskCard({
       </div>
 
       {/* Body: the whole card selects the task; the menu above stops propagation. */}
-      <button
-        type="button"
-        onClick={onSelect}
-        className="mt-2 block w-full rounded-sm text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        title={task.title}
-      >
+      <div className="mt-2" title={task.title}>
         <span
           className={cn(
             'line-clamp-2 text-[15px] font-medium leading-[1.4]',
@@ -268,7 +278,7 @@ function TaskCard({
         >
           {task.title}
         </span>
-      </button>
+      </div>
 
       {running && (
         <div className="mt-2 space-y-2">
