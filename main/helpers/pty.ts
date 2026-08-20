@@ -27,9 +27,31 @@ function appendScrollback(key: string, data: string): void {
   scrollbacks.set(key, cur.length > MAX_SCROLLBACK ? cur.slice(-MAX_SCROLLBACK) : cur)
 }
 
+// When VibeFlow itself is launched from an agent session (e.g. `npm start` run
+// inside Claude Code), the app process inherits that session's markers and
+// buildEnv() copies them wholesale. A terminal tab is the user's own top-level
+// shell, not a child of that agent, so a CLI started in it would otherwise
+// mis-detect itself as a nested session and disable transcript saving.
+// Listed explicitly rather than matched by prefix so deliberate user config
+// (ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR, …) still passes through.
+const INHERITED_AGENT_SESSION_VARS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_HOST_SESSION_ID',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_PID',
+  'CLAUDE_EFFORT',
+]
+
 /** Shared augmented env (sane PATH) plus the terminal-specific TERM. */
 function buildPtyEnv(): Record<string, string> {
-  return { ...buildEnv(), TERM: 'xterm-256color' }
+  const env: Record<string, string> = { ...buildEnv(), TERM: 'xterm-256color' }
+  for (const key of INHERITED_AGENT_SESSION_VARS) delete env[key]
+  return env
 }
 
 function findGitBash(): string | undefined {
