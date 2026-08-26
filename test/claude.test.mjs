@@ -113,16 +113,16 @@ test('buildAgentCommand — tells Codex to promote temporary evidence into task 
   const artifactsDir = `${workspacePath}/vf-abc123.artifacts`
 
   assert.ok(cmd.includes('/private/tmp'), 'must cover screenshot tools that return system temp paths')
-  assert.ok(cmd.includes('~/Downloads'), 'must cover the browser download dir gif_creator exports to')
+  assert.ok(cmd.includes('~/Downloads'), 'must cover the browser download dir tools export to')
   assert.ok(cmd.includes(`複製到 ${artifactsDir}/ 根目錄`), 'must name the task artifacts destination')
   assert.ok(cmd.includes('並確認目標檔案存在'), 'must require verifying the promoted file')
   assert.ok(cmd.includes('只回報或保留原路徑不算完成'), 'must reject evidence left at its source path')
 })
 
-test('buildAgentCommand — requires a GIF recording when the change is interactive', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, '/workspace/project')
+test('buildAgentCommand — requires a real screen recording when the change is interactive', () => {
+  const workspacePath = '/workspace/project'
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, workspacePath)
 
-  assert.ok(cmd.includes('gif_creator'), 'must name the recording tool')
   assert.ok(
     cmd.includes('能不能用一張靜態圖看出通過或失敗'),
     'must give the judgement test that decides screenshot vs recording'
@@ -131,8 +131,30 @@ test('buildAgentCommand — requires a GIF recording when the change is interact
     cmd.includes('純樣式、文案、靜態版面改動不需要錄'),
     'must scope recording to interactive changes only'
   )
-  assert.ok(cmd.includes('start_recording'), 'must spell out the recording sequence')
-  assert.ok(cmd.includes('stop_recording'), 'must spell out the recording sequence')
+  assert.ok(cmd.includes('screencapture -v -k -C -x -D1'), 'must spell out the recording command')
+  assert.ok(
+    cmd.includes(`${workspacePath}/vf-abc123.artifacts/<描述性檔名>.mov`),
+    'must record straight into the task artifacts dir as .mov'
+  )
+  assert.ok(
+    cmd.includes('pkill -INT -x screencapture'),
+    'must stop the recording with SIGINT so the file is finalized'
+  )
+})
+
+test('buildAgentCommand — forbids GIF output, so evidence stays watchable video', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, '/workspace/project')
+
+  // gif_creator may only appear as a prohibition. A GIF samples at action
+  // boundaries, which is exactly where transitions and hover states live.
+  assert.ok(cmd.includes('嚴禁用 `gif_creator`'), 'must ban the GIF tool outright')
+  assert.equal(
+    cmd.split('gif_creator').length - 1,
+    1,
+    'must name gif_creator exactly once — as the prohibition, never as an instruction'
+  )
+  assert.ok(!cmd.includes('start_recording'), 'must drop the old gif_creator recording sequence')
+  assert.ok(!cmd.includes('stop_recording'), 'must drop the old gif_creator recording sequence')
 })
 
 test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {

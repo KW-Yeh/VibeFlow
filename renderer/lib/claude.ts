@@ -147,17 +147,22 @@ function buildProgressProtocolLines(
     '7. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
     '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
     `9. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
-    `9a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄製 GIF 或影片、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（GIF 會自動播放；.mp4／.m4v／.webm／.mov 影片可直接在分頁內播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
-    `9b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再用 claude-in-chrome 的 \`gif_creator\` 錄一段。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
-    `9c. 錄製步驟：\`start_recording\` → 立刻截一張圖當首幀 → 執行互動 → 再截一張當末幀 → \`stop_recording\` → \`export\`（帶 \`download: true\` 與具描述性的 \`filename\`）。一段只涵蓋一條互動路徑，長度控制在 15 秒內；多條路徑分成多個檔，不要串成一長段。GIF 與影片都會以 base64 過 IPC 進 Artifacts 分頁，過大的檔會拖慢 UI；影片單檔超過 20MB 就不會內嵌播放，只能請使用者用「開啟資料夾」在系統播放器看，所以請把單檔壓在 20MB 以內。`,
-    `9d. 截圖或 GIF 工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（\`gif_creator\` 的 export 會落在 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
-    `9e. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
-    `9f. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
+    `9a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄影、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（截圖與 .mp4／.m4v／.webm／.mov 影片都能在分頁內直接播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
+    `9b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再錄一段影片。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
+    `9c. 錄影一律用 macOS 內建的 \`screencapture\` 輸出 .mov 影片，嚴禁用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間，錄了也看不出來。步驟：先把要錄的視窗帶到前景 → 背景執行 \`screencapture -v -k -C -x -D1 ${artifactsDir}/<描述性檔名>.mov\`（-k 標記點擊、-C 錄游標、-x 靜音；只想錄單一視窗就加 \`-R<x,y,w,h>\` 指定範圍，避免把終端機一起錄進去）→ 執行互動 → \`pkill -INT -x screencapture\` 停止。必須送 SIGINT，直接 kill 會寫不完檔尾、影片會壞掉；該指令會停掉所有錄影行程，若使用者自己也在錄，改成記下 PID 再 \`kill -INT <pid>\`。`,
+    `9d. 一段只涵蓋一條互動路徑，長度控制在 15 秒內；多條路徑分成多個檔，不要串成一長段，也不要把整段開發過程錄進去（螢幕錄影約每分鐘 15–80 MB）。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，只能請使用者用「開啟資料夾」在系統播放器看，所以請把單檔壓在 20MB 以內。`,
+    `9e. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
+    `9f. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
+    `9g. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
   ].join('\n')
 }
 
 /**
- * Fixed progress-tracking protocol. `progressFile` / `planFile` / `artifactsDir`
+ * Fixed progress-tracking protocol. Keep every line free of single quotes: the
+ * whole prompt goes through shellQuote, which rewrites `'` as `'\''` and so
+ * breaks any verbatim comparison against PROGRESS_PROTOCOL_PROMPT.
+ *
+ * `progressFile` / `planFile` / `artifactsDir`
  * are the paths the agent writes to — absolute workspace-folder paths when known
  * (see agentFilePaths), else the legacy cwd-relative names. Exported const uses
  * the relative fallbacks for backward-compatible callers/tests.
