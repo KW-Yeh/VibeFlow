@@ -10,6 +10,7 @@ import {
   deleteArtifacts,
   ARTIFACTS_DIR_SUFFIX,
   MAX_ARTIFACTS,
+  MAX_VIDEO_BYTES,
   SCRATCH_DIR_NAME,
 } from '../main/helpers/artifacts.ts'
 
@@ -195,6 +196,49 @@ test('listArtifacts — skips symlinks', async () => {
   }
 })
 
+test('listArtifacts — classifies playable video extensions with their mime', async () => {
+  const dir = await tmpDir()
+  try {
+    // Content is irrelevant: video is decided by extension, never by sniffing.
+    for (const name of ['clip.mp4', 'clip.m4v', 'clip.webm', 'clip.MOV', 'clip.mkv']) {
+      await fs.writeFile(path.join(dir, name), Buffer.from([0, 1, 2]))
+    }
+
+    const byName = Object.fromEntries(listArtifacts(dir).map((a) => [a.name, a]))
+
+    assert.equal(byName['clip.mp4'].kind, 'video')
+    assert.equal(byName['clip.mp4'].mime, 'video/mp4')
+    assert.equal(byName['clip.m4v'].mime, 'video/mp4')
+    assert.equal(byName['clip.webm'].mime, 'video/webm')
+    // Extension match is case-insensitive. .mov is labelled video/mp4 on
+    // purpose — Chromium's canPlayType rejects video/quicktime.
+    assert.equal(byName['clip.MOV'].kind, 'video')
+    assert.equal(byName['clip.MOV'].mime, 'video/mp4')
+    // Chromium cannot demux .mkv, so it stays an unpreviewable binary.
+    assert.equal(byName['clip.mkv'].kind, 'binary')
+    assert.equal(byName['clip.mkv'].mime, undefined)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('listArtifacts — a video past the inline cap is demoted to binary', async () => {
+  const dir = await tmpDir()
+  try {
+    // Sparse file: the size is what matters, writing 20MB of bytes is not.
+    const handle = await fs.open(path.join(dir, 'huge.mp4'), 'w')
+    await handle.truncate(MAX_VIDEO_BYTES + 1)
+    await handle.close()
+
+    const [artifact] = listArtifacts(dir)
+    assert.equal(artifact.name, 'huge.mp4')
+    assert.equal(artifact.kind, 'binary')
+    assert.equal(artifact.mime, undefined)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
 // --- readArtifact ---
 
 test('readArtifact — image comes back as a data URL', async () => {
@@ -207,6 +251,35 @@ test('readArtifact — image comes back as a data URL', async () => {
       content.dataUrl,
       `data:image/png;base64,${PNG_BYTES.toString('base64')}`
     )
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — video comes back as a data URL', async () => {
+  const dir = await tmpDir()
+  try {
+    const bytes = Buffer.from([0, 1, 2, 3])
+    await fs.writeFile(path.join(dir, 'clip.webm'), bytes)
+    const content = readArtifact(dir, 'clip.webm')
+    assert.equal(content.kind, 'video')
+    assert.equal(content.dataUrl, `data:video/webm;base64,${bytes.toString('base64')}`)
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readArtifact — a video past the inline cap reports binary, no bytes', async () => {
+  const dir = await tmpDir()
+  try {
+    const handle = await fs.open(path.join(dir, 'huge.mp4'), 'w')
+    await handle.truncate(MAX_VIDEO_BYTES + 1)
+    await handle.close()
+
+    const content = readArtifact(dir, 'huge.mp4')
+    assert.equal(content.kind, 'binary')
+    assert.equal(content.dataUrl, undefined)
+    assert.equal(content.text, undefined)
   } finally {
     await fs.rm(dir, { recursive: true, force: true })
   }

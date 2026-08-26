@@ -21,7 +21,7 @@ export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 export const SCRATCH_DIR_NAME = 'scratch'
 
 /** How an artifact is presented: rendered inline, as plain text, or not at all. */
-export type ArtifactKind = 'image' | 'text' | 'binary'
+export type ArtifactKind = 'image' | 'video' | 'text' | 'binary'
 
 export interface TaskArtifact {
   /** Path relative to the artifacts dir; forward-slash separated, may nest. */
@@ -32,7 +32,7 @@ export interface TaskArtifact {
   /** Epoch ms of the file's last modification. */
   modifiedAt: number
   kind: ArtifactKind
-  /** Images only — the MIME the data URL is built with. */
+  /** Images and videos only — the MIME the data URL is built with. */
   mime?: string
   /** True for the agent's own working files (under SCRATCH_DIR_NAME). */
   scratch: boolean
@@ -40,7 +40,7 @@ export interface TaskArtifact {
 
 export interface ArtifactContent {
   kind: ArtifactKind
-  /** Images only: `data:<mime>;base64,…`. */
+  /** Images and videos only: `data:<mime>;base64,…`. */
   dataUrl?: string
   /** Text only. */
   text?: string
@@ -59,6 +59,34 @@ const IMAGE_MIME: Record<string, string> = {
   '.bmp': 'image/bmp',
   '.svg': 'image/svg+xml',
 }
+
+/**
+ * Extensions a <video> tag can render, mapped to the MIME the data URL needs.
+ * Deliberately short: Electron ships Chromium's proprietary codecs, so H.264 in
+ * .mp4/.m4v and VP8/VP9/AV1 in .webm play. Containers Chromium cannot demux
+ * (.mkv, .avi) are left out on purpose.
+ *
+ * .mov maps to video/mp4, not video/quicktime: Chromium's canPlayType rejects
+ * video/quicktime outright, but QuickTime and MP4 are both ISO base media, so
+ * the MP4 demuxer plays the H.264 .mov that macOS screen recording produces
+ * once it is labelled that way (verified in the live app). A .mov carrying a
+ * codec Chromium lacks (ProRes) still fails to decode — the player shows that
+ * and points at the folder button, which beats hiding the file entirely.
+ */
+const VIDEO_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/mp4',
+}
+
+/**
+ * Videos cross IPC base64-encoded like images, so a long recording would cost
+ * ~1.33x its size as a JS string on both sides of the bridge. Past this it is
+ * surfaced as 'binary' (name and size only) and the user opens the artifacts
+ * folder in the OS file manager to watch it instead.
+ */
+export const MAX_VIDEO_BYTES = 20 * 1024 * 1024
 
 /** Text preview cap — a multi-MB log must not cross IPC in full. */
 const MAX_TEXT_BYTES = 256 * 1024
@@ -79,10 +107,24 @@ export function agentArtifactsPath(baseDir: string, worktreePath: string): strin
 }
 
 /**
- * Classify a non-image file by sampling its head for NUL bytes. Reading a .zip
- * or .mp4 as utf8 yields garbage, so those are surfaced as 'binary' (name and
- * size only) instead of being shown as text.
+ * Classify a file whose extension says nothing by sampling its head for NUL
+ * bytes. Reading a .zip as utf8 yields garbage, so those are surfaced as
+ * 'binary' (name and size only) instead of being shown as text.
  */
+function mediaKind(
+  filePath: string,
+  size: number
+): { kind: ArtifactKind; mime?: string } | null {
+  const extension = path.extname(filePath).toLowerCase()
+  const imageMime = IMAGE_MIME[extension]
+  if (imageMime) return { kind: 'image', mime: imageMime }
+  const videoMime = VIDEO_MIME[extension]
+  if (videoMime) {
+    return size > MAX_VIDEO_BYTES ? { kind: 'binary' } : { kind: 'video', mime: videoMime }
+  }
+  return null
+}
+
 function sniffKind(filePath: string): 'text' | 'binary' {
   let fd: number | undefined
   try {
@@ -159,14 +201,14 @@ export function listArtifacts(dir: string): TaskArtifact[] {
       } catch {
         continue
       }
-      const mime = IMAGE_MIME[path.extname(dirent.name).toLowerCase()]
+      const media = mediaKind(dirent.name, stat.size)
       found.push({
         name,
         path: full,
         size: stat.size,
         modifiedAt: stat.mtimeMs,
-        kind: mime ? 'image' : sniffKind(full),
-        mime,
+        kind: media ? media.kind : sniffKind(full),
+        mime: media?.mime,
         scratch,
       })
     }
@@ -183,20 +225,24 @@ export function listArtifacts(dir: string): TaskArtifact[] {
 export function readArtifact(dir: string, name: string): ArtifactContent | null {
   const target = resolveInside(dir, name)
   if (!target) return null
+  let stat: fs.Stats
   try {
-    if (!fs.lstatSync(target).isFile()) return null
+    stat = fs.lstatSync(target)
+    if (!stat.isFile()) return null
   } catch {
     return null
   }
 
-  const mime = IMAGE_MIME[path.extname(target).toLowerCase()]
   try {
-    if (mime) {
+    const media = mediaKind(target, stat.size)
+    if (media?.mime) {
       return {
-        kind: 'image',
-        dataUrl: `data:${mime};base64,${fs.readFileSync(target).toString('base64')}`,
+        kind: media.kind,
+        dataUrl: `data:${media.mime};base64,${fs.readFileSync(target).toString('base64')}`,
       }
     }
+    // An oversized video: previewable by extension, too big to inline.
+    if (media?.kind === 'binary') return { kind: 'binary' }
     if (sniffKind(target) === 'binary') return { kind: 'binary' }
     const buf = fs.readFileSync(target)
     return {

@@ -12,6 +12,8 @@ import {
   Circle,
   FileDiff,
   FileText,
+  Film,
+  FolderOpen,
   GitBranch,
   GitCompare,
   History,
@@ -56,6 +58,7 @@ import {
   getRelatedTasks,
   getTaskLinks,
   listArtifacts,
+  openArtifactsDir,
   readArtifact,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -85,6 +88,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 const ARTIFACT_KIND_LABEL: Record<ArtifactKind, string> = {
   image: '截圖',
+  video: '影片',
   text: '文字',
   binary: '二進位',
 }
@@ -130,11 +134,14 @@ function formatAge(modifiedAt: number): string {
 
 /**
  * Whether an artifact is verification evidence the user is meant to look at.
- * Everything else — reports, scripts, logs, and anything the agent parked in its
- * scratch subdirectory — is noise in the gallery and gets folded away instead.
+ * Screenshots and recordings both qualify — a video proves the interactions a
+ * static image cannot. Everything else — reports, scripts, logs, and anything
+ * the agent parked in its scratch subdirectory — is noise in the gallery and
+ * gets folded away instead. A recording past MAX_VIDEO_BYTES arrives as
+ * 'binary', so it folds away too and is watched via the folder button.
  */
 function isVerificationShot(artifact: TaskArtifact): boolean {
-  return artifact.kind === 'image' && !artifact.scratch
+  return (artifact.kind === 'image' || artifact.kind === 'video') && !artifact.scratch
 }
 
 interface LaunchEntry {
@@ -521,16 +528,22 @@ function MemorySection({ taskId }: { taskId: string }) {
 }
 
 /**
- * Thumbnail for an image artifact. Each tile fetches its own data URL, so
- * listing a directory of screenshots costs nothing until it is displayed.
+ * Thumbnail for an image or video artifact. Each tile fetches its own data URL,
+ * so listing a directory of screenshots costs nothing until it is displayed.
  * `modifiedAt` is a dep so an overwritten screenshot reloads on the next poll.
+ * A video tile renders its first frame via <video> rather than a poster image,
+ * which is why it stays muted and uncontrolled here — the dialog does playback.
  */
 function ArtifactThumb({ taskId, artifact }: { taskId: string; artifact: TaskArtifact }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null)
+  // A container we accept by extension can still hold a codec Chromium lacks
+  // (a ProRes .mov). Falling back to the icon beats a black rectangle.
+  const [undecodable, setUndecodable] = useState(false)
 
   useEffect(() => {
     let active = true
     setDataUrl(null)
+    setUndecodable(false)
     readArtifact(taskId, artifact.name)
       .then((content) => {
         if (active) setDataUrl(content?.dataUrl ?? null)
@@ -543,10 +556,35 @@ function ArtifactThumb({ taskId, artifact }: { taskId: string; artifact: TaskArt
     }
   }, [taskId, artifact.name, artifact.modifiedAt])
 
-  if (!dataUrl) {
+  const isVideo = artifact.kind === 'video'
+
+  if (!dataUrl || undecodable) {
     return (
       <div className="flex h-24 items-center justify-center rounded-md border border-border/70 bg-card">
-        <ImageIcon className="size-5 text-muted-foreground" />
+        {isVideo ? (
+          <Film className="size-5 text-muted-foreground" />
+        ) : (
+          <ImageIcon className="size-5 text-muted-foreground" />
+        )}
+      </div>
+    )
+  }
+  if (isVideo) {
+    return (
+      <div className="relative h-24 w-full overflow-hidden rounded-md border border-border/70 bg-card">
+        <video
+          src={dataUrl}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setUndecodable(true)}
+          className="h-full w-full object-contain"
+        />
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="flex size-7 items-center justify-center rounded-full bg-background/80 ring-1 ring-border/70">
+            <Play className="size-3.5 fill-current text-foreground" />
+          </span>
+        </span>
       </div>
     )
   }
@@ -559,7 +597,11 @@ function ArtifactThumb({ taskId, artifact }: { taskId: string; artifact: TaskArt
   )
 }
 
-/** Full-size artifact view. Images render inline; anything else falls back to text. */
+/**
+ * Full-size artifact view. Images and videos render inline; anything else falls
+ * back to text. Videos autoplay muted and loop so a short verification
+ * recording behaves like the GIFs it replaces, with controls to unmute or seek.
+ */
 function ArtifactPreview({
   taskId,
   artifact,
@@ -570,10 +612,14 @@ function ArtifactPreview({
   onClose: () => void
 }) {
   const [content, setContent] = useState<ArtifactContent | null | undefined>(undefined)
+  // Set when <video> rejects the stream — an accepted container with a codec
+  // Chromium cannot decode. Sends the user to the folder button instead.
+  const [playbackFailed, setPlaybackFailed] = useState(false)
 
   useEffect(() => {
     let active = true
     setContent(undefined)
+    setPlaybackFailed(false)
     readArtifact(taskId, artifact.name)
       .then((next) => {
         if (active) setContent(next)
@@ -608,9 +654,26 @@ function ArtifactPreview({
         </p>
       ) : content.kind === 'image' && content.dataUrl ? (
         <ZoomableImage src={content.dataUrl} alt={artifact.name} />
+      ) : content.kind === 'video' && content.dataUrl ? (
+        playbackFailed ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            這個影片的編碼無法在 app 內播放。用 Artifacts 分頁的「開啟資料夾」以系統播放器開啟。
+          </p>
+        ) : (
+          <video
+            src={content.dataUrl}
+            controls
+            autoPlay
+            loop
+            muted
+            playsInline
+            onError={() => setPlaybackFailed(true)}
+            className="max-h-[70vh] w-full rounded-md bg-black"
+          />
+        )
       ) : content.kind === 'binary' ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
-          二進位檔案（{formatBytes(artifact.size)}），不提供預覽。
+          無法內嵌預覽的檔案（{formatBytes(artifact.size)}）。用 Artifacts 分頁的「開啟資料夾」以系統播放器或編輯器開啟。
         </p>
       ) : (
         <>
@@ -654,16 +717,43 @@ function ArtifactsContent({
 }) {
   const [preview, setPreview] = useState<TaskArtifact | null>(null)
   const [showOthers, setShowOthers] = useState(false)
+  // Why the folder would not open (missing dir, no worktree). There is no toast
+  // in this app, so the reason is shown inline rather than swallowed.
+  const [openError, setOpenError] = useState<string | null>(null)
   const shots = artifacts.filter(isVerificationShot)
   const others = artifacts.filter((artifact) => !isVerificationShot(artifact))
 
+  const handleOpenDir = useCallback(() => {
+    setOpenError(null)
+    openArtifactsDir(taskId)
+      .then((reason) => setOpenError(reason || null))
+      .catch(() => setOpenError('開啟失敗'))
+  }, [taskId])
+
   return (
     <>
+      <div className="mb-2 flex items-center justify-end gap-2">
+        {openError && (
+          <span className="min-w-0 truncate text-xs text-muted-foreground" title={openError}>
+            {openError}
+          </span>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleOpenDir}
+          title={artifactsDir ?? '任務的 artifacts 目錄'}
+          className="text-xs"
+        >
+          <FolderOpen className="size-3.5" />
+          開啟資料夾
+        </Button>
+      </div>
       {artifacts.length === 0 ? (
         <div className="space-y-2 py-8 text-center">
           <p className="text-sm text-muted-foreground">還沒有暫存產物。</p>
           <p className="text-xs leading-5 text-muted-foreground/80">
-            Agent 會把驗證截圖與報告寫進
+            Agent 會把驗證截圖、錄影與報告寫進
             {artifactsDir ? (
               <code className="mx-1 break-all rounded-xs bg-muted/40 px-1 py-0.5 font-mono">
                 {artifactsDir}
@@ -702,7 +792,7 @@ function ArtifactsContent({
             </ul>
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              還沒有驗證截圖。
+              還沒有驗證截圖或錄影。
             </p>
           )}
 
@@ -734,6 +824,8 @@ function ArtifactsContent({
                       >
                         {artifact.kind === 'image' ? (
                           <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        ) : artifact.kind === 'video' ? (
+                          <Film className="size-3.5 shrink-0 text-muted-foreground" />
                         ) : (
                           <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                         )}

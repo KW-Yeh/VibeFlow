@@ -610,6 +610,21 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   /**
+   * Reveal the task's artifact directory in the OS file manager. The escape
+   * hatch for anything the in-app preview will not inline — a recording past
+   * MAX_VIDEO_BYTES, a .mkv, an archive. Returns an error string (empty when it
+   * opened) so the UI can say why nothing happened instead of failing silently.
+   */
+  ipcMain.handle('task:openArtifactsDir', async (_event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath || !task.workspacePath) return 'task has no worktree'
+    const dir = agentArtifactsPath(task.workspacePath, task.worktreePath)
+    if (!fs.existsSync(dir)) return 'artifacts directory does not exist yet'
+    const { shell } = await import('electron')
+    return shell.openPath(dir)
+  })
+
+  /**
    * Convert PLAN.md → plan.html (written to disk) and return the HTML string.
    * Once the worktree is gone (completed task) fall back to the snapshot taken
    * at cleanup time so the plan is still viewable.

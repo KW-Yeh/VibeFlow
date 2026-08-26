@@ -194,6 +194,12 @@ const vibeflow = {
   /** Content of one artifact, by its name relative to the artifacts dir. */
   readArtifact: (taskId: string, name: string): Promise<ArtifactContent | null> =>
     ipcRenderer.invoke('task:readArtifact', taskId, name),
+  /**
+   * Reveal the task's artifact directory in the OS file manager, for files the
+   * in-app preview will not inline. Resolves to '' on success, else a reason.
+   */
+  openArtifactsDir: (taskId: string): Promise<string> =>
+    ipcRenderer.invoke('task:openArtifactsDir', taskId),
   /** Convert PLAN.md to plan.html and return the HTML string. */
   getPlanHtml: (taskId: string): Promise<string | null> =>
     ipcRenderer.invoke('task:getPlanHtml', taskId),

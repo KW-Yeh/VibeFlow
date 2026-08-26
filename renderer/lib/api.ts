@@ -270,6 +270,12 @@ export async function readArtifact(
   return b ? b.readArtifact(taskId, name) : null
 }
 
+/** Reveal the task's artifact directory. Resolves to '' on success, else why not. */
+export async function openArtifactsDir(taskId: string): Promise<string> {
+  const b = bridge()
+  return b ? b.openArtifactsDir(taskId) : 'bridge unavailable'
+}
+
 export async function getPlan(taskId: string): Promise<string | null> {
   const b = bridge()
   return b ? b.getPlan(taskId) : null
