@@ -156,6 +156,7 @@ interface TaskWorkspacePanelProps {
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
   onStart: (task: Task) => void
+  onRestart: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
@@ -306,7 +307,13 @@ function TaskInfo({
   )
 }
 
-function PlanContent({ taskId }: { taskId: string }) {
+function PlanContent({
+  taskId,
+  refreshKey,
+}: {
+  taskId: string
+  refreshKey?: string
+}) {
   const [html, setHtml] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
@@ -322,7 +329,7 @@ function PlanContent({ taskId }: { taskId: string }) {
     return () => {
       active = false
     }
-  }, [taskId])
+  }, [taskId, refreshKey])
 
   if (html === undefined) {
     return (
@@ -1299,6 +1306,7 @@ export function TaskWorkspacePanel({
   subAgents,
   launch,
   onStart,
+  onRestart,
   onComplete,
   onEdit,
   onDelete,
@@ -1460,6 +1468,9 @@ export function TaskWorkspacePanel({
             launchCommand={launchCommand}
             launchNonce={launchNonce}
             readOnly={false}
+            onRestartTask={
+              column === 'in_progress' ? () => onRestart(task) : undefined
+            }
             onInteract={onInteract}
           />
         </div>
@@ -1523,7 +1534,10 @@ export function TaskWorkspacePanel({
                   onOpenSubAgents={onOpenSubAgents}
                 />
               ) : activeTaskTab === 'plan' ? (
-                <PlanContent taskId={task.id} />
+                <PlanContent
+                  taskId={task.id}
+                  refreshKey={`${task.runId ?? ''}:${task.progress?.planDone ?? ''}`}
+                />
               ) : (
                 <ArtifactsContent
                   taskId={task.id}

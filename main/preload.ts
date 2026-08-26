@@ -158,6 +158,11 @@ const vibeflow = {
     baseBranch?: string | null
   }): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:updateTask', payload),
+  /** Clear prior execution state and prepare a fresh run of this task. */
+  restartTask: (
+    taskId: string
+  ): Promise<{ state: VibeFlowState; task: Task }> =>
+    ipcRenderer.invoke('vibeflow:restartTask', taskId),
 
   // --- Roles ---
   createRole: (

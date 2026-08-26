@@ -10,6 +10,7 @@ import {
   agentProgressPath,
   agentPlanPath,
   deleteAgentFiles,
+  resetAgentProgress,
   PROGRESS_FILE,
   PLAN_FILE,
 } from '../main/helpers/progress.ts'
@@ -184,6 +185,26 @@ test('deleteAgentFiles — also removes the task artifacts directory', async () 
 
     deleteAgentFiles(base, wt)
     await assert.rejects(fs.access(artifactsDir), { code: 'ENOENT' })
+  } finally {
+    await fs.rm(base, { recursive: true, force: true })
+  }
+})
+
+test('resetAgentProgress — removes plan and progress but preserves artifacts', async () => {
+  const base = await tmpDir()
+  const wt = '/anywhere/feature-restart'
+  try {
+    const artifactsDir = agentArtifactsPath(base, wt)
+    await fs.mkdir(artifactsDir, { recursive: true })
+    await fs.writeFile(agentProgressPath(base, wt), '{}', 'utf8')
+    await fs.writeFile(agentPlanPath(base, wt), '# old plan', 'utf8')
+    await fs.writeFile(path.join(artifactsDir, 'evidence.png'), 'keep-me')
+
+    resetAgentProgress(base, wt)
+
+    await assert.rejects(fs.access(agentProgressPath(base, wt)), { code: 'ENOENT' })
+    await assert.rejects(fs.access(agentPlanPath(base, wt)), { code: 'ENOENT' })
+    await fs.access(path.join(artifactsDir, 'evidence.png'))
   } finally {
     await fs.rm(base, { recursive: true, force: true })
   }

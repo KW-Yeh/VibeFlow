@@ -35,6 +35,15 @@ export interface SubAgentRun {
  */
 export const SUBAGENTS_DIR = '.vibeflow-subagents'
 
+/** Remove hook events from a prior run without touching worktree source files. */
+export function resetSubAgents(cwd: string): void {
+  try {
+    fs.rmSync(path.join(cwd, SUBAGENTS_DIR), { recursive: true, force: true })
+  } catch {
+    // best-effort — a missing directory or unlink race must not fail a restart
+  }
+}
+
 /** A single Task-tool hook event, normalized from the raw hook JSON. */
 interface HookEvent {
   kind: 'pre' | 'post'

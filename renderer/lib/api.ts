@@ -209,6 +209,13 @@ export async function updateTask(payload: {
   return b ? b.updateTask(payload) : null
 }
 
+export async function restartTask(
+  taskId: string
+): Promise<{ state: VibeFlowState; task: Task } | null> {
+  const b = bridge()
+  return b ? b.restartTask(taskId) : null
+}
+
 export async function createRole(
   input: Omit<Role, 'id'>
 ): Promise<{ state: VibeFlowState; role: Role } | null> {

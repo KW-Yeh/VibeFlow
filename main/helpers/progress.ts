@@ -74,6 +74,24 @@ export function agentPlanPath(baseDir: string, worktreePath: string): string {
 }
 
 /**
+ * Remove only the execution state that makes an agent resume a prior run.
+ * The worktree and verification artifacts are deliberately preserved: a task
+ * restart should re-plan from the current files without discarding its work.
+ */
+export function resetAgentProgress(baseDir: string, worktreePath: string): void {
+  for (const p of [
+    agentProgressPath(baseDir, worktreePath),
+    agentPlanPath(baseDir, worktreePath),
+  ]) {
+    try {
+      fs.rmSync(p, { force: true })
+    } catch {
+      // best-effort — a missing file or unlink race must not fail a restart
+    }
+  }
+}
+
+/**
  * Best-effort removal of a task's progress + plan files and its temporary
  * artifact directory. Called when the task's worktree is torn down (cleanup /
  * delete / re-provision) so these runtime files share the worktree's lifecycle.
@@ -83,16 +101,7 @@ export function agentPlanPath(baseDir: string, worktreePath: string): string {
  * teardown path cannot forget them.
  */
 export function deleteAgentFiles(baseDir: string, worktreePath: string): void {
-  for (const p of [
-    agentProgressPath(baseDir, worktreePath),
-    agentPlanPath(baseDir, worktreePath),
-  ]) {
-    try {
-      fs.rmSync(p, { force: true })
-    } catch {
-      // best-effort — a missing file or unlink race must not fail teardown
-    }
-  }
+  resetAgentProgress(baseDir, worktreePath)
   deleteArtifacts(baseDir, worktreePath)
 }
 

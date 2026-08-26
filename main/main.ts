@@ -68,6 +68,7 @@ import {
   agentPlanPath,
   agentProgressPath,
   deleteAgentFiles,
+  resetAgentProgress,
   unwatchAllProgress,
   unwatchProgress,
   watchProgress,
@@ -78,6 +79,7 @@ import {
   readArtifact,
 } from './helpers/artifacts'
 import {
+  resetSubAgents,
   unwatchAllSubAgents,
   unwatchSubAgents,
   watchSubAgents,
@@ -317,6 +319,35 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('vibeflow:removeTask', async (_event, taskId: string) => {
     removeTask(taskId)
     return getState()
+  })
+
+  // Start an in-progress card again as a brand-new run. Keep the worktree and
+  // artifacts, but remove the PLAN/progress that would make the next agent
+  // resume. A new runId gives Claude a fresh pinned conversation while keeping
+  // that conversation discoverable after an app restart.
+  ipcMain.handle('vibeflow:restartTask', (event, taskId: string) => {
+    const task = findTask(taskId)
+    if (!task?.worktreePath) throw new Error('任務沒有可用的 worktree')
+    const workspacePath = task.workspacePath ?? path.dirname(task.worktreePath)
+
+    // Teardown performs the progress watcher's final sync before the files and
+    // mirrored store value are cleared.
+    teardownSession(taskId)
+    resetAgentProgress(workspacePath, task.worktreePath)
+    resetSubAgents(task.worktreePath)
+    updateTask(taskId, {
+      progress: undefined,
+      planHtml: undefined,
+      launchedAt: Date.now(),
+      runId: randomUUID(),
+    })
+
+    const restarted = findTask(taskId)
+    if (!restarted) throw new Error('找不到要重新開始的任務')
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('subagents:update', { taskId, subAgents: [] })
+    }
+    return { state: getState(), task: restarted }
   })
 
   // Edit an existing card's fields. Most are plain metadata read at launch time

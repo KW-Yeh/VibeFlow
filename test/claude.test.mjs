@@ -222,3 +222,24 @@ test('planningSessionId — is deterministic and distinct from executorSessionId
   assert.equal(planningSessionId('abcd1234'), planningSessionId('abcd1234'))
   assert.notEqual(planningSessionId('abcd1234'), executorSessionId('abcd1234'))
 })
+
+test('fresh task runs use distinct, stable planning and execution sessions', () => {
+  const firstRun = '11111111-1111-4111-8111-111111111111'
+  const secondRun = '22222222-2222-4222-8222-222222222222'
+
+  assert.equal(
+    planningSessionId('abcd1234', firstRun),
+    planningSessionId('abcd1234', firstRun),
+    'a restarted run must remain resumable after an app restart'
+  )
+  assert.notEqual(
+    planningSessionId('abcd1234', firstRun),
+    planningSessionId('abcd1234', secondRun),
+    'each restart must create a fresh planning conversation'
+  )
+  assert.notEqual(
+    executorSessionId('abcd1234', firstRun),
+    executorSessionId('abcd1234', secondRun),
+    'each restart must create a fresh execution conversation'
+  )
+})

@@ -429,8 +429,12 @@ export function buildExecutionPrompt(
  * Forces the version (4) and variant (8) nibbles so `claude --session-id`
  * accepts it as a valid UUID.
  */
-export function executorSessionId(taskId: string): string {
-  const hex = taskId.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(32, '0').slice(0, 32)
+export function executorSessionId(taskId: string, runId?: string): string {
+  const source = runId ? `${taskId}:${runId}` : taskId
+  const raw = source.replace(/[^0-9a-f]/gi, '').toLowerCase()
+  const hex = runId
+    ? `${raw.slice(0, 24).padEnd(24, '0')}${namespaceHash(`executor:${source}`)}`
+    : raw.padEnd(32, '0').slice(0, 32)
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
@@ -444,9 +448,10 @@ function namespaceHash(namespace: string): string {
 }
 
 /** Stable Claude session UUID for the planning conversation. */
-export function planningSessionId(taskId: string): string {
-  const taskHex = taskId.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(24, '0').slice(0, 24)
-  const hex = `${taskHex}${namespaceHash('planning')}`
+export function planningSessionId(taskId: string, runId?: string): string {
+  const source = runId ? `${taskId}:${runId}` : taskId
+  const taskHex = source.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(24, '0').slice(0, 24)
+  const hex = `${taskHex}${namespaceHash(runId ? `planning:${runId}` : 'planning')}`
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
@@ -487,7 +492,7 @@ export interface LaunchOptions {
  * same id that the planning phase already used.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath' | 'runId'>,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
@@ -506,7 +511,9 @@ export function buildClaudeCommand(
     files?.artifacts
   )
   const model = task.model || DEFAULT_MODELS.claude
-  const sessionId = isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
+  const sessionId = isExecution
+    ? executorSessionId(task.id, task.runId)
+    : planningSessionId(task.id, task.runId)
   return assembleCommand(
     'claude',
     sys,
@@ -669,6 +676,7 @@ export function buildAgentCommand(
     | 'executionModel'
     | 'effort'
     | 'worktreePath'
+    | 'runId'
   >,
   systemPrompt?: string | null,
   role?: Parameters<typeof buildRolePrompt>[0],
@@ -695,7 +703,9 @@ export function buildAgentCommand(
     files?.artifacts
   )
   const sessionId = agent === 'claude'
-    ? isExecution ? executorSessionId(task.id) : planningSessionId(task.id)
+    ? isExecution
+      ? executorSessionId(task.id, task.runId)
+      : planningSessionId(task.id, task.runId)
     : undefined
   return assembleCommand(
     agent,

@@ -25,7 +25,7 @@ import {
   planningSessionId,
   PLANNING_ROLE,
 } from '@/lib/claude'
-import { getMemoryLaunchInfo, termSessionExists } from '@/lib/api'
+import { getMemoryLaunchInfo, restartTask, termSessionExists } from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
@@ -280,8 +280,8 @@ export function KanbanBoard({
     // user with an interactive terminal for manual commands.
     const isExecution = task.progress?.planDone === true
     const sessionId = isExecution
-      ? executorSessionId(task.id)
-      : planningSessionId(task.id)
+      ? executorSessionId(task.id, task.runId)
+      : planningSessionId(task.id, task.runId)
     let cancelled = false
     void termSessionExists(cwd, sessionId).then((exists) => {
       if (cancelled || !exists || terminalLaunchRef.current[task.id]) return
@@ -351,6 +351,14 @@ export function KanbanBoard({
       done: board.done,
     })
     armLaunch(withStamp)
+  }
+
+  const restartTaskFromBeginning = async (task: Task) => {
+    const result = await restartTask(task.id)
+    if (!result) throw new Error('Electron bridge 無法使用')
+    executionStartedRef.current.delete(task.id)
+    onBoardChange(result.state.board)
+    armLaunch(result.task)
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
@@ -532,6 +540,7 @@ export function KanbanBoard({
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
+                      onRestart={restartTaskFromBeginning}
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}

@@ -85,6 +85,11 @@ export interface Task {
    */
   launchedAt?: number
   /**
+   * Fresh-run discriminator. Set when the user restarts a task so Claude gets
+   * a new pinned conversation while app-restart recovery can still find it.
+   */
+  runId?: string
+  /**
    * Latest execution progress, mirrored from the agent-maintained progress
    * file (see helpers/progress.ts). Survives restarts; a re-run feeds it back
    * into the prompt so the agent resumes instead of starting over.

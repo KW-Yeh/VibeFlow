@@ -6,7 +6,7 @@ import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, RotateCcw } from 'lucide-react'
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -31,6 +31,8 @@ interface TaskTerminalProps {
    * scrollback from the live session is preserved for review.
    */
   readOnly?: boolean
+  /** Restart the whole task from planning using its latest saved settings. */
+  onRestartTask?: () => Promise<void>
   /**
    * Called on real user interaction (keystrokes, file drop, restart) so the
    * host can pin a preview tab. Read through a ref — see `onInteractRef`.
@@ -45,6 +47,7 @@ export function TaskTerminal({
   launchCommand,
   launchNonce = 0,
   readOnly = false,
+  onRestartTask,
   onInteract,
 }: TaskTerminalProps) {
   // Effective session key: use the prop when provided, else fall back to taskId.
@@ -56,6 +59,7 @@ export function TaskTerminal({
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
   const [isRestarting, setIsRestarting] = useState(false)
+  const [isRestartingTask, setIsRestartingTask] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
   // PTY-start flow and the nonce effect read the latest values without
@@ -155,6 +159,27 @@ export function TaskTerminal({
       })
       .finally(() => setIsRestarting(false))
   }, [taskId, sessionKey])
+
+  const restartTaskFromBeginning = useCallback(async () => {
+    const term = termRef.current
+    if (!term || !onRestartTask || readOnlyRef.current) return
+
+    onInteractRef.current?.()
+    setIsRestartingTask(true)
+    // The main process clears persisted scrollback when the replacement command
+    // starts; clear the mounted xterm too so the new run visibly starts clean.
+    term.reset()
+    term.clear()
+    try {
+      await onRestartTask()
+      term.focus()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      term.writeln(`\r\n⚠️  重新開始失敗：${message}`)
+    } finally {
+      setIsRestartingTask(false)
+    }
+  }, [onRestartTask])
 
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
@@ -451,17 +476,32 @@ export function TaskTerminal({
             唯讀
           </span>
         ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 shrink-0 px-2 text-xs"
-            onClick={openFreshInteractiveShell}
-            disabled={!cwd || isRestarting}
-            title="關閉目前 session 並開啟乾淨的 Terminal"
-          >
-            <RefreshCw className={cn('size-3', isRestarting && 'animate-spin')} />
-            {isRestarting ? '重開中…' : '重開 Terminal'}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {onRestartTask && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 shrink-0 px-2 text-xs"
+                onClick={() => void restartTaskFromBeginning()}
+                disabled={!cwd || isRestartingTask || isRestarting}
+                title="清除舊 PLAN 與進度，依目前任務設定重新啟動 Agent"
+              >
+                <RotateCcw className={cn('size-3', isRestartingTask && 'animate-spin')} />
+                {isRestartingTask ? '重新開始中…' : '重新開始'}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs"
+              onClick={openFreshInteractiveShell}
+              disabled={!cwd || isRestarting || isRestartingTask}
+              title="關閉目前 session 並開啟乾淨的 Terminal"
+            >
+              <RefreshCw className={cn('size-3', isRestarting && 'animate-spin')} />
+              {isRestarting ? '重開中…' : '重開 Terminal'}
+            </Button>
+          </div>
         )}
       </div>
       <div className="min-h-0 w-full flex-1 overflow-hidden bg-background p-1">
