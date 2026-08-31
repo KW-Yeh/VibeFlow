@@ -1,4 +1,15 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { AnimatePresence } from 'motion/react'
 import type { DiffMethod } from 'react-diff-viewer-continued'
 
@@ -115,6 +126,37 @@ const POLL_INTERVAL_MS = 3000
  * duplicated because the renderer cannot runtime-import main-process modules).
  */
 const MAX_DIFF_FILES = 80
+
+/**
+ * Width of the workspace's right column, in px. Renderer-local UI state (same
+ * rationale as the board splitter: no electron-store schema to migrate), held
+ * as a CSS variable on <html> rather than React state so a drag repaints
+ * without re-rendering every mounted task panel — and so all of them stay in
+ * sync, since they read the same variable.
+ *
+ * The grid clamps it against the window in CSS (`min(var(...), 100% - …)`)
+ * rather than in JS, so a window too narrow for the chosen width only borrows
+ * it back — widening the window restores what the user picked.
+ */
+const ASIDE_STORAGE_KEY = 'vibeflow:workspace-aside-px'
+const ASIDE_WIDTH_VAR = '--vf-workspace-aside'
+/** Below these the terminal is too narrow to read and the aside's tabs wrap. */
+const MIN_TERMINAL_WIDTH = 320
+const MIN_ASIDE_WIDTH = 336
+/** Must match the splitter's `w-2.5`, which is the grid's `auto` column. */
+const SPLITTER_WIDTH = 10
+
+let asideWidthRestored = false
+
+/** Applies the stored width once per renderer load; unset = CSS fallback. */
+function restoreAsideWidth() {
+  if (asideWidthRestored || typeof window === 'undefined') return
+  asideWidthRestored = true
+  const raw = Number(window.localStorage.getItem(ASIDE_STORAGE_KEY))
+  if (Number.isFinite(raw) && raw >= MIN_ASIDE_WIDTH) {
+    document.documentElement.style.setProperty(ASIDE_WIDTH_VAR, `${raw}px`)
+  }
+}
 
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
@@ -1382,6 +1424,58 @@ export function TaskWorkspacePanel({
     setActiveTaskTab(tab)
   }
 
+  // ── Terminal / aside splitter ─────────────────────────────────────────────
+  // Only live in the lg+ two-column layout; below that the two panes stack and
+  // the splitter is display:none, so it is not a grid item at all.
+  const splitAreaRef = useRef<HTMLElement>(null)
+  const asideRef = useRef<HTMLElement>(null)
+  const dragOriginRef = useRef<{ x: number; width: number } | null>(null)
+
+  useLayoutEffect(restoreAsideWidth, [])
+
+  const clampAsideWidth = (next: number) => {
+    const available = splitAreaRef.current?.clientWidth ?? 0
+    const max =
+      available > 0 ? available - MIN_TERMINAL_WIDTH - SPLITTER_WIDTH : next
+    return Math.max(
+      MIN_ASIDE_WIDTH,
+      Math.min(next, Math.max(MIN_ASIDE_WIDTH, max))
+    )
+  }
+
+  const applyAsideWidth = (next: number, persist: boolean) => {
+    const width = Math.round(clampAsideWidth(next))
+    document.documentElement.style.setProperty(ASIDE_WIDTH_VAR, `${width}px`)
+    if (persist) window.localStorage.setItem(ASIDE_STORAGE_KEY, String(width))
+  }
+
+  const onSplitterDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const width = asideRef.current?.getBoundingClientRect().width ?? 0
+    if (width <= 0) return
+    dragOriginRef.current = { x: event.clientX, width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  // Dragging left widens the aside, so the delta is subtracted.
+  const onSplitterMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const origin = dragOriginRef.current
+    if (!origin) return
+    applyAsideWidth(origin.width - (event.clientX - origin.x), false)
+  }
+
+  const onSplitterUp = () => {
+    if (!dragOriginRef.current) return
+    dragOriginRef.current = null
+    const width = asideRef.current?.getBoundingClientRect().width ?? 0
+    if (width > 0) applyAsideWidth(width, true)
+  }
+
+  const nudgeSplitter = (delta: number) => {
+    const width = asideRef.current?.getBoundingClientRect().width ?? 0
+    if (width <= 0) return
+    applyAsideWidth(width + delta, true)
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
@@ -1460,8 +1554,11 @@ export function TaskWorkspacePanel({
           <MemorySection taskId={task.id} />
         </main>
       ) : (
-      <main className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_minmax(20rem,24rem)] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,27rem)]">
-        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-3 lg:border-b-0 lg:border-r">
+      <main
+        ref={splitAreaRef}
+        className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_auto_minmax(21rem,min(var(--vf-workspace-aside,24rem),100%_-_20.625rem))] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_auto_minmax(21rem,min(var(--vf-workspace-aside,27rem),100%_-_20.625rem))]"
+      >
+        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-3 lg:border-b-0">
           <TaskTerminal
             taskId={task.id}
             cwd={cwd}
@@ -1475,7 +1572,30 @@ export function TaskWorkspacePanel({
           />
         </div>
 
-        <aside className="flex min-h-0 min-w-0 flex-col bg-card/40">
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="調整終端機與任務內容的寬度"
+          tabIndex={0}
+          onPointerDown={onSplitterDown}
+          onPointerMove={onSplitterMove}
+          onPointerUp={onSplitterUp}
+          onPointerCancel={onSplitterUp}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') {
+              event.preventDefault()
+              nudgeSplitter(24)
+            } else if (event.key === 'ArrowRight') {
+              event.preventDefault()
+              nudgeSplitter(-24)
+            }
+          }}
+          className="hidden w-2.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:flex"
+        >
+          <span className="h-12 w-0.5 rounded-full bg-input" />
+        </div>
+
+        <aside ref={asideRef} className="flex min-h-0 min-w-0 flex-col bg-card/40">
           <InfoSection
             title="任務內容"
             icon={<FileDiff className="size-3.5" />}
