@@ -20,6 +20,14 @@ export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
  */
 export const SCRATCH_DIR_NAME = 'scratch'
 
+/**
+ * Bare, cwd-relative artifacts directory the agent is given when the workspace
+ * path is unknown (see renderer/lib/claude.ts ARTIFACTS_FALLBACK_DIR — keep both
+ * in sync). Unlike the normal path this one lands inside the worktree, so it is
+ * excluded from git (see ensureLocalExclude).
+ */
+export const ARTIFACTS_FALLBACK_DIR = '.vibeflow-artifacts'
+
 /** How an artifact is presented: rendered inline, as plain text, or not at all. */
 export type ArtifactKind = 'image' | 'video' | 'text' | 'binary'
 

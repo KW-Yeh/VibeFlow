@@ -6,6 +6,7 @@ import { PLAN_FILE, PROGRESS_FILE } from './progress'
 import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
 import { ATTACHMENTS_DIR } from './attachments'
+import { ARTIFACTS_FALLBACK_DIR } from './artifacts'
 
 const pexec = promisify(execFile)
 
@@ -176,10 +177,16 @@ export async function initRepository(projectPath: string): Promise<void> {
 }
 
 /**
- * Ensure the agent-maintained progress file is excluded via the repository's
+ * Ensure the agent-maintained runtime files are excluded via the repository's
  * `.git/info/exclude`. Unlike `.gitignore` this never enters the project's
- * history, and it applies to every worktree of the clone — so the progress
- * file can't be committed even by a `git add -A` run inside a task worktree.
+ * history, and it applies to every worktree of the clone — so these files can't
+ * be committed even by a `git add -A` run inside a task worktree.
+ *
+ * The progress / plan files and the artifacts dir normally live outside the
+ * worktree entirely (see agentProgressPath / agentPlanPath / agentArtifactsPath),
+ * so those entries only bite in the fallback case: the agent is handed the bare,
+ * cwd-relative name whenever the workspace path is unknown, and then writes into
+ * the worktree.
  */
 export async function ensureLocalExclude(projectPath: string): Promise<void> {
   const commonDir = await git(projectPath, ['rev-parse', '--git-common-dir'])
@@ -202,6 +209,14 @@ export async function ensureLocalExclude(projectPath: string): Promise<void> {
     path.join(infoDir, 'exclude'),
     PLAN_FILE,
     '# VibeFlow planning artifact (runtime-only)',
+    { mkdir: true }
+  )
+  // Screenshots, recordings and scratch files the agent parks here are evidence
+  // for the user, never part of the change.
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    `${ARTIFACTS_FALLBACK_DIR}/`,
+    '# VibeFlow task artifacts (runtime-only)',
     { mkdir: true }
   )
   await appendLineIfMissing(

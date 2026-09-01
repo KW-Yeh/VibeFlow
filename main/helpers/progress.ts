@@ -9,11 +9,12 @@ export interface TaskProgressStep {
 }
 
 /**
- * Persisted execution progress of a task. The Claude agent maintains a
- * progress file (in the userData dir, named by workspace — see agentProgressPath;
- * per the progress protocol appended to the system prompt); main watches that
- * file and mirrors its content into the store, so progress survives restarts and
- * a re-run can resume from the recorded state.
+ * Persisted execution progress of a task. The agent maintains a progress file
+ * (in the task's workspace folder, named by the worktree — see
+ * agentProgressPath; per the progress protocol appended to the prompt body, not
+ * the system prompt, which is the user's to configure); main watches that file
+ * and mirrors its content into the store, so progress survives restarts and a
+ * re-run can resume from the recorded state.
  */
 export interface TaskProgress {
   /** One-line summary of where the task currently stands. */
@@ -34,14 +35,18 @@ export interface TaskProgress {
 }
 
 /**
- * File the agent writes its progress to, relative to the session cwd.
- * Must match the literal in renderer/lib/claude.ts (progress protocol prompt).
+ * Suffix of the file the agent writes its progress to (see agentProgressPath);
+ * also the bare, cwd-relative name the agent is given when the workspace path
+ * is unknown. Must match the literal in renderer/lib/claude.ts (progress
+ * protocol prompt).
  */
 export const PROGRESS_FILE = '.vibeflow-progress.json'
 
 /**
- * Planning artifact written by the agent at the start of each task.
- * Runtime-only — excluded from git via .git/info/exclude (see ensureLocalExclude).
+ * Planning artifact written by the agent at the start of each task. Normally
+ * lives outside the worktree (see agentPlanPath); this bare name is also the
+ * cwd-relative fallback the agent is given when the workspace path is unknown,
+ * which is why it stays in .git/info/exclude (see ensureLocalExclude).
  */
 export const PLAN_FILE = 'PLAN.md'
 
@@ -63,8 +68,8 @@ export function agentProgressPath(baseDir: string, worktreePath: string): string
 }
 
 /**
- * Absolute path of a task's planning artifact (PLAN.md). Like the progress /
- * review files it lives in `baseDir` (the task's workspace folder = the
+ * Absolute path of a task's planning artifact (PLAN.md). Like the progress
+ * file it lives in `baseDir` (the task's workspace folder = the
  * worktree's parent), named by the worktree folder, so git never sees it and
  * concurrent tasks never collide. Renderer builds the identical path (see
  * renderer/lib/claude.ts agentFilePaths) — keep both in sync.

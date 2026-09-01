@@ -15,9 +15,13 @@ const TASK = {
   title: '修復登入流程',
   description: '使用者無法登入。',
   agentCli: /** @type {'claude'} */ ('claude'),
+  branch: 'fix/login-flow',
   worktreePath: '/tmp/vibeflow/vf-abc123',
   progress: undefined,
 }
+
+// Stand-in for the built-in agent-memory server paths main resolves at launch.
+const MEMORY = { serverPath: '/app/main/memory/mcp-server.mjs', dbPath: '/home/user/agent_memory.db' }
 
 const CODEX_TASK = {
   ...TASK,
@@ -119,6 +123,64 @@ test('buildAgentCommand — Codex body carries no leading blank lines without a 
 test('buildAgentCommand — carries progress protocol in prompt body', () => {
   const cmd = buildAgentCommand(CODEX_TASK, '')
   assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
+})
+
+// The agent-memory store is reached through the MCP server injected by
+// --mcp-config, which only the Claude launch path builds. Promising those tools
+// to an agent that cannot call them sends it chasing a dead end.
+test('buildAgentCommand — omits the agent-memory section when the server is not injected', () => {
+  const codex = buildAgentCommand(CODEX_TASK, '', { memory: MEMORY })
+  assert.ok(!codex.includes('memory_find_related_tasks'), 'Codex gets no --mcp-config, so no memory tools')
+  assert.ok(!codex.includes('Agent Memory'), 'must not announce a store the session cannot reach')
+
+  const claudeNoMemory = buildAgentCommand(TASK, '')
+  assert.ok(!claudeNoMemory.includes('memory_find_related_tasks'), 'no memory info means no memory section')
+})
+
+test('buildAgentCommand — includes the agent-memory section once Claude gets the server', () => {
+  const cmd = buildAgentCommand(TASK, '', { memory: MEMORY })
+  assert.ok(cmd.includes('--mcp-config'), 'Claude must receive the built-in server')
+  assert.ok(cmd.includes('memory_find_related_tasks'), 'must name the lookup tool')
+  assert.ok(cmd.includes('memory_save_checkpoint'), 'must name the sealing tool')
+})
+
+// main reads the store back by branch name, and VibeFlow already knows it. An
+// agent that derives its own id can disagree with the one the app queries.
+test('buildAgentCommand — states the memory task id instead of having the agent derive it', () => {
+  const cmd = buildAgentCommand(TASK, '', { memory: MEMORY })
+  assert.ok(cmd.includes(TASK.branch), 'must state the branch that keys the store')
+  assert.ok(!cmd.includes('rev-parse --abbrev-ref'), 'must not send the agent looking it up')
+})
+
+// Numbering is positional, so dropping the memory section must not leave a hole
+// the agent has to interpret.
+test('buildAgentCommand — protocol numbering stays contiguous in both variants', () => {
+  for (const [label, opts] of [['without memory', undefined], ['with memory', { memory: MEMORY }]]) {
+    const cmd = buildAgentCommand(TASK, '', opts)
+    const expected = opts ? 9 : 7
+    for (let n = 1; n <= expected; n += 1) {
+      assert.ok(cmd.includes(`${n}. `), `${label}: section ${n} must be present`)
+    }
+    assert.ok(!cmd.includes(`${expected + 1}. `), `${label}: must stop at section ${expected}`)
+  }
+})
+
+// The plan lives outside the worktree under a worktree-derived name, so a bare
+// PLAN.md would point the agent at a file that does not exist in its cwd.
+test('buildAgentCommand — planning and execution name the real plan path', () => {
+  const workspacePath = '/workspace/project'
+  const planPath = `${workspacePath}/vf-abc123.PLAN.md`
+
+  const planning = buildAgentCommand(TASK, '', undefined, workspacePath)
+  assert.ok(planning.includes(`建立 ${planPath}`), 'planning must name the absolute plan path')
+
+  const execution = buildAgentCommand(
+    { ...TASK, progress: { planDone: true, steps: [{ text: '實作修正', done: false }], updatedAt: 0 } },
+    '',
+    undefined,
+    workspacePath
+  )
+  assert.ok(execution.includes(`依照 ${planPath}`), 'execution must name the absolute plan path')
 })
 
 test('buildAgentCommand — tells Codex to promote temporary evidence into task artifacts', () => {

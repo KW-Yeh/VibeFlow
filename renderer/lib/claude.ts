@@ -85,13 +85,26 @@ export function taskArtifactsDir(
  * and mirrors into the task record — enabling card progress display, the Plan
  * view, and resume-on-rerun. Kept separate from the user's system prompt so editing
  * the workflow prompt cannot break progress tracking.
+ *
+ * `memoryTaskId` both gates and parameterizes the agent-memory section. Null
+ * omits it: the store is reached through the built-in MCP server, which only
+ * the Claude launch path can inject (see buildMemoryMcpFlag), so a Codex or
+ * Gemini task must not be told it has tools it cannot call. The section sits
+ * last and is appended rather than spliced in, so omitting it leaves no gap in
+ * the numbering.
+ *
+ * When present it is the task's branch name, which is the id main reads the
+ * store back by (see the task:getCheckpoints handler). VibeFlow already knows
+ * it, so it is stated outright rather than having the agent derive it — one
+ * fewer tool call, and no way for the two to disagree.
  */
 function buildProgressProtocolLines(
   progressFile: string,
   planFile: string,
-  artifactsDir: string
+  artifactsDir: string,
+  memoryTaskId: string | null
 ): string {
-  return [
+  const lines = [
     '進度追蹤協議（務必遵守）：',
     `1. 規劃階段：先把執行計劃寫入 ${planFile}（Markdown 格式，包含任務目標、執行步驟、預期成果）。`,
     `2. 若需求足夠明確，可形成可執行計劃，${planFile} 建立完成後立即把步驟列表寫入 ${progressFile}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "needsUserInput": false, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
@@ -99,17 +112,22 @@ function buildProgressProtocolLines(
     '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
     `5. 若 ${progressFile} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
     `6. 進度檔（${progressFile}）與計劃檔（${planFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
-    '7. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 `agent-memory` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用本任務的 git 分支名（在 worktree 執行 `git rev-parse --abbrev-ref HEAD` 取得），app 會以分支名回查此任務的 checkpoint 與關聯。',
-    '8. 規劃階段開始時：先呼叫 `memory_find_related_tasks`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 `memory_get_task_detail` 載入細節。任務完成或交接時：用 `memory_save_checkpoint`（task id = 分支名）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 `memory_link_tasks` 記錄。',
-    `9. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
-    `9a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄影、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（截圖與 .mp4／.m4v／.webm／.mov 影片都能在分頁內直接播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
-    `9b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再錄一段影片。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
-    `9c. 錄影一律用 macOS 內建的 \`screencapture\` 輸出 .mov 影片，嚴禁用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間，錄了也看不出來。步驟：先把要錄的視窗帶到前景 → 背景執行 \`screencapture -v -k -C -x -D1 ${artifactsDir}/<描述性檔名>.mov\`（-k 標記點擊、-C 錄游標、-x 靜音；只想錄單一視窗就加 \`-R<x,y,w,h>\` 指定範圍，避免把終端機一起錄進去）→ 執行互動 → \`pkill -INT -x screencapture\` 停止。必須送 SIGINT，直接 kill 會寫不完檔尾、影片會壞掉；該指令會停掉所有錄影行程，若使用者自己也在錄，改成記下 PID 再 \`kill -INT <pid>\`。`,
-    `9d. 一段只涵蓋一條互動路徑，長度控制在 15 秒內；多條路徑分成多個檔，不要串成一長段，也不要把整段開發過程錄進去（螢幕錄影約每分鐘 15–80 MB）。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，只能請使用者用「開啟資料夾」在系統播放器看，所以請把單檔壓在 20MB 以內。`,
-    `9e. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
-    `9f. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
-    `9g. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
-  ].join('\n')
+    `7. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
+    `7a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄影、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（截圖與 .mp4／.m4v／.webm／.mov 影片都能在分頁內直接播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
+    `7b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再錄一段影片。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
+    `7c. 錄影一律用 macOS 內建的 \`screencapture\` 輸出 .mov 影片，嚴禁用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間，錄了也看不出來。步驟：先把要錄的視窗帶到前景 → 背景執行 \`screencapture -v -k -C -x -D1 ${artifactsDir}/<描述性檔名>.mov\`（-k 標記點擊、-C 錄游標、-x 靜音；只想錄單一視窗就加 \`-R<x,y,w,h>\` 指定範圍，避免把終端機一起錄進去）→ 執行互動 → \`pkill -INT -x screencapture\` 停止。必須送 SIGINT，直接 kill 會寫不完檔尾、影片會壞掉；該指令會停掉所有錄影行程，若使用者自己也在錄，改成記下 PID 再 \`kill -INT <pid>\`。`,
+    `7d. 一段只涵蓋一條互動路徑，長度控制在 15 秒內；多條路徑分成多個檔，不要串成一長段，也不要把整段開發過程錄進去（螢幕錄影約每分鐘 15–80 MB）。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，只能請使用者用「開啟資料夾」在系統播放器看，所以請把單檔壓在 20MB 以內。`,
+    `7e. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
+    `7f. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
+    `7g. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
+  ]
+  if (memoryTaskId) {
+    lines.push(
+      `8. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 \`agent-memory\` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用 \`${memoryTaskId}\`（本任務的 git 分支名），不要自行改用其他 id：app 只以這個 id 回查此任務的 checkpoint 與關聯。`,
+      `9. 規劃階段開始時：先呼叫 \`memory_find_related_tasks\`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 \`memory_get_task_detail\` 載入細節。任務完成或交接時：用 \`memory_save_checkpoint\`（task id = \`${memoryTaskId}\`）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 \`memory_link_tasks\` 記錄。`,
+    )
+  }
+  return lines.join('\n')
 }
 
 /**
@@ -121,28 +139,35 @@ function buildProgressProtocolLines(
  * are the paths the agent writes to — absolute workspace-folder paths when known
  * (see agentFilePaths), else the legacy cwd-relative names. Exported const uses
  * the relative fallbacks for backward-compatible callers/tests.
+ *
+ * `memoryTaskId` defaults to null: claiming the agent-memory tools exist when
+ * they were not injected is the costlier mistake, so callers that know the
+ * server is wired pass the task id explicitly.
  */
 export function buildProgressProtocol(
   progressFile: string = PROGRESS_FILE,
   planFile: string = PLAN_FILE,
-  artifactsDir: string = ARTIFACTS_FALLBACK_DIR
+  artifactsDir: string = ARTIFACTS_FALLBACK_DIR,
+  memoryTaskId: string | null = null
 ): string {
-  return buildProgressProtocolLines(progressFile, planFile, artifactsDir)
+  return buildProgressProtocolLines(progressFile, planFile, artifactsDir, memoryTaskId)
 }
 
 export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(
   PROGRESS_FILE,
   PLAN_FILE,
-  ARTIFACTS_FALLBACK_DIR
+  ARTIFACTS_FALLBACK_DIR,
+  null
 )
 
 function appendProgressProtocol(
   prompt: string,
   progressFile?: string,
   planFile?: string,
-  artifactsDir?: string
+  artifactsDir?: string,
+  memoryTaskId: string | null = null
 ): string {
-  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile, artifactsDir)}`
+  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile, artifactsDir, memoryTaskId)}`
 }
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -295,13 +320,21 @@ export function buildPrompt(
   return lines.join('\n')
 }
 
+/**
+ * `planFile` must be the same absolute path the progress protocol names (see
+ * agentFilePaths): the plan lives outside the worktree under a worktree-derived
+ * name, so a bare `PLAN.md` would send the agent looking in its cwd, where no
+ * such file exists. Defaults to the cwd-relative fallback for callers that have
+ * no workspace path.
+ */
 export function buildPlanningPrompt(
-  task: Pick<Task, 'title' | 'description'>
+  task: Pick<Task, 'title' | 'description'>,
+  planFile: string = PLAN_FILE
 ): string {
   const lines = [buildPrompt(task)]
   lines.push(
     '',
-    '若需求足夠明確，建立 PLAN.md，依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps，然後直接進入執行階段，依序完成所有步驟。',
+    `若需求足夠明確，建立 ${planFile}，依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps，然後直接進入執行階段，依序完成所有步驟。`,
     '若需求仍缺少必要資訊，請先提出具體問題，並依進度追蹤協議寫入 planDone=false、needsUserInput=true，然後停止等待使用者回覆。'
   )
   return lines.join('\n')
@@ -330,12 +363,14 @@ export function buildResumePrompt(
   return lines.join('\n')
 }
 
+/** `planFile`: same absolute-path requirement as buildPlanningPrompt. */
 export function buildExecutionPrompt(
-  task: Pick<Task, 'progress'>
+  task: Pick<Task, 'progress'>,
+  planFile: string = PLAN_FILE
 ): string {
   const lines = [
     'Planning 已完成，請直接進入執行階段。',
-    '依照 PLAN.md 與下列進度，從第一個未完成的步驟開始實作；已完成的步驟請勿重做。',
+    `依照 ${planFile} 與下列進度，從第一個未完成的步驟開始實作；已完成的步驟請勿重做。`,
     '只有在執行前發現計劃仍缺少必要使用者資訊時，才停止並提出具體問題，同時把進度檔標記為 needsUserInput=true。',
   ]
   const progress = task.progress
@@ -418,7 +453,7 @@ export interface LaunchOptions {
  * same id that the planning phase already used.
  */
 export function buildClaudeCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath' | 'runId'>,
+  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath' | 'runId' | 'branch'>,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
   workspacePath?: string
@@ -427,13 +462,14 @@ export function buildClaudeCommand(
   const files = agentFilePaths(task.worktreePath, workspacePath)
   const sys = resolveSystemPrompt(systemPrompt)
   const basePrompt = isExecution
-    ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
-    : buildPlanningPrompt(task)
+    ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task, files?.plan)
+    : buildPlanningPrompt(task, files?.plan)
   const prompt = appendProgressProtocol(
     basePrompt,
     files?.progress,
     files?.plan,
-    files?.artifacts
+    files?.artifacts,
+    opts?.memory ? task.branch : null
   )
   const model = task.model || DEFAULT_MODELS.claude
   const sessionId = isExecution
@@ -604,6 +640,7 @@ export function buildAgentCommand(
     | 'effort'
     | 'worktreePath'
     | 'runId'
+    | 'branch'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -617,13 +654,14 @@ export function buildAgentCommand(
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)
-      : buildExecutionPrompt(task)
-    : buildPlanningPrompt(task)
+      : buildExecutionPrompt(task, files?.plan)
+    : buildPlanningPrompt(task, files?.plan)
   const prompt = appendProgressProtocol(
     basePrompt,
     files?.progress,
     files?.plan,
-    files?.artifacts
+    files?.artifacts,
+    agent === 'claude' && opts?.memory ? task.branch : null
   )
   const sessionId = agent === 'claude'
     ? isExecution

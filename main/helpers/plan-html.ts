@@ -5,7 +5,7 @@ import { renderMarkdownToHtml } from './markdown'
 
 /**
  * Filesystem-safe name for the preserved plan.html: `<title>-<createdAt>.html`.
- * Unlike the runtime PLAN.md/progress/review files, this is NOT cleared when the
+ * Unlike the runtime PLAN.md / progress files, this is NOT cleared when the
  * task completes — it stays in the workspace folder as a durable record.
  */
 export function planHtmlFileName(title: string, createdAt: number): string {

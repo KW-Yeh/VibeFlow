@@ -18,6 +18,7 @@ import {
   dropCoveredEntries,
 } from '../main/helpers/git.ts'
 import { PROGRESS_FILE } from '../main/helpers/progress.ts'
+import { ARTIFACTS_FALLBACK_DIR } from '../main/helpers/artifacts.ts'
 import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
 import {
   makeRepo,
@@ -125,6 +126,9 @@ test('ensureLocalExclude — adds the progress file to .git/info/exclude (idempo
     let content = await fs.readFile(excludePath, 'utf8')
     assert.ok(content.includes(PROGRESS_FILE))
     assert.ok(content.includes(`${ATTACHMENTS_DIR}/`))
+    // Same fallback case as the progress file: with no workspace path the agent
+    // writes its artifacts dir straight into the worktree.
+    assert.ok(content.includes(`${ARTIFACTS_FALLBACK_DIR}/`))
 
     await ensureLocalExclude(projectPath)
     content = await fs.readFile(excludePath, 'utf8')
