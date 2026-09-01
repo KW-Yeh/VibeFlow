@@ -5,7 +5,6 @@ import {
   resolveSystemPrompt,
   executorSessionId,
   planningSessionId,
-  DEFAULT_SYSTEM_PROMPT,
   PROGRESS_PROTOCOL_PROMPT,
 } from '../renderer/lib/claude.ts'
 
@@ -34,7 +33,6 @@ test('buildAgentCommand — planning uses the planning agent', () => {
   const cmd = buildAgentCommand(CODEX_TASK, '')
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use planning agent command')
   assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
-  assert.ok(cmd.includes(DEFAULT_SYSTEM_PROMPT), 'planning must include PM system prompt')
   assert.ok(cmd.includes('若需求足夠明確'), 'planning must include planning instructions')
 })
 
@@ -88,10 +86,34 @@ test('buildAgentCommand — execution uses the execution agent after PLAN is don
   assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
 })
 
+test('resolveSystemPrompt — blank custom prompt means no system prompt at all', () => {
+  assert.equal(resolveSystemPrompt(''), '')
+  assert.equal(resolveSystemPrompt('   '), '')
+  assert.equal(resolveSystemPrompt(undefined), '')
+  assert.equal(resolveSystemPrompt(null), '')
+})
+
 test('resolveSystemPrompt — does not inject progress protocol into system prompt', () => {
-  const sys = resolveSystemPrompt('')
-  assert.ok(sys.includes(DEFAULT_SYSTEM_PROMPT), 'must still include the default system prompt')
+  const sys = resolveSystemPrompt('自訂 prompt')
+  assert.equal(sys, '自訂 prompt')
   assert.ok(!sys.includes(PROGRESS_PROTOCOL_PROMPT), 'progress protocol belongs to the prompt body')
+})
+
+test('buildAgentCommand — omits --append-system-prompt when no prompt is configured', () => {
+  const cmd = buildAgentCommand(TASK, '')
+  assert.ok(!cmd.includes('--append-system-prompt'), 'an empty system prompt must not reach the CLI')
+  assert.ok(cmd.includes('若需求足夠明確'), 'the task prompt body must still be passed')
+})
+
+test('buildAgentCommand — passes a configured system prompt to Claude', () => {
+  const cmd = buildAgentCommand(TASK, '只用繁體中文回報')
+  assert.ok(cmd.includes('--append-system-prompt'), 'a configured system prompt must reach the CLI')
+  assert.ok(cmd.includes('只用繁體中文回報'), 'the configured text must be present')
+})
+
+test('buildAgentCommand — Codex body carries no leading blank lines without a system prompt', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '')
+  assert.ok(!cmd.includes("'\n\n"), 'an empty system prompt must not be folded into the Codex body')
 })
 
 test('buildAgentCommand — carries progress protocol in prompt body', () => {

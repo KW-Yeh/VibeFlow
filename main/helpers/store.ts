@@ -82,7 +82,7 @@ export interface AppSettings {
   autoMode: boolean
   /**
    * Custom system prompt appended when launching Claude for a card. Absent or
-   * blank = use the renderer's built-in default (DEFAULT_SYSTEM_PROMPT).
+   * blank = the agent is launched with no system prompt.
    */
   systemPrompt?: string
   /**

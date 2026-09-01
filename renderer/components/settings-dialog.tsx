@@ -11,13 +11,11 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
-  RotateCcw,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { fieldClass } from '@/components/ui/field'
-import { DEFAULT_SYSTEM_PROMPT } from '@/lib/claude'
 import {
   cancelGithubAuthLogin,
   getGithubAuthStatus,
@@ -107,7 +105,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (open) {
-      setText(systemPrompt.trim() ? systemPrompt : DEFAULT_SYSTEM_PROMPT)
+      setText(systemPrompt)
       setWorkstation(workstationPath)
       setAgentPage(null)
       setGithubPage(false)
@@ -166,12 +164,12 @@ export function SettingsDialog({
   }, [agentConnections])
 
   const trimmed = text.trim()
-  const isDefault = trimmed === '' || trimmed === DEFAULT_SYSTEM_PROMPT.trim()
+  const isUnset = trimmed === ''
   const canSubmit = !saving && !agentPage && !githubPage
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSave(isDefault ? '' : trimmed, workstation.trim())
+    onSave(trimmed, workstation.trim())
   }
 
   const handlePickWorkstation = async () => {
@@ -514,24 +512,14 @@ export function SettingsDialog({
                 <span
                   className={cn(
                     'ml-2 rounded-xs px-1.5 py-0.5 text-xs font-medium',
-                    isDefault
+                    isUnset
                       ? 'bg-secondary text-secondary-foreground'
                       : 'bg-primary/15 text-primary'
                   )}
                 >
-                  {isDefault ? '預設' : '已自訂'}
+                  {isUnset ? '未設定' : '已自訂'}
                 </span>
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-sm"
-                disabled={saving || trimmed === DEFAULT_SYSTEM_PROMPT.trim()}
-                onClick={() => setText(DEFAULT_SYSTEM_PROMPT)}
-              >
-                <RotateCcw className="size-3" />
-                重設為預設
-              </Button>
             </div>
             <textarea
               name="system-prompt"
@@ -543,7 +531,7 @@ export function SettingsDialog({
               className={cn(fieldClass, 'resize-y font-mono text-sm leading-5')}
             />
             <p className="text-sm text-muted-foreground">
-              啟動 Agent 時會以此 prompt 作為 system prompt；進度追蹤協議會隨任務內容自動附加。
+              啟動 Agent 時會以此 prompt 作為 system prompt；留空則不帶 system prompt。進度追蹤協議會隨任務內容自動附加。
             </p>
           </section>
 

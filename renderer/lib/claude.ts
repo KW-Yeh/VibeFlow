@@ -1,33 +1,6 @@
 import type { AgentCliId, MemoryLaunchInfo, Task } from '@/lib/types'
 
 /**
- * Default system prompt appended when auto-launching Claude for a card. It
- * drives a PM-style plan-then-execute, stage-gated workflow inside the task's
- * isolated git worktree. Users can override it via the settings dialog.
- */
-export const DEFAULT_SYSTEM_PROMPT = [
-  '你是在一個隔離的 git worktree 中，負責帶領任務從規劃到交付的專案協調者（PM）。全程使用繁體中文回報，並嚴格依循以下生命週期執行：',
-  '',
-  '## 專案生命週期（工作流）',
-  '你必須帶領任務依序經歷以下四個階段。只有當前階段的條件滿足後，才能進入下一階段：',
-  '',
-  '### 階段一：規劃任務（Context 建立）',
-  '評估需求完整性（規格、邊界條件、目標是否明確）。如需求不完善，進行多輪詢問直到補齊所有必要 context。確認完整後，提出初步的分工與執行計劃。',
-  '',
-  '### 階段二：檢視並修正計劃',
-  '將計畫提交給相關角色進行檢視（Design 評估視覺可行性、RD 評估技術可行性與時程）。根據反饋調整計畫，直到達成共識。',
-  '',
-  '### 階段三：執行計劃',
-  '正式指派任務給負責執行的主要角色（Design / RD / QA）開始施工。',
-  '',
-  '### 階段四：驗收與修復（非必經，視需求而定）',
-  '依照計劃中定義的驗收標準進行驗收：指派 QA 進行功能測試，或指派 Design 進行畫面驗收。若有 Bug/瑕疵，回報給原執行角色修復並再次驗收；若通過則結束此階段。',
-  '',
-  '## 結案總結',
-  '所有環節執行完畢且確認無後續驗收或修復工作時，進行結案總結，列出最終成果與交付狀態。',
-].join('\n')
-
-/**
  * Progress file suffix. The agent writes to `<userData>/<workspace>.vibeflow-progress.json`
  * (see agentFilePaths) — an absolute path outside the worktree so git never sees
  * it — falling back to this bare, cwd-relative name only when the base dir is
@@ -110,7 +83,7 @@ export function taskArtifactsDir(
  * Fixed protocol appended to the task prompt body. It makes the agent persist
  * its plan (to `planFile`) + step states (to `progressFile`), which main watches
  * and mirrors into the task record — enabling card progress display, the Plan
- * view, and resume-on-rerun. Kept separate from DEFAULT_SYSTEM_PROMPT so editing
+ * view, and resume-on-rerun. Kept separate from the user's system prompt so editing
  * the workflow prompt cannot break progress tracking.
  */
 function buildProgressProtocolLines(
@@ -278,13 +251,14 @@ function buildClaudeSettings(worktreePath?: string): string {
 }
 
 /**
- * Resolve the effective system prompt: the user's custom prompt when set
- * (non-blank), otherwise the built-in default. Runtime file-writing
- * instructions stay in the prompt body because their paths are per-launch
- * values derived from the unified files dir.
+ * Resolve the effective system prompt. Blank means the agent is launched with
+ * no system prompt at all — the plan-then-execute lifecycle it used to describe
+ * is specified concretely by the per-phase prompt bodies instead. Runtime
+ * file-writing instructions likewise stay in the prompt body because their
+ * paths are per-launch values derived from the unified files dir.
  */
 export function resolveSystemPrompt(custom?: string | null): string {
-  return custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
+  return custom && custom.trim() ? custom : ''
 }
 
 /**
@@ -515,13 +489,16 @@ function assembleCommand(
     const effortFlag = effort ? ` --effort ${effort}` : ''
     const mcpFlag = buildMemoryMcpFlag(opts?.memory)
     const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${mcpFlag}`
-    const tail = `${flags} --append-system-prompt ${shellQuote(systemPrompt)} ${shellQuote(prompt)}`
+    const sysFlag = systemPrompt
+      ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
+      : ''
+    const tail = `${flags}${sysFlag} ${shellQuote(prompt)}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)
       : `claude ${sessionId ? `--session-id ${sessionId} ` : opts?.resume ? '--continue ' : ''}${tail}\r`
   } else {
     // Codex / Gemini have no separate system-prompt flag — fold it into the body.
-    const combined = `${systemPrompt}\n\n${prompt}`
+    const combined = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
     const codexEffortFlag = effort
       ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
       : ''
