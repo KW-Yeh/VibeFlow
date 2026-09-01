@@ -444,51 +444,6 @@ export interface LaunchOptions {
 }
 
 /**
- * Build the full shell command (terminated with a carriage return) that
- * launches Claude in auto mode with the card's prompt and the effective
- * system prompt. Written verbatim into the card's PTY.
- *
- * Planning and execution use separate deterministic Claude sessions. This
- * prevents the execution phase from trying to create a fresh session with the
- * same id that the planning phase already used.
- */
-export function buildClaudeCommand(
-  task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath' | 'runId' | 'branch'>,
-  systemPrompt?: string | null,
-  opts?: LaunchOptions,
-  workspacePath?: string
-): string {
-  const isExecution = task.progress?.planDone === true
-  const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = resolveSystemPrompt(systemPrompt)
-  const basePrompt = isExecution
-    ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task, files?.plan)
-    : buildPlanningPrompt(task, files?.plan)
-  const prompt = appendProgressProtocol(
-    basePrompt,
-    files?.progress,
-    files?.plan,
-    files?.artifacts,
-    opts?.memory ? task.branch : null
-  )
-  const model = task.model || DEFAULT_MODELS.claude
-  const sessionId = isExecution
-    ? executorSessionId(task.id, task.runId)
-    : planningSessionId(task.id, task.runId)
-  return assembleCommand(
-    'claude',
-    sys,
-    prompt,
-    model,
-    task.effort,
-    opts,
-    task.worktreePath,
-    sessionId,
-    workspacePath
-  )
-}
-
-/**
  * Assemble the final shell command (CR-terminated) for a given agent CLI from
  * an already-resolved system prompt and prompt body. Centralizes the per-CLI
  * differences (flags, how the system prompt is passed, session resume).
