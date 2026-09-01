@@ -37,7 +37,6 @@ export interface CreateTaskInput {
   executionAgentCli?: AgentCliId
   executionModel?: string
   effort?: AgentEffort
-  roleId?: string
   attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
   storePath?: string
@@ -141,7 +140,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
       (input.executionAgentCli ? undefined : input.model) ||
       undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
-    roleId: input.roleId || undefined,
   }
 
   try {

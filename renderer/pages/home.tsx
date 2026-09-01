@@ -5,7 +5,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { RolesDialog } from '@/components/roles-dialog'
 import { SideMenu } from '@/components/side-menu'
 import {
   TerminalTabBar,
@@ -21,7 +20,6 @@ import {
   checkForRemoteUpdate,
   connectAgent,
   refreshAgentModels,
-  createRole,
   createTask,
   deleteTask,
   detectAgents,
@@ -39,9 +37,7 @@ import {
   persistBoard,
   pickFolder,
   relaunchApp,
-  removeRole,
   setSettings,
-  updateRole,
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -53,7 +49,6 @@ import type {
   AttachmentInput,
   BoardState,
   ConnectableAgentId,
-  Role,
   RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
@@ -98,11 +93,6 @@ export default function HomePage() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
 
-  // Roles state + dialog
-  const [roles, setRoles] = useState<Role[]>([])
-  const [rolesOpen, setRolesOpen] = useState(false)
-  const [savingRole, setSavingRole] = useState(false)
-  const [roleError, setRoleError] = useState<string | null>(null)
 
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -147,7 +137,6 @@ export default function HomePage() {
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
         setAgentConnections(state.settings.agentConnections ?? {})
-        setRoles(state.roles ?? [])
       }
       setLoaded(true)
     })
@@ -158,7 +147,7 @@ export default function HomePage() {
 
   // The sidebar no longer auto-opens: the board's three columns already list
   // every task, so an expanded sidebar would repeat them. It stays collapsed to
-  // its icon rail (projects, Auto Mode, roles, settings) until opened by hand.
+  // its icon rail (projects, Auto Mode, settings) until opened by hand.
 
   // Mirror live progress updates (pushed from main while sessions run) into
   // the local board copy. Main already persisted them — no persistBoard here.
@@ -208,7 +197,6 @@ export default function HomePage() {
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
       setAgentConnections(state.settings.agentConnections ?? {})
-      setRoles(state.roles ?? [])
     })
   }, [])
 
@@ -376,7 +364,6 @@ export default function HomePage() {
     model: string,
     executionModel: string,
     effort: AgentEffort,
-    roleId: string,
     attachments: AttachmentInput[]
   ) => {
     setCreating(true)
@@ -394,7 +381,6 @@ export default function HomePage() {
         executionAgentCli,
         executionModel: executionModel || undefined,
         effort,
-        roleId: roleId || undefined,
         attachments,
       })
       if (result) {
@@ -424,7 +410,6 @@ export default function HomePage() {
         taskId: editTask.id,
         title: payload.title,
         description: payload.description,
-        roleId: payload.roleId || undefined,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
@@ -452,74 +437,6 @@ export default function HomePage() {
     if (state) {
       setBoard(state.board)
       closeTabs([taskId])
-    }
-  }
-
-  const handleOpenRoles = () => {
-    setRoleError(null)
-    setRolesOpen(true)
-  }
-
-  const roleNameTaken = (name: string, excludeId?: string) => {
-    const target = name.trim().toLowerCase()
-    return roles.some(
-      (r) => r.id !== excludeId && r.name.trim().toLowerCase() === target
-    )
-  }
-
-  const handleCreateRole = async (
-    input: Omit<Role, 'id'>
-  ): Promise<boolean> => {
-    if (roleNameTaken(input.name)) {
-      setRoleError(`已存在名稱為「${input.name.trim()}」的角色`)
-      return false
-    }
-    setSavingRole(true)
-    setRoleError(null)
-    try {
-      const res = await createRole(input)
-      if (res) setRoles(res.state.roles)
-      return true
-    } catch (err) {
-      setRoleError(err instanceof Error ? err.message : String(err))
-      return false
-    } finally {
-      setSavingRole(false)
-    }
-  }
-
-  const handleUpdateRole = async (
-    roleId: string,
-    patch: Omit<Role, 'id'>
-  ): Promise<boolean> => {
-    if (roleNameTaken(patch.name, roleId)) {
-      setRoleError(`已存在名稱為「${patch.name.trim()}」的角色`)
-      return false
-    }
-    setSavingRole(true)
-    setRoleError(null)
-    try {
-      const state = await updateRole(roleId, patch)
-      if (state) setRoles(state.roles)
-      return true
-    } catch (err) {
-      setRoleError(err instanceof Error ? err.message : String(err))
-      return false
-    } finally {
-      setSavingRole(false)
-    }
-  }
-
-  const handleDeleteRole = async (roleId: string) => {
-    setSavingRole(true)
-    setRoleError(null)
-    try {
-      const state = await removeRole(roleId)
-      if (state) setRoles(state.roles)
-    } catch (err) {
-      setRoleError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSavingRole(false)
     }
   }
 
@@ -587,7 +504,6 @@ export default function HomePage() {
                 onDeleteProject={handleDeleteProject}
                 autoMode={autoMode}
                 onToggleAutoMode={handleToggleAutoMode}
-                onManageRoles={handleOpenRoles}
                 onRemoteShare={() => {
                   if (!remoteHost.roomCode) remoteHost.startSharing()
                   setRemoteShareOpen(true)
@@ -623,8 +539,6 @@ export default function HomePage() {
                   onDeleteTask={handleDeleteTask}
                   autoMode={autoMode}
                   systemPrompt={systemPrompt}
-                  roles={roles}
-                  onManageRoles={handleOpenRoles}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}
@@ -645,12 +559,10 @@ export default function HomePage() {
             </div>
             <EditTaskDialog
               task={editTask}
-              roles={roles}
               detectAgents={detectAgents}
               agentConnections={agentConnections}
               pickFolder={pickFolder}
               loadGitInfo={getGitInfo}
-              onManageRoles={handleOpenRoles}
               saving={savingEdit}
               error={editError}
               onSubmit={handleSaveEdit}
@@ -668,16 +580,6 @@ export default function HomePage() {
               onRefreshModels={handleRefreshAgentModels}
               onPickFolder={pickFolder}
               onClose={() => setSettingsOpen(false)}
-            />
-            <RolesDialog
-              open={rolesOpen}
-              roles={roles}
-              saving={savingRole}
-              error={roleError}
-              onCreate={handleCreateRole}
-              onUpdate={handleUpdateRole}
-              onDelete={handleDeleteRole}
-              onClose={() => setRolesOpen(false)}
             />
             <AnimatePresence>
               {creating && (

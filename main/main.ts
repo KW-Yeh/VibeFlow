@@ -5,22 +5,18 @@ import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
 import {
-  addRole,
   findTask,
   getSettings,
   getState,
   getStorePath,
-  removeRole,
   removeTask,
   resolveWorkstationPath,
   setBoard,
   setSettings,
-  updateRole,
   updateTask,
   type AppSettings,
   type BoardState,
   type ConnectableAgentId,
-  type Role,
   type Task,
 } from './helpers/store'
 import { projectWorkstationPath } from './helpers/workspace'
@@ -112,11 +108,6 @@ if (isProd) {
   serve({ directory: 'app' })
 } else {
   app.setPath('userData', `${app.getPath('userData')} (development)`)
-}
-
-/** Short, URL/branch-safe id derived from a UUID (tasks and roles share it). */
-function generateShortId(): string {
-  return randomUUID().slice(0, 8)
 }
 
 /**
@@ -304,7 +295,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         executionAgentCli?: AgentCliId
         executionModel?: string
         effort?: AgentEffort
-        roleId?: string
         attachments?: AttachmentInput[]
       }
     ) => {
@@ -351,7 +341,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   // Edit an existing card's fields. Most are plain metadata read at launch time
-  // (title / description / agent / model / workspace / roles). The project folder
+  // (title / description / agent / model / workspace). The project folder
   // and base branch are git-bound: re-selecting them rebuilds the worktree, which
   // is only allowed for not-yet-launched tasks (no work to lose).
   ipcMain.handle(
@@ -362,7 +352,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         taskId: string
         title: string
         description?: string
-        roleId?: string
         agentCli?: AgentCliId
         model?: string
         executionAgentCli?: AgentCliId
@@ -445,7 +434,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       updateTask(payload.taskId, {
         title: payload.title.trim() || `Task ${payload.taskId}`,
         description: payload.description?.trim() || undefined,
-        roleId: payload.roleId || undefined,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         executionAgentCli: payload.executionAgentCli,
@@ -456,27 +444,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return getState()
     }
   )
-
-  // --- Roles ---
-
-  ipcMain.handle('roles:create', (_event, input: Omit<Role, 'id'>) => {
-    const role: Role = { ...input, id: generateShortId() }
-    addRole(role)
-    return { state: getState(), role }
-  })
-
-  ipcMain.handle(
-    'roles:update',
-    (_event, payload: { roleId: string; patch: Partial<Role> }) => {
-      updateRole(payload.roleId, payload.patch)
-      return getState()
-    }
-  )
-
-  ipcMain.handle('roles:remove', (_event, roleId: string) => {
-    removeRole(roleId)
-    return getState()
-  })
 
   // --- Interactive terminal / PTY (Phase 3) ---
 

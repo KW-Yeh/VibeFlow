@@ -8,8 +8,6 @@ import {
   FolderOpen,
   GitBranch,
   Loader2,
-  ShieldCheck,
-  UserRound,
   X,
 } from 'lucide-react'
 
@@ -17,7 +15,6 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
-import { RoleAvatar } from '@/components/roles-dialog'
 import {
   DEFAULT_TASK_EFFORT,
   TaskEffortSlider,
@@ -33,7 +30,6 @@ import type {
   AgentConnections,
   AttachmentInput,
   GitInfo,
-  Role,
 } from '@/lib/types'
 
 type ProjectMode = 'existing' | 'new'
@@ -51,8 +47,6 @@ export interface NewTaskFormProps {
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
   agentConnections?: AgentConnections
-  roles: Role[]
-  onManageRoles: () => void
   onSubmit: (
     title: string,
     description: string,
@@ -65,7 +59,6 @@ export interface NewTaskFormProps {
     model: string,
     executionModel: string,
     effort: AgentEffort,
-    roleId: string,
     attachments: AttachmentInput[]
   ) => void
   onClose?: () => void
@@ -376,8 +369,6 @@ export function NewTaskForm({
   initRepository,
   detectAgents,
   agentConnections,
-  roles,
-  onManageRoles,
   onSubmit,
   onClose,
   inline = false,
@@ -402,7 +393,6 @@ export function NewTaskForm({
   const [model, setModel] = useState('')
   const [executionModel, setExecutionModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
-  const [roleId, setRoleId] = useState('')
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
@@ -518,7 +508,6 @@ export function NewTaskForm({
       model,
       executionModel,
       effort,
-      roleId,
       attachments.map(({ input }) => input)
     )
   }
@@ -539,8 +528,6 @@ export function NewTaskForm({
       setIsReadingAttachments(false)
     }
   }
-
-  const selectedRole = roles.find((r) => r.id === roleId) ?? null
 
   // ── Shared JSX blocks (closure over local state) ────────────────────────
 
@@ -639,51 +626,6 @@ export function NewTaskForm({
     </div>
   )
 
-  const rolesCard = (
-    <div className="space-y-3 rounded-lg border border-border/50 p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          角色設定
-        </p>
-        <button
-          type="button"
-          onClick={onManageRoles}
-          className="rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          管理角色
-        </button>
-      </div>
-      <div className="space-y-1.5">
-        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-          <UserRound className="size-3" />
-          指派角色
-        </span>
-        <div className="flex items-center gap-2">
-          {selectedRole && (
-            <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-xs" />
-          )}
-          <select
-            name="role"
-            value={roleId}
-            onChange={(e) => setRoleId(e.target.value)}
-            className={F}
-          >
-            <option value="">不指派角色</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <ShieldCheck className="size-3" />
-          完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
-        </p>
-      </div>
-    </div>
-  )
-
   const advancedSettingsBlock = (
     <div className="rounded-lg border border-border/50">
       <button
@@ -735,7 +677,6 @@ export function NewTaskForm({
             onModelChange={setExecutionModel}
             agentConnections={agentConnections}
           />
-          {rolesCard}
       </InlineEnterSurface>
     </div>
   )
@@ -941,7 +882,7 @@ export function NewTaskForm({
           {/* Step 1: project folder + base branch */}
           {step === 1 && <div className="space-y-4">{projectSettingsBlock}</div>}
 
-          {/* Step 2: task details, agents, roles, workspace */}
+          {/* Step 2: task details, agents, workspace */}
           {step === 2 && (
             <div className="space-y-4">
               <label className="block space-y-1.5">

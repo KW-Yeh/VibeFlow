@@ -9,11 +9,6 @@ import {
   PROGRESS_PROTOCOL_PROMPT,
 } from '../renderer/lib/claude.ts'
 
-const EXECUTOR_ROLE = {
-  name: '資深前端工程師',
-  positioning: '熟悉 React 與 TypeScript。',
-}
-
 // Full task with all fields required by the new fresh-launch signatures.
 // `id` is a valid 8-char hex string that exercising executorSessionId derivation.
 const TASK = {
@@ -35,11 +30,10 @@ const CODEX_TASK = {
 
 // ─── buildAgentCommand (planning vs execution) ──────────────────────────────
 
-test('buildAgentCommand — planning uses planning agent and does not inject executor role', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE)
+test('buildAgentCommand — planning uses the planning agent', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '')
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use planning agent command')
   assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
-  assert.ok(!cmd.includes('資深前端工程師'), 'planning must not inject executor role prompt')
   assert.ok(cmd.includes(DEFAULT_SYSTEM_PROMPT), 'planning must include PM system prompt')
   assert.ok(cmd.includes('若需求足夠明確'), 'planning must include planning instructions')
 })
@@ -77,7 +71,7 @@ test('buildAgentCommand — leaves Gemini unchanged when a task has effort metad
   assert.ok(!cmd.includes('model_reasoning_effort'))
 })
 
-test('buildAgentCommand — execution uses execution role after PLAN is done', () => {
+test('buildAgentCommand — execution uses the execution agent after PLAN is done', () => {
   const task = {
     ...CODEX_TASK,
     progress: {
@@ -88,28 +82,26 @@ test('buildAgentCommand — execution uses execution role after PLAN is done', (
       updatedAt: Date.now(),
     },
   }
-  const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
+  const cmd = buildAgentCommand(task, '')
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use execution agent command')
   assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
-  assert.ok(cmd.includes('資深前端工程師'), 'execution must inject executor role prompt')
   assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
 })
 
 test('resolveSystemPrompt — does not inject progress protocol into system prompt', () => {
-  const sys = resolveSystemPrompt('', EXECUTOR_ROLE)
+  const sys = resolveSystemPrompt('')
   assert.ok(sys.includes(DEFAULT_SYSTEM_PROMPT), 'must still include the default system prompt')
-  assert.ok(sys.includes('資深前端工程師'), 'must still include the role prompt')
   assert.ok(!sys.includes(PROGRESS_PROTOCOL_PROMPT), 'progress protocol belongs to the prompt body')
 })
 
 test('buildAgentCommand — carries progress protocol in prompt body', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE)
+  const cmd = buildAgentCommand(CODEX_TASK, '')
   assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
 })
 
 test('buildAgentCommand — tells Codex to promote temporary evidence into task artifacts', () => {
   const workspacePath = '/workspace/project'
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, workspacePath)
+  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, workspacePath)
   const artifactsDir = `${workspacePath}/vf-abc123.artifacts`
 
   assert.ok(cmd.includes('/private/tmp'), 'must cover screenshot tools that return system temp paths')
@@ -121,7 +113,7 @@ test('buildAgentCommand — tells Codex to promote temporary evidence into task 
 
 test('buildAgentCommand — requires a real screen recording when the change is interactive', () => {
   const workspacePath = '/workspace/project'
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, workspacePath)
+  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, workspacePath)
 
   assert.ok(
     cmd.includes('能不能用一張靜態圖看出通過或失敗'),
@@ -143,7 +135,7 @@ test('buildAgentCommand — requires a real screen recording when the change is 
 })
 
 test('buildAgentCommand — forbids GIF output, so evidence stays watchable video', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', EXECUTOR_ROLE, undefined, '/workspace/project')
+  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
 
   // gif_creator may only appear as a prohibition. A GIF samples at action
   // boundaries, which is exactly where transitions and hover states live.
@@ -170,7 +162,7 @@ test('buildAgentCommand — normalizes legacy Codex models to an available model
       updatedAt: Date.now(),
     },
   }
-  const cmd = buildAgentCommand(task, '', EXECUTOR_ROLE)
+  const cmd = buildAgentCommand(task, '')
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must replace unavailable legacy Codex model')
   assert.ok(!cmd.includes('gpt-5-codex'), 'must not launch unavailable gpt-5-codex')
 })
@@ -180,7 +172,7 @@ test('buildAgentCommand — Claude planning and execution use separate session i
   const executionId = executorSessionId(TASK.id)
   assert.notEqual(planningId, executionId)
 
-  const planningCmd = buildAgentCommand(TASK, '', EXECUTOR_ROLE)
+  const planningCmd = buildAgentCommand(TASK, '')
   assert.ok(planningCmd.includes(`--session-id ${planningId}`), 'planning must use planning session id')
   assert.ok(!planningCmd.includes(executionId), 'planning must not reserve executor session id')
 
@@ -194,7 +186,7 @@ test('buildAgentCommand — Claude planning and execution use separate session i
       updatedAt: Date.now(),
     },
   }
-  const executionCmd = buildAgentCommand(executionTask, '', EXECUTOR_ROLE)
+  const executionCmd = buildAgentCommand(executionTask, '')
   assert.ok(executionCmd.includes(`--session-id ${executionId}`), 'execution must use executor session id')
   assert.ok(!executionCmd.includes(planningId), 'execution must not reuse planning session id')
 })

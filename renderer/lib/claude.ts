@@ -1,5 +1,4 @@
-import type { AgentCliId, MemoryLaunchInfo, Role, Task } from '@/lib/types'
-import presetRolesData from '@/lib/preset-roles.json'
+import type { AgentCliId, MemoryLaunchInfo, Task } from '@/lib/types'
 
 /**
  * Default system prompt appended when auto-launching Claude for a card. It
@@ -27,23 +26,6 @@ export const DEFAULT_SYSTEM_PROMPT = [
   '## 結案總結',
   '所有環節執行完畢且確認無後續驗收或修復工作時，進行結案總結，列出最終成果與交付狀態。',
 ].join('\n')
-
-/**
- * Built-in role templates the user can pick from when creating a new role, and
- * the seeded default roles. Single source shared with main's DEFAULT_ROLES
- * (both import the same JSON — see main/helpers/store.ts).
- */
-export const PRESET_ROLES = presetRolesData as Role[]
-
-/** Look up a preset by its stable id (ids are guaranteed present in the JSON). */
-function presetById(id: string): Role {
-  const role = PRESET_ROLES.find((r) => r.id === id)
-  if (!role) throw new Error(`preset role ${id} missing from preset-roles.json`)
-  return role
-}
-
-/** 路卡利歐 - 專案經理: persona injected during the planning phase. */
-export const PLANNING_ROLE = presetById('49abf867')
 
 /**
  * Progress file suffix. The agent writes to `<userData>/<workspace>.vibeflow-progress.json`
@@ -193,31 +175,6 @@ function appendProgressProtocol(
 /** The permission mode passed to the Claude CLI ("auto mode"). */
 export const DEFAULT_PERMISSION_MODE = 'auto'
 
-/**
- * Build the role preamble prepended to the system prompt when a task is
- * assigned a role. It instructs the agent to take on the role's persona, so it
- * understands and executes the task from that role's perspective. Returns ''
- * for no role (default behavior) or an empty/unnamed role.
- */
-export function buildRolePrompt(
-  role?: Pick<
-    Role,
-    'name' | 'positioning' | 'responsibilities' | 'boundaries'
-  > | null
-): string {
-  if (!role || !role.name?.trim()) return ''
-  const lines = [
-    `你現在是一位資深的${role.name.trim()}。請根據以下角色定位與邊界限制，來審視並執行接下來的任務：`,
-  ]
-  const positioning = role.positioning?.trim()
-  const responsibilities = role.responsibilities?.trim()
-  const boundaries = role.boundaries?.trim()
-  if (positioning) lines.push('', '【角色定位】', positioning)
-  if (responsibilities) lines.push('', '【職責內容】', responsibilities)
-  if (boundaries) lines.push('', '【執行邊界】', boundaries)
-  return lines.join('\n')
-}
-
 /** Quote an arbitrary string for safe use as a single shell argument (POSIX). */
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
@@ -321,18 +278,13 @@ function buildClaudeSettings(worktreePath?: string): string {
 }
 
 /**
- * Resolve the effective system prompt: the assigned role's persona (when set)
- * in front, then the user's custom prompt when set (non-blank) otherwise the
- * built-in default. Runtime file-writing instructions stay in the prompt body
- * because their paths are per-launch values derived from the unified files dir.
+ * Resolve the effective system prompt: the user's custom prompt when set
+ * (non-blank), otherwise the built-in default. Runtime file-writing
+ * instructions stay in the prompt body because their paths are per-launch
+ * values derived from the unified files dir.
  */
-export function resolveSystemPrompt(
-  custom?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0]
-): string {
-  const base = custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
-  const rolePrompt = buildRolePrompt(role)
-  return rolePrompt ? `${rolePrompt}\n\n${base}` : base
+export function resolveSystemPrompt(custom?: string | null): string {
+  return custom && custom.trim() ? custom : DEFAULT_SYSTEM_PROMPT
 }
 
 /**
@@ -494,13 +446,12 @@ export interface LaunchOptions {
 export function buildClaudeCommand(
   task: Pick<Task, 'id' | 'title' | 'description' | 'progress' | 'model' | 'effort' | 'worktreePath' | 'runId'>,
   systemPrompt?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
   const isExecution = task.progress?.planDone === true
   const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : PLANNING_ROLE)
+  const sys = resolveSystemPrompt(systemPrompt)
   const basePrompt = isExecution
     ? opts?.resume ? buildResumePrompt(task) : buildExecutionPrompt(task)
     : buildPlanningPrompt(task)
@@ -647,9 +598,8 @@ export function taskExecutionModel(
 /**
  * Build the launch command for the task's current lifecycle phase.
  *
- * Planning (`planDone !== true`) uses the planning agent/model and only the PM
- * system prompt. Execution (`planDone === true`) switches to the execution
- * agent/model and injects the executor role.
+ * Planning (`planDone !== true`) uses the planning agent/model. Execution
+ * (`planDone === true`) switches to the execution agent/model.
  *
  * Codex and Gemini have no separate system-prompt flag, so the effective
  * system prompt and task prompt are folded into one CLI argument.
@@ -679,18 +629,14 @@ export function buildAgentCommand(
     | 'runId'
   >,
   systemPrompt?: string | null,
-  role?: Parameters<typeof buildRolePrompt>[0],
   opts?: LaunchOptions,
-  workspacePath?: string,
-  // Planning persona; caller passes the store's (user-editable) PM role so
-  // edits take effect. Falls back to the built-in PLANNING_ROLE when absent.
-  planningRole?: Parameters<typeof buildRolePrompt>[0]
+  workspacePath?: string
 ): string {
   const isExecution = task.progress?.planDone === true
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
   const model = isExecution ? taskExecutionModel(task) : taskModel(task)
   const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = resolveSystemPrompt(systemPrompt, isExecution ? role : (planningRole ?? PLANNING_ROLE))
+  const sys = resolveSystemPrompt(systemPrompt)
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)

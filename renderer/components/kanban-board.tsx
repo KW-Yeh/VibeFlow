@@ -23,7 +23,6 @@ import {
   executorSessionId,
   isTaskComplete,
   planningSessionId,
-  PLANNING_ROLE,
 } from '@/lib/claude'
 import { getMemoryLaunchInfo, restartTask, termSessionExists } from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
@@ -38,7 +37,6 @@ import type {
   ColumnId,
   GitInfo,
   MemoryLaunchInfo,
-  Role,
   SubAgentRun,
   Task,
 } from '@/lib/types'
@@ -53,9 +51,6 @@ interface KanbanBoardProps {
   autoMode: boolean
   /** Custom system prompt for launches ('' = use the built-in default). */
   systemPrompt: string
-  /** Roles available for assignment / display. */
-  roles: Role[]
-  onManageRoles: () => void
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in the workspace panel). */
@@ -93,7 +88,6 @@ interface KanbanBoardProps {
     model: string,
     executionModel: string,
     effort: AgentEffort,
-    roleId: string,
     attachments: AttachmentInput[]
   ) => void
 }
@@ -167,8 +161,6 @@ export function KanbanBoard({
   onDeleteTask,
   autoMode,
   systemPrompt,
-  roles,
-  onManageRoles,
   subAgents,
   selectedTaskId,
   onSelectTask,
@@ -187,14 +179,6 @@ export function KanbanBoard({
   agentConnections,
   onCreateTask,
 }: KanbanBoardProps) {
-  const roleById = (id?: string): Role | null =>
-    (id && roles.find((r) => r.id === id)) || null
-
-  // Auto-assigned planning persona: prefer the user's (editable) store role by
-  // id so edits in the role manager take effect; fall back to the built-in
-  // preset when the store lacks it (e.g. users predating the seeded role set).
-  const planningRole = (): Role => roleById(PLANNING_ROLE.id) ?? PLANNING_ROLE
-
   // Task whose sub-agent drawer is open (null = closed).
   const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
   const subAgentDrawerSnapshotRef = useRef<SubAgentDrawerSnapshot | null>(null)
@@ -241,13 +225,10 @@ export function KanbanBoard({
   }
 
   const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
-    const role = roleById(task.roleId)
     armTerminalCommand(
       task.id,
       buildWorkspaceLaunchCommand({
         task,
-        role,
-        planningRole: planningRole(),
         systemPrompt,
         workspacePath: task.workspacePath,
         resume: opts?.resume,
@@ -451,7 +432,6 @@ export function KanbanBoard({
       >
         <BoardColumns
           board={board}
-          roles={roles}
           subAgents={subAgents}
           selectedTaskId={selectedTaskId ?? null}
           onSelectTask={onSelectTask}
@@ -536,7 +516,6 @@ export function KanbanBoard({
                     <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
-                      role={roleById(entry.task.roleId)}
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
@@ -572,8 +551,6 @@ export function KanbanBoard({
                       initRepository={initRepository}
                       detectAgents={detectAgents}
                       agentConnections={agentConnections}
-                      roles={roles}
-                      onManageRoles={onManageRoles}
                       onSubmit={onCreateTask}
                     />
                   </div>

@@ -40,7 +40,6 @@ the project folder is chosen **per task** at creation time (there is no global
 | Rebuild + hot update | `./rebuild.sh --install` | Fast build, then swap the new `.app` over the running/installed copy — the live app shows a「立即重啟」banner (see `main/helpers/update.ts`) |
 | Rebuild + auto relaunch | `./rebuild.sh --relaunch` | `--install`, then quit + reopen VibeFlow automatically |
 | Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev app store and omit it for the packaged app store. `--help` lists every option |
-| List roles via CLI | `npm run vibeflow -- role list --profile dev` | Prints `ID  NAME` for the store's roles so you can pass a valid `--role` id (`--json` for scripts) |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
 | Tests | `npm test` | `node --test` over `test/**/*.test.mjs` with TS type-stripping, so tests import `main/helpers/*.ts` directly. Headless — no Electron, no dev server. |
@@ -67,7 +66,6 @@ npm run vibeflow -- task create \
   --prompt "Investigate and fix the login failure" \
   --status backlog \
   --effort high \
-  --role 87969ac0 \
   --attach ./screenshot.png \
   --profile dev
 ```
@@ -80,7 +78,7 @@ npm run vibeflow -- task create \
 - Every other creation option the new-task dialog offers has a flag:
   `--base-branch`, `--branch`, `--mode existing|new` (`new` runs `git init` first),
   `--agent` / `--model` (planning & review), `--exec-agent` / `--exec-model`
-  (execution), `--effort low|medium|high|xhigh`, `--role <id|name>`, and
+  (execution), `--effort low|medium|high|xhigh`, and
   `--attach <path>` (repeat per file; the CLI reads the bytes and infers the mime).
 - `--branch` is the branch the task runs on. Left out, the name is derived from
   the card (`branch-name.ts`) and quietly de-duplicated; given explicitly, it is
@@ -93,9 +91,6 @@ npm run vibeflow -- task create \
   `main/helpers/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
 - Unknown flags are rejected, so a typo fails loudly instead of being ignored.
-- `npm run vibeflow -- role list` prints the store's roles as an `ID  NAME` table
-  (add `--json` for machine-readable output, avatars omitted) — use it to find the
-  id for `--role`. `--role` also accepts an exact role name.
 - `--profile dev` writes to
   `~/Library/Application Support/VibeFlow (development)/vibeflow-state.json`, which is
   what `npm run dev` uses. Omitting `--profile` writes to the packaged app store at

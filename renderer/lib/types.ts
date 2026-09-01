@@ -3,7 +3,6 @@
 export type {
   ColumnId,
   Task,
-  Role,
   BoardState,
   AppSettings,
   AgentConnection,

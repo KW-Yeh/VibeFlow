@@ -27,7 +27,6 @@ test('Claude launches enable Chrome for fresh and resumed sessions', () => {
       },
     },
     undefined,
-    undefined,
     { resume: true }
   )
   assert.equal(resumed.match(/--chrome/g)?.length, 2)

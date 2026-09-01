@@ -6,13 +6,10 @@ import {
   GitBranch,
   Loader2,
   Lock,
-  ShieldCheck,
-  UserRound,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { RoleAvatar } from '@/components/roles-dialog'
 import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
 import {
   DEFAULT_TASK_EFFORT,
@@ -26,14 +23,12 @@ import type {
   AgentEffort,
   AgentConnections,
   GitInfo,
-  Role,
   Task,
 } from '@/lib/types'
 
 export interface EditTaskPayload {
   title: string
   description: string
-  roleId: string
   agentCli: AgentCliId
   model: string
   executionAgentCli: AgentCliId
@@ -47,13 +42,10 @@ export interface EditTaskPayload {
 interface EditTaskDialogProps {
   /** The task being edited, or null when the dialog is closed. */
   task: Task | null
-  /** Roles available for assignment ('' = use the default, no role). */
-  roles: Role[]
   detectAgents: () => Promise<AgentCli[]>
   agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
-  onManageRoles?: () => void
   saving: boolean
   error: string | null
   onSubmit: (payload: EditTaskPayload) => void
@@ -62,12 +54,10 @@ interface EditTaskDialogProps {
 
 export function EditTaskDialog({
   task,
-  roles,
   detectAgents,
   agentConnections,
   pickFolder,
   loadGitInfo,
-  onManageRoles,
   saving,
   error,
   onSubmit,
@@ -75,7 +65,6 @@ export function EditTaskDialog({
 }: EditTaskDialogProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [roleId, setRoleId] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
@@ -104,7 +93,6 @@ export function EditTaskDialog({
     if (!task) return
     setTitle(task.title)
     setDescription(task.description ?? '')
-    setRoleId(task.roleId ?? '')
     setAgentCli(task.agentCli ?? 'claude')
     setModel(task.model ?? '')
     setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
@@ -147,7 +135,6 @@ export function EditTaskDialog({
   const isDirty =
     title !== displayedTask.title ||
     description !== (displayedTask.description ?? '') ||
-    roleId !== (displayedTask.roleId ?? '') ||
     agentCli !== (displayedTask.agentCli ?? 'claude') ||
     model !== (displayedTask.model ?? '') ||
     executionAgentCli !== (displayedTask.executionAgentCli ?? displayedTask.agentCli ?? 'claude') ||
@@ -199,14 +186,12 @@ export function EditTaskDialog({
     !loadingInfo &&
     (!projectChanged || isRepo)
 
-  const selectedRole = roles.find((r) => r.id === roleId) ?? null
 
   const handleSubmit = () => {
     if (!canSubmit) return
     onSubmit({
       title: title.trim(),
       description: description.trim(),
-      roleId,
       agentCli,
       model,
       executionAgentCli,
@@ -224,7 +209,7 @@ export function EditTaskDialog({
         <DialogShell
           key={displayedTask.id}
       title="編輯任務"
-      description="更新任務內容、agent 與角色指派。"
+      description="更新任務內容與 agent 設定。"
       saving={saving}
       onClose={handleClose}
       showHeader
@@ -366,7 +351,7 @@ export function EditTaskDialog({
           )}
         </div>
 
-        {/* Advanced — agents, roles, workspace (mirrors the new-task dialog). */}
+        {/* Advanced — agents, workspace (mirrors the new-task dialog). */}
         <div className="rounded-lg border border-border/50">
           <button
             type="button"
@@ -406,50 +391,6 @@ export function EditTaskDialog({
                 agentConnections={agentConnections}
               />
 
-              <div className="space-y-3 rounded-lg border border-border/50 p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    角色設定
-                  </p>
-                  {onManageRoles && (
-                    <button
-                      type="button"
-                      onClick={onManageRoles}
-                      className="rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      管理角色
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                    <UserRound className="size-3" />
-                    指派角色
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {selectedRole && (
-                      <RoleAvatar role={selectedRole} className="size-6 shrink-0 text-xs" />
-                    )}
-                    <select
-                      name="edit-task-role"
-                      value={roleId}
-                      onChange={(e) => setRoleId(e.target.value)}
-                      className={F}
-                    >
-                      <option value="">不指派角色</option>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <ShieldCheck className="size-3" />
-                    完成後由測試工程師自動審查並來回修正（須開啟 Auto Mode）。
-                  </p>
-                </div>
-              </div>
             </div>
           )}
         </div>

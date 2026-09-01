@@ -18,7 +18,6 @@ import {
   Settings,
   Smartphone,
   Trash2,
-  Users,
   X,
   Zap,
 } from 'lucide-react'
@@ -54,7 +53,6 @@ interface SideMenuProps {
   /** Global Auto Mode: auto-run a card's execution on entering In Progress. */
   autoMode: boolean
   onToggleAutoMode: () => void
-  onManageRoles: () => void
   onRemoteShare?: () => void
   remoteActive?: boolean
   onOpenSettings: () => void
@@ -573,7 +571,6 @@ function SettingsDock({
   collapsed,
   autoMode,
   onToggleAutoMode,
-  onManageRoles,
   onRemoteShare,
   remoteActive,
   onOpenSettings,
@@ -581,7 +578,6 @@ function SettingsDock({
   collapsed: boolean
   autoMode: boolean
   onToggleAutoMode: () => void
-  onManageRoles: () => void
   onRemoteShare?: () => void
   remoteActive?: boolean
   onOpenSettings: () => void
@@ -599,14 +595,6 @@ function SettingsDock({
           className={cn('size-8', autoMode && 'text-primary hover:text-primary')}
         >
           <Zap className={cn('size-4', autoMode && 'fill-current')} />
-        </IconButton>
-        <IconButton
-          aria-label="管理角色"
-          onClick={onManageRoles}
-          title="管理角色"
-          className="size-8"
-        >
-          <Users className="size-4" />
         </IconButton>
         {onRemoteShare && (
           <IconButton
@@ -662,9 +650,6 @@ function SettingsDock({
         Auto Mode
       </button>
       <div className="flex items-center gap-1 px-1">
-        <IconButton aria-label="管理角色" onClick={onManageRoles} title="管理角色">
-          <Users className="size-4" />
-        </IconButton>
         {onRemoteShare && (
           <IconButton
             aria-label="遠端控制"
@@ -741,7 +726,6 @@ export function SideMenu({
   onDeleteProject,
   autoMode,
   onToggleAutoMode,
-  onManageRoles,
   onRemoteShare,
   remoteActive,
   onOpenSettings,
@@ -991,7 +975,6 @@ export function SideMenu({
         collapsed={collapsed}
         autoMode={autoMode}
         onToggleAutoMode={onToggleAutoMode}
-        onManageRoles={onManageRoles}
         onRemoteShare={onRemoteShare}
         remoteActive={remoteActive}
         onOpenSettings={onOpenSettings}

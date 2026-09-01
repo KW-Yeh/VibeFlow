@@ -23,7 +23,6 @@ import type {
   PrStatus,
   RelatedTask,
   RemoteUpdateSnapshot,
-  Role,
   SubAgentRun,
   Task,
   TaskArtifact,
@@ -185,7 +184,6 @@ export async function createTask(payload: {
   executionAgentCli?: AgentCliId
   executionModel?: string
   effort?: AgentEffort
-  roleId?: string
   attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
@@ -196,7 +194,6 @@ export async function updateTask(payload: {
   taskId: string
   title: string
   description?: string
-  roleId?: string
   agentCli?: AgentCliId
   model?: string
   executionAgentCli?: AgentCliId
@@ -216,27 +213,6 @@ export async function restartTask(
   return b ? b.restartTask(taskId) : null
 }
 
-export async function createRole(
-  input: Omit<Role, 'id'>
-): Promise<{ state: VibeFlowState; role: Role } | null> {
-  const b = bridge()
-  return b ? b.createRole(input) : null
-}
-
-export async function updateRole(
-  roleId: string,
-  patch: Partial<Role>
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.updateRole(roleId, patch) : null
-}
-
-export async function removeRole(
-  roleId: string
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.removeRole(roleId) : null
-}
 
 export async function removeTask(taskId: string): Promise<VibeFlowState | null> {
   const b = bridge()

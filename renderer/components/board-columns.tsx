@@ -18,7 +18,7 @@ import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
 import { isTaskComplete } from '@/lib/claude'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId, Role, SubAgentRun, Task } from '@/lib/types'
+import type { BoardState, ColumnId, SubAgentRun, Task } from '@/lib/types'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -165,7 +165,6 @@ function CardMenu({
 function TaskCard({
   task,
   column,
-  role,
   subAgentCount,
   selected,
   now,
@@ -175,7 +174,6 @@ function TaskCard({
 }: {
   task: Task
   column: ColumnId
-  role: Role | null
   subAgentCount: number
   selected: boolean
   now: number
@@ -347,14 +345,6 @@ function TaskCard({
         )}
       </div>
 
-      {role && !done && (
-        <div className="mt-2">
-          <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-            {role.name}
-          </span>
-        </div>
-      )}
-
       {menuAnchor && (
         <CardMenu
           task={task}
@@ -422,7 +412,6 @@ function ProjectFilter({
 
 export interface BoardColumnsProps {
   board: BoardState
-  roles: Role[]
   subAgents: Record<string, SubAgentRun[]>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
@@ -433,7 +422,6 @@ export interface BoardColumnsProps {
 
 export function BoardColumns({
   board,
-  roles,
   subAgents,
   selectedTaskId,
   onSelectTask,
@@ -460,9 +448,6 @@ export function BoardColumns({
     activeFilter
       ? board[column].filter((task) => projectLabel(task) === activeFilter)
       : board[column]
-
-  const roleById = (id?: string): Role | null =>
-    (id && roles.find((r) => r.id === id)) || null
 
   const total = allTasks.length
 
@@ -504,7 +489,6 @@ export function BoardColumns({
                     key={task.id}
                     task={task}
                     column={column}
-                    role={roleById(task.roleId)}
                     subAgentCount={(subAgents[task.id] ?? []).length}
                     selected={task.id === selectedTaskId}
                     now={now}

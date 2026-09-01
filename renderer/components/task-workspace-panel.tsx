@@ -47,7 +47,6 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
-import { RoleAvatar } from '@/components/roles-dialog'
 import { ZoomableImage } from '@/components/zoomable-image'
 import {
   buildAgentCommand,
@@ -83,7 +82,6 @@ import type {
   MemoryLaunchInfo,
   MemoryTaskLink,
   RelatedTask,
-  Role,
   SubAgentRun,
   Task,
   TaskArtifact,
@@ -194,7 +192,6 @@ interface LaunchEntry {
 interface TaskWorkspacePanelProps {
   task: Task
   column: ColumnId
-  role: Role | null
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
   onStart: (task: Task) => void
@@ -241,12 +238,11 @@ function InfoSection({
 function TaskInfo({
   task,
   column,
-  role,
   subAgents,
   onOpenSubAgents,
 }: Pick<
   TaskWorkspacePanelProps,
-  'task' | 'column' | 'role' | 'subAgents' | 'onOpenSubAgents'
+  'task' | 'column' | 'subAgents' | 'onOpenSubAgents'
 >) {
   const progress = task.progress
   const steps = progress?.steps ?? []
@@ -289,15 +285,6 @@ function TaskInfo({
           </div>
         )}
       </div>
-
-      {role && (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-secondary py-0.5 pl-0.5 pr-2 text-xs font-medium text-secondary-foreground">
-            <RoleAvatar role={role} className="size-4 text-[10px]" />
-            {role.name}
-          </span>
-        </div>
-      )}
 
       {task.description && <MarkdownContent source={task.description} />}
 
@@ -1344,7 +1331,6 @@ function DiffSection({ taskId }: { taskId: string }) {
 export function TaskWorkspacePanel({
   task,
   column,
-  role,
   subAgents,
   launch,
   onStart,
@@ -1649,7 +1635,6 @@ export function TaskWorkspacePanel({
                 <TaskInfo
                   task={task}
                   column={column}
-                  role={role}
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
@@ -1678,8 +1663,6 @@ export function TaskWorkspacePanel({
 
 export function buildWorkspaceLaunchCommand({
   task,
-  role,
-  planningRole,
   systemPrompt,
   workspacePath,
   resume,
@@ -1687,9 +1670,6 @@ export function buildWorkspaceLaunchCommand({
   autoMode,
 }: {
   task: Task
-  role: Role | null
-  /** Store's PM role for the planning phase; undefined → built-in fallback. */
-  planningRole?: Role | null
   systemPrompt: string
   workspacePath?: string
   resume?: boolean
@@ -1701,9 +1681,7 @@ export function buildWorkspaceLaunchCommand({
   return buildAgentCommand(
     task,
     systemPrompt,
-    role ?? undefined,
     { resume, memory, autoMode },
-    workspacePath,
-    planningRole ?? undefined
+    workspacePath
   )
 }

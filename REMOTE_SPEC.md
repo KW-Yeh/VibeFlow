@@ -123,7 +123,7 @@ interface RemoteBoardState {
 
 ### 4.2 CreateTaskPayload（手機 → VibeFlow）
 
-遠端建立任務限制：不支援 baseBranch 自選（預設 main），不支援 agentCli/roleId 設定（保持簡單）。
+遠端建立任務限制：不支援 baseBranch 自選（預設 main），不支援 agentCli 設定（保持簡單）。
 
 ```typescript
 interface CreateTaskPayload {
@@ -367,7 +367,7 @@ vibeflow-remote/           # 獨立 repo，部署至 Vercel
 
 注意：
 - 專案下拉選單的選項來自 VibeFlow 回傳的 `workspaces`（`available: true` 的才顯示）
-- 不開放 baseBranch、roleId、agentCli 選項（保持簡單，使用 VibeFlow 預設值）
+- 不開放 baseBranch、agentCli 選項（保持簡單，使用 VibeFlow 預設值）
 - 送出後卡片狀態轉為 `loading`，待 VibeFlow 回傳新 state 後更新
 
 ### 6.4 核心 Hook：`use-remote-client.ts`

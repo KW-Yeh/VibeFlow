@@ -41,7 +41,7 @@ tests never touch the user's git config or network).
 
 ## Known gaps (not covered here)
 
-- `main/helpers/store.ts` — board/role mutators are inseparable from
+- `main/helpers/store.ts` — board mutators are inseparable from
   `electron-store`, which requires an Electron `app` runtime. Best verified via
   the CDP-driven live-app path in `CLAUDE.md`.
 - `main/main.ts` IPC handlers, `pty.ts`, and the renderer components — need an
