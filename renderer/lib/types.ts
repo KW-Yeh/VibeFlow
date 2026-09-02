@@ -30,6 +30,12 @@ export type {
   MemoryTaskLink,
   RelatedTask,
 } from '../../main/helpers/memory'
+export type {
+  LibraryEntry,
+  LibraryKind,
+  LibraryLaunchInfo,
+  LibraryScript,
+} from '../../main/helpers/library'
 export type { AgentCli, AgentCliId, AgentEffort } from '../../main/helpers/agents'
 export type {
   GitHubCliAuthEvent,

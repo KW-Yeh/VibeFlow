@@ -79,6 +79,7 @@ import type {
   DiffEntry,
   DiffFile,
   MemoryCheckpoint,
+  LibraryLaunchInfo,
   MemoryLaunchInfo,
   MemoryTaskLink,
   RelatedTask,
@@ -1667,6 +1668,7 @@ export function buildWorkspaceLaunchCommand({
   workspacePath,
   resume,
   memory,
+  library,
   autoMode,
 }: {
   task: Task
@@ -1675,13 +1677,15 @@ export function buildWorkspaceLaunchCommand({
   resume?: boolean
   /** Built-in agent-memory server injection; undefined → not wired. */
   memory?: MemoryLaunchInfo
+  /** VibeFlow library delivery; undefined → nothing enabled. */
+  library?: LibraryLaunchInfo
   /** Global Auto Mode — drives Codex authorization at launch. */
   autoMode?: boolean
 }): string {
   return buildAgentCommand(
     task,
     systemPrompt,
-    { resume, memory, autoMode },
+    { resume, memory, library, autoMode },
     workspacePath
   )
 }

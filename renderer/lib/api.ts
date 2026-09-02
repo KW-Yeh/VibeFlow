@@ -18,6 +18,9 @@ import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
   MemoryCheckpoint,
+  LibraryEntry,
+  LibraryKind,
+  LibraryLaunchInfo,
   MemoryLaunchInfo,
   MemoryTaskLink,
   PrStatus,
@@ -274,6 +277,84 @@ export async function getCheckpoints(
 ): Promise<MemoryCheckpoint[]> {
   const b = bridge()
   return b ? b.getCheckpoints(taskId) : []
+}
+
+export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {
+  const b = bridge()
+  return b ? b.pickLibrarySource(kind) : null
+}
+
+export async function listLibrary(): Promise<LibraryEntry[]> {
+  const b = bridge()
+  return b ? b.listLibrary() : []
+}
+
+export async function importLibraryEntry(
+  kind: LibraryKind,
+  sourcePath: string
+): Promise<LibraryEntry | null> {
+  const b = bridge()
+  return b ? b.importLibraryEntry({ kind, sourcePath }) : null
+}
+
+export async function createLibraryEntry(
+  kind: LibraryKind,
+  name: string,
+  content: string,
+  description?: string
+): Promise<LibraryEntry | null> {
+  const b = bridge()
+  return b ? b.createLibraryEntry({ kind, name, content, description }) : null
+}
+
+export async function readLibraryEntry(
+  kind: LibraryKind,
+  name: string
+): Promise<string | null> {
+  const b = bridge()
+  return b ? b.readLibraryEntry({ kind, name }) : null
+}
+
+export async function updateLibraryEntry(
+  kind: LibraryKind,
+  name: string,
+  content: string
+): Promise<LibraryEntry | null> {
+  const b = bridge()
+  return b ? b.updateLibraryEntry({ kind, name, content }) : null
+}
+
+export async function setLibraryEntryDescription(
+  kind: LibraryKind,
+  name: string,
+  description: string
+): Promise<boolean> {
+  const b = bridge()
+  return b ? b.setLibraryEntryDescription({ kind, name, description }) : false
+}
+
+export async function setLibraryEntryEnabled(
+  kind: LibraryKind,
+  name: string,
+  enabled: boolean
+): Promise<boolean> {
+  const b = bridge()
+  return b ? b.setLibraryEntryEnabled({ kind, name, enabled }) : false
+}
+
+export async function deleteLibraryEntry(
+  kind: LibraryKind,
+  name: string
+): Promise<boolean> {
+  const b = bridge()
+  return b ? b.deleteLibraryEntry({ kind, name }) : false
+}
+
+export async function getLibraryLaunchInfo(
+  worktreePath?: string
+): Promise<LibraryLaunchInfo | null> {
+  const b = bridge()
+  return b ? b.getLibraryLaunchInfo(worktreePath) : null
 }
 
 export async function getMemoryLaunchInfo(): Promise<MemoryLaunchInfo | null> {

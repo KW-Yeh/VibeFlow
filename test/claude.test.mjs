@@ -59,18 +59,19 @@ test('buildAgentCommand — maps task effort to a session-scoped Codex config ov
   )
 })
 
-test('buildAgentCommand — leaves Gemini unchanged when a task has effort metadata', () => {
+// A store written by a build that offered more agents can still name one this
+// build dropped. Falling through would launch the wrong CLI, so it must land on
+// claude rather than on whatever branch happens to be last.
+test('buildAgentCommand — an unknown agentCli falls back to claude, not the codex branch', () => {
   const cmd = buildAgentCommand({
     ...TASK,
-    agentCli: /** @type {'gemini'} */ ('gemini'),
-    model: 'gemini-2.5-flash',
-    executionAgentCli: /** @type {'gemini'} */ ('gemini'),
-    executionModel: 'gemini-2.5-flash',
-    effort: 'high',
+    agentCli: /** @type {'claude'} */ ('gemini'),
+    model: 'sonnet',
+    executionAgentCli: /** @type {'claude'} */ ('gemini'),
+    executionModel: 'sonnet',
   })
-  assert.ok(cmd.startsWith('gemini --yolo -i --model gemini-2.5-flash '))
-  assert.ok(!cmd.includes('--effort'))
-  assert.ok(!cmd.includes('model_reasoning_effort'))
+  assert.ok(cmd.startsWith('claude '), 'must launch claude')
+  assert.ok(!cmd.includes('gemini'), 'must not pass the unknown id to any CLI')
 })
 
 test('buildAgentCommand — execution uses the execution agent after PLAN is done', () => {
@@ -195,9 +196,8 @@ test('buildAgentCommand — tells Codex to promote temporary evidence into task 
   assert.ok(cmd.includes('只回報或保留原路徑不算完成'), 'must reject evidence left at its source path')
 })
 
-test('buildAgentCommand — requires a real screen recording when the change is interactive', () => {
-  const workspacePath = '/workspace/project'
-  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, workspacePath)
+test('buildAgentCommand — keeps the decision rule for when a recording is needed', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
 
   assert.ok(
     cmd.includes('能不能用一張靜態圖看出通過或失敗'),
@@ -207,30 +207,28 @@ test('buildAgentCommand — requires a real screen recording when the change is 
     cmd.includes('純樣式、文案、靜態版面改動不需要錄'),
     'must scope recording to interactive changes only'
   )
-  assert.ok(cmd.includes('screencapture -v -k -C -x -D1'), 'must spell out the recording command')
-  assert.ok(
-    cmd.includes(`${workspacePath}/vf-abc123.artifacts/<描述性檔名>.mov`),
-    'must record straight into the task artifacts dir as .mov'
-  )
-  assert.ok(
-    cmd.includes('pkill -INT -x screencapture'),
-    'must stop the recording with SIGINT so the file is finalized'
-  )
+  assert.ok(cmd.includes('visual-parity'), 'must point at the skill that owns the mechanism')
 })
 
-test('buildAgentCommand — forbids GIF output, so evidence stays watchable video', () => {
+// The protocol used to prescribe `screencapture -v`, which contradicts
+// visual-parity: Playwright dispatches synthetic events, so the real macOS
+// pointer never moves and the recording shows a cursor frozen in place.
+test('buildAgentCommand — forbids the tools that cannot capture the interaction', () => {
   const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
+
+  assert.ok(cmd.includes('切勿用 `screencapture` 錄互動'), 'must ban screencapture for interaction')
+  assert.ok(cmd.includes('合成事件'), 'must give the reason, not just the prohibition')
+  assert.ok(!cmd.includes('screencapture -v'), 'must not spell out the broken recipe')
 
   // gif_creator may only appear as a prohibition. A GIF samples at action
   // boundaries, which is exactly where transitions and hover states live.
-  assert.ok(cmd.includes('嚴禁用 `gif_creator`'), 'must ban the GIF tool outright')
+  assert.ok(cmd.includes('切勿用 `gif_creator`'), 'must ban the GIF tool outright')
   assert.equal(
     cmd.split('gif_creator').length - 1,
     1,
     'must name gif_creator exactly once — as the prohibition, never as an instruction'
   )
   assert.ok(!cmd.includes('start_recording'), 'must drop the old gif_creator recording sequence')
-  assert.ok(!cmd.includes('stop_recording'), 'must drop the old gif_creator recording sequence')
 })
 
 test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {

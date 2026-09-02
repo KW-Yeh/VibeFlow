@@ -24,7 +24,12 @@ import {
   isTaskComplete,
   planningSessionId,
 } from '@/lib/claude'
-import { getMemoryLaunchInfo, restartTask, termSessionExists } from '@/lib/api'
+import {
+  getLibraryLaunchInfo,
+  getMemoryLaunchInfo,
+  restartTask,
+  termSessionExists,
+} from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
@@ -224,7 +229,11 @@ export function KanbanBoard({
     }))
   }
 
-  const armLaunch = (task: Task, opts?: { resume?: boolean }) => {
+  // Library launch info is fetched per launch, not cached like memory: enabling
+  // an entry must take effect on the very next run, and the delivery trees are
+  // rebuilt by the same call.
+  const armLaunch = async (task: Task, opts?: { resume?: boolean }) => {
+    const library = await getLibraryLaunchInfo(task.worktreePath)
     armTerminalCommand(
       task.id,
       buildWorkspaceLaunchCommand({
@@ -233,6 +242,7 @@ export function KanbanBoard({
         workspacePath: task.workspacePath,
         resume: opts?.resume,
         memory: memoryLaunchRef.current ?? undefined,
+        library: library ?? undefined,
         autoMode,
       })
     )
@@ -267,7 +277,7 @@ export function KanbanBoard({
     void termSessionExists(cwd, sessionId).then((exists) => {
       if (cancelled || !exists || terminalLaunchRef.current[task.id]) return
       if (isExecution) executionStartedRef.current.add(task.id)
-      armLaunch(task, { resume: true })
+      void armLaunch(task, { resume: true })
     })
     return () => {
       cancelled = true
@@ -289,7 +299,7 @@ export function KanbanBoard({
       const prevTask = prev?.in_progress.find((t) => t.id === task.id)
       if (!prevTask || prevTask.progress?.planDone === true) continue
       executionStartedRef.current.add(task.id)
-      armLaunch(task)
+      void armLaunch(task)
       break
     }
   }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -320,7 +330,7 @@ export function KanbanBoard({
       onTaskDone(task.id)
     }
     if (willLaunch) {
-      armLaunch(toInsert, { resume: wasLaunched(task) })
+      void armLaunch(toInsert, { resume: wasLaunched(task) })
     }
   }
 
@@ -331,7 +341,7 @@ export function KanbanBoard({
       in_progress: [withStamp, ...board.in_progress],
       done: board.done,
     })
-    armLaunch(withStamp)
+    void armLaunch(withStamp)
   }
 
   const restartTaskFromBeginning = async (task: Task) => {
@@ -339,7 +349,7 @@ export function KanbanBoard({
     if (!result) throw new Error('Electron bridge 無法使用')
     executionStartedRef.current.delete(task.id)
     onBoardChange(result.state.board)
-    armLaunch(result.task)
+    void armLaunch(result.task)
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')

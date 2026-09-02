@@ -1,4 +1,4 @@
-import type { AgentCliId, MemoryLaunchInfo, Task } from '@/lib/types'
+import type { AgentCliId, LibraryLaunchInfo, MemoryLaunchInfo, Task } from '@/lib/types'
 
 /**
  * Progress file suffix. The agent writes to `<userData>/<workspace>.vibeflow-progress.json`
@@ -89,7 +89,7 @@ export function taskArtifactsDir(
  * `memoryTaskId` both gates and parameterizes the agent-memory section. Null
  * omits it: the store is reached through the built-in MCP server, which only
  * the Claude launch path can inject (see buildMemoryMcpFlag), so a Codex or
- * Gemini task must not be told it has tools it cannot call. The section sits
+ * Codex task must not be told it has tools it cannot call. The section sits
  * last and is appended rather than spliced in, so omitting it leaves no gap in
  * the numbering.
  *
@@ -115,11 +115,10 @@ function buildProgressProtocolLines(
     `7. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
     `7a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄影、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（截圖與 .mp4／.m4v／.webm／.mov 影片都能在分頁內直接播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
     `7b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再錄一段影片。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
-    `7c. 錄影一律用 macOS 內建的 \`screencapture\` 輸出 .mov 影片，嚴禁用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間，錄了也看不出來。步驟：先把要錄的視窗帶到前景 → 背景執行 \`screencapture -v -k -C -x -D1 ${artifactsDir}/<描述性檔名>.mov\`（-k 標記點擊、-C 錄游標、-x 靜音；只想錄單一視窗就加 \`-R<x,y,w,h>\` 指定範圍，避免把終端機一起錄進去）→ 執行互動 → \`pkill -INT -x screencapture\` 停止。必須送 SIGINT，直接 kill 會寫不完檔尾、影片會壞掉；該指令會停掉所有錄影行程，若使用者自己也在錄，改成記下 PID 再 \`kill -INT <pid>\`。`,
-    `7d. 一段只涵蓋一條互動路徑，長度控制在 15 秒內；多條路徑分成多個檔，不要串成一長段，也不要把整段開發過程錄進去（螢幕錄影約每分鐘 15–80 MB）。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，只能請使用者用「開啟資料夾」在系統播放器看，所以請把單檔壓在 20MB 以內。`,
-    `7e. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
-    `7f. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
-    `7g. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
+    `7c. 錄影的機制見 \`visual-parity\` skill（一段只涵蓋一條互動路徑、15 秒內、檔名對回驗收條目）。切勿用 \`screencapture\` 錄互動：Playwright 派發的是合成事件，macOS 真實指標不會動，錄到的游標停在原地。也切勿用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，請壓在 20MB 以內。`,
+    `7d. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
+    `7e. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
+    `7f. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
   ]
   if (memoryTaskId) {
     lines.push(
@@ -287,6 +286,17 @@ export function resolveSystemPrompt(custom?: string | null): string {
 }
 
 /**
+ * Combine the library's enabled prompts with the user's configured system
+ * prompt. Library prompts come first so the Settings prompt is read last and
+ * wins on conflict — it is the narrower instruction, aimed at this launch.
+ */
+function withLibraryPrompts(systemPrompt: string, library?: LibraryLaunchInfo): string {
+  const text = library?.promptText?.trim()
+  if (!text) return systemPrompt
+  return systemPrompt ? `${text}\n\n${systemPrompt}` : text
+}
+
+/**
  * True when the card's recorded progress shows every step done — i.e. the task
  * has finished. Used to decide whether a re-open should resume the agent (work
  * still pending) or simply keep the terminal open without auto-running.
@@ -435,10 +445,17 @@ export interface LaunchOptions {
    */
   memory?: MemoryLaunchInfo
   /**
+   * VibeFlow's own skill / prompt / script library for this launch. Claude
+   * loads it as a session-only plugin; Codex gets a CODEX_HOME whose `skills/`
+   * VibeFlow assembled, since Codex discovers skills only from there. Absent →
+   * nothing is enabled and no library flag is added.
+   */
+  library?: LibraryLaunchInfo
+  /**
    * Global Auto Mode. For Codex this decides authorization: ON adds
    * `--dangerously-bypass-approvals-and-sandbox` so the agent runs unattended;
    * OFF leaves Codex in its default interactive mode (waits for approval each
-   * step). Claude/Gemini already run non-interactively via their own flags.
+   * step). Claude already runs non-interactively via its own flags.
    */
   autoMode?: boolean
 }
@@ -479,7 +496,14 @@ function assembleCommand(
     const modelFlag = model ? ` --model ${model}` : ''
     const effortFlag = effort ? ` --effort ${effort}` : ''
     const mcpFlag = buildMemoryMcpFlag(opts?.memory)
-    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${mcpFlag}`
+    // Library skills ride in as a session-only plugin; --add-dir is what makes
+    // its scripts readable and runnable from inside the worktree.
+    const library = opts?.library
+    const libraryFlags = library
+      ? ` --plugin-dir ${shellQuote(toShellPath(library.pluginDir))}` +
+        ` --add-dir ${shellQuote(toShellPath(library.libraryDir))}`
+      : ''
+    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${mcpFlag}${libraryFlags}`
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
@@ -488,17 +512,19 @@ function assembleCommand(
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)
       : `claude ${sessionId ? `--session-id ${sessionId} ` : opts?.resume ? '--continue ' : ''}${tail}\r`
   } else {
-    // Codex / Gemini have no separate system-prompt flag — fold it into the body.
+    // Codex has no separate system-prompt flag — fold it into the body.
     const combined = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
     const codexEffortFlag = effort
       ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
       : ''
-    cmd = agent === 'codex'
-      // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
-      // interactive mode (waits for the user to approve each step).
-      ? `codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model} ${shellQuote(combined)}\r`
-      // gemini: --yolo auto-approves tool calls; -i stays interactive
-      : `gemini --yolo -i --model ${model} ${shellQuote(combined)}\r`
+    // Codex discovers skills only from $CODEX_HOME/skills, so the library is
+    // delivered by pointing the launch at the home VibeFlow assembled.
+    const codexHome = opts?.library
+      ? `CODEX_HOME=${shellQuote(toShellPath(opts.library.codexHome))} `
+      : ''
+    // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
+    // interactive mode (waits for the user to approve each step).
+    cmd = `${codexHome}codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model} ${shellQuote(combined)}\r`
   }
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
@@ -509,7 +535,6 @@ function assembleCommand(
 export const AGENT_NAMES: Record<AgentCliId, string> = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
-  gemini: 'Gemini CLI',
 }
 
 /**
@@ -520,7 +545,6 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
 const DEFAULT_MODELS: Record<AgentCliId, string> = {
   claude: 'sonnet',
   codex: 'gpt-5.5',
-  gemini: 'gemini-2.5-flash',
 }
 
 const LEGACY_MODEL_FALLBACKS: Partial<Record<AgentCliId, Record<string, string>>> = {
@@ -534,9 +558,15 @@ function normalizeModel(agent: AgentCliId, model: string): string {
   return LEGACY_MODEL_FALLBACKS[agent]?.[model] ?? model
 }
 
-/** Resolve a task's agent (tasks created before the field existed = claude). */
+/**
+ * Resolve a task's agent. Absent means the task predates the field; an
+ * unrecognised value means it was written by a build that still offered an
+ * agent this one does not — either way claude is the only safe target, since
+ * falling through would launch the wrong CLI.
+ */
 export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
-  return task.agentCli ?? 'claude'
+  const agent = task.agentCli
+  return agent && agent in AGENT_NAMES ? agent : 'claude'
 }
 
 /** Resolve the model passed to the agent CLI (task.model, else agent default). */
@@ -569,7 +599,7 @@ export function taskExecutionModel(
  * Planning (`planDone !== true`) uses the planning agent/model. Execution
  * (`planDone === true`) switches to the execution agent/model.
  *
- * Codex and Gemini have no separate system-prompt flag, so the effective
+ * Codex has no separate system-prompt flag, so the effective
  * system prompt and task prompt are folded into one CLI argument.
  *
  * For Claude, planning and execution use separate deterministic session ids:
@@ -577,7 +607,7 @@ export function taskExecutionModel(
  *   - Execution: `executorSessionId(task.id)` for implementation context.
  * This lets execution start as a fresh session after planning without colliding
  * with the already-created planning session.
- * Codex/Gemini fall back to a fresh launch whose prompt already folds in the
+ * Codex falls back to a fresh launch whose prompt already folds in the
  * recorded progress (via buildPrompt), giving a soft resume regardless of
  * `opts.resume`.
  */
@@ -605,7 +635,7 @@ export function buildAgentCommand(
   const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
   const model = isExecution ? taskExecutionModel(task) : taskModel(task)
   const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = resolveSystemPrompt(systemPrompt)
+  const sys = withLibraryPrompts(resolveSystemPrompt(systemPrompt), opts?.library)
   const basePrompt = isExecution
     ? opts?.resume && agent === 'claude'
       ? buildResumePrompt(task)

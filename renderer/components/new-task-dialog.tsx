@@ -317,7 +317,7 @@ export function AgentModelFields({
           )
         ) : agents.length === 0 ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-            未偵測到 Agent CLI（claude / codex / gemini）。
+            未偵測到 Agent CLI（claude / codex）。
           </p>
         ) : (
           <select

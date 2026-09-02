@@ -9,11 +9,7 @@ import {
 } from '../main/helpers/agents.ts'
 
 test('AGENT_CLIS — keeps the supported agent registry lightweight and static', () => {
-  assert.deepEqual(AGENT_CLIS.map((agent) => agent.id), [
-    'claude',
-    'codex',
-    'gemini',
-  ])
+  assert.deepEqual(AGENT_CLIS.map((agent) => agent.id), ['claude', 'codex'])
 
   const claudeModels = AGENT_CLIS.find((agent) => agent.id === 'claude')
     ?.models.map((model) => model.id)
@@ -27,7 +23,6 @@ test('AGENT_CLIS — keeps the supported agent registry lightweight and static',
 test('defaultModelFor — returns the first model for each agent', () => {
   assert.equal(defaultModelFor('claude'), 'sonnet')
   assert.equal(defaultModelFor('codex'), 'gpt-5.5')
-  assert.equal(defaultModelFor('gemini'), 'gemini-2.5-flash')
 })
 
 test('DEFAULT_TASK_EFFORT — the renderer slider mirrors the value main creates tasks with', () => {

@@ -9,12 +9,14 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Library,
   LogOut,
   RefreshCw,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { LibraryPanel } from '@/components/library-panel'
 import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
@@ -154,6 +156,7 @@ export function SettingsDialog({
     })
   }, [open])
 
+  const [libraryPage, setLibraryPage] = useState(false)
   const selectedConnection = agentPage ? agentConnections?.[agentPage.id] : undefined
 
   const connectedModelCount = useMemo(() => {
@@ -253,12 +256,22 @@ export function SettingsDialog({
       {open && (
         <DialogShell
           key="settings-dialog"
-      title={githubPage ? '登入 GitHub CLI' : agentPage ? `連結 ${agentPage.name}` : '設定'}
+      title={
+        githubPage
+          ? '登入 GitHub CLI'
+          : agentPage
+          ? `連結 ${agentPage.name}`
+          : libraryPage
+          ? 'Library'
+          : '設定'
+      }
       description={
         githubPage
           ? '使用 GitHub CLI 的網頁授權流程登入 github.com。'
           : agentPage
           ? '綁定個人 API key 以取得可用 model list。'
+          : libraryPage
+          ? 'VibeFlow 自有的 skill / prompt / script，啟動任務時投遞給 Claude 與 Codex。'
           : '調整 system prompt 與 agent 帳號連線。'
       }
       saving={saving || connecting || githubBusy}
@@ -302,6 +315,11 @@ export function SettingsDialog({
               {connecting ? '驗證中…' : '儲存 API key'}
             </Button>
           </>
+        ) : libraryPage ? (
+          <Button variant="ghost" size="sm" onClick={() => setLibraryPage(false)}>
+            <ArrowLeft className="size-3.5" />
+            返回設定
+          </Button>
         ) : (
           <>
             <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
@@ -463,6 +481,8 @@ export function SettingsDialog({
             </p>
           )}
         </div>
+      ) : libraryPage ? (
+        <LibraryPanel />
       ) : (
         <div className="space-y-6">
           <section className="space-y-2">
@@ -533,6 +553,20 @@ export function SettingsDialog({
             <p className="text-sm text-muted-foreground">
               啟動 Agent 時會以此 prompt 作為 system prompt；留空則不帶 system prompt。進度追蹤協議會隨任務內容自動附加。
             </p>
+          </section>
+
+          <section className="space-y-2">
+            <div>
+              <h3 className="text-base font-medium">Library</h3>
+              <p className="text-sm text-muted-foreground">
+                VibeFlow 自有的 skill / prompt / script。啟用的項目會在啟動任務時自動投遞給
+                Claude 與 Codex，不必依賴本機的 ~/.claude 或 ~/.codex 佈局。
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setLibraryPage(true)}>
+              <Library className="size-3.5" />
+              管理 Library
+            </Button>
           </section>
 
           <section className="space-y-3">

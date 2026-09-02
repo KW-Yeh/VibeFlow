@@ -99,6 +99,19 @@ import {
 } from './helpers/chat-session'
 import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
 import { writeAttachments, type AttachmentInput } from './helpers/attachments'
+import {
+  createEntry as createLibraryEntry,
+  deleteEntry as deleteLibraryEntry,
+  importEntry as importLibraryEntry,
+  libraryLaunchInfo,
+  libraryRoot,
+  listLibrary,
+  readEntryContent as readLibraryEntry,
+  setEntryDescription as setLibraryEntryDescription,
+  setEntryEnabled as setLibraryEntryEnabled,
+  updateEntry as updateLibraryEntry,
+  type LibraryKind,
+} from './helpers/library'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -257,7 +270,18 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return result.filePaths[0]
   })
 
-  // Detect which agent CLIs (claude / codex / gemini) exist on PATH, so the
+  // Pick a library import source: a skill is a directory holding SKILL.md,
+  // a prompt or script is a single file.
+  ipcMain.handle('dialog:pickLibrarySource', async (_event, kind: LibraryKind) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: kind === 'skill' ? '選擇 skill 目錄（需含 SKILL.md）' : `選擇 ${kind} 檔案`,
+      properties: [kind === 'skill' ? 'openDirectory' : 'openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  // Detect which agent CLIs (claude / codex) exist on PATH, so the
   // new-task dialog can offer only the agents actually installed.
   ipcMain.handle('env:detectAgents', () => detectAgents())
 
@@ -649,6 +673,77 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   /** Built-in memory MCP server + unified db paths for launch-command injection. */
   ipcMain.handle('memory:getLaunchInfo', () => memoryLaunchInfo())
+
+  // Library: VibeFlow's own store of skills / prompts / scripts. Every handler
+  // resolves the root fresh because Electron redirects userData in dev.
+  ipcMain.handle('library:list', async () => listLibrary(await libraryRoot()))
+
+  ipcMain.handle(
+    'library:import',
+    async (_event, payload: { kind: LibraryKind; sourcePath: string }) =>
+      importLibraryEntry(await libraryRoot(), payload.kind, payload.sourcePath)
+  )
+
+  ipcMain.handle(
+    'library:create',
+    async (
+      _event,
+      payload: { kind: LibraryKind; name: string; content: string; description?: string }
+    ) =>
+      createLibraryEntry(
+        await libraryRoot(),
+        payload.kind,
+        payload.name,
+        payload.content,
+        payload.description
+      )
+  )
+
+  ipcMain.handle(
+    'library:read',
+    async (_event, payload: { kind: LibraryKind; name: string }) =>
+      readLibraryEntry(await libraryRoot(), payload.kind, payload.name)
+  )
+
+  ipcMain.handle(
+    'library:update',
+    async (_event, payload: { kind: LibraryKind; name: string; content: string }) =>
+      updateLibraryEntry(await libraryRoot(), payload.kind, payload.name, payload.content)
+  )
+
+  ipcMain.handle(
+    'library:setDescription',
+    async (_event, payload: { kind: LibraryKind; name: string; description: string }) => {
+      setLibraryEntryDescription(
+        await libraryRoot(),
+        payload.kind,
+        payload.name,
+        payload.description
+      )
+      return true
+    }
+  )
+
+  ipcMain.handle(
+    'library:setEnabled',
+    async (_event, payload: { kind: LibraryKind; name: string; enabled: boolean }) => {
+      setLibraryEntryEnabled(await libraryRoot(), payload.kind, payload.name, payload.enabled)
+      return true
+    }
+  )
+
+  ipcMain.handle(
+    'library:delete',
+    async (_event, payload: { kind: LibraryKind; name: string }) => {
+      deleteLibraryEntry(await libraryRoot(), payload.kind, payload.name)
+      return true
+    }
+  )
+
+  /** Rebuilt plugin dir + CODEX_HOME for launch-command injection. */
+  ipcMain.handle('library:getLaunchInfo', (_event, worktreePath?: string) =>
+    libraryLaunchInfo(worktreePath)
+  )
 
   /** FTS-similar prior tasks across the unified store (keyed by branch name). */
   ipcMain.handle('task:getRelatedTasks', async (_event, taskId: string) => {

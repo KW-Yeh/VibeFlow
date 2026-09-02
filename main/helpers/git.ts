@@ -1227,7 +1227,6 @@ export async function generateCommitMessage(
   const cliFlags: Record<string, string[]> = {
     claude: ['-p'],
     codex: ['-p'],
-    gemini: ['-p'],
   }
 
   const flags = cliFlags[agentCli] ?? ['-p']

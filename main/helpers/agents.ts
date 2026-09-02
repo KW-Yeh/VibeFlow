@@ -5,12 +5,12 @@ import { execEnv } from './env'
 const pexec = promisify(execFile)
 
 /** Agent CLIs VibeFlow knows how to launch inside a task's PTY. */
-export type AgentCliId = 'claude' | 'codex' | 'gemini'
+export type AgentCliId = 'claude' | 'codex'
 
 /**
  * Provider-neutral reasoning depth stored on a task. Claude Code and Codex
  * share these four levels; the launch builder translates them to each CLI's
- * session-scoped flag. Gemini currently ignores the setting.
+ * session-scoped flag.
  */
 export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh'
 
@@ -66,15 +66,6 @@ export const AGENT_CLIS: AgentCli[] = [
       { id: 'gpt-5.5', label: 'GPT-5.5（預設）' },
       { id: 'gpt-5.4', label: 'GPT-5.4' },
       { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-    ],
-  },
-  {
-    id: 'gemini',
-    bin: 'gemini',
-    name: 'Gemini CLI',
-    models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（輕量・預設）' },
-      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
     ],
   },
 ]

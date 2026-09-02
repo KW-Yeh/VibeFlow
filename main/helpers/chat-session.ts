@@ -111,11 +111,8 @@ function buildRawAgentCommand(
   workspacePath?: string
 ): string {
   const combined = `${systemPrompt}\n\n${fullText}`
-  if (agentCli === 'codex') {
-    const addDir = workspacePath ? ` --add-dir ${quote(workspacePath)}` : ''
-    return `codex exec --model ${quote(model)} --sandbox workspace-write --ask-for-approval never -C ${quote(worktreePath)}${addDir} --color never ${quote(combined)}`
-  }
-  return `gemini --yolo -i --model ${quote(model)} ${quote(combined)}`
+  const addDir = workspacePath ? ` --add-dir ${quote(workspacePath)}` : ''
+  return `codex exec --model ${quote(model)} --sandbox workspace-write --ask-for-approval never -C ${quote(worktreePath)}${addDir} --color never ${quote(combined)}`
 }
 
 function posixShellQuote(s: string): string {

@@ -6,7 +6,7 @@ let cached: Record<string, string> | null = null
 /**
  * Build a child-process env with a sane PATH. Apps launched outside a login
  * shell can inherit a minimal PATH, so user-installed CLIs such as `claude`,
- * `codex`, `gemini`, and tools invoked by git hooks may not be found. We
+ * `codex`, and tools invoked by git hooks may not be found. We
  * augment PATH with common bin locations per platform.
  *
  * Memoized: the process PATH does not change during a run.

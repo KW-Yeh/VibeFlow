@@ -25,6 +25,11 @@ import type {
 import type { SubAgentRun } from './helpers/subagents'
 import type { ChatAttachment, Conversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/attachments'
+import type {
+  LibraryEntry,
+  LibraryKind,
+  LibraryLaunchInfo,
+} from './helpers/library'
 import type { ChatChunk, ChatPhase } from './helpers/chat-session'
 import type {
   GitHubCliAuthEvent,
@@ -124,7 +129,7 @@ const vibeflow = {
   /** Initialise a new git repository and return its GitInfo. */
   initRepository: (projectPath: string): Promise<GitInfo> =>
     ipcRenderer.invoke('git:initRepository', projectPath),
-  /** Agent CLIs (claude / codex / gemini) actually installed on PATH. */
+  /** Agent CLIs (claude / codex) actually installed on PATH. */
   detectAgents: (): Promise<AgentCli[]> =>
     ipcRenderer.invoke('env:detectAgents'),
   createTask: (payload: {
@@ -198,6 +203,43 @@ const vibeflow = {
   /** Built-in memory MCP server + unified db paths for launch injection. */
   getMemoryLaunchInfo: (): Promise<MemoryLaunchInfo> =>
     ipcRenderer.invoke('memory:getLaunchInfo'),
+  /** Native picker for a library import source (dir for skills, file otherwise). */
+  pickLibrarySource: (kind: LibraryKind): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:pickLibrarySource', kind),
+  /** VibeFlow's own skill / prompt / script store. */
+  listLibrary: (): Promise<LibraryEntry[]> => ipcRenderer.invoke('library:list'),
+  importLibraryEntry: (payload: {
+    kind: LibraryKind
+    sourcePath: string
+  }): Promise<LibraryEntry> => ipcRenderer.invoke('library:import', payload),
+  createLibraryEntry: (payload: {
+    kind: LibraryKind
+    name: string
+    content: string
+    description?: string
+  }): Promise<LibraryEntry> => ipcRenderer.invoke('library:create', payload),
+  readLibraryEntry: (payload: { kind: LibraryKind; name: string }): Promise<string> =>
+    ipcRenderer.invoke('library:read', payload),
+  updateLibraryEntry: (payload: {
+    kind: LibraryKind
+    name: string
+    content: string
+  }): Promise<LibraryEntry> => ipcRenderer.invoke('library:update', payload),
+  setLibraryEntryDescription: (payload: {
+    kind: LibraryKind
+    name: string
+    description: string
+  }): Promise<boolean> => ipcRenderer.invoke('library:setDescription', payload),
+  setLibraryEntryEnabled: (payload: {
+    kind: LibraryKind
+    name: string
+    enabled: boolean
+  }): Promise<boolean> => ipcRenderer.invoke('library:setEnabled', payload),
+  deleteLibraryEntry: (payload: { kind: LibraryKind; name: string }): Promise<boolean> =>
+    ipcRenderer.invoke('library:delete', payload),
+  /** Rebuilt delivery trees + launch flags for the library. */
+  getLibraryLaunchInfo: (worktreePath?: string): Promise<LibraryLaunchInfo | null> =>
+    ipcRenderer.invoke('library:getLaunchInfo', worktreePath),
   /** FTS-similar prior tasks across the unified store. */
   getRelatedTasks: (taskId: string): Promise<RelatedTask[]> =>
     ipcRenderer.invoke('task:getRelatedTasks', taskId),
