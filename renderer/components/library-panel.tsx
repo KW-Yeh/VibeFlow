@@ -54,7 +54,13 @@ interface DraftState {
   description: string
 }
 
-export function LibraryPanel() {
+export function LibraryPanel({
+  onEditingChange,
+}: {
+  /** Editing owns the whole panel, so the host hides its own way out — two
+      exits where one silently discards the edit is worse than one. */
+  onEditingChange?: (editing: boolean) => void
+}) {
   const [entries, setEntries] = useState<LibraryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -70,6 +76,10 @@ export function LibraryPanel() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    onEditingChange?.(editing !== null)
+  }, [editing, onEditingChange])
 
   /** Every mutation reports its own failure inline — a silent no-op would look
       like the library simply ignored the click. */
@@ -194,7 +204,12 @@ export function LibraryPanel() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    setDraft({ kind: id, name: '', content: '', description: '' })
+                    setDraft({
+                      kind: id,
+                      name: '',
+                      content: templateFor(id, ''),
+                      description: '',
+                    })
                   }
                   disabled={busy !== null}
                 >
@@ -212,6 +227,8 @@ export function LibraryPanel() {
                   value={draft.name}
                   onChange={(e) => {
                     const name = e.target.value
+                    // Keep the template in sync with the name until the user
+                    // edits the body themselves.
                     setDraft({
                       ...draft,
                       name,
@@ -237,7 +254,7 @@ export function LibraryPanel() {
                   onChange={(e) => setDraft({ ...draft, content: e.target.value })}
                   rows={8}
                   spellCheck={false}
-                  placeholder={id === 'skill' ? templateFor(id, draft.name || 'my-skill') : ''}
+                  placeholder={id === 'skill' ? '' : '內容'}
                   className={cn(fieldClass, 'resize-y font-mono text-sm leading-5')}
                 />
                 <div className="flex justify-end gap-2">
@@ -280,7 +297,12 @@ export function LibraryPanel() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-mono text-sm">{entry.name}</p>
                       {entry.description && (
-                        <p className="text-sm text-muted-foreground">{entry.description}</p>
+                        <p
+                          className="line-clamp-2 text-sm text-muted-foreground"
+                          title={entry.description}
+                        >
+                          {entry.description}
+                        </p>
                       )}
                       {entry.sourcePath && (
                         <p className="truncate text-xs text-muted-foreground/70">

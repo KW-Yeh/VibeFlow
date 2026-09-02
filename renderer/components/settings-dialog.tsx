@@ -157,6 +157,7 @@ export function SettingsDialog({
   }, [open])
 
   const [libraryPage, setLibraryPage] = useState(false)
+  const [libraryEditing, setLibraryEditing] = useState(false)
   const selectedConnection = agentPage ? agentConnections?.[agentPage.id] : undefined
 
   const connectedModelCount = useMemo(() => {
@@ -316,10 +317,12 @@ export function SettingsDialog({
             </Button>
           </>
         ) : libraryPage ? (
-          <Button variant="ghost" size="sm" onClick={() => setLibraryPage(false)}>
-            <ArrowLeft className="size-3.5" />
-            返回設定
-          </Button>
+          libraryEditing ? null : (
+            <Button variant="ghost" size="sm" onClick={() => setLibraryPage(false)}>
+              <ArrowLeft className="size-3.5" />
+              返回設定
+            </Button>
+          )
         ) : (
           <>
             <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
@@ -482,7 +485,7 @@ export function SettingsDialog({
           )}
         </div>
       ) : libraryPage ? (
-        <LibraryPanel />
+        <LibraryPanel onEditingChange={setLibraryEditing} />
       ) : (
         <div className="space-y-6">
           <section className="space-y-2">
