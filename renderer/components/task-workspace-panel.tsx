@@ -211,24 +211,32 @@ function InfoSection({
   children,
   actions,
   count,
+  heading,
 }: {
-  title: string
-  icon: React.ReactNode
+  title?: string
+  icon?: React.ReactNode
   children: React.ReactNode
   actions?: React.ReactNode
   /** Optional item count shown beside the title (discoverability, PLAN E1). */
   count?: number
+  /**
+   * Takes over the title slot entirely. A section whose content is already
+   * named by its own switcher has nothing left for a title to say.
+   */
+  heading?: React.ReactNode
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col border-b border-border last:border-b-0">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 px-4">
-        <h2 className={cn(SECTION_LABEL, 'flex min-w-0 items-center gap-2')}>
-          {icon}
-          <span className="truncate">{title}</span>
-          {count !== undefined && count > 0 && (
-            <span className="shrink-0 tabular-nums text-muted-foreground/80">{count}</span>
-          )}
-        </h2>
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4">
+        {heading ?? (
+          <h2 className={cn(SECTION_LABEL, 'flex min-w-0 items-center gap-2')}>
+            {icon}
+            <span className="truncate">{title}</span>
+            {count !== undefined && count > 0 && (
+              <span className="shrink-0 tabular-nums text-muted-foreground/80">{count}</span>
+            )}
+          </h2>
+        )}
         {actions}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
@@ -1062,11 +1070,13 @@ function DiffFileModal({
 }
 
 /**
- * Changed files as a flat list. The list itself is polled cheaply
- * (`fetch: false`, metadata only); a file's body is loaded when its row opens
- * the single-file modal, and the full-screen view still loads everything at once.
+ * Git-diff state for one task: the changed-file list is polled cheaply
+ * (`fetch: false`, metadata only), a file's body is loaded when its row opens
+ * the single-file modal, and the full-screen view still loads everything at
+ * once. Owned by the panel rather than the view so the tab's changed-file count
+ * stays live while another tab is on screen.
  */
-function DiffSection({ taskId }: { taskId: string }) {
+function useTaskDiff(taskId: string, enabled: boolean) {
   const [entries, setEntries] = useState<DiffEntry[]>([])
   /** path → body; a `null` value records "asked, not available" so it is not refetched. */
   const [contents, setContents] = useState<Record<string, DiffFile | null>>({})
@@ -1137,6 +1147,7 @@ function DiffSection({ taskId }: { taskId: string }) {
   // self-rescheduling poll that follows stays local, so it never hits the
   // network and cannot overlap with itself.
   useEffect(() => {
+    if (!enabled) return
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -1162,7 +1173,7 @@ function DiffSection({ taskId }: { taskId: string }) {
       active = false
       if (timer) clearTimeout(timer)
     }
-  }, [taskId, refreshNonce, applyEntries])
+  }, [taskId, enabled, refreshNonce, applyEntries])
 
   // A poll can retire the open file (committed, reverted, or deleted); there is
   // nothing left to show for it, so close instead of stranding a stale diff.
@@ -1189,46 +1200,79 @@ function DiffSection({ taskId }: { taskId: string }) {
     }
   }, [expanded, taskId])
 
-  const closeExpanded = () => {
+  const closeExpanded = useCallback(() => {
     setExpanded(false)
     setFullFiles(null)
-  }
+  }, [])
 
-  const manualRefresh = () => {
+  const expand = useCallback(() => setExpanded(true), [])
+
+  const manualRefresh = useCallback(() => {
     setContents({})
     loadedEntriesRef.current.clear()
     setRefreshNonce((n) => n + 1)
+  }, [])
+
+  return {
+    entries,
+    contents,
+    selectedEntry,
+    setSelectedPath,
+    loading,
+    error,
+    expanded,
+    fullFiles,
+    expand,
+    closeExpanded,
+    manualRefresh,
   }
+}
+
+type TaskDiff = ReturnType<typeof useTaskDiff>
+
+/** Header controls for the Git diff tab. */
+function DiffActions({ diff }: { diff: TaskDiff }) {
+  return (
+    <div className="flex items-center gap-1">
+      <IconButton
+        aria-label="重新整理 Git diff"
+        title="重新整理（含 fetch origin）"
+        className="p-1"
+        disabled={diff.loading}
+        onClick={diff.manualRefresh}
+      >
+        <RefreshCw className={cn('size-3.5', diff.loading && 'animate-spin')} />
+      </IconButton>
+      {diff.entries.length > 0 && (
+        <IconButton
+          aria-label="放大檢視 Git diff"
+          title="放大檢視（全部展開）"
+          className="p-1"
+          onClick={diff.expand}
+        >
+          <Maximize2 className="size-3.5" />
+        </IconButton>
+      )}
+    </div>
+  )
+}
+
+/** The Git diff tab: changed-file list, plus the single-file and full-screen views. */
+function DiffContent({ taskId, diff }: { taskId: string; diff: TaskDiff }) {
+  const {
+    entries,
+    contents,
+    selectedEntry,
+    setSelectedPath,
+    loading,
+    error,
+    expanded,
+    fullFiles,
+    closeExpanded,
+  } = diff
 
   return (
-    <InfoSection
-      title="Git diff"
-      icon={<GitCompare className="size-3.5" />}
-      count={entries.length}
-      actions={
-        <div className="flex items-center gap-1">
-          <IconButton
-            aria-label="重新整理 Git diff"
-            title="重新整理（含 fetch origin）"
-            className="p-1"
-            disabled={loading}
-            onClick={manualRefresh}
-          >
-            <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-          </IconButton>
-          {entries.length > 0 && (
-            <IconButton
-              aria-label="放大檢視 Git diff"
-              title="放大檢視（全部展開）"
-              className="p-1"
-              onClick={() => setExpanded(true)}
-            >
-              <Maximize2 className="size-3.5" />
-            </IconButton>
-          )}
-        </div>
-      }
-    >
+    <>
       {loading && entries.length === 0 ? (
         <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
@@ -1325,7 +1369,7 @@ function DiffSection({ taskId }: { taskId: string }) {
           </div>
         </div>
       )}
-    </InfoSection>
+    </>
   )
 }
 
@@ -1342,7 +1386,7 @@ export function TaskWorkspacePanel({
   onOpenSubAgents,
   onInteract,
 }: TaskWorkspacePanelProps) {
-  type TaskTab = 'task' | 'plan' | 'artifacts'
+  type TaskTab = 'task' | 'plan' | 'artifacts' | 'diff'
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('task')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
@@ -1351,6 +1395,9 @@ export function TaskWorkspacePanel({
   const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
   const cwd = task.worktreePath ?? task.projectPath ?? null
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
+  // Polled at the panel so the tab's changed-file count stays live while
+  // another tab is showing — same reason the artifact list is polled here.
+  const diff = useTaskDiff(task.id, column !== 'done')
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
@@ -1562,7 +1609,7 @@ export function TaskWorkspacePanel({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="調整終端機與任務內容的寬度"
+          aria-label="調整終端機與側邊面板的寬度"
           tabIndex={0}
           onPointerDown={onSplitterDown}
           onPointerMove={onSplitterMove}
@@ -1584,44 +1631,52 @@ export function TaskWorkspacePanel({
 
         <aside ref={asideRef} className="flex min-h-0 min-w-0 flex-col bg-card/40">
           <InfoSection
-            title="任務內容"
-            icon={<FileDiff className="size-3.5" />}
-            actions={
+            heading={
               <div
                 role="tablist"
-                aria-label="任務內容檢視"
-                className="flex rounded-md border border-border/70 p-0.5"
+                aria-label="任務檢視"
+                className="flex min-w-0 rounded-md border border-border/70 p-0.5"
               >
                 {([
                   ['task', '任務'],
                   ['plan', 'Plan'],
                   ['artifacts', 'Artifacts'],
-                ] as const).map(([tab, label]) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    role="tab"
-                    id={tabId(tab)}
-                    aria-selected={activeTaskTab === tab}
-                    aria-controls={tabPanelId}
-                    onClick={() => selectTaskTab(tab)}
-                    className={cn(
-                      'rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                      activeTaskTab === tab
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {label}
-                    {tab === 'artifacts' && shotCount > 0 && (
-                      <span className="ml-1 tabular-nums text-muted-foreground/80">
-                        {shotCount}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                  ['diff', 'Git diff'],
+                ] as const).map(([tab, label]) => {
+                  const badge =
+                    tab === 'artifacts'
+                      ? shotCount
+                      : tab === 'diff'
+                        ? diff.entries.length
+                        : 0
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      id={tabId(tab)}
+                      aria-selected={activeTaskTab === tab}
+                      aria-controls={tabPanelId}
+                      onClick={() => selectTaskTab(tab)}
+                      className={cn(
+                        'shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                        activeTaskTab === tab
+                          ? 'bg-primary/15 text-primary'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {label}
+                      {badge > 0 && (
+                        <span className="ml-1 tabular-nums text-muted-foreground/80">
+                          {badge}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             }
+            actions={activeTaskTab === 'diff' ? <DiffActions diff={diff} /> : undefined}
           >
             {/* h-full gives the panel a definite height so a tab that fills its
                 space (the Plan iframe) can resolve a percentage height; taller
@@ -1644,17 +1699,17 @@ export function TaskWorkspacePanel({
                   taskId={task.id}
                   refreshKey={`${task.runId ?? ''}:${task.progress?.planDone ?? ''}`}
                 />
-              ) : (
+              ) : activeTaskTab === 'artifacts' ? (
                 <ArtifactsContent
                   taskId={task.id}
                   artifacts={artifacts}
                   artifactsDir={artifactsDir}
                 />
+              ) : (
+                <DiffContent taskId={task.id} diff={diff} />
               )}
             </div>
           </InfoSection>
-
-          <DiffSection key={task.id} taskId={task.id} />
         </aside>
       </main>
       )}
