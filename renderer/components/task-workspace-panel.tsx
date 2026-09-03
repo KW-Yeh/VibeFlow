@@ -27,7 +27,6 @@ import {
   FolderOpen,
   GitBranch,
   GitCompare,
-  History,
   Image as ImageIcon,
   Layers,
   Lightbulb,
@@ -87,6 +86,24 @@ import type {
   Task,
   TaskArtifact,
 } from '@/lib/types'
+
+/**
+ * The aside's views. Which ones a task offers depends on its column: a done
+ * task has no live terminal, artifacts, or worktree to diff, and is the only
+ * place its memory checkpoints are worth reading.
+ */
+type TaskTab = 'task' | 'plan' | 'artifacts' | 'diff' | 'memory'
+
+const TAB_LABEL: Record<TaskTab, string> = {
+  task: '任務',
+  plan: 'Plan',
+  artifacts: 'Artifacts',
+  diff: 'Git diff',
+  memory: 'Memory',
+}
+
+const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'plan', 'artifacts', 'diff']
+const DONE_TASK_TABS: readonly TaskTab[] = ['plan', 'memory']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -408,7 +425,7 @@ function formatCheckpointTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
-function MemorySection({ taskId }: { taskId: string }) {
+function MemoryContent({ taskId }: { taskId: string }) {
   const [checkpoints, setCheckpoints] = useState<MemoryCheckpoint[] | undefined>(
     undefined
   )
@@ -437,7 +454,7 @@ function MemorySection({ taskId }: { taskId: string }) {
   }, [taskId])
 
   return (
-    <InfoSection title="Memory" icon={<History className="size-3.5" />}>
+    <>
       {checkpoints === undefined ? (
         <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
@@ -568,7 +585,7 @@ function MemorySection({ taskId }: { taskId: string }) {
         )}
         </div>
       )}
-    </InfoSection>
+    </>
   )
 }
 
@@ -1386,7 +1403,6 @@ export function TaskWorkspacePanel({
   onOpenSubAgents,
   onInteract,
 }: TaskWorkspacePanelProps) {
-  type TaskTab = 'task' | 'plan' | 'artifacts' | 'diff'
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('task')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
@@ -1457,6 +1473,46 @@ export function TaskWorkspacePanel({
     onInteract?.()
     setActiveTaskTab(tab)
   }
+
+  // Completing a task swaps the tab set under the selection, so clamp rather
+  // than store — an out-of-set tab falls back to the column's first one.
+  const tabs = column === 'done' ? DONE_TASK_TABS : ACTIVE_TASK_TABS
+  const activeTab = tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
+
+  const tabStrip = (
+    <div
+      role="tablist"
+      aria-label="任務檢視"
+      className="flex min-w-0 rounded-md border border-border/70 p-0.5"
+    >
+      {tabs.map((tab) => {
+        const badge =
+          tab === 'artifacts' ? shotCount : tab === 'diff' ? diff.entries.length : 0
+        return (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={tabId(tab)}
+            aria-selected={activeTab === tab}
+            aria-controls={tabPanelId}
+            onClick={() => selectTaskTab(tab)}
+            className={cn(
+              'shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              activeTab === tab
+                ? 'bg-primary/15 text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {TAB_LABEL[tab]}
+            {badge > 0 && (
+              <span className="ml-1 tabular-nums text-muted-foreground/80">{badge}</span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
 
   // ── Terminal / aside splitter ─────────────────────────────────────────────
   // Only live in the lg+ two-column layout; below that the two panes stack and
@@ -1582,10 +1638,20 @@ export function TaskWorkspacePanel({
 
       {column === 'done' ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
-          <InfoSection title="Plan" icon={<FileDiff className="size-3.5" />}>
-            <PlanContent taskId={task.id} />
+          <InfoSection heading={tabStrip}>
+            <div
+              role="tabpanel"
+              id={tabPanelId}
+              aria-labelledby={tabId(activeTab)}
+              className="h-full"
+            >
+              {activeTab === 'plan' ? (
+                <PlanContent taskId={task.id} />
+              ) : (
+                <MemoryContent taskId={task.id} />
+              )}
+            </div>
           </InfoSection>
-          <MemorySection taskId={task.id} />
         </main>
       ) : (
       <main
@@ -1631,52 +1697,8 @@ export function TaskWorkspacePanel({
 
         <aside ref={asideRef} className="flex min-h-0 min-w-0 flex-col bg-card/40">
           <InfoSection
-            heading={
-              <div
-                role="tablist"
-                aria-label="任務檢視"
-                className="flex min-w-0 rounded-md border border-border/70 p-0.5"
-              >
-                {([
-                  ['task', '任務'],
-                  ['plan', 'Plan'],
-                  ['artifacts', 'Artifacts'],
-                  ['diff', 'Git diff'],
-                ] as const).map(([tab, label]) => {
-                  const badge =
-                    tab === 'artifacts'
-                      ? shotCount
-                      : tab === 'diff'
-                        ? diff.entries.length
-                        : 0
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      role="tab"
-                      id={tabId(tab)}
-                      aria-selected={activeTaskTab === tab}
-                      aria-controls={tabPanelId}
-                      onClick={() => selectTaskTab(tab)}
-                      className={cn(
-                        'shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        activeTaskTab === tab
-                          ? 'bg-primary/15 text-primary'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      {label}
-                      {badge > 0 && (
-                        <span className="ml-1 tabular-nums text-muted-foreground/80">
-                          {badge}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            }
-            actions={activeTaskTab === 'diff' ? <DiffActions diff={diff} /> : undefined}
+            heading={tabStrip}
+            actions={activeTab === 'diff' ? <DiffActions diff={diff} /> : undefined}
           >
             {/* h-full gives the panel a definite height so a tab that fills its
                 space (the Plan iframe) can resolve a percentage height; taller
@@ -1684,22 +1706,22 @@ export function TaskWorkspacePanel({
             <div
               role="tabpanel"
               id={tabPanelId}
-              aria-labelledby={tabId(activeTaskTab)}
+              aria-labelledby={tabId(activeTab)}
               className="h-full"
             >
-              {activeTaskTab === 'task' ? (
+              {activeTab === 'task' ? (
                 <TaskInfo
                   task={task}
                   column={column}
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
-              ) : activeTaskTab === 'plan' ? (
+              ) : activeTab === 'plan' ? (
                 <PlanContent
                   taskId={task.id}
                   refreshKey={`${task.runId ?? ''}:${task.progress?.planDone ?? ''}`}
                 />
-              ) : activeTaskTab === 'artifacts' ? (
+              ) : activeTab === 'artifacts' ? (
                 <ArtifactsContent
                   taskId={task.id}
                   artifacts={artifacts}
