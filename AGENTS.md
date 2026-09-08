@@ -100,6 +100,53 @@ npm run vibeflow -- task create \
 - Verify a CLI-created task with `git worktree list --porcelain` and, when needed, by
   reading the selected store JSON.
 
+### CLI task update
+
+Rewrite an existing card's text or move it between columns:
+
+```sh
+npm run vibeflow -- task update \
+  --task abc12345 \
+  --title "[索引] Fix login bug" \
+  --prompt "本卡已拆成 3 張子卡" \
+  --status backlog \
+  --profile dev
+```
+
+- `--task` is required, plus at least one of `--title` / `--prompt` / `--status`.
+- `--prompt` with an empty string clears the description; omitting it leaves the
+  description untouched. A blank `--title` is ignored rather than blanking the card.
+- Only text and column are editable. Branch, worktree and project path are
+  provisioned on disk, so `updateTaskFromInput` refuses to touch them — a card must
+  not be able to claim a different worktree without re-provisioning.
+- `--status` moves the card to the head of the target column. It does **not**
+  launch anything: auto-launch only fires when a card is moved in the app.
+- A running app picks the change up on its own — `main.ts` watches the store file's
+  directory and pushes fresh state to the renderer.
+
+### Launch environment
+
+Every launch exports the running card's identity into its shell, so an agent can
+put more cards on the board it is itself running on (see `boardEnvPrefix` in
+`renderer/lib/claude.ts` and `main/helpers/board-cli.ts`):
+
+| Variable | Value |
+|---|---|
+| `VIBEFLOW_TASK_ID` | the card's id — what `task update --task` takes |
+| `VIBEFLOW_PROJECT_PATH` | the card's project — what `task create --project` takes |
+| `VIBEFLOW_BRANCH` / `VIBEFLOW_BASE_BRANCH` | the card's branch and its base |
+| `VIBEFLOW_STORE_DIR` | store dir of the **running** app — pass it as `--store-path` instead of guessing `--profile` |
+| `VIBEFLOW_CLI` / `VIBEFLOW_CLI_LOADER` | `scripts/vibeflow.mjs` and the loader it needs; **absent in the packaged app**, which ships no `scripts/` |
+| `VIBEFLOW_AUTO_MODE` | `1` / `0` |
+
+`VIBEFLOW_CLI` being absent is the signal that the board is read-only for the agent;
+anything that writes cards must degrade instead of emitting a command that cannot run.
+Call the CLI by absolute path — the agent's cwd is its worktree, not this repo:
+
+```sh
+node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" task create ...
+```
+
 ---
 
 ## Project structure
