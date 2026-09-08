@@ -3,12 +3,13 @@
 // Or:      npm run vibeflow -- <command>
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
-import { createTaskFromInput } from '../main/helpers/tasks.ts'
+import { createTaskFromInput, updateTaskFromInput } from '../main/helpers/tasks.ts'
 import { fileToAttachmentInput } from '../main/helpers/attachments.ts'
 import { AGENT_CLIS, AGENT_EFFORTS } from '../main/helpers/agents.ts'
 
 const AGENT_IDS = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
+const SUBCOMMANDS = ['create', 'update']
 const MODES = ['existing', 'new']
 
 const USAGE = `
@@ -16,6 +17,7 @@ VibeFlow CLI
 
 Usage:
   vibeflow task create [options]
+  vibeflow task update [options]
 
 task create options:
   --project <path>       Target project directory (required)
@@ -34,6 +36,17 @@ task create options:
   --store-path <dir>     Explicit electron-store directory
   --profile <name>       dev | prod — shorthand for common store paths
   -h, --help             Show this help
+
+task update options:
+  --task <id>            Card to update (required)
+  --title <text>         New card title
+  --prompt <text>        New card description (empty string clears it)
+  --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
+  --store-path <dir>     Explicit electron-store directory
+  --profile <name>       dev | prod — shorthand for common store paths
+
+  At least one of --title / --prompt / --status is required. Branch, worktree
+  and project path are provisioned on disk and cannot be changed here.
 
 Notes:
   A card created with --status in_progress does NOT start running by itself;
@@ -79,6 +92,7 @@ try {
       project:       { type: 'string' },
       title:         { type: 'string' },
       prompt:        { type: 'string' },
+      task:          { type: 'string' },
       status:        { type: 'string' },
       'base-branch': { type: 'string' },
       branch:        { type: 'string' },
@@ -108,8 +122,50 @@ if (values.help || (!cmd && !values.project)) {
 
 const storePath = resolveStorePath(values['store-path'], values.profile)
 
-if (cmd !== 'task' || sub !== 'create') {
-  fail('UNKNOWN_COMMAND', `Unknown command: "${[cmd, sub].filter(Boolean).join(' ')}". Use: task create`)
+if (cmd !== 'task' || !SUBCOMMANDS.includes(sub)) {
+  fail(
+    'UNKNOWN_COMMAND',
+    `Unknown command: "${[cmd, sub].filter(Boolean).join(' ')}". Use: ${SUBCOMMANDS.map((s) => `task ${s}`).join(' | ')}`
+  )
+}
+
+if (sub === 'update') {
+  if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
+  requireOneOf('--status', values.status, STATUSES)
+  if (
+    values.title === undefined &&
+    values.prompt === undefined &&
+    values.status === undefined
+  ) {
+    fail(
+      'MISSING_ARGUMENT',
+      'task update needs at least one of: --title, --prompt, --status'
+    )
+  }
+
+  try {
+    const { task, storePath: resolvedPath } = updateTaskFromInput({
+      taskId: values.task,
+      title: values.title,
+      description: values.prompt,
+      status: values.status,
+      storePath,
+    })
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      storePath: resolvedPath,
+      task: {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        branch: task.branch,
+        worktreePath: task.worktreePath,
+      },
+    }, null, 2) + '\n')
+  } catch (err) {
+    fail(err.code ?? 'UNKNOWN_ERROR', err.message)
+  }
+  process.exit(0)
 }
 
 const missing = []

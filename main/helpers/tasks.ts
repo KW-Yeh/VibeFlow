@@ -149,3 +149,66 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
 
   return { task, storePath: store.path }
 }
+
+export interface UpdateTaskInput {
+  taskId: string
+  title?: string
+  /** Empty string clears the description; absent leaves it untouched. */
+  description?: string
+  status?: ColumnId
+  /** CLI-only: explicit store directory; absent = use Electron getStore(). */
+  storePath?: string
+}
+
+export interface UpdateTaskResult {
+  task: Task
+  /** Absolute path of the store JSON file that was written. */
+  storePath: string
+}
+
+/**
+ * Patch a card's text and column. Only those are editable here: branch,
+ * worktree and project path are provisioned on disk, so a card must never be
+ * able to claim a different one without re-provisioning.
+ */
+export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
+  const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
+  const board = store.get('board')
+  const columns = Object.keys(board) as ColumnId[]
+  const from = columns.find((col) => board[col].some((t) => t.id === input.taskId))
+  if (!from) {
+    throw Object.assign(new Error(`找不到卡片：${input.taskId}`), {
+      code: 'TASK_NOT_FOUND',
+    })
+  }
+
+  const current = board[from].find((t) => t.id === input.taskId) as Task
+  const title = input.title?.trim()
+  const description = input.description?.trim()
+  const task: Task = {
+    ...current,
+    ...(title ? { title } : {}),
+    ...(input.description !== undefined
+      ? { description: description || undefined }
+      : {}),
+  }
+
+  const to = input.status ?? from
+  if (to === from) {
+    board[from] = board[from].map((t) => (t.id === task.id ? task : t))
+  } else {
+    board[from] = board[from].filter((t) => t.id !== task.id)
+    board[to] = [task, ...board[to]]
+  }
+
+  try {
+    store.set('board', board)
+  } catch (err) {
+    throw Object.assign(
+      new Error(`Store 寫入失敗：${(err as Error).message}`),
+      { code: 'STORE_WRITE_FAILED' }
+    )
+  }
+
+  return { task, storePath: store.path }
+}
