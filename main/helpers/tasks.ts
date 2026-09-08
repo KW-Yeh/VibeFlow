@@ -34,8 +34,6 @@ export interface CreateTaskInput {
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   model?: string
-  executionAgentCli?: AgentCliId
-  executionModel?: string
   effort?: AgentEffort
   attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
@@ -73,7 +71,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
 
   // The task's workspace folder is `<workstationRoot>/<projectName>` under the
   // global workstation (settings.workstationPath, default ~/Desktop). The
-  // worktree and all runtime files (PLAN.md, progress/review json, plan.html)
+  // worktree and runtime artifact files
   // live directly inside it. Create it up front so provisioning has a home.
   const projectName = path.basename(projectPath)
   const workspacePath = projectWorkstationPath(
@@ -134,11 +132,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     createdAt: Date.now(),
     agentCli: input.agentCli ?? 'claude',
     model: input.model || undefined,
-    executionAgentCli: input.executionAgentCli ?? input.agentCli ?? 'claude',
-    executionModel:
-      input.executionModel ||
-      (input.executionAgentCli ? undefined : input.model) ||
-      undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
   }
 

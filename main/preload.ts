@@ -14,7 +14,6 @@ import type {
   GitInfo,
   PrStatus,
 } from './helpers/git'
-import type { TaskProgress } from './helpers/progress'
 import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
 import type {
   MemoryCheckpoint,
@@ -141,8 +140,6 @@ const vibeflow = {
     mode?: 'existing' | 'new'
     agentCli?: AgentCliId
     model?: string
-    executionAgentCli?: AgentCliId
-    executionModel?: string
     effort?: AgentEffort
     attachments?: AttachmentInput[]
   }): Promise<{ state: VibeFlowState; task: Task }> =>
@@ -153,8 +150,6 @@ const vibeflow = {
     description?: string
     agentCli?: AgentCliId
     model?: string
-    executionAgentCli?: AgentCliId
-    executionModel?: string
     effort?: AgentEffort
     projectPath?: string
     baseBranch?: string | null
@@ -179,9 +174,6 @@ const vibeflow = {
   /** Content for one changed file, loaded when its row is expanded. */
   getDiffFile: (taskId: string, filePath: string): Promise<DiffFile | null> =>
     ipcRenderer.invoke('git:getDiffFile', taskId, filePath),
-  /** Read the task's runtime PLAN.md artifact, when present. */
-  getPlan: (taskId: string): Promise<string | null> =>
-    ipcRenderer.invoke('task:getPlan', taskId),
   /** Temporary artifacts the agent wrote for this task (metadata only). */
   listArtifacts: (taskId: string): Promise<TaskArtifact[]> =>
     ipcRenderer.invoke('task:listArtifacts', taskId),
@@ -194,9 +186,6 @@ const vibeflow = {
    */
   openArtifactsDir: (taskId: string): Promise<string> =>
     ipcRenderer.invoke('task:openArtifactsDir', taskId),
-  /** Convert PLAN.md to plan.html and return the HTML string. */
-  getPlanHtml: (taskId: string): Promise<string | null> =>
-    ipcRenderer.invoke('task:getPlanHtml', taskId),
   /** Agent-memory checkpoints for the task (keyed by branch name). */
   getCheckpoints: (taskId: string): Promise<MemoryCheckpoint[]> =>
     ipcRenderer.invoke('task:getCheckpoints', taskId),
@@ -265,17 +254,6 @@ const vibeflow = {
     ipcRenderer.invoke('shell:openExternal', url),
   cleanupTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:cleanupTask', taskId),
-  /** Live task-progress updates pushed from main while a session runs. */
-  onProgressUpdate: (
-    callback: (payload: { taskId: string; progress: TaskProgress }) => void
-  ): (() => void) => {
-    const sub = (
-      _event: IpcRendererEvent,
-      payload: { taskId: string; progress: TaskProgress }
-    ) => callback(payload)
-    ipcRenderer.on('progress:update', sub)
-    return () => ipcRenderer.removeListener('progress:update', sub)
-  },
   /** Live sub-agent updates pushed from main while a session runs. */
   onSubAgentsUpdate: (
     callback: (payload: { taskId: string; subAgents: SubAgentRun[] }) => void

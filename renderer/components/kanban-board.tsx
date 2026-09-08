@@ -21,8 +21,6 @@ import {
 import { NewTaskForm } from '@/components/new-task-dialog'
 import {
   executorSessionId,
-  isTaskComplete,
-  planningSessionId,
 } from '@/lib/claude'
 import {
   getLibraryLaunchInfo,
@@ -54,7 +52,7 @@ interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void
   /** Global Auto Mode: auto-run a card's Claude execution on entering In Progress. */
   autoMode: boolean
-  /** Custom system prompt for launches ('' = use the built-in default). */
+  /** Custom system prompt for launches ('' = Artifact instructions only). */
   systemPrompt: string
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
@@ -89,9 +87,7 @@ interface KanbanBoardProps {
     branch: string,
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
-    executionAgentCli: AgentCliId,
     model: string,
-    executionModel: string,
     effort: AgentEffort,
     attachments: AttachmentInput[]
   ) => void
@@ -191,13 +187,12 @@ export function KanbanBoard({
   // the DOM (just hidden) so PTY state survives switching tasks; it is dropped
   // only when its tab closes — and only for tasks that are not in progress.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
-  // Per-task armed terminal launch command; bumping `nonce` fires a new phase.
+  // Per-task armed terminal launch command; bumping `nonce` fires a new launch.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
   // Always-current ref so async callbacks (termSessionExists .then) read the
   // latest terminalLaunch without depending on a stale closure.
   const terminalLaunchRef = useRef(terminalLaunch)
   terminalLaunchRef.current = terminalLaunch
-  const executionStartedRef = useRef<Set<string>>(new Set())
   const reducedMotion = useReducedMotion() ?? false
   const surfaceEnterVariants = createEnterVariants({
     timing: 'standard',
@@ -232,7 +227,10 @@ export function KanbanBoard({
   // Library launch info is fetched per launch, not cached like memory: enabling
   // an entry must take effect on the very next run, and the delivery trees are
   // rebuilt by the same call.
-  const armLaunch = async (task: Task, opts?: { resume?: boolean }) => {
+  const armLaunch = async (
+    task: Task,
+    opts?: { resume?: boolean; includeTaskPrompt?: boolean }
+  ) => {
     const library = await getLibraryLaunchInfo(task.worktreePath)
     armTerminalCommand(
       task.id,
@@ -241,17 +239,13 @@ export function KanbanBoard({
         systemPrompt,
         workspacePath: task.workspacePath,
         resume: opts?.resume,
+        includeTaskPrompt: opts?.includeTaskPrompt,
         memory: memoryLaunchRef.current ?? undefined,
         library: library ?? undefined,
         autoMode,
       })
     )
   }
-
-  // Tracks the previous board for the planning→execution handoff: only
-  // auto-start execution when planDone flips within this session, never on
-  // app reopen.
-  const prevExecBoardRef = useRef<typeof board | null>(null)
 
   // Auto-mount the selected task terminal so TaskWorkspacePanel renders it immediately.
   useEffect(() => {
@@ -262,47 +256,22 @@ export function KanbanBoard({
     // in this session — avoids double-sending on re-selection.
     if (terminalLaunch[selectedTaskId]) return
     const task = board.in_progress.find((t) => t.id === selectedTaskId)
-    if (!task || !wasLaunched(task) || isTaskComplete(task)) return
-    if (task.progress?.needsUserInput) return
+    if (!task || !wasLaunched(task)) return
     const cwd = task.worktreePath
     if (!cwd) return
     // Selecting a task must not start a fresh run. Auto-resume only when the
     // pinned conversation actually exists on disk; otherwise leave it for the
     // user with an interactive terminal for manual commands.
-    const isExecution = task.progress?.planDone === true
-    const sessionId = isExecution
-      ? executorSessionId(task.id, task.runId)
-      : planningSessionId(task.id, task.runId)
+    const sessionId = executorSessionId(task.id, task.runId)
     let cancelled = false
     void termSessionExists(cwd, sessionId).then((exists) => {
       if (cancelled || !exists || terminalLaunchRef.current[task.id]) return
-      if (isExecution) executionStartedRef.current.add(task.id)
       void armLaunch(task, { resume: true })
     })
     return () => {
       cancelled = true
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const prev = prevExecBoardRef.current
-    prevExecBoardRef.current = board
-    for (const task of board.in_progress) {
-      if (!task.launchedAt) continue
-      if (task.progress?.planDone !== true) continue
-      if (task.progress?.needsUserInput) continue
-      if (isTaskComplete(task)) continue
-      if (executionStartedRef.current.has(task.id)) continue
-      // Only auto-start execution when planning JUST completed in this session
-      // (planDone flipped false→true). On app reopen there is no prior board, so
-      // an already-planDone task is left with its interactive terminal.
-      const prevTask = prev?.in_progress.find((t) => t.id === task.id)
-      if (!prevTask || prevTask.progress?.planDone === true) continue
-      executionStartedRef.current.add(task.id)
-      void armLaunch(task)
-      break
-    }
-  }, [board]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveTask = (
     task: Task,
@@ -311,7 +280,6 @@ export function KanbanBoard({
   ) => {
     const willLaunch =
       to === 'in_progress' &&
-      !isTaskComplete(task) &&
       (opts?.forceLaunch === true || (autoMode && !task.launchedAt))
     const toInsert =
       willLaunch && !task.launchedAt
@@ -347,9 +315,12 @@ export function KanbanBoard({
   const restartTaskFromBeginning = async (task: Task) => {
     const result = await restartTask(task.id)
     if (!result) throw new Error('Electron bridge 無法使用')
-    executionStartedRef.current.delete(task.id)
     onBoardChange(result.state.board)
     void armLaunch(result.task)
+  }
+
+  const launchAgentOnly = async (task: Task) => {
+    await armLaunch(task, { includeTaskPrompt: false })
   }
 
   const completeTask = (task: Task) => moveTask(task, 'done')
@@ -530,6 +501,7 @@ export function KanbanBoard({
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
                       onRestart={restartTaskFromBeginning}
+                      onLaunchAgent={launchAgentOnly}
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}

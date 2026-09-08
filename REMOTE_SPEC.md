@@ -66,7 +66,6 @@ interface Message {
 | `vf:hello` | 連線建立後立即發送 | `{ version: string, deviceName: string }` |
 | `vf:state` | hello 之後 / 狀態有異動 | `RemoteBoardState`（見第 4 節） |
 | `vf:terminal-chunk` | 有訂閱的 task terminal 輸出 | `{ taskId: string, data: string }` |
-| `vf:progress-update` | task 的 `.vibeflow-progress.json` 有更新 | `{ taskId: string, progress: TaskProgress }` |
 | `vf:error` | 指令執行失敗 | `{ code: string, message: string }` |
 
 ### 3.2 手機 → VibeFlow

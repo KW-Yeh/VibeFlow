@@ -17,7 +17,6 @@ import {
   commitAndPush,
   dropCoveredEntries,
 } from '../main/helpers/git.ts'
-import { PROGRESS_FILE } from '../main/helpers/progress.ts'
 import { ARTIFACTS_FALLBACK_DIR } from '../main/helpers/artifacts.ts'
 import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
 import {
@@ -118,21 +117,19 @@ test('getGitInfo — defaultBase prefers main over the current branch', async ()
 
 // --- ensureLocalExclude ---
 
-test('ensureLocalExclude — adds the progress file to .git/info/exclude (idempotent)', async () => {
+test('ensureLocalExclude — adds runtime directories to .git/info/exclude (idempotent)', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   try {
     await ensureLocalExclude(projectPath)
     const excludePath = path.join(projectPath, '.git', 'info', 'exclude')
     let content = await fs.readFile(excludePath, 'utf8')
-    assert.ok(content.includes(PROGRESS_FILE))
     assert.ok(content.includes(`${ATTACHMENTS_DIR}/`))
-    // Same fallback case as the progress file: with no workspace path the agent
-    // writes its artifacts dir straight into the worktree.
+    // With no workspace path the agent writes its artifacts dir into the worktree.
     assert.ok(content.includes(`${ARTIFACTS_FALLBACK_DIR}/`))
 
     await ensureLocalExclude(projectPath)
     content = await fs.readFile(excludePath, 'utf8')
-    const occurrences = content.split(PROGRESS_FILE).length - 1
+    const occurrences = content.split(`${ARTIFACTS_FALLBACK_DIR}/`).length - 1
     assert.equal(occurrences, 1)
   } finally {
     await cleanup()
@@ -324,22 +321,6 @@ test('getWorktreeDiff — includes committed changes vs the base', async () => {
   }
 })
 
-test('getWorktreeDiff — excludes the agent progress file', async () => {
-  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
-  try {
-    const res = await provision(projectPath, 'abc12345', 'main', 'feature/no-progress')
-    const wt = res.worktreePath
-    await writeFile(wt, PROGRESS_FILE, '{"summary":"x","steps":[]}')
-    await writeFile(wt, 'real.txt', 'real\n')
-
-    const diff = await getWorktreeDiff(wt, 'main')
-    assert.ok(!diff.some((d) => d.path === PROGRESS_FILE), 'progress file must be hidden')
-    assert.ok(diff.some((d) => d.path === 'real.txt'))
-  } finally {
-    await cleanup()
-  }
-})
-
 test('getWorktreeDiff — truncates oversized file content', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
@@ -457,22 +438,6 @@ test('getWorktreeDiffEntries — { fetch: false } works with no remote at all', 
   }
 })
 
-test('getWorktreeDiffEntries — excludes the agent progress file', async () => {
-  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
-  try {
-    const res = await provision(projectPath, 'abc12345', 'main', 'feature/entries-hidden')
-    const wt = res.worktreePath
-    await writeFile(wt, PROGRESS_FILE, '{"summary":"x","steps":[]}')
-    await writeFile(wt, 'real.txt', 'real\n')
-
-    const entries = await getWorktreeDiffEntries(wt, 'main')
-    assert.ok(!entries.some((e) => e.path === PROGRESS_FILE))
-    assert.ok(entries.some((e) => e.path === 'real.txt'))
-  } finally {
-    await cleanup()
-  }
-})
-
 test('getWorktreeDiffFile — returns the same body getWorktreeDiff would', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
@@ -526,40 +491,6 @@ test('commitAndPush — stages, commits, and pushes the worktree branch', async 
     await cleanup()
   }
 })
-
-// REGRESSION — see test/BUG-REPORT.md #1 (fixed).
-// commitAndPush used to run `git add -A -- . :(exclude).vibeflow-progress.json`.
-// On git >= 2.x, when the excluded file is ALSO ignored (provisionWorktree adds
-// it to .git/info/exclude) and present on disk — i.e. every real task finalize —
-// git treated the :(exclude) pathspec as "explicitly naming an ignored path" and
-// exited 1, so the un-try/caught `git add` threw and the whole finalize rejected.
-// The fix drops the redundant pathspec — `.git/info/exclude` already hides the
-// file from `git add -A`. This test now guards that behavior.
-test(
-  'commitAndPush — never commits the agent progress file',
-  async () => {
-    const { projectPath, cleanup } = await makeRepo({ withRemote: true })
-    try {
-      const res = await provision(
-        projectPath,
-        'abc12345',
-        'main',
-        'feature/exclude-progress'
-      )
-      const wt = res.worktreePath
-      await writeFile(wt, PROGRESS_FILE, '{"summary":"x","steps":[]}')
-      await writeFile(wt, 'tracked.txt', 'keep me\n')
-
-      const fin = await commitAndPush(wt, 'feat: add tracked file')
-      assert.equal(fin.committed, true)
-      const committed = (await git(wt, 'ls-tree', '-r', '--name-only', 'HEAD')).split('\n')
-      assert.ok(committed.includes('tracked.txt'))
-      assert.ok(!committed.includes(PROGRESS_FILE), 'progress file must stay uncommitted')
-    } finally {
-      await cleanup()
-    }
-  }
-)
 
 test('commitAndPush — clean tree commits nothing', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })

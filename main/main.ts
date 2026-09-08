@@ -46,7 +46,6 @@ import {
   syncBaseBranch,
 } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
-import { generatePlanHtml } from './helpers/plan-html'
 import {
   getCheckpoints,
   getRelatedTasks,
@@ -61,16 +60,8 @@ import {
   writeSession,
 } from './helpers/pty'
 import {
-  agentPlanPath,
-  agentProgressPath,
-  deleteAgentFiles,
-  resetAgentProgress,
-  unwatchAllProgress,
-  unwatchProgress,
-  watchProgress,
-} from './helpers/progress'
-import {
   agentArtifactsPath,
+  deleteArtifacts,
   listArtifacts,
   readArtifact,
 } from './helpers/artifacts'
@@ -124,12 +115,10 @@ if (isProd) {
 }
 
 /**
- * Tear down a task's live session: stop the PTY and its associated watchers.
- * The watcher runs a final sync on its way out.
+ * Tear down a task's live session: stop the PTY and sub-agent watcher.
  */
 function teardownSession(taskId: string): void {
   killSession(taskId)
-  unwatchProgress(taskId)
   unwatchSubAgents(taskId)
 }
 
@@ -316,8 +305,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         mode?: 'existing' | 'new'
         agentCli?: AgentCliId
         model?: string
-        executionAgentCli?: AgentCliId
-        executionModel?: string
         effort?: AgentEffort
         attachments?: AttachmentInput[]
       }
@@ -335,23 +322,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getState()
   })
 
-  // Start an in-progress card again as a brand-new run. Keep the worktree and
-  // artifacts, but remove the PLAN/progress that would make the next agent
-  // resume. A new runId gives Claude a fresh pinned conversation while keeping
-  // that conversation discoverable after an app restart.
+  // Start an in-progress card again as a brand-new run. Keep its worktree and
+  // artifacts; a new runId gives Claude a fresh pinned conversation.
   ipcMain.handle('vibeflow:restartTask', (event, taskId: string) => {
     const task = findTask(taskId)
     if (!task?.worktreePath) throw new Error('任務沒有可用的 worktree')
-    const workspacePath = task.workspacePath ?? path.dirname(task.worktreePath)
-
-    // Teardown performs the progress watcher's final sync before the files and
-    // mirrored store value are cleared.
     teardownSession(taskId)
-    resetAgentProgress(workspacePath, task.worktreePath)
     resetSubAgents(task.worktreePath)
     updateTask(taskId, {
-      progress: undefined,
-      planHtml: undefined,
       launchedAt: Date.now(),
       runId: randomUUID(),
     })
@@ -378,8 +356,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description?: string
         agentCli?: AgentCliId
         model?: string
-        executionAgentCli?: AgentCliId
-        executionModel?: string
         effort?: AgentEffort
         projectPath?: string
         baseBranch?: string | null
@@ -425,7 +401,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         if (existing.projectPath && existing.worktreePath) {
           const oldBranch = existing.branch || fallbackBranchName(payload.taskId)
           await removeWorktree(existing.projectPath, existing.worktreePath)
-          deleteAgentFiles(
+          deleteArtifacts(
             existing.workspacePath ?? path.dirname(existing.worktreePath),
             existing.worktreePath
           )
@@ -460,8 +436,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         description: payload.description?.trim() || undefined,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
-        executionAgentCli: payload.executionAgentCli,
-        executionModel: payload.executionModel || undefined,
         effort: payload.effort,
         ...gitPatch,
       })
@@ -492,26 +466,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         payload.cwd,
         event.sender,
         payload.command,
-        // Session ended (natural exit included) — nothing can write the
-        // progress / sub-agent files anymore, so stop all watchers.
+        // Session ended (natural exit included), so stop its watcher.
         () => {
-          unwatchProgress(taskId)
           unwatchSubAgents(taskId)
         },
         payload.cols,
         payload.rows,
         payload.fresh
       )
-      // Progress file lives in the task's workspace folder — the worktree's
-      // parent (dirname of cwd) — named by the worktree folder, not inside the
-      // worktree itself. Watch it there and mirror into the store.
-      const agentFilesDir = path.dirname(payload.cwd)
-      watchProgress(taskId, agentProgressPath(agentFilesDir, payload.cwd), (progress) => {
-        updateTask(taskId, { progress })
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('progress:update', { taskId, progress })
-        }
-      })
       watchSubAgents(taskId, payload.cwd, (subAgents) => {
         if (!event.sender.isDestroyed()) {
           event.sender.send('subagents:update', {
@@ -598,19 +560,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getWorktreeDiffFile(task.worktreePath, task.baseBranch ?? 'HEAD', filePath)
   })
 
-  ipcMain.handle('task:getPlan', async (_event, taskId: string) => {
-    const task = findTask(taskId)
-    if (!task?.worktreePath || !task.workspacePath) return null
-    try {
-      return await fs.promises.readFile(
-        agentPlanPath(task.workspacePath, task.worktreePath),
-        'utf8'
-      )
-    } catch {
-      return null
-    }
-  })
-
   /**
    * Temporary artifacts (screenshots, reports, logs) the agent wrote for this
    * task. Metadata only — bytes come from task:readArtifact per item. Empty once
@@ -644,24 +593,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!fs.existsSync(dir)) return 'artifacts directory does not exist yet'
     const { shell } = await import('electron')
     return shell.openPath(dir)
-  })
-
-  /**
-   * Convert PLAN.md → plan.html (written to disk) and return the HTML string.
-   * Once the worktree is gone (completed task) fall back to the snapshot taken
-   * at cleanup time so the plan is still viewable.
-   */
-  ipcMain.handle('task:getPlanHtml', async (_event, taskId: string) => {
-    const task = findTask(taskId)
-    if (task?.worktreePath && task.workspacePath) {
-      return generatePlanHtml(
-        task.workspacePath,
-        task.worktreePath,
-        task.title,
-        task.createdAt ?? 0
-      )
-    }
-    return task?.planHtml ?? null
   })
 
   /** Agent-memory checkpoints for a task, keyed by branch name in the db. */
@@ -820,33 +751,17 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
-    // Snapshot the plan before the runtime PLAN.md is removed, so a done task can
-    // still show its plan. This also writes the preserved <title>-<createdAt>.html
-    // into the workspace folder (kept after cleanup).
-    let planHtml: string | undefined
-    if (task?.worktreePath && task.workspacePath) {
-      planHtml =
-        (await generatePlanHtml(
-          task.workspacePath,
-          task.worktreePath,
-          task.title,
-          task.createdAt ?? 0
-        )) ?? undefined
-    }
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
-      deleteAgentFiles(
+      deleteArtifacts(
         task.workspacePath ?? path.dirname(task.worktreePath),
         task.worktreePath
       )
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
-    // Only overwrite planHtml when we actually captured a snapshot this call.
-    // A repeat completion (done→in_progress→done) has no worktree to snapshot,
-    // so leaving planHtml out preserves the earlier snapshot instead of nulling it.
-    updateTask(taskId, planHtml ? { worktreePath: undefined, planHtml } : { worktreePath: undefined })
+    updateTask(taskId, { worktreePath: undefined })
     return getState()
   })
 
@@ -858,7 +773,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
-      deleteAgentFiles(
+      deleteArtifacts(
         task.workspacePath ?? path.dirname(task.worktreePath),
         task.worktreePath
       )
@@ -978,7 +893,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 app.on('window-all-closed', () => {
   killAllSessions()
   cancelAllChatSends()
-  unwatchAllProgress()
   unwatchAllSubAgents()
   storeWatcher?.close()
   app.quit()
@@ -987,7 +901,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   killAllSessions()
   cancelAllChatSends()
-  unwatchAllProgress()
   unwatchAllSubAgents()
   storeWatcher?.close()
   stopUpdateWatcher()

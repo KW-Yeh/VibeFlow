@@ -12,9 +12,8 @@ import { cn } from '@/lib/utils'
  * and the highlight.js grammars all land in this chunk, which markdown-content
  * pulls in lazily. Import it from there, not directly.
  *
- * The plugin set matches main/helpers/markdown.ts so PLAN.md (rendered in the
- * main process to a standalone document) and everything rendered here agree.
- * Raw HTML is not enabled on either side; see MARKDOWN_RENDERING_PLAN.md §6.
+ * Raw HTML is intentionally not enabled; artifact and task markdown remains
+ * inert renderer content.
  */
 const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkBreaks]
 

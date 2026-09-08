@@ -2,11 +2,11 @@ import fs from 'fs'
 import path from 'path'
 
 /**
- * Suffix of a task's temporary-artifact directory. Like the progress / plan
- * files it lives in the task's workspace folder (the worktree's parent), named
+ * Suffix of a task's temporary-artifact directory. It lives in the task's
+ * workspace folder (the worktree's parent), named
  * by the worktree folder, so git never sees it and concurrent tasks never
  * collide. Renderer builds the identical path from the same workspace path (see
- * renderer/lib/claude.ts agentFilePaths) — keep both in sync.
+ * renderer/lib/claude.ts agentArtifactsDir) — keep both in sync.
  */
 export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 
@@ -107,8 +107,7 @@ export const MAX_ARTIFACTS = 200
 const SNIFF_BYTES = 8 * 1024
 
 /**
- * Absolute path of a task's artifact directory. Mirrors
- * agentProgressPath/agentPlanPath in progress.ts — same naming rule.
+ * Absolute path of a task's artifact directory.
  */
 export function agentArtifactsPath(baseDir: string, worktreePath: string): string {
   return path.join(baseDir, `${path.basename(worktreePath)}${ARTIFACTS_DIR_SUFFIX}`)

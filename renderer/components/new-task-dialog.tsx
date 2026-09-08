@@ -55,9 +55,7 @@ export interface NewTaskFormProps {
     branch: string,
     mode: ProjectMode,
     agentCli: AgentCliId,
-    executionAgentCli: AgentCliId,
     model: string,
-    executionModel: string,
     effort: AgentEffort,
     attachments: AttachmentInput[]
   ) => void
@@ -389,9 +387,7 @@ export function NewTaskForm({
   const [detectKey, setDetectKey] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
-  const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
-  const [executionModel, setExecutionModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -416,7 +412,6 @@ export function NewTaskForm({
       setAgents(found)
       if (!found.some((a) => a.id === 'claude') && found.length > 0) {
         setAgentCli(found[0].id)
-        setExecutionAgentCli(found[0].id)
       }
     })
     return () => {
@@ -504,9 +499,7 @@ export function NewTaskForm({
       branch.trim(),
       mode,
       agentCli,
-      executionAgentCli,
       model,
-      executionModel,
       effort,
       attachments.map(({ input }) => input)
     )
@@ -650,7 +643,7 @@ export function NewTaskForm({
         className="space-y-4 border-t border-border/50 p-4"
       >
           <AgentModelFields
-            title="Planning Agent"
+            title="Agent"
             agents={agents}
             detectTimedOut={detectTimedOut}
             onRetry={() => setDetectKey((k) => k + 1)}
@@ -661,20 +654,6 @@ export function NewTaskForm({
             }}
             model={model}
             onModelChange={setModel}
-            agentConnections={agentConnections}
-          />
-          <AgentModelFields
-            title="Execution Agent"
-            agents={agents}
-            detectTimedOut={detectTimedOut}
-            onRetry={() => setDetectKey((k) => k + 1)}
-            agentCli={executionAgentCli}
-            onAgentChange={(next) => {
-              setExecutionAgentCli(next)
-              setExecutionModel('')
-            }}
-            model={executionModel}
-            onModelChange={setExecutionModel}
             agentConnections={agentConnections}
           />
       </InlineEnterSurface>

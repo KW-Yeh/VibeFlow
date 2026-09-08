@@ -2,14 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildAgentCommand,
-  resolveSystemPrompt,
+  buildArtifactPrompt,
   executorSessionId,
-  planningSessionId,
-  PROGRESS_PROTOCOL_PROMPT,
+  resolveSystemPrompt,
 } from '../renderer/lib/claude.ts'
 
-// Full task with all fields required by the new fresh-launch signatures.
-// `id` is a valid 8-char hex string that exercising executorSessionId derivation.
 const TASK = {
   id: 'abcd1234',
   title: '修復登入流程',
@@ -17,303 +14,134 @@ const TASK = {
   agentCli: /** @type {'claude'} */ ('claude'),
   branch: 'fix/login-flow',
   worktreePath: '/tmp/vibeflow/vf-abc123',
-  progress: undefined,
 }
-
-// Stand-in for the built-in agent-memory server paths main resolves at launch.
-const MEMORY = { serverPath: '/app/main/memory/mcp-server.mjs', dbPath: '/home/user/agent_memory.db' }
 
 const CODEX_TASK = {
   ...TASK,
   agentCli: /** @type {'codex'} */ ('codex'),
   model: 'gpt-5.5',
-  executionAgentCli: /** @type {'codex'} */ ('codex'),
-  executionModel: 'gpt-5.5',
 }
 
-// ─── buildAgentCommand (planning vs execution) ──────────────────────────────
-
-test('buildAgentCommand — planning uses the planning agent', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '')
-  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use planning agent command')
-  assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
-  assert.ok(cmd.includes('若需求足夠明確'), 'planning must include planning instructions')
-})
-
-test('buildAgentCommand — passes task effort to Claude Code', () => {
-  const cmd = buildAgentCommand({ ...TASK, effort: 'high' })
-  assert.ok(cmd.includes('--effort high'), 'Claude must receive the task effort as a session flag')
-})
-
-test('buildAgentCommand — pins Claude to a dark theme that matches xterm', () => {
-  const cmd = buildAgentCommand(TASK)
-  assert.ok(cmd.includes('"theme":"dark"'), 'Claude must render for VibeFlow’s dark terminal')
-  assert.ok(!cmd.includes('"theme":"light"'), 'light theme makes question text unreadable')
-})
-
-test('buildAgentCommand — maps task effort to a session-scoped Codex config override', () => {
-  const cmd = buildAgentCommand({ ...CODEX_TASK, effort: 'xhigh' })
-  assert.ok(
-    cmd.startsWith(`codex -c 'model_reasoning_effort="xhigh"' --model gpt-5.5 `),
-    'Codex must receive a TOML config override without changing the user config file'
-  )
-})
-
-// A store written by a build that offered more agents can still name one this
-// build dropped. Falling through would launch the wrong CLI, so it must land on
-// claude rather than on whatever branch happens to be last.
-test('buildAgentCommand — an unknown agentCli falls back to claude, not the codex branch', () => {
-  const cmd = buildAgentCommand({
-    ...TASK,
-    agentCli: /** @type {'claude'} */ ('gemini'),
-    model: 'sonnet',
-    executionAgentCli: /** @type {'claude'} */ ('gemini'),
-    executionModel: 'sonnet',
-  })
-  assert.ok(cmd.startsWith('claude '), 'must launch claude')
-  assert.ok(!cmd.includes('gemini'), 'must not pass the unknown id to any CLI')
-})
-
-test('buildAgentCommand — execution uses the execution agent after PLAN is done', () => {
-  const task = {
-    ...CODEX_TASK,
-    progress: {
-      summary: 'PLAN.md 完成',
-      planDone: true,
-      needsUserInput: false,
-      steps: [{ text: '實作修正', done: false }],
-      updatedAt: Date.now(),
-    },
-  }
-  const cmd = buildAgentCommand(task, '')
-  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must use execution agent command')
-  assert.ok(!cmd.includes('--full-auto'), 'codex command must not use unsupported --full-auto')
-  assert.ok(cmd.includes('Planning 已完成'), 'execution must include execution instructions')
-})
-
-test('resolveSystemPrompt — blank custom prompt means no system prompt at all', () => {
+test('resolveSystemPrompt — blank custom prompt stays blank', () => {
   assert.equal(resolveSystemPrompt(''), '')
   assert.equal(resolveSystemPrompt('   '), '')
   assert.equal(resolveSystemPrompt(undefined), '')
   assert.equal(resolveSystemPrompt(null), '')
 })
 
-test('resolveSystemPrompt — does not inject progress protocol into system prompt', () => {
-  const sys = resolveSystemPrompt('自訂 prompt')
-  assert.equal(sys, '自訂 prompt')
-  assert.ok(!sys.includes(PROGRESS_PROTOCOL_PROMPT), 'progress protocol belongs to the prompt body')
+test('buildArtifactPrompt — names the task artifact and scratch paths', () => {
+  const prompt = buildArtifactPrompt('/workspace/project/vf-abc123.artifacts')
+  assert.match(prompt, /本次 session 全程適用/)
+  assert.match(prompt, /\/workspace\/project\/vf-abc123\.artifacts\//)
+  assert.match(prompt, /vf-abc123\.artifacts\/scratch\//)
+  assert.ok(!prompt.includes('progress'))
+  assert.ok(!prompt.includes('PLAN.md'))
+  assert.ok(!prompt.includes('Agent Memory'))
 })
 
-test('buildAgentCommand — omits --append-system-prompt when no prompt is configured', () => {
-  const cmd = buildAgentCommand(TASK, '')
-  assert.ok(!cmd.includes('--append-system-prompt'), 'an empty system prompt must not reach the CLI')
-  assert.ok(cmd.includes('若需求足夠明確'), 'the task prompt body must still be passed')
+test('buildAgentCommand — Claude receives Artifact context as a system prompt', () => {
+  const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
+  assert.ok(cmd.startsWith('claude '))
+  assert.ok(cmd.includes('--append-system-prompt'))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(cmd.includes('任務標題：修復登入流程'))
+  assert.ok(!cmd.includes('進度追蹤'))
+  assert.ok(!cmd.includes('PLAN.md'))
 })
 
-test('buildAgentCommand — passes a configured system prompt to Claude', () => {
-  const cmd = buildAgentCommand(TASK, '只用繁體中文回報')
-  assert.ok(cmd.includes('--append-system-prompt'), 'a configured system prompt must reach the CLI')
-  assert.ok(cmd.includes('只用繁體中文回報'), 'the configured text must be present')
+test('buildAgentCommand — Claude system prompt orders built-in, library, then custom', () => {
+  const cmd = buildAgentCommand(TASK, 'CUSTOM_MARKER', {
+    library: {
+      promptText: 'LIBRARY_MARKER',
+      pluginDir: '/tmp/plugin',
+      libraryDir: '/tmp/library',
+      codexHome: '/tmp/codex-home',
+      scripts: [],
+    },
+  }, '/workspace/project')
+  assert.ok(cmd.indexOf('Artifact 設定') < cmd.indexOf('LIBRARY_MARKER'))
+  assert.ok(cmd.indexOf('LIBRARY_MARKER') < cmd.indexOf('CUSTOM_MARKER'))
 })
 
-test('buildAgentCommand — Codex body carries no leading blank lines without a system prompt', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '')
-  assert.ok(!cmd.includes("'\n\n"), 'an empty system prompt must not be folded into the Codex body')
+test('buildAgentCommand — Codex folds Artifact context into its initial prompt', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
+  assert.ok(cmd.startsWith('codex --model gpt-5.5 '))
+  assert.ok(!cmd.includes('--append-system-prompt'))
+  assert.ok(cmd.includes('Artifact 設定'))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(cmd.includes('任務標題：修復登入流程'))
 })
 
-test('buildAgentCommand — carries progress protocol in prompt body', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '')
-  assert.ok(cmd.includes(PROGRESS_PROTOCOL_PROMPT), 'must still provide progress-writing instructions')
+test('buildAgentCommand — agent-only Claude launch omits card content and pinned session', () => {
+  const cmd = buildAgentCommand(
+    TASK,
+    'CUSTOM_MARKER',
+    { includeTaskPrompt: false },
+    '/workspace/project'
+  )
+  assert.ok(cmd.startsWith('claude '))
+  assert.ok(cmd.includes('--append-system-prompt'))
+  assert.ok(cmd.includes('CUSTOM_MARKER'))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('--session-id'))
+  assert.ok(!cmd.includes('任務標題'))
+  assert.ok(!cmd.includes('修復登入流程'))
+  assert.ok(!cmd.includes('使用者無法登入'))
 })
 
-// The agent-memory store is reached through the MCP server injected by
-// --mcp-config, which only the Claude launch path builds. Promising those tools
-// to an agent that cannot call them sends it chasing a dead end.
-test('buildAgentCommand — omits the agent-memory section when the server is not injected', () => {
-  const codex = buildAgentCommand(CODEX_TASK, '', { memory: MEMORY })
-  assert.ok(!codex.includes('memory_find_related_tasks'), 'Codex gets no --mcp-config, so no memory tools')
-  assert.ok(!codex.includes('Agent Memory'), 'must not announce a store the session cannot reach')
-
-  const claudeNoMemory = buildAgentCommand(TASK, '')
-  assert.ok(!claudeNoMemory.includes('memory_find_related_tasks'), 'no memory info means no memory section')
+test('buildAgentCommand — agent-only Codex launch includes settings and Artifact but no card content', () => {
+  const cmd = buildAgentCommand(
+    CODEX_TASK,
+    'CUSTOM_MARKER',
+    { includeTaskPrompt: false },
+    '/workspace/project'
+  )
+  assert.ok(cmd.startsWith('codex --model gpt-5.5 '))
+  assert.ok(cmd.includes('CUSTOM_MARKER'))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('任務標題'))
+  assert.ok(!cmd.includes('修復登入流程'))
+  assert.ok(!cmd.includes('使用者無法登入'))
 })
 
-test('buildAgentCommand — includes the agent-memory section once Claude gets the server', () => {
-  const cmd = buildAgentCommand(TASK, '', { memory: MEMORY })
-  assert.ok(cmd.includes('--mcp-config'), 'Claude must receive the built-in server')
-  assert.ok(cmd.includes('memory_find_related_tasks'), 'must name the lookup tool')
-  assert.ok(cmd.includes('memory_save_checkpoint'), 'must name the sealing tool')
+test('buildAgentCommand — passes effort to both CLIs', () => {
+  assert.ok(buildAgentCommand({ ...TASK, effort: 'high' }).includes('--effort high'))
+  assert.ok(
+    buildAgentCommand({ ...CODEX_TASK, effort: 'xhigh' }).startsWith(
+      `codex -c 'model_reasoning_effort="xhigh"' --model gpt-5.5 `
+    )
+  )
 })
 
-// main reads the store back by branch name, and VibeFlow already knows it. An
-// agent that derives its own id can disagree with the one the app queries.
-test('buildAgentCommand — states the memory task id instead of having the agent derive it', () => {
-  const cmd = buildAgentCommand(TASK, '', { memory: MEMORY })
-  assert.ok(cmd.includes(TASK.branch), 'must state the branch that keys the store')
-  assert.ok(!cmd.includes('rev-parse --abbrev-ref'), 'must not send the agent looking it up')
+test('buildAgentCommand — unknown agent falls back to Claude', () => {
+  const cmd = buildAgentCommand({ ...TASK, agentCli: /** @type {'claude'} */ ('gemini') })
+  assert.ok(cmd.startsWith('claude '))
+  assert.ok(!cmd.includes('--model gemini'))
 })
 
-// Numbering is positional, so dropping the memory section must not leave a hole
-// the agent has to interpret.
-test('buildAgentCommand — protocol numbering stays contiguous in both variants', () => {
-  for (const [label, opts] of [['without memory', undefined], ['with memory', { memory: MEMORY }]]) {
-    const cmd = buildAgentCommand(TASK, '', opts)
-    const expected = opts ? 9 : 7
-    for (let n = 1; n <= expected; n += 1) {
-      assert.ok(cmd.includes(`${n}. `), `${label}: section ${n} must be present`)
-    }
-    assert.ok(!cmd.includes(`${expected + 1}. `), `${label}: must stop at section ${expected}`)
-  }
-})
-
-// The plan lives outside the worktree under a worktree-derived name, so a bare
-// PLAN.md would point the agent at a file that does not exist in its cwd.
-test('buildAgentCommand — planning and execution name the real plan path', () => {
-  const workspacePath = '/workspace/project'
-  const planPath = `${workspacePath}/vf-abc123.PLAN.md`
-
-  const planning = buildAgentCommand(TASK, '', undefined, workspacePath)
-  assert.ok(planning.includes(`建立 ${planPath}`), 'planning must name the absolute plan path')
-
-  const execution = buildAgentCommand(
-    { ...TASK, progress: { planDone: true, steps: [{ text: '實作修正', done: false }], updatedAt: 0 } },
+test('buildAgentCommand — restart uses a fresh pinned session and retains Artifact context', () => {
+  const runId = '11111111-1111-4111-8111-111111111111'
+  const cmd = buildAgentCommand(
+    { ...TASK, runId },
     '',
     undefined,
-    workspacePath
+    '/workspace/project'
   )
-  assert.ok(execution.includes(`依照 ${planPath}`), 'execution must name the absolute plan path')
+  assert.ok(cmd.includes(`--session-id ${executorSessionId(TASK.id, runId)}`))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
 })
 
-test('buildAgentCommand — tells Codex to promote temporary evidence into task artifacts', () => {
-  const workspacePath = '/workspace/project'
-  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, workspacePath)
-  const artifactsDir = `${workspacePath}/vf-abc123.artifacts`
-
-  assert.ok(cmd.includes('/private/tmp'), 'must cover screenshot tools that return system temp paths')
-  assert.ok(cmd.includes('~/Downloads'), 'must cover the browser download dir tools export to')
-  assert.ok(cmd.includes(`複製到 ${artifactsDir}/ 根目錄`), 'must name the task artifacts destination')
-  assert.ok(cmd.includes('並確認目標檔案存在'), 'must require verifying the promoted file')
-  assert.ok(cmd.includes('只回報或保留原路徑不算完成'), 'must reject evidence left at its source path')
+test('buildAgentCommand — Claude resume re-injects Artifact context', () => {
+  const cmd = buildAgentCommand(TASK, '', { resume: true }, '/workspace/project')
+  assert.ok(cmd.includes('--append-system-prompt'))
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(cmd.includes('請接續這個任務'))
 })
 
-test('buildAgentCommand — keeps the decision rule for when a recording is needed', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
-
-  assert.ok(
-    cmd.includes('能不能用一張靜態圖看出通過或失敗'),
-    'must give the judgement test that decides screenshot vs recording'
-  )
-  assert.ok(
-    cmd.includes('純樣式、文案、靜態版面改動不需要錄'),
-    'must scope recording to interactive changes only'
-  )
-  assert.ok(cmd.includes('visual-parity'), 'must point at the skill that owns the mechanism')
-})
-
-// The protocol used to prescribe `screencapture -v`, which contradicts
-// visual-parity: Playwright dispatches synthetic events, so the real macOS
-// pointer never moves and the recording shows a cursor frozen in place.
-test('buildAgentCommand — forbids the tools that cannot capture the interaction', () => {
-  const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
-
-  assert.ok(cmd.includes('切勿用 `screencapture` 錄互動'), 'must ban screencapture for interaction')
-  assert.ok(cmd.includes('合成事件'), 'must give the reason, not just the prohibition')
-  assert.ok(!cmd.includes('screencapture -v'), 'must not spell out the broken recipe')
-
-  // gif_creator may only appear as a prohibition. A GIF samples at action
-  // boundaries, which is exactly where transitions and hover states live.
-  assert.ok(cmd.includes('切勿用 `gif_creator`'), 'must ban the GIF tool outright')
-  assert.equal(
-    cmd.split('gif_creator').length - 1,
-    1,
-    'must name gif_creator exactly once — as the prohibition, never as an instruction'
-  )
-  assert.ok(!cmd.includes('start_recording'), 'must drop the old gif_creator recording sequence')
-})
-
-test('buildAgentCommand — normalizes legacy Codex models to an available model', () => {
-  const task = {
-    ...CODEX_TASK,
-    model: 'gpt-5-codex',
-    executionModel: 'gpt-5',
-    progress: {
-      summary: 'PLAN.md 完成',
-      planDone: true,
-      needsUserInput: false,
-      steps: [{ text: '實作修正', done: false }],
-      updatedAt: Date.now(),
-    },
-  }
-  const cmd = buildAgentCommand(task, '')
-  assert.ok(cmd.startsWith('codex --model gpt-5.5 '), 'must replace unavailable legacy Codex model')
-  assert.ok(!cmd.includes('gpt-5-codex'), 'must not launch unavailable gpt-5-codex')
-})
-
-test('buildAgentCommand — Claude planning and execution use separate session ids', () => {
-  const planningId = planningSessionId(TASK.id)
-  const executionId = executorSessionId(TASK.id)
-  assert.notEqual(planningId, executionId)
-
-  const planningCmd = buildAgentCommand(TASK, '')
-  assert.ok(planningCmd.includes(`--session-id ${planningId}`), 'planning must use planning session id')
-  assert.ok(!planningCmd.includes(executionId), 'planning must not reserve executor session id')
-
-  const executionTask = {
-    ...TASK,
-    progress: {
-      summary: 'PLAN.md 完成',
-      planDone: true,
-      needsUserInput: false,
-      steps: [{ text: '實作修正', done: false }],
-      updatedAt: Date.now(),
-    },
-  }
-  const executionCmd = buildAgentCommand(executionTask, '')
-  assert.ok(executionCmd.includes(`--session-id ${executionId}`), 'execution must use executor session id')
-  assert.ok(!executionCmd.includes(planningId), 'execution must not reuse planning session id')
-})
-
-// ─── executorSessionId ───────────────────────────────────────────────────────
-
-test('executorSessionId — produces a valid v4-variant UUID from an 8-char hex task id', () => {
-  const uuid = executorSessionId('abcd1234')
-  assert.match(
-    uuid,
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
-    'must be a valid RFC-4122 v4 UUID'
-  )
-})
-
-test('executorSessionId — is deterministic (same input → same output)', () => {
-  assert.equal(executorSessionId('abcd1234'), executorSessionId('abcd1234'))
-})
-
-test('executorSessionId — different task ids produce different UUIDs', () => {
-  assert.notEqual(executorSessionId('abcd1234'), executorSessionId('ef567890'))
-})
-
-test('planningSessionId — is deterministic and distinct from executorSessionId', () => {
-  assert.equal(planningSessionId('abcd1234'), planningSessionId('abcd1234'))
-  assert.notEqual(planningSessionId('abcd1234'), executorSessionId('abcd1234'))
-})
-
-test('fresh task runs use distinct, stable planning and execution sessions', () => {
-  const firstRun = '11111111-1111-4111-8111-111111111111'
-  const secondRun = '22222222-2222-4222-8222-222222222222'
-
-  assert.equal(
-    planningSessionId('abcd1234', firstRun),
-    planningSessionId('abcd1234', firstRun),
-    'a restarted run must remain resumable after an app restart'
-  )
-  assert.notEqual(
-    planningSessionId('abcd1234', firstRun),
-    planningSessionId('abcd1234', secondRun),
-    'each restart must create a fresh planning conversation'
-  )
-  assert.notEqual(
-    executorSessionId('abcd1234', firstRun),
-    executorSessionId('abcd1234', secondRun),
-    'each restart must create a fresh execution conversation'
-  )
+test('executorSessionId — is valid, stable, and unique per run', () => {
+  const first = executorSessionId('abcd1234', '11111111-1111-4111-8111-111111111111')
+  const second = executorSessionId('abcd1234', '22222222-2222-4222-8222-222222222222')
+  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/)
+  assert.equal(first, executorSessionId('abcd1234', '11111111-1111-4111-8111-111111111111'))
+  assert.notEqual(first, second)
 })

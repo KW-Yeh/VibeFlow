@@ -29,7 +29,6 @@ import {
   initRepository,
   installRemoteUpdate,
   loadState,
-  onProgressUpdate,
   onRemoteUpdateState,
   onStateChanged,
   onSubAgentsUpdate,
@@ -80,7 +79,7 @@ export default function HomePage() {
   // persistBoard write can't leak them to disk.
   const [subAgents, setSubAgents] = useState<Record<string, SubAgentRun[]>>({})
   const [autoMode, setAutoMode] = useState(true)
-  // Custom system prompt ('' = the built-in default is in effect).
+  // Custom system prompt ('' = only the built-in Artifact instructions).
   const [systemPrompt, setSystemPrompt] = useState('')
   // Global workstation path ('' = the ~/Desktop default is in effect).
   const [workstationPath, setWorkstationPath] = useState('')
@@ -148,22 +147,6 @@ export default function HomePage() {
   // The sidebar no longer auto-opens: the board's three columns already list
   // every task, so an expanded sidebar would repeat them. It stays collapsed to
   // its icon rail (projects, Auto Mode, settings) until opened by hand.
-
-  // Mirror live progress updates (pushed from main while sessions run) into
-  // the local board copy. Main already persisted them — no persistBoard here.
-  useEffect(() => {
-    return onProgressUpdate(({ taskId, progress }) => {
-      setBoard((prev) => ({
-        backlog: prev.backlog.map((t) =>
-          t.id === taskId ? { ...t, progress } : t
-        ),
-        in_progress: prev.in_progress.map((t) =>
-          t.id === taskId ? { ...t, progress } : t
-        ),
-        done: prev.done.map((t) => (t.id === taskId ? { ...t, progress } : t)),
-      }))
-    })
-  }, [])
 
   // Live sub-agent updates pushed from main while sessions run. Kept in a
   // dedicated state map (not merged into `board`) so they stay session-only.
@@ -360,9 +343,7 @@ export default function HomePage() {
     branch: string,
     mode: 'existing' | 'new',
     agentCli: AgentCliId,
-    executionAgentCli: AgentCliId,
     model: string,
-    executionModel: string,
     effort: AgentEffort,
     attachments: AttachmentInput[]
   ) => {
@@ -378,8 +359,6 @@ export default function HomePage() {
         mode,
         agentCli,
         model: model || undefined,
-        executionAgentCli,
-        executionModel: executionModel || undefined,
         effort,
         attachments,
       })
@@ -412,8 +391,6 @@ export default function HomePage() {
         description: payload.description,
         agentCli: payload.agentCli,
         model: payload.model || undefined,
-        executionAgentCli: payload.executionAgentCli,
-        executionModel: payload.executionModel || undefined,
         effort: payload.effort,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,

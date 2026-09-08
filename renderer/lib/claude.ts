@@ -1,23 +1,6 @@
 import type { AgentCliId, LibraryLaunchInfo, MemoryLaunchInfo, Task } from '@/lib/types'
 
 /**
- * Progress file suffix. The agent writes to `<userData>/<workspace>.vibeflow-progress.json`
- * (see agentFilePaths) — an absolute path outside the worktree so git never sees
- * it — falling back to this bare, cwd-relative name only when the base dir is
- * unknown. Must match PROGRESS_FILE in main/helpers/progress.ts (string literal
- * duplicated because the renderer cannot runtime-import main-process modules).
- */
-const PROGRESS_FILE = '.vibeflow-progress.json'
-
-/**
- * Planning artifact base name. The agent writes it to
- * `<workspacePath>/<worktree-dir>.PLAN.md` (see agentFilePaths) — outside the
- * worktree so git never sees it — falling back to this bare, cwd-relative name
- * only when paths are unknown. Must match PLAN_FILE in main/helpers/progress.ts.
- */
-const PLAN_FILE = 'PLAN.md'
-
-/**
  * Temporary-artifact directory suffix. The agent writes screenshots, reports and
  * logs to `<workspacePath>/<worktree-dir>.artifacts/` (see agentFilePaths) —
  * outside the worktree so git never sees it — falling back to this bare,
@@ -45,26 +28,15 @@ function pathBasename(p: string): string {
   return i >= 0 ? norm.slice(i + 1) : norm
 }
 
-/**
- * Absolute paths the agent writes its progress / plan files to. They live
- * directly in the task's workspace folder (the worktree's parent), named by the
- * worktree folder, so git never sees them and concurrent tasks never collide.
- * Mirrors main/helpers/progress.ts agentProgressPath/agentPlanPath — keep both
- * in sync. Returns null when the workspace path or worktree is unknown, so
- * callers fall back to the legacy cwd-relative names.
- */
-function agentFilePaths(
+/** Absolute task-artifact path; null when the workspace or worktree is unknown. */
+function agentArtifactsDir(
   worktreePath: string | undefined,
   workspacePath: string | undefined
-): { progress: string; plan: string; artifacts: string } | null {
+): string | null {
   if (!worktreePath || !workspacePath) return null
   const dir = toShellPath(workspacePath)
   const ws = pathBasename(worktreePath)
-  return {
-    progress: `${dir}/${ws}${PROGRESS_FILE}`,
-    plan: `${dir}/${ws}.${PLAN_FILE}`,
-    artifacts: `${dir}/${ws}${ARTIFACTS_DIR_SUFFIX}`,
-  }
+  return `${dir}/${ws}${ARTIFACTS_DIR_SUFFIX}`
 }
 
 /**
@@ -76,97 +48,26 @@ export function taskArtifactsDir(
   worktreePath: string | undefined,
   workspacePath: string | undefined
 ): string | null {
-  return agentFilePaths(worktreePath, workspacePath)?.artifacts ?? null
+  return agentArtifactsDir(worktreePath, workspacePath)
 }
 
 /**
- * Fixed protocol appended to the task prompt body. It makes the agent persist
- * its plan (to `planFile`) + step states (to `progressFile`), which main watches
- * and mirrors into the task record — enabling card progress display, the Plan
- * view, and resume-on-rerun. Kept separate from the user's system prompt so editing
- * the workflow prompt cannot break progress tracking.
- *
- * `memoryTaskId` both gates and parameterizes the agent-memory section. Null
- * omits it: the store is reached through the built-in MCP server, which only
- * the Claude launch path can inject (see buildMemoryMcpFlag), so a Codex or
- * Codex task must not be told it has tools it cannot call. The section sits
- * last and is appended rather than spliced in, so omitting it leaves no gap in
- * the numbering.
- *
- * When present it is the task's branch name, which is the id main reads the
- * store back by (see the task:getCheckpoints handler). VibeFlow already knows
- * it, so it is stated outright rather than having the agent derive it — one
- * fewer tool call, and no way for the two to disagree.
+ * Session-level instructions for task artifacts. Claude receives this through
+ * `--append-system-prompt`; Codex has no equivalent flag, so assembleCommand
+ * folds it into the first prompt. Either way the agent sees the absolute path
+ * at session start without relying on progress files or PLAN.md.
  */
-function buildProgressProtocolLines(
-  progressFile: string,
-  planFile: string,
-  artifactsDir: string,
-  memoryTaskId: string | null
+export function buildArtifactPrompt(
+  artifactsDir: string = ARTIFACTS_FALLBACK_DIR
 ): string {
-  const lines = [
-    '進度追蹤協議（務必遵守）：',
-    `1. 規劃階段：先把執行計劃寫入 ${planFile}（Markdown 格式，包含任務目標、執行步驟、預期成果）。`,
-    `2. 若需求足夠明確，可形成可執行計劃，${planFile} 建立完成後立即把步驟列表寫入 ${progressFile}，JSON 格式：{"summary": "一句話描述目前狀態", "planDone": true, "needsUserInput": false, "steps": [{"text": "步驟描述", "done": false}]}。planDone 設為 true 代表計劃完成，進入執行階段。`,
-    `3. 若 planning 發現必須先詢問使用者才能完善計劃，請先向使用者提出具體問題，並把 ${progressFile} 寫成 {"summary": "需要使用者補充的問題摘要", "planDone": false, "needsUserInput": true, "steps": []}；不要開始執行。`,
-    '4. 每完成一個步驟，立即把該步驟的 done 改為 true、把 needsUserInput 設為 false，並更新 summary。',
-    `5. 若 ${progressFile} 已存在且 planDone 為 true，代表此任務先前執行過：先讀取內容，跳過 done 為 true 的步驟，從未完成的步驟接續執行。`,
-    `6. 進度檔（${progressFile}）與計劃檔（${planFile}）由 VibeFlow 統一管理，位於 worktree 之外，切勿將其加入 git commit。`,
-    `7. 暫存產物（非最終交付物）一律寫入 ${artifactsDir}/（目錄不存在請先建立），並依用途分流成兩區，不要混用：`,
-    `7a. 要給使用者看的驗證證據（UI 驗證截圖、互動錄影、視覺比對報告）→ 放 ${artifactsDir}/ 根目錄。做 UI 相關驗證時務必把證據存在這裡，使用者會在 VibeFlow 的「Artifacts」分頁直接檢視（截圖與 .mp4／.m4v／.webm／.mov 影片都能在分頁內直接播放），不必自行開 dev server。這一區請保持精簡：只放你會主動請使用者過目的檔案。`,
-    `7b. 截圖只能證明長相，證明不了互動。判斷測試：這次改動的預期行為，能不能用一張靜態圖看出通過或失敗？看不出來 → 除了截圖，再錄一段影片。常見需要錄的情況（不窮盡）：hover／focus 狀態、展開收合、拖拉排序、多步驟流程、轉場動畫、表單驗證回饋、loading→完成的狀態切換。純樣式、文案、靜態版面改動不需要錄。`,
-    `7c. 錄影的機制見 \`visual-parity\` skill（一段只涵蓋一條互動路徑、15 秒內、檔名對回驗收條目）。切勿用 \`screencapture\` 錄互動：Playwright 派發的是合成事件，macOS 真實指標不會動，錄到的游標停在原地。也切勿用 \`gif_creator\` 或任何產 GIF 的工具：GIF 是動作邊界的截圖串接，transition、loading、hover 這些正要判的東西剛好落在取樣點之間。影片會以 base64 過 IPC 進 Artifacts 分頁，單檔超過 20MB 就不會內嵌播放，請壓在 20MB 以內。`,
-    `7d. 截圖或錄影工具若只能先把檔案存到系統暫存路徑（例如 /tmp、/private/tmp、$TMPDIR）或瀏覽器下載目錄（例如 ~/Downloads），產出後必須立即把檔案複製到 ${artifactsDir}/ 根目錄，並確認目標檔案存在；只回報或保留原路徑不算完成。若工具可指定輸出路徑，從一開始就指定 ${artifactsDir}/。`,
-    `7e. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔、大型原始資料）→ 放 ${artifactsDir}/${SCRATCH_DIR_NAME}/。這一區在 UI 預設收折起來，使用者不會逐一點開；不要把該給使用者看的東西放進來。`,
-    `7f. 兩區都在 worktree 之外、會隨任務清理一起刪除：切勿放最終交付物，也切勿加入 git commit。`,
-  ]
-  if (memoryTaskId) {
-    lines.push(
-      `8. Agent Memory（VibeFlow 內建、跨所有專案共用的統一記憶庫）：本任務已自動接上 \`agent-memory\` MCP server，無需另外安裝。所有 memory 操作的 task id 一律用 \`${memoryTaskId}\`（本任務的 git 分支名），不要自行改用其他 id：app 只以這個 id 回查此任務的 checkpoint 與關聯。`,
-      `9. 規劃階段開始時：先呼叫 \`memory_find_related_tasks\`（query 用本次需求關鍵字）看有無可重用的過往任務；有相關的再用 \`memory_get_task_detail\` 載入細節。任務完成或交接時：用 \`memory_save_checkpoint\`（task id = \`${memoryTaskId}\`）封存本次成果（rolling summary、outcome、關鍵決策+理由、待辦；大型輸出放 artifacts），捨棄試誤過程。任務間有穩定關係（derived_from / supersedes / depends_on…）時用 \`memory_link_tasks\` 記錄。`,
-    )
-  }
-  return lines.join('\n')
-}
-
-/**
- * Fixed progress-tracking protocol. Keep every line free of single quotes: the
- * whole prompt goes through shellQuote, which rewrites `'` as `'\''` and so
- * breaks any verbatim comparison against PROGRESS_PROTOCOL_PROMPT.
- *
- * `progressFile` / `planFile` / `artifactsDir`
- * are the paths the agent writes to — absolute workspace-folder paths when known
- * (see agentFilePaths), else the legacy cwd-relative names. Exported const uses
- * the relative fallbacks for backward-compatible callers/tests.
- *
- * `memoryTaskId` defaults to null: claiming the agent-memory tools exist when
- * they were not injected is the costlier mistake, so callers that know the
- * server is wired pass the task id explicitly.
- */
-export function buildProgressProtocol(
-  progressFile: string = PROGRESS_FILE,
-  planFile: string = PLAN_FILE,
-  artifactsDir: string = ARTIFACTS_FALLBACK_DIR,
-  memoryTaskId: string | null = null
-): string {
-  return buildProgressProtocolLines(progressFile, planFile, artifactsDir, memoryTaskId)
-}
-
-export const PROGRESS_PROTOCOL_PROMPT = buildProgressProtocolLines(
-  PROGRESS_FILE,
-  PLAN_FILE,
-  ARTIFACTS_FALLBACK_DIR,
-  null
-)
-
-function appendProgressProtocol(
-  prompt: string,
-  progressFile?: string,
-  planFile?: string,
-  artifactsDir?: string,
-  memoryTaskId: string | null = null
-): string {
-  return `${prompt}\n\n${buildProgressProtocol(progressFile, planFile, artifactsDir, memoryTaskId)}`
+  return [
+    'Artifact 設定（本次 session 全程適用）：',
+    `1. 本任務的 Artifact 資料夾是 ${artifactsDir}/；需要保存給使用者的驗證證據或報告時，請寫入此資料夾（不存在請建立）。`,
+    `2. 使用者會在 VibeFlow 的 Artifacts 分頁檢視根目錄內容；只放你會主動請使用者過目的檔案。`,
+    `3. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔）放在 ${artifactsDir}/${SCRATCH_DIR_NAME}/。`,
+    `4. 若工具先輸出到 /tmp、/private/tmp、$TMPDIR 或 ~/Downloads，請把最終要呈現的檔案複製到 ${artifactsDir}/ 並確認存在。`,
+    '5. Artifact 資料夾位於 worktree 之外；不要把其中內容加入 git commit，也不要把最終交付物只留在這裡。',
+  ].join('\n')
 }
 
 /** The permission mode passed to the Claude CLI ("auto mode"). */
@@ -274,128 +175,34 @@ function buildClaudeSettings(worktreePath?: string): string {
   return JSON.stringify(settings)
 }
 
-/**
- * Resolve the effective system prompt. Blank means the agent is launched with
- * no system prompt at all — the plan-then-execute lifecycle it used to describe
- * is specified concretely by the per-phase prompt bodies instead. Runtime
- * file-writing instructions likewise stay in the prompt body because their
- * paths are per-launch values derived from the unified files dir.
- */
+/** Resolve the optional user-configured system prompt. */
 export function resolveSystemPrompt(custom?: string | null): string {
   return custom && custom.trim() ? custom : ''
 }
 
-/**
- * Combine the library's enabled prompts with the user's configured system
- * prompt. Library prompts come first so the Settings prompt is read last and
- * wins on conflict — it is the narrower instruction, aimed at this launch.
- */
-function withLibraryPrompts(systemPrompt: string, library?: LibraryLaunchInfo): string {
-  const text = library?.promptText?.trim()
-  if (!text) return systemPrompt
-  return systemPrompt ? `${text}\n\n${systemPrompt}` : text
-}
-
-/**
- * True when the card's recorded progress shows every step done — i.e. the task
- * has finished. Used to decide whether a re-open should resume the agent (work
- * still pending) or simply keep the terminal open without auto-running.
- */
-export function isTaskComplete(task: Pick<Task, 'progress'>): boolean {
-  const steps = task.progress?.steps
-  return !!steps && steps.length > 0 && steps.every((s) => s.done)
-}
-
-/**
- * Build the initial prompt fed to Claude from a card's title + description.
- * When the card carries previously recorded progress, it is included so a
- * re-run resumes from the recorded state instead of starting over.
- */
+/** Build the initial prompt fed to the agent from a card's title + description. */
 export function buildPrompt(
-  task: Pick<Task, 'title' | 'description' | 'progress'>
+  task: Pick<Task, 'title' | 'description'>
 ): string {
   const lines = [`任務標題：${task.title}`]
   const description = task.description?.trim()
   if (description) {
     lines.push('', '任務描述：', description)
   }
-  const progress = task.progress
-  if (progress && progress.steps.length > 0) {
-    lines.push('', '先前已記錄的進度（請接續執行，勿重做已完成的步驟）：')
-    if (progress.summary) lines.push(`摘要：${progress.summary}`)
-    for (const step of progress.steps) {
-      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
-    }
-  }
-  return lines.join('\n')
-}
-
-/**
- * `planFile` must be the same absolute path the progress protocol names (see
- * agentFilePaths): the plan lives outside the worktree under a worktree-derived
- * name, so a bare `PLAN.md` would send the agent looking in its cwd, where no
- * such file exists. Defaults to the cwd-relative fallback for callers that have
- * no workspace path.
- */
-export function buildPlanningPrompt(
-  task: Pick<Task, 'title' | 'description'>,
-  planFile: string = PLAN_FILE
-): string {
-  const lines = [buildPrompt(task)]
-  lines.push(
-    '',
-    `若需求足夠明確，建立 ${planFile}，依進度追蹤協議寫入 planDone=true、needsUserInput=false 與 steps，然後直接進入執行階段，依序完成所有步驟。`,
-    '若需求仍缺少必要資訊，請先提出具體問題，並依進度追蹤協議寫入 planDone=false、needsUserInput=true，然後停止等待使用者回覆。'
-  )
   return lines.join('\n')
 }
 
 /**
  * Build the message sent as a new turn when resuming a prior agent session.
  * The conversation history is restored by the CLI's resume flag, so this only
- * needs to nudge the agent to pick up from the last recorded progress instead
- * of re-stating the whole task.
+ * needs only a small nudge rather than the full task description.
  */
-export function buildResumePrompt(
-  task: Pick<Task, 'progress'>
-): string {
-  const lines = [
-    '請接續先前的工作：從尚未完成的步驟繼續執行，已完成的步驟請勿重做。',
-  ]
-  const progress = task.progress
-  if (progress && progress.steps.length > 0) {
-    lines.push('', '最後記錄的進度：')
-    if (progress.summary) lines.push(`摘要：${progress.summary}`)
-    for (const step of progress.steps) {
-      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
-    }
-  }
-  return lines.join('\n')
-}
-
-/** `planFile`: same absolute-path requirement as buildPlanningPrompt. */
-export function buildExecutionPrompt(
-  task: Pick<Task, 'progress'>,
-  planFile: string = PLAN_FILE
-): string {
-  const lines = [
-    'Planning 已完成，請直接進入執行階段。',
-    `依照 ${planFile} 與下列進度，從第一個未完成的步驟開始實作；已完成的步驟請勿重做。`,
-    '只有在執行前發現計劃仍缺少必要使用者資訊時，才停止並提出具體問題，同時把進度檔標記為 needsUserInput=true。',
-  ]
-  const progress = task.progress
-  if (progress && progress.steps.length > 0) {
-    lines.push('', '目前記錄的步驟：')
-    if (progress.summary) lines.push(`摘要：${progress.summary}`)
-    for (const step of progress.steps) {
-      lines.push(`- [${step.done ? 'x' : ' '}] ${step.text}`)
-    }
-  }
-  return lines.join('\n')
+export function buildResumePrompt(): string {
+  return '請接續這個任務，先確認目前工作區狀態，再繼續尚未完成的工作。'
 }
 
 /**
- * Deterministic, stable session UUID for a task's executor conversation,
+ * Deterministic, stable session UUID for a task conversation,
  * derived from the task id so it survives restarts without persistence.
  * Forces the version (4) and variant (8) nibbles so `claude --session-id`
  * accepts it as a valid UUID.
@@ -418,16 +225,14 @@ function namespaceHash(namespace: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
-/** Stable Claude session UUID for the planning conversation. */
-export function planningSessionId(taskId: string, runId?: string): string {
-  const source = runId ? `${taskId}:${runId}` : taskId
-  const taskHex = source.replace(/[^0-9a-f]/gi, '').toLowerCase().padEnd(24, '0').slice(0, 24)
-  const hex = `${taskHex}${namespaceHash(runId ? `planning:${runId}` : 'planning')}`
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
-}
-
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
+  /**
+   * Include the card title and description as the launch's initial message.
+   * Defaults to true. Set false for an interactive agent shell that receives
+   * only launch settings and Artifact context.
+   */
+  includeTaskPrompt?: boolean
   /**
    * Resume the prior agent session instead of starting a fresh conversation.
    * For Claude this uses `--resume <sessionId>` (when a sessionId is known)
@@ -487,9 +292,8 @@ function assembleCommand(
     // Inline --settings: dark theme always, sub-agent recording hooks only
     // when the worktree path is known (session-only, never touches the repo).
     const settings = ` --settings ${shellQuote(buildClaudeSettings(worktreePath))}`
-    // Grant the agent write access to the workspace folder (the worktree's
-    // parent) so it can write the progress/review/PLAN files there even though
-    // it runs with cwd inside the worktree.
+    // Grant access to the workspace folder so the agent can write artifacts
+    // outside the worktree.
     const addDir = workspacePath
       ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
       : ''
@@ -507,13 +311,14 @@ function assembleCommand(
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
-    const tail = `${flags}${sysFlag} ${shellQuote(prompt)}`
+    const promptArg = prompt ? ` ${shellQuote(prompt)}` : ''
+    const tail = `${flags}${sysFlag}${promptArg}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)
       : `claude ${sessionId ? `--session-id ${sessionId} ` : opts?.resume ? '--continue ' : ''}${tail}\r`
   } else {
     // Codex has no separate system-prompt flag — fold it into the body.
-    const combined = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
+    const combined = [systemPrompt, prompt].filter(Boolean).join('\n\n')
     const codexEffortFlag = effort
       ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
       : ''
@@ -524,7 +329,8 @@ function assembleCommand(
       : ''
     // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
     // interactive mode (waits for the user to approve each step).
-    cmd = `${codexHome}codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model} ${shellQuote(combined)}\r`
+    const promptArg = combined ? ` ${shellQuote(combined)}` : ''
+    cmd = `${codexHome}codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model}${promptArg}\r`
   }
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
@@ -575,41 +381,14 @@ export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
   return normalizeModel(agent, task.model || DEFAULT_MODELS[agent])
 }
 
-/** Resolve the execution agent (old tasks fall back to the planning agent). */
-export function taskExecutionAgent(
-  task: Pick<Task, 'agentCli' | 'executionAgentCli'>
-): AgentCliId {
-  return task.executionAgentCli ?? taskAgent(task)
-}
-
-/** Resolve the execution model (old tasks fall back to the planning model). */
-export function taskExecutionModel(
-  task: Pick<Task, 'agentCli' | 'model' | 'executionAgentCli' | 'executionModel'>
-): string {
-  const agent = taskExecutionAgent(task)
-  const model = !task.executionAgentCli
-    ? task.model || DEFAULT_MODELS[agent]
-    : task.executionModel || DEFAULT_MODELS[agent]
-  return normalizeModel(agent, model)
-}
-
 /**
- * Build the launch command for the task's current lifecycle phase.
- *
- * Planning (`planDone !== true`) uses the planning agent/model. Execution
- * (`planDone === true`) switches to the execution agent/model.
+ * Build the launch command for a task's single agent session.
  *
  * Codex has no separate system-prompt flag, so the effective
  * system prompt and task prompt are folded into one CLI argument.
  *
- * For Claude, planning and execution use separate deterministic session ids:
- *   - Planning: `planningSessionId(task.id)` for plan-only context.
- *   - Execution: `executorSessionId(task.id)` for implementation context.
- * This lets execution start as a fresh session after planning without colliding
- * with the already-created planning session.
- * Codex falls back to a fresh launch whose prompt already folds in the
- * recorded progress (via buildPrompt), giving a soft resume regardless of
- * `opts.resume`.
+ * Claude receives Artifact instructions as a session system prompt. Codex has
+ * no separate system-prompt flag, so they are folded into its initial message.
  */
 export function buildAgentCommand(
   task: Pick<
@@ -617,41 +396,34 @@ export function buildAgentCommand(
     | 'id'
     | 'title'
     | 'description'
-    | 'progress'
     | 'agentCli'
     | 'model'
-    | 'executionAgentCli'
-    | 'executionModel'
     | 'effort'
     | 'worktreePath'
     | 'runId'
-    | 'branch'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
-  const isExecution = task.progress?.planDone === true
-  const agent = isExecution ? taskExecutionAgent(task) : taskAgent(task)
-  const model = isExecution ? taskExecutionModel(task) : taskModel(task)
-  const files = agentFilePaths(task.worktreePath, workspacePath)
-  const sys = withLibraryPrompts(resolveSystemPrompt(systemPrompt), opts?.library)
-  const basePrompt = isExecution
+  const agent = taskAgent(task)
+  const model = taskModel(task)
+  const artifactsDir = agentArtifactsDir(task.worktreePath, workspacePath)
+    ?? ARTIFACTS_FALLBACK_DIR
+  const builtInPrompt = buildArtifactPrompt(artifactsDir)
+  const libraryPrompt = opts?.library?.promptText?.trim()
+  const customPrompt = resolveSystemPrompt(systemPrompt)
+  const sys = [builtInPrompt, libraryPrompt, customPrompt].filter(Boolean).join('\n\n')
+  const includeTaskPrompt = opts?.includeTaskPrompt !== false
+  const prompt = includeTaskPrompt
     ? opts?.resume && agent === 'claude'
-      ? buildResumePrompt(task)
-      : buildExecutionPrompt(task, files?.plan)
-    : buildPlanningPrompt(task, files?.plan)
-  const prompt = appendProgressProtocol(
-    basePrompt,
-    files?.progress,
-    files?.plan,
-    files?.artifacts,
-    agent === 'claude' && opts?.memory ? task.branch : null
-  )
-  const sessionId = agent === 'claude'
-    ? isExecution
-      ? executorSessionId(task.id, task.runId)
-      : planningSessionId(task.id, task.runId)
+      ? buildResumePrompt()
+      : buildPrompt(task)
+    : ''
+  // An agent-only launch is intentionally independent from the task's pinned
+  // conversation. Claude creates a fresh interactive session of its own.
+  const sessionId = agent === 'claude' && includeTaskPrompt
+    ? executorSessionId(task.id, task.runId)
     : undefined
   return assembleCommand(
     agent,

@@ -6,7 +6,7 @@ import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
-import { RefreshCw, RotateCcw } from 'lucide-react'
+import { Bot, RefreshCw, RotateCcw } from 'lucide-react'
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -23,7 +23,7 @@ interface TaskTerminalProps {
    * Sent at most once per distinct `launchNonce` value.
    */
   launchCommand?: string | null
-  /** Bump when a new task phase needs to launch `launchCommand`. */
+  /** Bump whenever a new agent command needs to replace the current PTY. */
   launchNonce?: number
   /**
    * When true (card is Done), the terminal is view-only: no PTY is started,
@@ -31,8 +31,10 @@ interface TaskTerminalProps {
    * scrollback from the live session is preserved for review.
    */
   readOnly?: boolean
-  /** Restart the whole task from planning using its latest saved settings. */
+  /** Restart the whole task using its latest saved settings and card content. */
   onRestartTask?: () => Promise<void>
+  /** Start a fresh agent with settings + Artifact context, without card content. */
+  onLaunchAgent?: () => Promise<void>
   /**
    * Called on real user interaction (keystrokes, file drop, restart) so the
    * host can pin a preview tab. Read through a ref — see `onInteractRef`.
@@ -48,6 +50,7 @@ export function TaskTerminal({
   launchNonce = 0,
   readOnly = false,
   onRestartTask,
+  onLaunchAgent,
   onInteract,
 }: TaskTerminalProps) {
   // Effective session key: use the prop when provided, else fall back to taskId.
@@ -60,6 +63,7 @@ export function TaskTerminal({
   const [isAttaching, setIsAttaching] = useState(false)
   const [isRestarting, setIsRestarting] = useState(false)
   const [isRestartingTask, setIsRestartingTask] = useState(false)
+  const [isLaunchingAgent, setIsLaunchingAgent] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
   // PTY-start flow and the nonce effect read the latest values without
@@ -95,7 +99,7 @@ export function TaskTerminal({
       const startCwd = cwdRef.current
       const term = termRef.current
       if (!startCwd) return
-      // scrollback is intentionally ignored here: a new task phase replaces
+      // scrollback is intentionally ignored here: a new agent launch replaces
       // the already-mounted terminal and starts with a fresh buffer.
       readyRef.current = false
       runningCommandRef.current = true
@@ -181,6 +185,25 @@ export function TaskTerminal({
     }
   }, [onRestartTask])
 
+  const launchAgentOnly = useCallback(async () => {
+    const term = termRef.current
+    if (!term || !onLaunchAgent || readOnlyRef.current) return
+
+    onInteractRef.current?.()
+    setIsLaunchingAgent(true)
+    term.reset()
+    term.clear()
+    try {
+      await onLaunchAgent()
+      term.focus()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      term.writeln(`\r\n⚠️  啟動 Agent 失敗：${message}`)
+    } finally {
+      setIsLaunchingAgent(false)
+    }
+  }, [onLaunchAgent])
+
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
     const cmd = launchCmdRef.current
@@ -188,7 +211,7 @@ export function TaskTerminal({
     const nonce = launchNonceRef.current
     // The initial command is spawned by the init effect, which marks its nonce —
     // so this no-ops at mount. A new nonce on a still-mounted component denotes
-    // a phase transition and replaces the prior PTY.
+    // a new agent launch and replaces the prior PTY.
     if (sentNonceRef.current === nonce) return
     sentNonceRef.current = nonce
     launchWithCommand(cmd)
@@ -404,7 +427,7 @@ export function TaskTerminal({
     }
   }, [taskId, sessionKey, maybeLaunch, restartInteractiveShell])
 
-  // Launch a new task phase when the parent bumps the nonce while mounted.
+  // Launch a new agent command when the parent bumps the nonce while mounted.
   useEffect(() => {
     maybeLaunch()
   }, [launchCommand, launchNonce, maybeLaunch])
@@ -483,11 +506,24 @@ export function TaskTerminal({
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void restartTaskFromBeginning()}
-                disabled={!cwd || isRestartingTask || isRestarting}
-                title="清除舊 PLAN 與進度，依目前任務設定重新啟動 Agent"
+                disabled={!cwd || isRestartingTask || isRestarting || isLaunchingAgent}
+                title="依目前任務設定與內容重新啟動 Agent"
               >
                 <RotateCcw className={cn('size-3', isRestartingTask && 'animate-spin')} />
                 {isRestartingTask ? '重新開始中…' : '重新開始'}
+              </Button>
+            )}
+            {onLaunchAgent && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 shrink-0 px-2 text-xs"
+                onClick={() => void launchAgentOnly()}
+                disabled={!cwd || isLaunchingAgent || isRestartingTask || isRestarting}
+                title="只帶入 Agent 設定與 Artifact 資訊，不傳入任務內容"
+              >
+                <Bot className={cn('size-3', isLaunchingAgent && 'animate-pulse')} />
+                {isLaunchingAgent ? '啟動中…' : '啟動 Agent'}
               </Button>
             )}
             <Button
@@ -495,7 +531,7 @@ export function TaskTerminal({
               size="sm"
               className="h-6 shrink-0 px-2 text-xs"
               onClick={openFreshInteractiveShell}
-              disabled={!cwd || isRestarting || isRestartingTask}
+              disabled={!cwd || isRestarting || isRestartingTask || isLaunchingAgent}
               title="關閉目前 session 並開啟乾淨的 Terminal"
             >
               <RefreshCw className={cn('size-3', isRestarting && 'animate-spin')} />

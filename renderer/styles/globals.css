@@ -107,9 +107,7 @@
 
    The app is a single fixed dark theme (see :root above), so instead of
    `prose-invert` — which swaps to typography's generic dark greys — every
-   --tw-prose-* var is bound to the Notion-after-dark token set. Keep this in
-   step with the standalone plan document's CSS in main/helpers/plan-html.ts;
-   the two render the same markdown and must not drift apart. */
+   --tw-prose-* var is bound to the Notion-after-dark token set. */
 .prose {
   --tw-prose-body: var(--muted-foreground);
   --tw-prose-headings: var(--foreground);
@@ -168,10 +166,7 @@
   max-width: 100%;
   overflow-x: auto;
 }
-/* Typography rules tables with horizontal lines only (a bottom border on thead
-   and on each body row). Agent-written tables are dense and technical, so give
-   them the same full grid the standalone plan document uses — keep these in step
-   with the table CSS in main/helpers/plan-html.ts. */
+/* Agent-written tables are dense and technical, so use a full grid. */
 .prose th,
 .prose td {
   border: 1px solid var(--border);
@@ -201,9 +196,7 @@
 /* ── highlight.js token colours ─────────────────────────────────────────────
    rehype-highlight emits highlight.js class names; no upstream theme is
    installed so the palette is built from the app's own tokens (blue/green/
-   amber/red) to stay inside the design system. The literal hex equivalents are
-   duplicated in main/helpers/plan-html.ts for the standalone plan document —
-   change both together. */
+   amber/red) to stay inside the design system. */
 .hljs-comment,
 .hljs-quote {
   color: #7f7f7f;

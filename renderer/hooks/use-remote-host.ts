@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BoardState, ColumnId, MemoryCheckpoint, Task, TaskProgressStep } from '@/lib/types'
-import { getCheckpoints, getPlanHtml, onTermData, persistBoard, termInput } from '@/lib/api'
+import type { BoardState, ColumnId, MemoryCheckpoint, Task } from '@/lib/types'
+import { getCheckpoints, onTermData, persistBoard, termInput } from '@/lib/api'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -10,12 +10,7 @@ type RemoteTask = {
   description?: string
   projectName?: string
   column: ColumnId
-  progress?: {
-    summary?: string
-    steps: TaskProgressStep[]
-  }
   launchedAt?: number
-  plan?: { html: string }
   checkpoints?: MemoryCheckpoint[]
 }
 
@@ -26,22 +21,15 @@ async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask
     description: task.description,
     projectName: task.projectName,
     column,
-    progress: task.progress
-      ? { summary: task.progress.summary, steps: task.progress.steps }
-      : undefined,
     launchedAt: task.launchedAt,
   }
 
   if (column !== 'done') return remoteTask
 
-  const [planHtml, checkpoints] = await Promise.all([
-    getPlanHtml(task.id).catch(() => null),
-    getCheckpoints(task.id).catch(() => []),
-  ])
+  const checkpoints = await getCheckpoints(task.id).catch(() => [])
 
   return {
     ...remoteTask,
-    plan: planHtml ? { html: planHtml } : undefined,
     checkpoints,
   }
 }

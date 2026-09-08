@@ -2,7 +2,6 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
-import { PLAN_FILE, PROGRESS_FILE } from './progress'
 import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
 import { ATTACHMENTS_DIR } from './attachments'
@@ -182,33 +181,17 @@ export async function initRepository(projectPath: string): Promise<void> {
  * history, and it applies to every worktree of the clone — so these files can't
  * be committed even by a `git add -A` run inside a task worktree.
  *
- * The progress / plan files and the artifacts dir normally live outside the
- * worktree entirely (see agentProgressPath / agentPlanPath / agentArtifactsPath),
- * so those entries only bite in the fallback case: the agent is handed the bare,
- * cwd-relative name whenever the workspace path is unknown, and then writes into
- * the worktree.
+ * The artifacts dir normally lives outside the worktree, so its entry only
+ * applies to the cwd-relative fallback used when the workspace path is unknown.
  */
 export async function ensureLocalExclude(projectPath: string): Promise<void> {
   const commonDir = await git(projectPath, ['rev-parse', '--git-common-dir'])
   const infoDir = path.resolve(projectPath, commonDir, 'info')
-  await appendLineIfMissing(
-    path.join(infoDir, 'exclude'),
-    PROGRESS_FILE,
-    '# VibeFlow task progress file (runtime-only)',
-    { mkdir: true }
-  )
   // The sub-agent event log is VibeFlow runtime metadata, never to be committed.
   await appendLineIfMissing(
     path.join(infoDir, 'exclude'),
     `${SUBAGENTS_DIR}/`,
     '# VibeFlow sub-agent event log (runtime-only)',
-    { mkdir: true }
-  )
-  // The planning artifact is temporary — exclude so git add -A can't commit it.
-  await appendLineIfMissing(
-    path.join(infoDir, 'exclude'),
-    PLAN_FILE,
-    '# VibeFlow planning artifact (runtime-only)',
     { mkdir: true }
   )
   // Screenshots, recordings and scratch files the agent parks here are evidence
@@ -380,7 +363,7 @@ async function resolveBranchName(
  * live in `.git/info/exclude` (see `ensureLocalExclude`), so `git ls-files
  * --ignored` would otherwise happily include them.
  */
-const RUNTIME_ARTIFACT_DENYLIST = new Set([PROGRESS_FILE, PLAN_FILE, SUBAGENTS_DIR])
+const RUNTIME_ARTIFACT_DENYLIST = new Set([SUBAGENTS_DIR])
 const MAX_IGNORED_COPY_BYTES = 10 * 1024 * 1024
 const MAX_IGNORED_COPY_FILES = 200
 
@@ -963,12 +946,9 @@ async function collectDiffEntries(
     }
   }
 
-  // The agent-maintained progress file, plan file, and sub-agent event log are
-  // VibeFlow metadata, not changes to review — keep them out of the diff viewer.
+  // The sub-agent event log is VibeFlow metadata, not a change to review.
   const entries = Array.from(entryMap.values()).filter(
     (e) =>
-      e.path !== PROGRESS_FILE &&
-      e.path !== PLAN_FILE &&
       e.path !== SUBAGENTS_DIR &&
       !e.path.startsWith(`${SUBAGENTS_DIR}/`)
   )
@@ -1089,10 +1069,7 @@ export async function commitAndPush(
   worktreePath: string,
   message: string
 ): Promise<FinalizeResult> {
-  // Stage everything. The agent-maintained progress file is kept out of the
-  // commit by `.git/info/exclude` (see ensureLocalExclude), so `git add -A`
-  // skips it on its own. An explicit `:(exclude)` pathspec here is redundant
-  // and, on modern git, throws when the ignored file is present on disk.
+  // Runtime-only files are kept out by `.git/info/exclude`.
   await git(worktreePath, ['add', '-A'])
 
   let committed = false

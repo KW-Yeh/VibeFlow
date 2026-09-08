@@ -31,8 +31,6 @@ export interface EditTaskPayload {
   description: string
   agentCli: AgentCliId
   model: string
-  executionAgentCli: AgentCliId
-  executionModel: string
   effort: AgentEffort
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
@@ -67,8 +65,6 @@ export function EditTaskDialog({
   const [description, setDescription] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
-  const [executionAgentCli, setExecutionAgentCli] = useState<AgentCliId>('claude')
-  const [executionModel, setExecutionModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
@@ -95,8 +91,6 @@ export function EditTaskDialog({
     setDescription(task.description ?? '')
     setAgentCli(task.agentCli ?? 'claude')
     setModel(task.model ?? '')
-    setExecutionAgentCli(task.executionAgentCli ?? task.agentCli ?? 'claude')
-    setExecutionModel(task.executionModel ?? '')
     setEffort(task.effort ?? DEFAULT_TASK_EFFORT)
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
@@ -137,8 +131,6 @@ export function EditTaskDialog({
     description !== (displayedTask.description ?? '') ||
     agentCli !== (displayedTask.agentCli ?? 'claude') ||
     model !== (displayedTask.model ?? '') ||
-    executionAgentCli !== (displayedTask.executionAgentCli ?? displayedTask.agentCli ?? 'claude') ||
-    executionModel !== (displayedTask.executionModel ?? '') ||
     effort !== (displayedTask.effort ?? DEFAULT_TASK_EFFORT) ||
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '')
@@ -156,11 +148,6 @@ export function EditTaskDialog({
     setAgentCli(next)
     setModel('')
   }
-  const handleExecutionAgentChange = (next: AgentCliId) => {
-    setExecutionAgentCli(next)
-    setExecutionModel('')
-  }
-
   const handlePickFolder = async () => {
     const picked = await pickFolder()
     if (!picked) return
@@ -194,8 +181,6 @@ export function EditTaskDialog({
       description: description.trim(),
       agentCli,
       model,
-      executionAgentCli,
-      executionModel,
       effort,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
@@ -369,7 +354,7 @@ export function EditTaskDialog({
           {advancedOpen && (
             <div className="space-y-4 border-t border-border/50 p-4">
               <AgentModelFields
-                title="Planning Agent"
+                title="Agent"
                 agents={agents}
                 detectTimedOut={detectTimedOut}
                 onRetry={() => setDetectKey((k) => k + 1)}
@@ -379,18 +364,6 @@ export function EditTaskDialog({
                 onModelChange={setModel}
                 agentConnections={agentConnections}
               />
-              <AgentModelFields
-                title="Execution Agent"
-                agents={agents}
-                detectTimedOut={detectTimedOut}
-                onRetry={() => setDetectKey((k) => k + 1)}
-                agentCli={executionAgentCli}
-                onAgentChange={handleExecutionAgentChange}
-                model={executionModel}
-                onModelChange={setExecutionModel}
-                agentConnections={agentConnections}
-              />
-
             </div>
           )}
         </div>

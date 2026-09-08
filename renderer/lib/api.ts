@@ -29,7 +29,6 @@ import type {
   SubAgentRun,
   Task,
   TaskArtifact,
-  TaskProgress,
   VibeFlowState,
 } from '@/lib/types'
 
@@ -184,8 +183,6 @@ export async function createTask(payload: {
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
   model?: string
-  executionAgentCli?: AgentCliId
-  executionModel?: string
   effort?: AgentEffort
   attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
@@ -199,8 +196,6 @@ export async function updateTask(payload: {
   description?: string
   agentCli?: AgentCliId
   model?: string
-  executionAgentCli?: AgentCliId
-  executionModel?: string
   effort?: AgentEffort
   projectPath?: string
   baseBranch?: string | null
@@ -260,16 +255,6 @@ export async function readArtifact(
 export async function openArtifactsDir(taskId: string): Promise<string> {
   const b = bridge()
   return b ? b.openArtifactsDir(taskId) : 'bridge unavailable'
-}
-
-export async function getPlan(taskId: string): Promise<string | null> {
-  const b = bridge()
-  return b ? b.getPlan(taskId) : null
-}
-
-export async function getPlanHtml(taskId: string): Promise<string | null> {
-  const b = bridge()
-  return b ? b.getPlanHtml(taskId) : null
 }
 
 export async function getCheckpoints(
@@ -409,17 +394,6 @@ export function onStateChanged(
 ): () => void {
   const b = bridge()
   return b ? b.onStateChanged(callback) : () => {}
-}
-
-/**
- * Subscribe to live task-progress updates pushed from the main process.
- * Returns an unsubscribe function (no-op when the bridge is absent).
- */
-export function onProgressUpdate(
-  callback: (payload: { taskId: string; progress: TaskProgress }) => void
-): () => void {
-  const b = bridge()
-  return b ? b.onProgressUpdate(callback) : () => {}
 }
 
 /**

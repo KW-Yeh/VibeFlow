@@ -18,9 +18,8 @@ const ReactDiffViewer = lazy(() =>
 )
 import {
   Check,
-  CheckCircle2,
   ChevronRight,
-  Circle,
+  Copy,
   FileDiff,
   FileText,
   Film,
@@ -49,7 +48,6 @@ import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
 import {
   buildAgentCommand,
-  isTaskComplete,
   taskArtifactsDir,
 } from '@/lib/claude'
 import {
@@ -63,7 +61,6 @@ import {
   getDiff,
   getDiffEntries,
   getDiffFile,
-  getPlanHtml,
   getRelatedTasks,
   getTaskLinks,
   listArtifacts,
@@ -92,18 +89,17 @@ import type {
  * task has no live terminal, artifacts, or worktree to diff, and is the only
  * place its memory checkpoints are worth reading.
  */
-type TaskTab = 'task' | 'plan' | 'artifacts' | 'diff' | 'memory'
+type TaskTab = 'task' | 'artifacts' | 'diff' | 'memory'
 
 const TAB_LABEL: Record<TaskTab, string> = {
   task: '任務',
-  plan: 'Plan',
   artifacts: 'Artifacts',
   diff: 'Git diff',
   memory: 'Memory',
 }
 
-const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'plan', 'artifacts', 'diff']
-const DONE_TASK_TABS: readonly TaskTab[] = ['plan', 'memory']
+const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'artifacts', 'diff']
+const DONE_TASK_TABS: readonly TaskTab[] = ['memory']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -214,6 +210,7 @@ interface TaskWorkspacePanelProps {
   launch?: LaunchEntry
   onStart: (task: Task) => void
   onRestart: (task: Task) => Promise<void>
+  onLaunchAgent: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
@@ -270,11 +267,6 @@ function TaskInfo({
   TaskWorkspacePanelProps,
   'task' | 'column' | 'subAgents' | 'onOpenSubAgents'
 >) {
-  const progress = task.progress
-  const steps = progress?.steps ?? []
-  const doneSteps = steps.filter((step) => step.done).length
-  const complete = isTaskComplete(task)
-
   return (
     <div className="space-y-4 text-base">
       <div>
@@ -282,11 +274,6 @@ function TaskInfo({
           <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
             {column === 'in_progress' ? 'In Progress' : column === 'done' ? 'Done' : 'Backlog'}
           </span>
-          {complete && (
-            <span className="rounded-xs bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">
-              complete
-            </span>
-          )}
         </div>
         <h3 className="break-words text-lg font-semibold tracking-tight text-foreground">
           {task.title}
@@ -314,40 +301,6 @@ function TaskInfo({
 
       {task.description && <MarkdownContent source={task.description} />}
 
-      {steps.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Progress</span>
-            <span className="tabular-nums">
-              {doneSteps}/{steps.length}
-            </span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${(doneSteps / steps.length) * 100}%` }}
-            />
-          </div>
-          {progress?.summary && (
-            <p className="text-sm text-muted-foreground">{progress.summary}</p>
-          )}
-          <ul className="space-y-1 rounded-md bg-muted/30 p-2.5 text-sm">
-            {steps.map((step, index) => (
-              <li key={index} className="flex items-start gap-1.5">
-                {step.done ? (
-                  <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-primary" />
-                ) : (
-                  <Circle className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                )}
-                <span className={cn('break-words', step.done && 'text-muted-foreground line-through')}>
-                  {step.text}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {subAgents.length > 0 && (
         <button
           type="button"
@@ -359,64 +312,6 @@ function TaskInfo({
         </button>
       )}
     </div>
-  )
-}
-
-function PlanContent({
-  taskId,
-  refreshKey,
-}: {
-  taskId: string
-  refreshKey?: string
-}) {
-  const [html, setHtml] = useState<string | null | undefined>(undefined)
-
-  useEffect(() => {
-    let active = true
-    setHtml(undefined)
-    getPlanHtml(taskId)
-      .then((next) => {
-        if (active) setHtml(next)
-      })
-      .catch(() => {
-        if (active) setHtml(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [taskId, refreshKey])
-
-  if (html === undefined) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
-        讀取 plan 中…
-      </div>
-    )
-  }
-
-  if (!html) {
-    return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
-        尚未找到 agent 產出的 PLAN.md。
-      </p>
-    )
-  }
-
-  return (
-    // Bleeds over InfoSection's p-4 so the rendered plan reaches the section
-    // edges; the offsets must stay in step with that padding.
-    <iframe
-      srcDoc={html}
-      // A srcDoc frame is same-origin by default, which would put the plan
-      // document in reach of this window and its preload bridge. The plan is
-      // inert content — no scripts, no navigation — so drop every capability
-      // rather than rely on the pipeline never emitting raw HTML.
-      sandbox=""
-      className="-m-4 block border-0"
-      style={{ width: 'calc(100% + 2rem)', height: 'calc(100% + 2rem)' }}
-      title="Plan"
-    />
   )
 }
 
@@ -779,6 +674,7 @@ function ArtifactsContent({
 }) {
   const [preview, setPreview] = useState<TaskArtifact | null>(null)
   const [showOthers, setShowOthers] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
   // Why the folder would not open (missing dir, no worktree). There is no toast
   // in this app, so the reason is shown inline rather than swallowed.
   const [openError, setOpenError] = useState<string | null>(null)
@@ -792,8 +688,40 @@ function ArtifactsContent({
       .catch(() => setOpenError('開啟失敗'))
   }, [taskId])
 
+  const handleCopyDir = useCallback(() => {
+    if (!artifactsDir) return
+    navigator.clipboard.writeText(artifactsDir)
+      .then(() => {
+        setCopyState('copied')
+        window.setTimeout(() => setCopyState('idle'), 1600)
+      })
+      .catch(() => setCopyState('error'))
+  }, [artifactsDir])
+
   return (
     <>
+      <div className="mb-3 space-y-2 rounded-md border border-border/70 bg-muted/20 p-2.5">
+        <div className="text-xs font-medium text-muted-foreground">Artifact 資料夾</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <code
+            className="min-w-0 flex-1 select-all break-all rounded-xs bg-background px-2 py-1.5 font-mono text-xs text-foreground"
+            title={artifactsDir ?? '尚無可用路徑'}
+          >
+            {artifactsDir ?? '尚無可用路徑'}
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopyDir}
+            disabled={!artifactsDir}
+            title="複製 Artifact 資料夾路徑"
+            className="shrink-0 text-xs"
+          >
+            {copyState === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copyState === 'copied' ? '已複製' : copyState === 'error' ? '複製失敗' : '複製路徑'}
+          </Button>
+        </div>
+      </div>
       <div className="mb-2 flex items-center justify-end gap-2">
         {openError && (
           <span className="min-w-0 truncate text-xs text-muted-foreground" title={openError}>
@@ -815,15 +743,7 @@ function ArtifactsContent({
         <div className="space-y-2 py-8 text-center">
           <p className="text-sm text-muted-foreground">還沒有暫存產物。</p>
           <p className="text-xs leading-5 text-muted-foreground/80">
-            Agent 會把驗證截圖、錄影與報告寫進
-            {artifactsDir ? (
-              <code className="mx-1 break-all rounded-xs bg-muted/40 px-1 py-0.5 font-mono">
-                {artifactsDir}
-              </code>
-            ) : (
-              '任務的 artifacts 目錄'
-            )}
-            ，工作暫存放其下的 <code className="rounded-xs bg-muted/40 px-1 py-0.5 font-mono">scratch/</code>
+            Agent 會把驗證截圖、錄影與報告寫進上方資料夾，工作暫存放其下的 <code className="rounded-xs bg-muted/40 px-1 py-0.5 font-mono">scratch/</code>
             ，完成任務時會一併清除。
           </p>
         </div>
@@ -1397,6 +1317,7 @@ export function TaskWorkspacePanel({
   launch,
   onStart,
   onRestart,
+  onLaunchAgent,
   onComplete,
   onEdit,
   onDelete,
@@ -1645,11 +1566,7 @@ export function TaskWorkspacePanel({
               aria-labelledby={tabId(activeTab)}
               className="h-full"
             >
-              {activeTab === 'plan' ? (
-                <PlanContent taskId={task.id} />
-              ) : (
-                <MemoryContent taskId={task.id} />
-              )}
+              <MemoryContent taskId={task.id} />
             </div>
           </InfoSection>
         </main>
@@ -1667,6 +1584,9 @@ export function TaskWorkspacePanel({
             readOnly={false}
             onRestartTask={
               column === 'in_progress' ? () => onRestart(task) : undefined
+            }
+            onLaunchAgent={
+              column === 'in_progress' ? () => onLaunchAgent(task) : undefined
             }
             onInteract={onInteract}
           />
@@ -1716,11 +1636,6 @@ export function TaskWorkspacePanel({
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
-              ) : activeTab === 'plan' ? (
-                <PlanContent
-                  taskId={task.id}
-                  refreshKey={`${task.runId ?? ''}:${task.progress?.planDone ?? ''}`}
-                />
               ) : activeTab === 'artifacts' ? (
                 <ArtifactsContent
                   taskId={task.id}
@@ -1744,6 +1659,7 @@ export function buildWorkspaceLaunchCommand({
   systemPrompt,
   workspacePath,
   resume,
+  includeTaskPrompt,
   memory,
   library,
   autoMode,
@@ -1752,6 +1668,8 @@ export function buildWorkspaceLaunchCommand({
   systemPrompt: string
   workspacePath?: string
   resume?: boolean
+  /** False starts an agent with settings + Artifact context, without card text. */
+  includeTaskPrompt?: boolean
   /** Built-in agent-memory server injection; undefined → not wired. */
   memory?: MemoryLaunchInfo
   /** VibeFlow library delivery; undefined → nothing enabled. */
@@ -1762,7 +1680,7 @@ export function buildWorkspaceLaunchCommand({
   return buildAgentCommand(
     task,
     systemPrompt,
-    { resume, memory, library, autoMode },
+    { resume, includeTaskPrompt, memory, library, autoMode },
     workspacePath
   )
 }

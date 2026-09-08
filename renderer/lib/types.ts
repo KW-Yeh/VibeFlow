@@ -46,10 +46,6 @@ export type {
   RemoteUpdateStatus,
 } from '../../main/helpers/remote-update'
 export type {
-  TaskProgress,
-  TaskProgressStep,
-} from '../../main/helpers/progress'
-export type {
   SubAgentRun,
   SubAgentStatus,
 } from '../../main/helpers/subagents'

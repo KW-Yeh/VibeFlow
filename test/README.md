@@ -32,7 +32,6 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 |---|---|---|
 | `branch-name.test.mjs` | `main/helpers/branch-name.ts` | pure unit — slug/ticket derivation, edge & malformed input |
 | `env.test.mjs` | `main/helpers/env.ts` | pure unit — PATH augmentation + memoisation |
-| `progress.test.mjs` | `main/helpers/progress.ts` | unit against temp files — parse/validate + watcher emit/dedupe |
 | `git.test.mjs` | `main/helpers/git.ts` | integration against throwaway repos (+ a bare remote) |
 
 `test/support/` holds the harness: the resolve hook, its registrar, and

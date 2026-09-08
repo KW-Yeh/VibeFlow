@@ -141,7 +141,7 @@ function sqlQuote(value: string): string {
 /**
  * Read the agent-memory checkpoints (and their artifact summaries) for a task
  * from the shared unified db. The memory task id is the VibeFlow branch name
- * (see the progress protocol). Returns [] when the db is absent, the task has
+ * (the launch integration uses the branch as its stable id). Returns [] when the db is absent, the task has
  * no checkpoints, or sqlite3 is unavailable.
  */
 export async function getCheckpoints(

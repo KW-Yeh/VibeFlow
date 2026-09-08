@@ -77,8 +77,7 @@ npm run vibeflow -- task create \
   unless you intend to start them from the UI.
 - Every other creation option the new-task dialog offers has a flag:
   `--base-branch`, `--branch`, `--mode existing|new` (`new` runs `git init` first),
-  `--agent` / `--model` (planning & review), `--exec-agent` / `--exec-model`
-  (execution), `--effort low|medium|high|xhigh`, and
+  `--agent` / `--model`, `--effort low|medium|high|xhigh`, and
   `--attach <path>` (repeat per file; the CLI reads the bytes and infers the mime).
 - `--branch` is the branch the task runs on. Left out, the name is derived from
   the card (`branch-name.ts`) and quietly de-duplicated; given explicitly, it is
@@ -112,7 +111,7 @@ main/                      Electron main process (ESM, bundled by nextron/webpac
 └── helpers/
     ├── store.ts           electron-store: VibeFlowState, Task, board mutators (LAZY init)
     ├── git.ts             git via child_process: info / worktree / diff / commit+push
-    ├── progress.ts        task-progress types + .vibeflow-progress.json reader/watcher
+    ├── artifacts.ts       per-task Artifact path, listing, preview, and cleanup
     ├── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
     └── create-window.ts   window-state persistence (scaffold)
 
@@ -124,7 +123,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
 │   ├── new-task-dialog.tsx per-task folder picker + git detect + create
-│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/plan + diff
+│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/artifacts/diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM main (single source of truth)
@@ -160,16 +159,8 @@ renderer/                  Next.js app (Pages Router)
   the target project's `.gitignore`.
 - **Dark theme**: the app wraps content in `<div className="dark">`; style with the
   shadcn token classes (`bg-background`, `text-muted-foreground`, etc.), not raw colors.
-- **Markdown renders in two places and they must agree.** The main process turns
-  PLAN.md into a standalone HTML document (`main/helpers/markdown.ts` → `plan-html.ts`,
-  consumed by the Plan tab's iframe and the mobile remote); the renderer renders
-  everything else through `components/markdown-content.tsx` → `markdown-body.tsx`.
-  They cannot share code — the renderer must not import main at runtime — so three
-  things are deliberately duplicated and have to change together: the remark/rehype
-  plugin set, the highlight.js language list (`main/helpers/markdown.ts` ↔
-  `renderer/lib/markdown-plugins.ts`), and the CSS (`plan-html.ts`'s inlined styles ↔
-  the `.prose`/`.hljs-*` blocks in `renderer/styles/globals.css`). Raw HTML is
-  disabled on both sides; see `MARKDOWN_RENDERING_PLAN.md` §6 before enabling it.
+- **Markdown renders in the renderer** through
+  `components/markdown-content.tsx` → `markdown-body.tsx`. Raw HTML is disabled.
   Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.
 
 ---

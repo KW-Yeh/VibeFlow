@@ -27,10 +27,8 @@ task create options:
                          If origin already publishes it, the branch is fetched and
                          checked out instead of being created.
   --mode <mode>          ${MODES.join(' | ')}  (default: existing; "new" runs git init first)
-  --agent <id>           Planning/review agent: ${AGENT_IDS.join(' | ')}  (default: claude)
-  --model <id>           Planning/review model (default: the agent's own default)
-  --exec-agent <id>      Execution agent (default: --agent)
-  --exec-model <id>      Execution model (default: --model, or the agent's default)
+  --agent <id>           Task agent: ${AGENT_IDS.join(' | ')}  (default: claude)
+  --model <id>           Task model (default: the agent's own default)
   --effort <level>       ${AGENT_EFFORTS.join(' | ')}  (default: medium, same as the UI)
   --attach <path>        Attach a file; repeat the flag for several files
   --store-path <dir>     Explicit electron-store directory
@@ -87,8 +85,6 @@ try {
       mode:          { type: 'string' },
       agent:         { type: 'string' },
       model:         { type: 'string' },
-      'exec-agent':  { type: 'string' },
-      'exec-model':  { type: 'string' },
       effort:        { type: 'string' },
       attach:        { type: 'string', multiple: true },
       'store-path':  { type: 'string' },
@@ -127,7 +123,6 @@ if (missing.length) {
 requireOneOf('--status', values.status, STATUSES)
 requireOneOf('--mode', values.mode, MODES)
 requireOneOf('--agent', values.agent, AGENT_IDS)
-requireOneOf('--exec-agent', values['exec-agent'], AGENT_IDS)
 requireOneOf('--effort', values.effort, AGENT_EFFORTS)
 
 let attachments = []
@@ -148,8 +143,6 @@ try {
     mode: values.mode ?? 'existing',
     agentCli: values.agent,
     model: values.model,
-    executionAgentCli: values['exec-agent'],
-    executionModel: values['exec-model'],
     effort: values.effort,
     attachments,
     storePath,
@@ -166,8 +159,6 @@ try {
       baseBranch: task.baseBranch,
       agentCli: task.agentCli,
       model: task.model,
-      executionAgentCli: task.executionAgentCli,
-      executionModel: task.executionModel,
       effort: task.effort,
     },
   }, null, 2) + '\n')

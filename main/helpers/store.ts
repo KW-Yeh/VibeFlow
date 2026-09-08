@@ -2,7 +2,6 @@ import Store from 'electron-store'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
-import type { TaskProgress } from './progress'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
 export type ConnectableAgentId = 'claude' | 'codex'
@@ -33,25 +32,15 @@ export interface Task {
   workspacePath?: string
   /** Base branch the worktree was created from. */
   baseBranch?: string
-  /**
-   * Snapshot of the rendered plan.html taken just before the worktree is torn
-   * down on completion. Lets a done task still show its PLAN once the worktree
-   * (and its live PLAN.md) is gone.
-   */
-  planHtml?: string
   /** Whether the branch was pushed upstream at creation. */
   pushed?: boolean
-  /** Agent CLI used for planning/review. Absent = 'claude' (pre-field tasks). */
+  /** Agent CLI used for this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
-  /** Planning/review model id. Absent = agent's default model. */
+  /** Model id. Absent = agent's default model. */
   model?: string
-  /** Agent CLI used to execute this task. Absent = agentCli (pre-field tasks). */
-  executionAgentCli?: AgentCliId
-  /** Execution model id. Absent = execution agent's default model. */
-  executionModel?: string
-  /** Reasoning depth for both planning and execution. Absent = provider/model default. */
+  /** Reasoning depth. Absent = provider/model default. */
   effort?: AgentEffort
-  /** Epoch ms when the card was created. Used to name the preserved plan.html. */
+  /** Epoch ms when the card was created. */
   createdAt?: number
   /**
    * Epoch ms when this card's Claude execution was first launched. Used to
@@ -63,12 +52,6 @@ export interface Task {
    * a new pinned conversation while app-restart recovery can still find it.
    */
   runId?: string
-  /**
-   * Latest execution progress, mirrored from the agent-maintained progress
-   * file (see helpers/progress.ts). Survives restarts; a re-run feeds it back
-   * into the prompt so the agent resumes instead of starting over.
-   */
-  progress?: TaskProgress
 }
 
 export type BoardState = Record<ColumnId, Task[]>
@@ -185,8 +168,8 @@ export function getSettings(): AppSettings {
 /** Shallow-merge a patch into settings and persist; returns the merged value. */
 export function setSettings(patch: Partial<AppSettings>): AppSettings {
   const next = { ...getSettings(), ...patch }
-  // A blank custom system prompt means "use the built-in default" — drop the
-  // key instead of persisting an empty string.
+  // A blank custom system prompt means "no custom prompt" — drop the key
+  // instead of persisting an empty string.
   if (typeof next.systemPrompt === 'string' && next.systemPrompt.trim() === '') {
     delete next.systemPrompt
   }

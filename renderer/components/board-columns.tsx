@@ -4,8 +4,6 @@ import {
   CircleCheckBig,
   GitBranch,
   Layers,
-  ListChecks,
-  MessageCircleQuestionMark,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -16,7 +14,6 @@ import { useEffect, useRef, useState } from 'react'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
-import { isTaskComplete } from '@/lib/claude'
 import { cn } from '@/lib/utils'
 import type { BoardState, ColumnId, SubAgentRun, Task } from '@/lib/types'
 
@@ -32,21 +29,6 @@ const COLUMN_DOT: Record<ColumnId, string> = {
   backlog: 'bg-muted-foreground/60',
   in_progress: 'bg-warning animate-pulse',
   done: 'bg-success',
-}
-
-/** Execution stage a card is in, derived from the agent-maintained progress file. */
-type Stage = 'planning' | 'executing' | 'needs-input'
-
-function stageOf(task: Task): Stage {
-  if (task.progress?.needsUserInput) return 'needs-input'
-  return task.progress?.planDone === true ? 'executing' : 'planning'
-}
-
-/** Elapsed run time, coarse on purpose — the board ticks every 30s, not every second. */
-function formatElapsed(since: number, now: number): string {
-  const minutes = Math.max(0, Math.floor((now - since) / 60000))
-  if (minutes < 60) return `${minutes}m`
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
 }
 
 function projectLabel(task: Task): string {
@@ -167,7 +149,6 @@ function TaskCard({
   column,
   subAgentCount,
   selected,
-  now,
   onSelect,
   onEdit,
   onDelete,
@@ -176,7 +157,6 @@ function TaskCard({
   column: ColumnId
   subAgentCount: number
   selected: boolean
-  now: number
   onSelect: () => void
   onEdit: () => void
   onDelete: () => void
@@ -186,13 +166,8 @@ function TaskCard({
     null
   )
   const menuOpen = menuAnchor !== null
-  const complete = isTaskComplete(task)
-  const stage = stageOf(task)
-  const steps = task.progress?.steps ?? []
-  const doneSteps = steps.filter((step) => step.done).length
   const running = column === 'in_progress'
   const done = column === 'done'
-  const currentStep = steps.find((step) => !step.done)
 
   return (
     <div
@@ -214,16 +189,14 @@ function TaskCard({
         done && 'bg-card/60',
         selected
           ? 'border-primary shadow-[0_0_0_2px] shadow-primary/20'
-          : stage === 'needs-input' && running
-            ? 'border-warning/35'
-            : 'border-border hover:border-input'
+          : 'border-border hover:border-input'
       )}
     >
       {/* Header: project · effort, swapped for the actions menu on hover. */}
       <div className="group/head flex items-center gap-1.5 text-xs text-muted-foreground">
         <Layers className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{projectLabel(task)}</span>
-        {done && complete ? (
+        {done ? (
           <span className="flex shrink-0 items-center gap-1 rounded-xs bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
             <CircleCheckBig className="size-2.5" />
             complete
@@ -277,62 +250,6 @@ function TaskCard({
           {task.title}
         </span>
       </div>
-
-      {running && (
-        <div className="mt-2 space-y-2">
-          {stage === 'needs-input' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning">
-              <MessageCircleQuestionMark className="size-3" />
-              需要你回覆
-            </span>
-          ) : stage === 'executing' ? (
-            <>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning" />
-                <span className="font-medium text-warning">Executing</span>
-                {steps.length > 0 && (
-                  <span className="ml-auto tabular-nums text-muted-foreground">
-                    {doneSteps}/{steps.length}
-                  </span>
-                )}
-              </div>
-              {steps.length > 0 && (
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${(doneSteps / steps.length) * 100}%` }}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <ListChecks className="size-3 shrink-0" />
-              Planning
-            </div>
-          )}
-
-          {task.progress?.summary && (
-            <p className="line-clamp-2 text-xs leading-[1.45] text-muted-foreground">
-              {task.progress.summary}
-            </p>
-          )}
-
-          {/* Live run state. Everything here comes from the progress file the
-              agent maintains — the board has no access to terminal output. */}
-          {task.launchedAt && stage !== 'needs-input' && (
-            <div className="flex items-center gap-1.5 rounded-sm bg-background px-2 py-1.5 font-mono text-[11px] leading-4 text-muted-foreground">
-              <span className="size-1 shrink-0 animate-pulse rounded-full bg-success" />
-              <span className="min-w-0 flex-1 truncate">
-                {currentStep?.text ?? '等待 agent 回報進度…'}
-              </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground/70">
-                {formatElapsed(task.launchedAt, now)}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
         <GitBranch className="size-3 shrink-0" />
@@ -431,11 +348,6 @@ export function BoardColumns({
 }: BoardColumnsProps) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000)
-    return () => clearInterval(timer)
-  }, [])
 
   const allTasks = [...board.backlog, ...board.in_progress, ...board.done]
   const projects = Array.from(new Set(allTasks.map(projectLabel))).sort((a, b) =>
@@ -491,7 +403,6 @@ export function BoardColumns({
                     column={column}
                     subAgentCount={(subAgents[task.id] ?? []).length}
                     selected={task.id === selectedTaskId}
-                    now={now}
                     onSelect={() => onSelectTask(task.id)}
                     onEdit={() => onEditTask(task.id)}
                     onDelete={() => onDeleteTask(task.id)}

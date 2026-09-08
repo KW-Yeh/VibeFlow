@@ -59,7 +59,7 @@ type GithubAuthPhase = 'idle' | 'starting' | 'waiting' | 'success' | 'error'
 
 interface SettingsDialogProps {
   open: boolean
-  /** Current custom system prompt ('' = the built-in default is in effect). */
+  /** Current custom system prompt ('' = no user prompt). */
   systemPrompt: string
   /** Current global workstation path ('' = the ~/Desktop default is in effect). */
   workstationPath: string
@@ -554,7 +554,7 @@ export function SettingsDialog({
               className={cn(fieldClass, 'resize-y font-mono text-sm leading-5')}
             />
             <p className="text-sm text-muted-foreground">
-              啟動 Agent 時會以此 prompt 作為 system prompt；留空則不帶 system prompt。進度追蹤協議會隨任務內容自動附加。
+              啟動 Agent 時會以此 prompt 作為 system prompt；留空則只帶入任務專屬的 Artifact 設定。
             </p>
           </section>
 
