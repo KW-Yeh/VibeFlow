@@ -148,3 +148,79 @@ test('executorSessionId — is valid, stable, and unique per run', () => {
   assert.equal(first, executorSessionId('abcd1234', '11111111-1111-4111-8111-111111111111'))
   assert.notEqual(first, second)
 })
+
+const BOARD_TASK = {
+  ...TASK,
+  projectPath: '/Users/dev/project',
+  baseBranch: 'main',
+}
+
+const BOARD_CLI = {
+  storeDir: '/Users/dev/Library/Application Support/VibeFlow (development)',
+  cliPath: '/Users/dev/Desktop/VibeFlow/scripts/vibeflow.mjs',
+  loaderPath: '/Users/dev/Desktop/VibeFlow/test/support/register.mjs',
+}
+
+test('buildAgentCommand — board access is exported into the launch shell', () => {
+  const cmd = buildAgentCommand(
+    BOARD_TASK,
+    '',
+    { boardCli: BOARD_CLI, autoMode: true },
+    '/workspace/project'
+  )
+
+  assert.ok(cmd.startsWith('export VIBEFLOW_TASK_ID='))
+  assert.ok(cmd.includes(`VIBEFLOW_TASK_ID='abcd1234'`))
+  assert.ok(cmd.includes(`VIBEFLOW_PROJECT_PATH='/Users/dev/project'`))
+  assert.ok(cmd.includes(`VIBEFLOW_BRANCH='fix/login-flow'`))
+  assert.ok(cmd.includes(`VIBEFLOW_BASE_BRANCH='main'`))
+  assert.ok(cmd.includes(`VIBEFLOW_CLI='${BOARD_CLI.cliPath}'`))
+  assert.ok(cmd.includes(`VIBEFLOW_CLI_LOADER='${BOARD_CLI.loaderPath}'`))
+  assert.ok(cmd.includes(`VIBEFLOW_AUTO_MODE='1'`))
+  assert.ok(cmd.includes(`; claude `), 'the agent command still follows the exports')
+})
+
+test('buildAgentCommand — a store dir with spaces stays one quoted value', () => {
+  const cmd = buildAgentCommand(BOARD_TASK, '', { boardCli: BOARD_CLI })
+
+  assert.ok(cmd.includes(`VIBEFLOW_STORE_DIR='${BOARD_CLI.storeDir}'`))
+  assert.ok(cmd.includes(`VIBEFLOW_AUTO_MODE='0'`), 'Auto Mode off is reported, not omitted')
+})
+
+test('buildAgentCommand — no board info exports nothing', () => {
+  const cmd = buildAgentCommand(BOARD_TASK, '', undefined, '/workspace/project')
+
+  assert.ok(cmd.startsWith('claude '))
+  assert.ok(!cmd.includes('VIBEFLOW_'))
+})
+
+test('buildAgentCommand — a board with no CLI exports identity but no CLI path', () => {
+  const cmd = buildAgentCommand(BOARD_TASK, '', {
+    boardCli: { storeDir: BOARD_CLI.storeDir },
+  })
+
+  assert.ok(cmd.includes(`VIBEFLOW_TASK_ID='abcd1234'`))
+  assert.ok(!cmd.includes('VIBEFLOW_CLI='))
+  assert.ok(!cmd.includes('VIBEFLOW_CLI_LOADER='))
+})
+
+test('buildAgentCommand — exports precede the resume `if`, not just one branch', () => {
+  const cmd = buildAgentCommand(BOARD_TASK, '', {
+    resume: true,
+    boardCli: BOARD_CLI,
+  })
+
+  assert.ok(cmd.startsWith('export VIBEFLOW_TASK_ID='))
+  assert.ok(cmd.includes('; if [ -f '), 'the resume test must run inside the exported env')
+})
+
+test('buildAgentCommand — Codex gets the same board exports', () => {
+  const cmd = buildAgentCommand(
+    { ...CODEX_TASK, projectPath: '/Users/dev/project', baseBranch: 'main' },
+    '',
+    { boardCli: BOARD_CLI }
+  )
+
+  assert.ok(cmd.startsWith('export VIBEFLOW_TASK_ID='))
+  assert.ok(cmd.includes('; codex '))
+})

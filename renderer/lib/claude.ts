@@ -1,4 +1,10 @@
-import type { AgentCliId, LibraryLaunchInfo, MemoryLaunchInfo, Task } from '@/lib/types'
+import type {
+  AgentCliId,
+  BoardCliLaunchInfo,
+  LibraryLaunchInfo,
+  MemoryLaunchInfo,
+  Task,
+} from '@/lib/types'
 
 /**
  * Temporary-artifact directory suffix. The agent writes screenshots, reports and
@@ -81,6 +87,40 @@ function shellQuote(s: string): string {
 /** Normalize path separators to forward slashes for use inside shell commands. */
 function toShellPath(p: string): string {
   return p.replace(/\\/g, '/')
+}
+
+/**
+ * Card identity exported into the launch shell: which card is running, and how
+ * to reach the board it belongs to. A skill splitting work into sub-cards needs
+ * this to create them and to rewrite the card it was given; an unset
+ * VIBEFLOW_CLI means the board is read-only for the agent (the packaged app
+ * ships no CLI), so absent values are omitted rather than exported empty. No
+ * board info at all exports nothing: a launch that cannot reach the board must
+ * not look to a skill as if it could.
+ *
+ * `export …;` rather than a `VAR=v cmd` prefix: a resuming Claude launch is a
+ * shell `if` statement, which that prefix form cannot carry.
+ */
+function boardEnvPrefix(
+  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch'>,
+  opts?: LaunchOptions
+): string {
+  const board = opts?.boardCli
+  if (!board) return ''
+  const entries: Array<[string, string | undefined]> = [
+    ['VIBEFLOW_TASK_ID', task.id],
+    ['VIBEFLOW_PROJECT_PATH', task.projectPath],
+    ['VIBEFLOW_BRANCH', task.branch],
+    ['VIBEFLOW_BASE_BRANCH', task.baseBranch],
+    ['VIBEFLOW_STORE_DIR', board?.storeDir],
+    ['VIBEFLOW_CLI', board?.cliPath],
+    ['VIBEFLOW_CLI_LOADER', board?.loaderPath],
+    ['VIBEFLOW_AUTO_MODE', opts?.autoMode ? '1' : '0'],
+  ]
+  const exports = entries
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key}=${shellQuote(toShellPath(value))}`)
+  return exports.length ? `export ${exports.join(' ')}; ` : ''
 }
 
 /**
@@ -249,6 +289,12 @@ export interface LaunchOptions {
    */
   library?: LibraryLaunchInfo
   /**
+   * Store dir + CLI paths the agent needs to create sub-cards and rewrite its
+   * own card. Absent → no VIBEFLOW_CLI is exported and the board stays
+   * read-only for the agent.
+   */
+  boardCli?: BoardCliLaunchInfo
+  /**
    * Global Auto Mode. For Codex this decides authorization: ON adds
    * `--dangerously-bypass-approvals-and-sandbox` so the agent runs unattended;
    * OFF leaves Codex in its default interactive mode (waits for approval each
@@ -393,6 +439,9 @@ export function buildAgentCommand(
     | 'effort'
     | 'worktreePath'
     | 'runId'
+    | 'projectPath'
+    | 'branch'
+    | 'baseBranch'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -415,15 +464,18 @@ export function buildAgentCommand(
   const sessionId = agent === 'claude' && includeTaskPrompt
     ? executorSessionId(task.id, task.runId)
     : undefined
-  return assembleCommand(
-    agent,
-    sys,
-    prompt,
-    model,
-    task.effort,
-    opts,
-    task.worktreePath,
-    sessionId,
-    workspacePath
+  return (
+    boardEnvPrefix(task, opts) +
+    assembleCommand(
+      agent,
+      sys,
+      prompt,
+      model,
+      task.effort,
+      opts,
+      task.worktreePath,
+      sessionId,
+      workspacePath
+    )
   )
 }

@@ -46,6 +46,7 @@ import {
   syncBaseBranch,
 } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
+import { boardCliLaunchInfo } from './helpers/board-cli'
 import {
   getCheckpoints,
   getRelatedTasks,
@@ -604,6 +605,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   /** Built-in memory MCP server + unified db paths for launch-command injection. */
   ipcMain.handle('memory:getLaunchInfo', () => memoryLaunchInfo())
+
+  /** Store dir + CLI paths an agent needs to put cards on this same board. */
+  ipcMain.handle('board:getCliLaunchInfo', () => boardCliLaunchInfo())
 
   // Library: VibeFlow's own store of skills / prompts / scripts. Every handler
   // resolves the root fresh because Electron redirects userData in dev.

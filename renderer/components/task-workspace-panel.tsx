@@ -71,6 +71,7 @@ import { cn } from '@/lib/utils'
 import type {
   ArtifactContent,
   ArtifactKind,
+  BoardCliLaunchInfo,
   ColumnId,
   DiffEntry,
   DiffFile,
@@ -1662,6 +1663,7 @@ export function buildWorkspaceLaunchCommand({
   includeTaskPrompt,
   memory,
   library,
+  boardCli,
   autoMode,
 }: {
   task: Task
@@ -1674,13 +1676,15 @@ export function buildWorkspaceLaunchCommand({
   memory?: MemoryLaunchInfo
   /** VibeFlow library delivery; undefined → nothing enabled. */
   library?: LibraryLaunchInfo
+  /** Board access for the agent; undefined → it cannot create or edit cards. */
+  boardCli?: BoardCliLaunchInfo
   /** Global Auto Mode — drives Codex authorization at launch. */
   autoMode?: boolean
 }): string {
   return buildAgentCommand(
     task,
     systemPrompt,
-    { resume, includeTaskPrompt, memory, library, autoMode },
+    { resume, includeTaskPrompt, memory, library, boardCli, autoMode },
     workspacePath
   )
 }

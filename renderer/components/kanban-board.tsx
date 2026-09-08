@@ -23,6 +23,7 @@ import {
   executorSessionId,
 } from '@/lib/claude'
 import {
+  getBoardCliLaunchInfo,
   getLibraryLaunchInfo,
   getMemoryLaunchInfo,
   restartTask,
@@ -36,6 +37,7 @@ import type {
   AgentEffort,
   AgentConnections,
   AttachmentInput,
+  BoardCliLaunchInfo,
   BoardState,
   ColumnId,
   GitInfo,
@@ -210,6 +212,15 @@ export function KanbanBoard({
     })
   }, [])
 
+  // Store dir and CLI paths are fixed for the app session too — an agent uses
+  // them to create sub-cards and rewrite its own card.
+  const boardCliRef = useRef<BoardCliLaunchInfo | null>(null)
+  useEffect(() => {
+    getBoardCliLaunchInfo().then((info) => {
+      if (info) boardCliRef.current = info
+    })
+  }, [])
+
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
@@ -242,6 +253,7 @@ export function KanbanBoard({
         includeTaskPrompt: opts?.includeTaskPrompt,
         memory: memoryLaunchRef.current ?? undefined,
         library: library ?? undefined,
+        boardCli: boardCliRef.current ?? undefined,
         autoMode,
       })
     )

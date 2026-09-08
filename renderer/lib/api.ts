@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ArtifactContent,
   AttachmentInput,
+  BoardCliLaunchInfo,
   BoardState,
   ChatChunk,
   ChatAttachment,
@@ -345,6 +346,11 @@ export async function getLibraryLaunchInfo(
 export async function getMemoryLaunchInfo(): Promise<MemoryLaunchInfo | null> {
   const b = bridge()
   return b ? b.getMemoryLaunchInfo() : null
+}
+
+export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {
+  const b = bridge()
+  return b ? b.getBoardCliLaunchInfo() : null
 }
 
 export async function getRelatedTasks(taskId: string): Promise<RelatedTask[]> {

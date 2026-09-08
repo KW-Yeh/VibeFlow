@@ -15,6 +15,7 @@ import type {
   PrStatus,
 } from './helpers/git'
 import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
+import type { BoardCliLaunchInfo } from './helpers/board-cli'
 import type {
   MemoryCheckpoint,
   MemoryLaunchInfo,
@@ -192,6 +193,9 @@ const vibeflow = {
   /** Built-in memory MCP server + unified db paths for launch injection. */
   getMemoryLaunchInfo: (): Promise<MemoryLaunchInfo> =>
     ipcRenderer.invoke('memory:getLaunchInfo'),
+  /** Store dir + CLI paths for launch injection, so an agent can write cards. */
+  getBoardCliLaunchInfo: (): Promise<BoardCliLaunchInfo> =>
+    ipcRenderer.invoke('board:getCliLaunchInfo'),
   /** Native picker for a library import source (dir for skills, file otherwise). */
   pickLibrarySource: (kind: LibraryKind): Promise<string | null> =>
     ipcRenderer.invoke('dialog:pickLibrarySource', kind),

@@ -22,6 +22,7 @@ export type {
   ArtifactKind,
   TaskArtifact,
 } from '../../main/helpers/artifacts'
+export type { BoardCliLaunchInfo } from '../../main/helpers/board-cli'
 export type {
   MemoryCheckpoint,
   MemoryDecision,
