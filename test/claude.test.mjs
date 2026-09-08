@@ -131,11 +131,14 @@ test('buildAgentCommand — restart uses a fresh pinned session and retains Arti
   assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
 })
 
-test('buildAgentCommand — Claude resume re-injects Artifact context', () => {
+test('buildAgentCommand — Claude resume re-injects Artifact context without a new message', () => {
   const cmd = buildAgentCommand(TASK, '', { resume: true }, '/workspace/project')
   assert.ok(cmd.includes('--append-system-prompt'))
   assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
-  assert.ok(cmd.includes('請接續這個任務'))
+  assert.ok(!cmd.includes('請接續這個任務'))
+  assert.ok(!cmd.includes('任務標題'))
+  assert.ok(!cmd.includes('修復登入流程'))
+  assert.ok(!cmd.includes('使用者無法登入'))
 })
 
 test('executorSessionId — is valid, stable, and unique per run', () => {

@@ -120,8 +120,9 @@ function buildMemoryMcpFlag(memory?: MemoryLaunchInfo): string {
  * unrunnable. The session lives at `~/.claude/projects/<cwd→dashes>/<id>.jsonl`
  * (every non-alphanumeric in the cwd becomes a dash); a shell `-f` test at
  * launch time picks `--resume` or `--session-id` accordingly. `tail` is every
- * argument after the session flag (flags + system prompt + prompt), identical
- * for both branches. Falls back to a plain resume when the cwd is unknown.
+ * argument after the session flag (flags + system prompt + optional prompt),
+ * identical for both branches. Falls back to a plain resume when the cwd is
+ * unknown.
  */
 function claudeResumeOrFresh(
   sessionId: string,
@@ -190,15 +191,6 @@ export function buildPrompt(
     lines.push('', '任務描述：', description)
   }
   return lines.join('\n')
-}
-
-/**
- * Build the message sent as a new turn when resuming a prior agent session.
- * The conversation history is restored by the CLI's resume flag, so this only
- * needs only a small nudge rather than the full task description.
- */
-export function buildResumePrompt(): string {
-  return '請接續這個任務，先確認目前工作區狀態，再繼續尚未完成的工作。'
 }
 
 /**
@@ -415,11 +407,9 @@ export function buildAgentCommand(
   const customPrompt = resolveSystemPrompt(systemPrompt)
   const sys = [builtInPrompt, libraryPrompt, customPrompt].filter(Boolean).join('\n\n')
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
-  const prompt = includeTaskPrompt
-    ? opts?.resume && agent === 'claude'
-      ? buildResumePrompt()
-      : buildPrompt(task)
-    : ''
+  // Resuming restores the existing conversation verbatim. Do not submit a new
+  // user turn automatically; the user can decide what to ask next.
+  const prompt = includeTaskPrompt && !opts?.resume ? buildPrompt(task) : ''
   // An agent-only launch is intentionally independent from the task's pinned
   // conversation. Claude creates a fresh interactive session of its own.
   const sessionId = agent === 'claude' && includeTaskPrompt
