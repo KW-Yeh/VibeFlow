@@ -6,7 +6,7 @@ import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
-import { Bot, RefreshCw, RotateCcw } from 'lucide-react'
+import { Bot, RotateCcw } from 'lucide-react'
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -61,7 +61,6 @@ export function TaskTerminal({
   const dragDepthRef = useRef(0)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
-  const [isRestarting, setIsRestarting] = useState(false)
   const [isRestartingTask, setIsRestartingTask] = useState(false)
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false)
 
@@ -126,42 +125,6 @@ export function TaskTerminal({
         readyRef.current = true
         term.focus()
       })
-  }, [taskId, sessionKey])
-
-  const openFreshInteractiveShell = useCallback(() => {
-    const startCwd = cwdRef.current
-    const term = termRef.current
-    const api = typeof window !== 'undefined' ? window.vibeflow : undefined
-    if (!startCwd || !term || !api || readOnlyRef.current) return
-
-    onInteractRef.current?.()
-    readyRef.current = false
-    runningCommandRef.current = false
-    setIsRestarting(true)
-    // Clear both xterm's visible buffer and the main-process scrollback. The
-    // latter prevents output from the closed PTY from returning after a panel
-    // remounts later in the app session.
-    term.reset()
-    term.clear()
-    void api.term
-      .start(
-        taskId,
-        startCwd,
-        undefined,
-        sessionKey,
-        term.cols,
-        term.rows,
-        true
-      )
-      .then(() => {
-        readyRef.current = true
-        term.focus()
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error)
-        term.writeln(`\r\n⚠️  重開 Terminal 失敗：${message}`)
-      })
-      .finally(() => setIsRestarting(false))
   }, [taskId, sessionKey])
 
   const restartTaskFromBeginning = useCallback(async () => {
@@ -506,7 +469,7 @@ export function TaskTerminal({
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void restartTaskFromBeginning()}
-                disabled={!cwd || isRestartingTask || isRestarting || isLaunchingAgent}
+                disabled={!cwd || isRestartingTask || isLaunchingAgent}
                 title="依目前任務設定與內容重新啟動 Agent"
               >
                 <RotateCcw className={cn('size-3', isRestartingTask && 'animate-spin')} />
@@ -519,24 +482,13 @@ export function TaskTerminal({
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void launchAgentOnly()}
-                disabled={!cwd || isLaunchingAgent || isRestartingTask || isRestarting}
+                disabled={!cwd || isLaunchingAgent || isRestartingTask}
                 title="只帶入 Agent 設定與 Artifact 資訊，不傳入任務內容"
               >
                 <Bot className={cn('size-3', isLaunchingAgent && 'animate-pulse')} />
                 {isLaunchingAgent ? '啟動中…' : '啟動 Agent'}
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 shrink-0 px-2 text-xs"
-              onClick={openFreshInteractiveShell}
-              disabled={!cwd || isRestarting || isRestartingTask || isLaunchingAgent}
-              title="關閉目前 session 並開啟乾淨的 Terminal"
-            >
-              <RefreshCw className={cn('size-3', isRestarting && 'animate-spin')} />
-              {isRestarting ? '重開中…' : '重開 Terminal'}
-            </Button>
           </div>
         )}
       </div>

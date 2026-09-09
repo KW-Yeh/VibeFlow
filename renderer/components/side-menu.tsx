@@ -167,15 +167,6 @@ function defaultProjectExpanded(project: ProjectGroup): boolean {
   return project.hasSelected || project.tasks.some((entry) => entry.column !== 'done')
 }
 
-function projectInitials(name: string): string {
-  return name
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || '?'
-}
-
 const COLUMN_LABEL = {
   backlog: 'Backlog',
   in_progress: 'In Progress',
@@ -879,38 +870,7 @@ export function SideMenu({
       <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
         {/* Projects section */}
         <div className="px-2">
-          {collapsed ? (
-            <motion.div
-              key="collapsed-projects"
-              initial="hidden"
-              animate="visible"
-              variants={contentVariants}
-              className="space-y-1"
-            >
-              {projects.map((project) => {
-                const firstTask = project.tasks[0]?.task
-                const selected = project.hasSelected
-                return (
-                  <button
-                    key={project.key}
-                    type="button"
-                    aria-label={`開啟 ${project.name}`}
-                    title={project.path ?? project.name}
-                    disabled={!firstTask}
-                    onClick={() => firstTask && onSelectTask(firstTask.id)}
-                    className={cn(
-                      'mx-auto flex size-8 items-center justify-center rounded-md text-xs font-semibold transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40',
-                      selected
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                    )}
-                  >
-                    {projectInitials(project.name)}
-                  </button>
-                )
-              })}
-            </motion.div>
-          ) : (
+          {collapsed ? null : (
             <motion.div
               key="expanded-projects"
               initial="hidden"
