@@ -6,11 +6,7 @@ import fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import readline from 'node:readline'
-import {
-  getCheckpointsFromDb,
-  getRelatedTasksFromDb,
-  getTaskLinksFromDb,
-} from '../main/helpers/memory.ts'
+import { getCheckpointsFromDb } from '../main/helpers/memory.ts'
 
 const SERVER = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -161,33 +157,10 @@ test('memory MCP server — handshake + save→find→detail→artifact→link r
   const missing = await call(srv, 'memory_get_task_detail', { task_id: 'nope' })
   assert.match(missing.error, /no task/)
 
-  // The app's read-side helpers (memory.ts *FromDb variants) read the same
-  // store the server just wrote.
+  // The app's read-side helper (getCheckpointsFromDb) reads the same store the
+  // server just wrote.
   const cps = await getCheckpointsFromDb(dbPath, 'feature/built-in-agent-memory')
   assert.equal(cps.length, 2)
   assert.equal(cps[0].seq, 1)
   assert.equal(cps[0].artifacts[0].description, 'design note')
-
-  // getRelatedTasks: seeded from this task's own title/summary, excludes self,
-  // surfaces the other task (shared "memory" vocabulary via FTS).
-  const rel = await getRelatedTasksFromDb(dbPath, 'feature/built-in-agent-memory')
-  assert.ok(rel.every((r) => r.id !== 'feature/built-in-agent-memory'))
-  assert.ok(rel.some((r) => r.id === 'feature/plan'))
-
-  // getTaskLinks: outgoing edge from this task, neighbour title resolved.
-  const outLinks = await getTaskLinksFromDb(dbPath, 'feature/built-in-agent-memory')
-  assert.deepEqual(outLinks, [
-    {
-      otherId: 'feature/plan',
-      otherTitle: 'Plan feature',
-      relation: 'derived_from',
-      note: 'extends the done-panel memory work',
-      direction: 'outgoing',
-    },
-  ])
-  // and the incoming view from the other side.
-  const inLinks = await getTaskLinksFromDb(dbPath, 'feature/plan')
-  assert.equal(inLinks.length, 1)
-  assert.equal(inLinks[0].direction, 'incoming')
-  assert.equal(inLinks[0].otherId, 'feature/built-in-agent-memory')
 })

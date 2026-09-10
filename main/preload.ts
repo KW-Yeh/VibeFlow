@@ -16,12 +16,7 @@ import type {
 } from './helpers/git'
 import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
 import type { BoardCliLaunchInfo } from './helpers/board-cli'
-import type {
-  MemoryCheckpoint,
-  MemoryLaunchInfo,
-  MemoryTaskLink,
-  RelatedTask,
-} from './helpers/memory'
+import type { MemoryCheckpoint, MemoryLaunchInfo } from './helpers/memory'
 import type { SubAgentRun } from './helpers/subagents'
 import type { ChatAttachment, Conversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/attachments'
@@ -233,12 +228,6 @@ const vibeflow = {
   /** Rebuilt delivery trees + launch flags for the library. */
   getLibraryLaunchInfo: (worktreePath?: string): Promise<LibraryLaunchInfo | null> =>
     ipcRenderer.invoke('library:getLaunchInfo', worktreePath),
-  /** FTS-similar prior tasks across the unified store. */
-  getRelatedTasks: (taskId: string): Promise<RelatedTask[]> =>
-    ipcRenderer.invoke('task:getRelatedTasks', taskId),
-  /** Explicit task_links neighbours for the task. */
-  getTaskLinks: (taskId: string): Promise<MemoryTaskLink[]> =>
-    ipcRenderer.invoke('task:getTaskLinks', taskId),
   approve: (
     taskId: string,
     message: string

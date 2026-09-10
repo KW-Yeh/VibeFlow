@@ -49,12 +49,7 @@ import {
 import { captureTaskOutcome } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
 import { boardCliLaunchInfo } from './helpers/board-cli'
-import {
-  getCheckpoints,
-  getRelatedTasks,
-  getTaskLinks,
-  memoryLaunchInfo,
-} from './helpers/memory'
+import { getCheckpoints, memoryLaunchInfo } from './helpers/memory'
 import {
   killAllSessions,
   killSession,
@@ -681,20 +676,6 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('library:getLaunchInfo', (_event, worktreePath?: string) =>
     libraryLaunchInfo(worktreePath)
   )
-
-  /** FTS-similar prior tasks across the unified store (keyed by branch name). */
-  ipcMain.handle('task:getRelatedTasks', async (_event, taskId: string) => {
-    const task = findTask(taskId)
-    if (!task) return []
-    return getRelatedTasks(task.branch)
-  })
-
-  /** Explicit task_links neighbours for a task (keyed by branch name). */
-  ipcMain.handle('task:getTaskLinks', async (_event, taskId: string) => {
-    const task = findTask(taskId)
-    if (!task) return []
-    return getTaskLinks(task.branch)
-  })
 
   // Approve: commit everything in the worktree and push the branch upstream.
   ipcMain.handle(

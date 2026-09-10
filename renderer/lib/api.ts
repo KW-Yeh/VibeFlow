@@ -23,9 +23,7 @@ import type {
   LibraryKind,
   LibraryLaunchInfo,
   MemoryLaunchInfo,
-  MemoryTaskLink,
   PrStatus,
-  RelatedTask,
   RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
@@ -351,16 +349,6 @@ export async function getMemoryLaunchInfo(): Promise<MemoryLaunchInfo | null> {
 export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {
   const b = bridge()
   return b ? b.getBoardCliLaunchInfo() : null
-}
-
-export async function getRelatedTasks(taskId: string): Promise<RelatedTask[]> {
-  const b = bridge()
-  return b ? b.getRelatedTasks(taskId) : []
-}
-
-export async function getTaskLinks(taskId: string): Promise<MemoryTaskLink[]> {
-  const b = bridge()
-  return b ? b.getTaskLinks(taskId) : []
 }
 
 export async function approve(

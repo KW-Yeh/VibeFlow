@@ -32,8 +32,6 @@ export type {
   MemoryDecision,
   MemoryArtifact,
   MemoryLaunchInfo,
-  MemoryTaskLink,
-  RelatedTask,
 } from '../../main/helpers/memory'
 export type {
   LibraryEntry,
