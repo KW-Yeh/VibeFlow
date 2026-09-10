@@ -6,6 +6,7 @@ import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
 import { ATTACHMENTS_DIR } from './attachments'
 import { ARTIFACTS_FALLBACK_DIR } from './artifacts'
+import type { OutcomeCommit, OutcomeFile, OutcomePr, TaskOutcome } from './store'
 
 const pexec = promisify(execFile)
 
@@ -1090,6 +1091,114 @@ export async function commitAndPush(
   }
 
   return { committed, pushed, message }
+}
+
+/**
+ * Cap on commits recorded in a task outcome. A branch with more than this is
+ * one whose story the subject lines were never going to tell anyway.
+ */
+export const MAX_OUTCOME_COMMITS = 50
+
+/** NUL-separated `git log` fields, so a subject containing the separator cannot split a record. */
+const OUTCOME_LOG_FORMAT = '%h%x00%s'
+
+/**
+ * The branch's PR, shaped for storing on the card. Returns `{ pr }` so the
+ * caller can spread it, or null when there is no PR, no `gh`, or no network —
+ * none of which is an error worth failing a teardown over, and all of which
+ * simply leave the card showing its commits and diff alone.
+ *
+ * Unlike getPrStatus this also pulls title and body, because the body is the
+ * point: it is where the reasoning behind the change was written down, and it
+ * becomes unreachable once the worktree gh needs is deleted.
+ */
+async function getOutcomePr(
+  worktreePath: string
+): Promise<{ pr: OutcomePr } | null> {
+  try {
+    const { stdout } = await pexec(
+      'gh',
+      ['pr', 'view', '--json', 'url,number,state,title,body'],
+      { cwd: worktreePath, env: execEnv() }
+    )
+    const parsed = JSON.parse(stdout.toString().trim()) as OutcomePr
+    if (!parsed?.url) return null
+    return {
+      pr: {
+        number: parsed.number,
+        state: parsed.state,
+        url: parsed.url,
+        title: parsed.title,
+        ...(parsed.body?.trim() ? { body: parsed.body } : {}),
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Snapshot what a task's branch changed, for keeping after the worktree is
+ * gone. Deliberately offline: this runs while a task is being torn down, so it
+ * must not block teardown on the network, and it compares against whatever base
+ * ref is already local.
+ *
+ * Returns null when the branch changed nothing — a task that was completed
+ * without ever diverging from its base has no outcome worth storing, and the
+ * caller uses null to leave any earlier snapshot alone.
+ */
+export async function captureTaskOutcome(
+  worktreePath: string,
+  baseBranch: string
+): Promise<TaskOutcome | null> {
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+
+  let commits: OutcomeCommit[] = []
+  try {
+    const log = await git(worktreePath, [
+      'log',
+      `--format=${OUTCOME_LOG_FORMAT}`,
+      `--max-count=${MAX_OUTCOME_COMMITS}`,
+      `${baseRef}..HEAD`,
+    ])
+    commits = log
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, ...rest] = line.split('\0')
+        return { sha, subject: rest.join('\0') }
+      })
+  } catch {
+    // A base ref that cannot be resolved into a range leaves the commit list
+    // empty; the file list below is still worth having.
+  }
+
+  let entries: DiffEntry[] = []
+  try {
+    entries = await collectDiffEntries(worktreePath, baseRef)
+  } catch {
+    // no diff readable — fall through and decide on commits alone
+  }
+
+  const files: OutcomeFile[] = entries.slice(0, MAX_DIFF_FILES).map((e) => ({
+    path: e.path,
+    status: e.status,
+    additions: e.additions,
+    deletions: e.deletions,
+  }))
+
+  if (commits.length === 0 && files.length === 0) return null
+
+  return {
+    commits,
+    files,
+    ...((await getOutcomePr(worktreePath)) ?? {}),
+    // Totals cover every changed file, including those past the display cap.
+    additions: entries.reduce((sum, e) => sum + e.additions, 0),
+    deletions: entries.reduce((sum, e) => sum + e.deletions, 0),
+    ...(entries.length > MAX_DIFF_FILES ? { truncated: true } : {}),
+    capturedAt: Date.now(),
+  }
 }
 
 export interface PrStatus {

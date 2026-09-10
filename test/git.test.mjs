@@ -16,6 +16,7 @@ import {
   getWorktreeDiffFile,
   commitAndPush,
   dropCoveredEntries,
+  captureTaskOutcome,
 } from '../main/helpers/git.ts'
 import { ARTIFACTS_FALLBACK_DIR } from '../main/helpers/artifacts.ts'
 import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
@@ -631,4 +632,70 @@ test('dropCoveredEntries — drops a descendant nested several levels down', () 
     dropCoveredEntries(['a', 'a/b/c/d.txt', 'a2/b.txt']),
     ['a', 'a2/b.txt']
   )
+})
+
+// --- captureTaskOutcome ---
+
+test('captureTaskOutcome — records the branch commits and its changed files', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'out00001', 'main', 'feature/outcome')
+    const wt = res.worktreePath
+
+    await writeFile(wt, 'added.txt', 'brand new\n')
+    await git(wt, 'add', '-A')
+    await git(wt, 'commit', '-m', 'feat: add the file')
+    await writeFile(wt, 'README.md', '# sandbox\nchanged\n')
+    await git(wt, 'add', '-A')
+    await git(wt, 'commit', '-m', 'docs: rewrite the readme')
+
+    const outcome = await captureTaskOutcome(wt, 'main')
+
+    // Newest first, so the last thing done reads first on the card.
+    assert.deepEqual(
+      outcome.commits.map((c) => c.subject),
+      ['docs: rewrite the readme', 'feat: add the file']
+    )
+    for (const commit of outcome.commits) {
+      assert.match(commit.sha, /^[0-9a-f]{7,}$/)
+    }
+
+    const paths = outcome.files.map((f) => f.path).sort()
+    assert.deepEqual(paths, ['README.md', 'added.txt'])
+    assert.ok(outcome.additions > 0)
+    assert.equal(typeof outcome.capturedAt, 'number')
+    assert.equal(outcome.truncated, undefined)
+    // Stage two fills this in; a capture without gh must not invent one.
+    assert.equal(outcome.pr, undefined)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('captureTaskOutcome — a branch that changed nothing yields null', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'out00002', 'main', 'feature/untouched')
+    // Nothing committed, nothing edited: there is no outcome worth keeping, and
+    // null is what tells the caller to leave an earlier snapshot alone.
+    assert.equal(await captureTaskOutcome(res.worktreePath, 'main'), null)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('captureTaskOutcome — uncommitted work still counts as a changed file', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'out00003', 'main', 'feature/dirty')
+    const wt = res.worktreePath
+    await writeFile(wt, 'scratch.txt', 'not committed\n')
+
+    const outcome = await captureTaskOutcome(wt, 'main')
+
+    assert.equal(outcome.commits.length, 0)
+    assert.deepEqual(outcome.files.map((f) => f.path), ['scratch.txt'])
+  } finally {
+    await cleanup()
+  }
 })

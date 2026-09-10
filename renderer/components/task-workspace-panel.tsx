@@ -24,8 +24,11 @@ import {
   FileText,
   Film,
   FolderOpen,
+  ExternalLink,
   GitBranch,
+  GitCommitHorizontal,
   GitCompare,
+  GitPullRequest,
   Image as ImageIcon,
   Layers,
   Lightbulb,
@@ -61,10 +64,9 @@ import {
   getDiff,
   getDiffEntries,
   getDiffFile,
-  getRelatedTasks,
-  getTaskLinks,
   listArtifacts,
   openArtifactsDir,
+  openExternal,
   readArtifact,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -78,11 +80,10 @@ import type {
   MemoryCheckpoint,
   LibraryLaunchInfo,
   MemoryLaunchInfo,
-  MemoryTaskLink,
-  RelatedTask,
   SubAgentRun,
   Task,
   TaskArtifact,
+  TaskOutcome,
 } from '@/lib/types'
 
 /**
@@ -262,6 +263,131 @@ function InfoSection({
   )
 }
 
+/** OPEN / MERGED / CLOSED, tinted so the card's fate reads at a glance. */
+const PR_STATE_CLASS: Record<string, string> = {
+  MERGED: 'bg-primary/15 text-primary',
+  OPEN: 'bg-success/15 text-success',
+  CLOSED: 'bg-destructive/15 text-destructive',
+}
+
+/**
+ * What a finished task came to: its pull request, its commits, and the files it
+ * touched, all captured at completion (see captureTaskOutcome). This is the
+ * card's account of the work once the worktree, artifacts and branch are gone,
+ * so it renders from the stored snapshot alone and never reaches for git.
+ */
+function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
+  const [showBody, setShowBody] = useState(false)
+  const { pr, commits, files } = outcome
+
+  return (
+    <div className="space-y-4">
+      {pr && (
+        <div className="space-y-2">
+          <h3 className={cn(SECTION_LABEL, 'flex items-center gap-1.5')}>
+            <GitPullRequest className="size-3.5" />
+            Pull Request
+          </h3>
+          <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-2.5 text-sm">
+            <div className="flex items-start gap-2">
+              <span
+                className={cn(
+                  'shrink-0 rounded-xs px-1.5 py-0.5 text-xs font-medium',
+                  PR_STATE_CLASS[pr.state] ?? 'bg-secondary text-secondary-foreground'
+                )}
+              >
+                {pr.state}
+              </span>
+              <span className="min-w-0 flex-1 break-words text-foreground">
+                {pr.title}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void openExternal(pr.url)}
+                className="flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <ExternalLink className="size-3" />#{pr.number}
+              </button>
+              {pr.body && (
+                <button
+                  type="button"
+                  onClick={() => setShowBody((v) => !v)}
+                  className="rounded-sm text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  {showBody ? '收合說明' : '展開說明'}
+                </button>
+              )}
+            </div>
+            {pr.body && showBody && (
+              <MarkdownContent
+                source={pr.body}
+                compact
+                className="bg-transparent p-0"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {commits.length > 0 && (
+        <div className="space-y-2">
+          <h3 className={cn(SECTION_LABEL, 'flex items-center gap-1.5')}>
+            <GitCommitHorizontal className="size-3.5" />
+            Commits
+            <span className="tabular-nums font-normal">{commits.length}</span>
+          </h3>
+          <ul className="space-y-1 rounded-md bg-muted/30 p-2.5 text-sm">
+            {commits.map((c) => (
+              <li key={c.sha} className="flex items-start gap-2">
+                <code className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {c.sha}
+                </code>
+                <span className="min-w-0 break-words">{c.subject}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="space-y-2">
+          <h3 className={cn(SECTION_LABEL, 'flex items-center gap-1.5')}>
+            <FileDiff className="size-3.5" />
+            變更檔案
+            <span className="tabular-nums font-normal">{files.length}</span>
+            <span className="ml-auto font-normal tabular-nums">
+              <span className="text-success">+{outcome.additions}</span>
+              <span className="ml-1 text-destructive">−{outcome.deletions}</span>
+            </span>
+          </h3>
+          <ul className="space-y-1 rounded-md bg-muted/30 p-2.5 text-sm">
+            {files.map((f) => (
+              <li key={f.path} className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 break-all font-mono text-xs">
+                  {f.path}
+                </span>
+                {(f.additions > 0 || f.deletions > 0) && (
+                  <span className="shrink-0 text-xs tabular-nums">
+                    <span className="text-success">+{f.additions}</span>
+                    <span className="ml-1 text-destructive">−{f.deletions}</span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {outcome.truncated && (
+            <p className="text-xs text-muted-foreground">
+              只列出前 {files.length} 個檔案。
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaskInfo({
   task,
   column,
@@ -305,6 +431,8 @@ function TaskInfo({
 
       {task.description && <MarkdownContent source={task.description} />}
 
+      {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}
+
       {subAgents.length > 0 && (
         <button
           type="button"
@@ -324,18 +452,20 @@ function formatCheckpointTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
+/**
+ * This task's own memory checkpoints. Deliberately scoped to the one card:
+ * related tasks and cross-task links used to appear here too, but what a done
+ * card is asked for is the conclusion of the work in front of you, not a way
+ * into other tasks' memory.
+ */
 function MemoryContent({ taskId }: { taskId: string }) {
   const [checkpoints, setCheckpoints] = useState<MemoryCheckpoint[] | undefined>(
     undefined
   )
-  const [related, setRelated] = useState<RelatedTask[]>([])
-  const [links, setLinks] = useState<MemoryTaskLink[]>([])
 
   useEffect(() => {
     let active = true
     setCheckpoints(undefined)
-    setRelated([])
-    setLinks([])
     getCheckpoints(taskId)
       .then((next) => {
         if (active) setCheckpoints(next)
@@ -343,10 +473,6 @@ function MemoryContent({ taskId }: { taskId: string }) {
       .catch(() => {
         if (active) setCheckpoints([])
       })
-    // Cross-task relations come from the unified store, so they naturally span
-    // every workspace. Failures degrade to empty (block simply hides).
-    getRelatedTasks(taskId).then((r) => active && setRelated(r)).catch(() => {})
-    getTaskLinks(taskId).then((l) => active && setLinks(l)).catch(() => {})
     return () => {
       active = false
     }
@@ -359,13 +485,11 @@ function MemoryContent({ taskId }: { taskId: string }) {
           <Loader2 className="size-3.5 animate-spin" />
           讀取 memory 中…
         </div>
-      ) : checkpoints.length === 0 && related.length === 0 && links.length === 0 ? (
+      ) : checkpoints.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">
           此任務沒有記錄任何 memory checkpoint。
         </p>
       ) : (
-        <div className="space-y-4">
-        {checkpoints.length > 0 && (
         <ol className="space-y-3">
           {checkpoints.map((cp) => (
             <li
@@ -423,66 +547,6 @@ function MemoryContent({ taskId }: { taskId: string }) {
             </li>
           ))}
         </ol>
-        )}
-
-        {related.length > 0 && (
-          <div>
-            <h3 className={cn(SECTION_LABEL, 'mb-2 flex items-center gap-1.5')}>
-              <Layers className="size-3.5" />
-              相關任務
-            </h3>
-            <ul className="space-y-1.5">
-              {related.map((r) => (
-                <li
-                  key={r.id}
-                  className="rounded-md border border-border/70 bg-muted/20 p-2 text-sm"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={r.id}>
-                      {r.title}
-                    </span>
-                    {r.status && (
-                      <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
-                        {r.status}
-                      </span>
-                    )}
-                  </div>
-                  {r.summary && (
-                    <p className="mt-1 line-clamp-2 break-words text-muted-foreground">
-                      {r.summary}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {links.length > 0 && (
-          <div>
-            <h3 className={cn(SECTION_LABEL, 'mb-2 flex items-center gap-1.5')}>
-              <GitBranch className="size-3.5" />
-              關聯
-            </h3>
-            <ul className="space-y-1.5">
-              {links.map((l, i) => (
-                <li
-                  key={`${l.direction}-${l.otherId}-${l.relation}-${i}`}
-                  className="flex items-start gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-sm"
-                >
-                  <span className="shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
-                    {l.direction === 'outgoing' ? l.relation : `← ${l.relation}`}
-                  </span>
-                  <span className="min-w-0 flex-1 break-words">
-                    <span className="text-foreground">{l.otherTitle ?? l.otherId}</span>
-                    {l.note && <span className="text-muted-foreground"> — {l.note}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        </div>
       )}
     </>
   )

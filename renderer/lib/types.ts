@@ -2,7 +2,11 @@
 // and main share a single source of truth (type-only, erased at build time).
 export type {
   ColumnId,
+  OutcomeCommit,
+  OutcomeFile,
+  OutcomePr,
   Task,
+  TaskOutcome,
   BoardState,
   AppSettings,
   AgentConnection,

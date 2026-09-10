@@ -18,6 +18,7 @@ import {
   type BoardState,
   type ConnectableAgentId,
   type Task,
+  type TaskOutcome,
 } from './helpers/store'
 import { projectWorkstationPath } from './helpers/workspace'
 import { detectAgents, type AgentCliId, type AgentEffort } from './helpers/agents'
@@ -45,6 +46,7 @@ import {
   removeWorktree,
   syncBaseBranch,
 } from './helpers/git'
+import { captureTaskOutcome } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
 import { boardCliLaunchInfo } from './helpers/board-cli'
 import {
@@ -755,6 +757,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
+    // Snapshot what the branch changed before the worktree that holds it is
+    // removed, so a done card can still account for the work.
+    let outcome: TaskOutcome | undefined
+    if (task?.worktreePath) {
+      outcome =
+        (await captureTaskOutcome(task.worktreePath, task.baseBranch ?? 'main')) ??
+        undefined
+    }
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)
@@ -765,7 +775,13 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       await deleteBranch(task.projectPath, branch)
       await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
     }
-    updateTask(taskId, { worktreePath: undefined })
+    // Only write the outcome when this call actually captured one. Completing
+    // an already-completed card (done -> in_progress -> done) has no worktree
+    // left to read, and must not blank the snapshot taken the first time.
+    updateTask(
+      taskId,
+      outcome ? { worktreePath: undefined, outcome } : { worktreePath: undefined }
+    )
     return getState()
   })
 

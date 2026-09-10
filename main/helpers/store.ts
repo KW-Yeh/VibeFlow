@@ -52,6 +52,71 @@ export interface Task {
    * a new pinned conversation while app-restart recovery can still find it.
    */
   runId?: string
+  /**
+   * What the work came to, captured at completion. Absent on cards finished
+   * before the field existed and on any card whose branch never diverged from
+   * its base — the UI treats both the same way, by showing nothing.
+   */
+  outcome?: TaskOutcome
+}
+
+/**
+ * One commit made on a task's branch.
+ */
+export interface OutcomeCommit {
+  /** Abbreviated sha; the branch is gone by the time this is read, so it is a label, not a ref. */
+  sha: string
+  subject: string
+}
+
+/** One file the task's branch changed, relative to its base. */
+export interface OutcomeFile {
+  path: string
+  /** Single-letter git status, as in DiffEntry. */
+  status: string
+  additions: number
+  deletions: number
+}
+
+/**
+ * What the finished work amounted to, captured from git while the worktree
+ * still exists and kept after it is gone.
+ *
+ * Completing a task deletes its worktree, artifacts and local branch, which
+ * until now left a done card with no account of what it changed. Everything
+ * here is a by-product of work that had to happen anyway — commits, a diff,
+ * a PR — rather than a report the agent has to remember to write, which is
+ * why it is present on cards where an agent-written record never was.
+ */
+export interface TaskOutcome {
+  /** Newest first, capped at MAX_OUTCOME_COMMITS. */
+  commits: OutcomeCommit[]
+  /** Capped at MAX_DIFF_FILES, like the live diff view. */
+  files: OutcomeFile[]
+  additions: number
+  deletions: number
+  /** True when `files` was cut at the cap, so the UI can say so. */
+  truncated?: boolean
+  /** The task's own pull request, when it had one. */
+  pr?: OutcomePr
+  /** Epoch ms the snapshot was taken. */
+  capturedAt: number
+}
+
+/**
+ * The task's pull request as it stood at completion. Snapshotted rather than
+ * fetched on demand: the worktree `gh` needs is deleted with the task, and the
+ * card must still read offline. `url` is kept so the UI can point at the live
+ * PR, which may have moved on since.
+ */
+export interface OutcomePr {
+  number: number
+  /** OPEN | MERGED | CLOSED, verbatim from gh. */
+  state: string
+  url: string
+  title: string
+  /** Markdown body; absent when the PR had none. */
+  body?: string
 }
 
 export type BoardState = Record<ColumnId, Task[]>
