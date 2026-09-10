@@ -88,7 +88,10 @@ import type {
 /**
  * The aside's views. Which ones a task offers depends on its column: a done
  * task has no live terminal, artifacts, or worktree to diff, and is the only
- * place its memory checkpoints are worth reading.
+ * place its memory checkpoints are worth reading. It keeps the task view: once
+ * cleanup has taken the worktree and artifacts, the card's own title and
+ * description are the only account of the work that survives, so a done card
+ * must not open onto an empty panel.
  */
 type TaskTab = 'task' | 'artifacts' | 'diff' | 'memory'
 
@@ -100,7 +103,7 @@ const TAB_LABEL: Record<TaskTab, string> = {
 }
 
 const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'artifacts', 'diff']
-const DONE_TASK_TABS: readonly TaskTab[] = ['memory']
+const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'memory']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -1567,7 +1570,16 @@ export function TaskWorkspacePanel({
               aria-labelledby={tabId(activeTab)}
               className="h-full"
             >
-              <MemoryContent taskId={task.id} />
+              {activeTab === 'task' ? (
+                <TaskInfo
+                  task={task}
+                  column={column}
+                  subAgents={subAgents}
+                  onOpenSubAgents={onOpenSubAgents}
+                />
+              ) : (
+                <MemoryContent taskId={task.id} />
+              )}
             </div>
           </InfoSection>
         </main>
