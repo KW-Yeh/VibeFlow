@@ -21,6 +21,7 @@ the project folder is chosen **per task** at creation time (there is no global
 - **Terminal**: `@xterm/xterm` + `@xterm/addon-fit` (renderer) ↔ `node-pty` (main, native)
 - **Persistence**: `electron-store`
 - **Diff viewer**: `react-diff-viewer-continued`
+- **Diagrams**: `mermaid` — lazy-loaded, `mermaid` markdown fences only
 - **Icons**: `lucide-react`
 - **Package manager**: npm
 
@@ -209,6 +210,12 @@ renderer/                  Next.js app (Pages Router)
 - **Markdown renders in the renderer** through
   `components/markdown-content.tsx` → `markdown-body.tsx`. Raw HTML is disabled.
   Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.
+  The single exception is a `mermaid` fence, which `markdown-body` hands to
+  `mermaid-diagram.tsx` and which reaches the DOM as markup; `securityLevel: 'strict'`
+  plus root-level `htmlLabels: false` are what keep that output inert, and
+  `ui-consistency` fails if either is relaxed. mermaid is imported inside the effect,
+  never at module scope — it is the heaviest chunk in the renderer, and markdown with
+  no diagram in it must not load it.
 
 ---
 

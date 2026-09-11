@@ -187,3 +187,19 @@ test('terminal inset stays outside the host measured by FitAddon', () => {
     'Keep terminal padding on a wrapper outside the unpadded FitAddon host'
   )
 })
+
+test('mermaid stays inert and out of the initial bundle', () => {
+  const src = read(join(rendererRoot, 'components/mermaid-diagram.tsx'))
+  assert.ok(
+    src.includes("securityLevel: 'strict'"),
+    "mermaid must keep securityLevel: 'strict' — its output is injected as markup"
+  )
+  assert.ok(
+    /^\s*htmlLabels: false,$/m.test(src),
+    'mermaid needs root-level htmlLabels: false (flowchart.htmlLabels is deprecated and ignored)'
+  )
+  assert.ok(
+    !/^import\s[^\n]*\sfrom\s'mermaid'/m.test(src),
+    'mermaid must be imported inside the effect, not at module scope'
+  )
+})
