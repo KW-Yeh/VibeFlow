@@ -3,6 +3,7 @@ import { motion, useIsPresent, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useRef } from 'react'
 
 import { IconButton } from '@/components/ui/icon-button'
+import { acquireModalPresence } from '@/lib/modal-presence'
 import { createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
@@ -64,6 +65,10 @@ export function DialogShell({
     onCloseRef.current = onClose
     savingRef.current = saving
   }, [onClose, saving])
+
+  // Held for the whole mounted lifetime, exit animation included: the panel is
+  // still on screen while it plays.
+  useEffect(() => acquireModalPresence(), [])
 
   useEffect(() => {
     if (!isPresent) return

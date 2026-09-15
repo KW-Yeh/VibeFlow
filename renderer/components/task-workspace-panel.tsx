@@ -67,6 +67,7 @@ import {
   openExternal,
   readArtifact,
 } from '@/lib/api'
+import { isModalOpen } from '@/lib/modal-presence'
 import { cn } from '@/lib/utils'
 import type {
   ArtifactContent,
@@ -463,7 +464,17 @@ function DecisionsContent({ taskId, live }: { taskId: string; live: boolean }) {
     let timer: ReturnType<typeof setTimeout> | undefined
     setDecisions(undefined)
 
+    // Idle while a dialog covers the panel: adopting fresh data behind one
+    // only resizes a scroll container nobody can see, and macOS flashes that
+    // container's overlay scrollbar through the translucent backdrop. The first
+    // load is exempt so a view opened under a dialog still fills in.
+    let loaded = false
     const tick = async () => {
+      if (loaded && isModalOpen()) {
+        if (active && live) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
+        return
+      }
+      loaded = true
       try {
         const next = await getDecisions(taskId)
         if (active) setDecisions(next)
@@ -671,12 +682,9 @@ function ArtifactPreview({
       ) : (
         <>
           {isMarkdownArtifact(artifact.name) ? (
-            <MarkdownContent
-              source={content.text ?? ''}
-              className="max-h-[70vh] overflow-auto"
-            />
+            <MarkdownContent source={content.text ?? ''} />
           ) : (
-            <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs">
+            <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 font-mono text-xs">
               {content.text}
             </pre>
           )}
@@ -1124,7 +1132,14 @@ function useTaskDiff(taskId: string, enabled: boolean) {
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
 
+    let loaded = false
     const tick = async (withFetch: boolean) => {
+      // See DecisionsContent: a poll behind a dialog only churns the layout.
+      if (loaded && isModalOpen()) {
+        if (active) timer = setTimeout(() => void tick(false), POLL_INTERVAL_MS)
+        return
+      }
+      loaded = true
       try {
         const next = await getDiffEntries(taskId, { fetch: withFetch })
         if (!active) return
@@ -1386,7 +1401,14 @@ export function TaskWorkspacePanel({
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
 
+    let loaded = false
     const tick = async () => {
+      // See DecisionsContent: a poll behind a dialog only churns the layout.
+      if (loaded && isModalOpen()) {
+        if (active) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
+        return
+      }
+      loaded = true
       try {
         const next = await listArtifacts(task.id)
         if (active) setArtifacts(next)
