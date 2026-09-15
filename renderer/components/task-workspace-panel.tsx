@@ -31,8 +31,6 @@ import {
   GitPullRequest,
   Image as ImageIcon,
   Layers,
-  Lightbulb,
-  ListTodo,
   Loader2,
   Maximize2,
   RefreshCw,
@@ -60,7 +58,7 @@ import {
   stabilizeDiffEntries,
 } from '@/lib/diff-state'
 import {
-  getCheckpoints,
+  getDecisions,
   getDiff,
   getDiffEntries,
   getDiffFile,
@@ -77,34 +75,32 @@ import type {
   ColumnId,
   DiffEntry,
   DiffFile,
-  MemoryCheckpoint,
   LibraryLaunchInfo,
-  MemoryLaunchInfo,
   SubAgentRun,
   Task,
   TaskArtifact,
+  TaskDecisions,
   TaskOutcome,
 } from '@/lib/types'
 
 /**
  * The aside's views. Which ones a task offers depends on its column: a done
- * task has no live terminal, artifacts, or worktree to diff, and is the only
- * place its memory checkpoints are worth reading. It keeps the task view: once
- * cleanup has taken the worktree and artifacts, the card's own title and
- * description are the only account of the work that survives, so a done card
- * must not open onto an empty panel.
+ * task has no live terminal, artifacts, or worktree to diff. The decision
+ * record is on both sets — the agent maintains it from the first turn, and it
+ * is written outside the worktree precisely so completing the task does not
+ * take it away.
  */
-type TaskTab = 'task' | 'artifacts' | 'diff' | 'memory'
+type TaskTab = 'task' | 'decisions' | 'artifacts' | 'diff'
 
 const TAB_LABEL: Record<TaskTab, string> = {
   task: '任務',
+  decisions: '決策',
   artifacts: 'Artifacts',
   diff: 'Git diff',
-  memory: 'Memory',
 }
 
-const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'artifacts', 'diff']
-const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'memory']
+const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions', 'artifacts', 'diff']
+const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -447,108 +443,80 @@ function TaskInfo({
   )
 }
 
-function formatCheckpointTime(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
-}
-
 /**
- * This task's own memory checkpoints. Deliberately scoped to the one card:
- * related tasks and cross-task links used to appear here too, but what a done
- * card is asked for is the conclusion of the work in front of you, not a way
- * into other tasks' memory.
+ * The task's decision record — what this task decided, and why. Written by the
+ * agent as it works (see buildDecisionPrompt) to a file outside the worktree,
+ * so it is the one account of the work that survives completion. What the task
+ * *changed* is not repeated here: that is captured from git into TaskOutcome
+ * and shown on the task view.
+ *
+ * `live` polls while the task is still running, so a decision the agent records
+ * mid-session shows up without reopening the panel.
  */
-function MemoryContent({ taskId }: { taskId: string }) {
-  const [checkpoints, setCheckpoints] = useState<MemoryCheckpoint[] | undefined>(
+function DecisionsContent({ taskId, live }: { taskId: string; live: boolean }) {
+  const [decisions, setDecisions] = useState<TaskDecisions | null | undefined>(
     undefined
   )
 
   useEffect(() => {
     let active = true
-    setCheckpoints(undefined)
-    getCheckpoints(taskId)
-      .then((next) => {
-        if (active) setCheckpoints(next)
-      })
-      .catch(() => {
-        if (active) setCheckpoints([])
-      })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    setDecisions(undefined)
+
+    const tick = async () => {
+      try {
+        const next = await getDecisions(taskId)
+        if (active) setDecisions(next)
+      } catch {
+        if (active) setDecisions(null)
+      } finally {
+        if (active && live) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
+      }
+    }
+
+    void tick()
     return () => {
       active = false
+      if (timer) clearTimeout(timer)
     }
-  }, [taskId])
+  }, [taskId, live])
+
+  if (decisions === undefined) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        讀取決策書中…
+      </div>
+    )
+  }
+
+  if (!decisions?.markdown?.trim()) {
+    return (
+      <div className="space-y-2 py-10 text-center">
+        <p className="text-sm text-muted-foreground">
+          此任務還沒有記錄任何決策。
+        </p>
+        {decisions?.path && (
+          <p className="break-all px-4 text-xs text-muted-foreground/70">
+            agent 會寫入 {decisions.path}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <>
-      {checkpoints === undefined ? (
-        <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" />
-          讀取 memory 中…
-        </div>
-      ) : checkpoints.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">
-          此任務沒有記錄任何 memory checkpoint。
-        </p>
-      ) : (
-        <ol className="space-y-3">
-          {checkpoints.map((cp) => (
-            <li
-              key={cp.id}
-              className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm"
-            >
-              <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                <span className="rounded-xs bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
-                  #{cp.seq}
-                </span>
-                <span className="tabular-nums">{formatCheckpointTime(cp.createdAt)}</span>
-              </div>
-              {cp.outcome && (
-                <MarkdownContent
-                  source={cp.outcome}
-                  compact
-                  className="bg-transparent p-0"
-                />
-              )}
-              {cp.decisions.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {cp.decisions.map((d, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <Lightbulb className="mt-0.5 size-3 shrink-0 text-warning" />
-                      <span className="break-words">
-                        <span className="text-foreground">{d.choice}</span>
-                        {d.reason && (
-                          <span className="text-muted-foreground"> — {d.reason}</span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {cp.openItems.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {cp.openItems.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-muted-foreground">
-                      <ListTodo className="mt-0.5 size-3 shrink-0" />
-                      <span className="break-words">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {cp.artifacts.length > 0 && (
-                <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
-                  {cp.artifacts.map((a) => (
-                    <div key={a.id} className="flex items-start gap-1.5 text-muted-foreground">
-                      <FileDiff className="mt-0.5 size-3 shrink-0" />
-                      <span className="break-words">{a.description}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
+    <div className="space-y-2">
+      <MarkdownContent source={decisions.markdown} className="bg-transparent p-0" />
+      {decisions.truncated && (
+        <p className="text-xs text-muted-foreground">內容過長，僅顯示前段。</p>
       )}
-    </>
+      {decisions.updatedAt != null && (
+        <p className="text-xs text-muted-foreground tabular-nums">
+          更新於 {new Date(decisions.updatedAt).toLocaleString()}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -1642,7 +1610,7 @@ export function TaskWorkspacePanel({
                   onOpenSubAgents={onOpenSubAgents}
                 />
               ) : (
-                <MemoryContent taskId={task.id} />
+                <DecisionsContent taskId={task.id} live={false} />
               )}
             </div>
           </InfoSection>
@@ -1698,8 +1666,8 @@ export function TaskWorkspacePanel({
             actions={activeTab === 'diff' ? <DiffActions diff={diff} /> : undefined}
           >
             {/* h-full gives the panel a definite height so a tab that fills its
-                space (the Plan iframe) can resolve a percentage height; taller
-                tabs still overflow into the section's own scroll container. */}
+                space can resolve a percentage height; taller tabs still
+                overflow into the section's own scroll container. */}
             <div
               role="tabpanel"
               id={tabPanelId}
@@ -1713,6 +1681,8 @@ export function TaskWorkspacePanel({
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
+              ) : activeTab === 'decisions' ? (
+                <DecisionsContent taskId={task.id} live />
               ) : activeTab === 'artifacts' ? (
                 <ArtifactsContent
                   taskId={task.id}
@@ -1737,7 +1707,6 @@ export function buildWorkspaceLaunchCommand({
   workspacePath,
   resume,
   includeTaskPrompt,
-  memory,
   library,
   boardCli,
   autoMode,
@@ -1748,8 +1717,6 @@ export function buildWorkspaceLaunchCommand({
   resume?: boolean
   /** False starts an agent with settings + Artifact context, without card text. */
   includeTaskPrompt?: boolean
-  /** Built-in agent-memory server injection; undefined → not wired. */
-  memory?: MemoryLaunchInfo
   /** VibeFlow library delivery; undefined → nothing enabled. */
   library?: LibraryLaunchInfo
   /** Board access for the agent; undefined → it cannot create or edit cards. */
@@ -1760,7 +1727,7 @@ export function buildWorkspaceLaunchCommand({
   return buildAgentCommand(
     task,
     systemPrompt,
-    { resume, includeTaskPrompt, memory, library, boardCli, autoMode },
+    { resume, includeTaskPrompt, library, boardCli, autoMode },
     workspacePath
   )
 }

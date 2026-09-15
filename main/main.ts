@@ -49,7 +49,7 @@ import {
 import { captureTaskOutcome } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
 import { boardCliLaunchInfo } from './helpers/board-cli'
-import { getCheckpoints, memoryLaunchInfo } from './helpers/memory'
+import { decisionsKey, deleteDecisions, readDecisions } from './helpers/decisions'
 import {
   killAllSessions,
   killSession,
@@ -593,15 +593,19 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return shell.openPath(dir)
   })
 
-  /** Agent-memory checkpoints for a task, keyed by branch name in the db. */
-  ipcMain.handle('task:getCheckpoints', async (_event, taskId: string) => {
+  /**
+   * The task's decision record. Readable in every column: the agent maintains
+   * it as it works, and it outlives the worktree so a done card still has it.
+   * Null only when the task has no workspace folder to hold one.
+   */
+  ipcMain.handle('task:getDecisions', (_event, taskId: string) => {
     const task = findTask(taskId)
-    if (!task) return []
-    return getCheckpoints(task.branch)
+    if (!task?.workspacePath) return null
+    return readDecisions(
+      task.workspacePath,
+      decisionsKey(task.worktreePath, task.branch)
+    )
   })
-
-  /** Built-in memory MCP server + unified db paths for launch-command injection. */
-  ipcMain.handle('memory:getLaunchInfo', () => memoryLaunchInfo())
 
   /** Store dir + CLI paths an agent needs to put cards on this same board. */
   ipcMain.handle('board:getCliLaunchInfo', () => boardCliLaunchInfo())
@@ -771,6 +775,14 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     const task = findTask(taskId)
     teardownSession(taskId)
     cancelChatSend(taskId)
+    // The decision record outlives completion on purpose, but not the card it
+    // belongs to — deleting the card leaves nothing that could ever read it.
+    if (task?.workspacePath) {
+      deleteDecisions(
+        task.workspacePath,
+        decisionsKey(task.worktreePath, task.branch)
+      )
+    }
     if (task?.projectPath && task.worktreePath) {
       const branch = task.branch || fallbackBranchName(taskId)
       await removeWorktree(task.projectPath, task.worktreePath)

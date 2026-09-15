@@ -18,16 +18,15 @@ import type {
   GitInfo,
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
-  MemoryCheckpoint,
   LibraryEntry,
   LibraryKind,
   LibraryLaunchInfo,
-  MemoryLaunchInfo,
   PrStatus,
   RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
   TaskArtifact,
+  TaskDecisions,
   VibeFlowState,
 } from '@/lib/types'
 
@@ -256,11 +255,10 @@ export async function openArtifactsDir(taskId: string): Promise<string> {
   return b ? b.openArtifactsDir(taskId) : 'bridge unavailable'
 }
 
-export async function getCheckpoints(
-  taskId: string
-): Promise<MemoryCheckpoint[]> {
+/** The task's decision record; null without the bridge or a workspace folder. */
+export async function getDecisions(taskId: string): Promise<TaskDecisions | null> {
   const b = bridge()
-  return b ? b.getCheckpoints(taskId) : []
+  return b ? b.getDecisions(taskId) : null
 }
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {
@@ -339,11 +337,6 @@ export async function getLibraryLaunchInfo(
 ): Promise<LibraryLaunchInfo | null> {
   const b = bridge()
   return b ? b.getLibraryLaunchInfo(worktreePath) : null
-}
-
-export async function getMemoryLaunchInfo(): Promise<MemoryLaunchInfo | null> {
-  const b = bridge()
-  return b ? b.getMemoryLaunchInfo() : null
 }
 
 export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {

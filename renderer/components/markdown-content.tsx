@@ -9,7 +9,7 @@ const MarkdownBody = lazy(() => import('@/components/markdown-body'))
  * palette are bound to the app's tokens in styles/globals.css.
  *
  * Used for anything the agent wrote for a human to read — task descriptions,
- * memory checkpoint outcomes, sub-agent results, `.md` artifacts. Verbatim text
+ * decision records, sub-agent results, `.md` artifacts. Verbatim text
  * (sub-agent prompts, logs, non-markdown artifacts) stays in a <pre>, since
  * whitespace carries meaning there and the copy button must match what is shown.
  */

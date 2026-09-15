@@ -3,8 +3,10 @@ import assert from 'node:assert/strict'
 import {
   buildAgentCommand,
   buildArtifactPrompt,
+  buildDecisionPrompt,
   executorSessionId,
   resolveSystemPrompt,
+  taskDecisionsPath,
 } from '../renderer/lib/claude.ts'
 
 const TASK = {
@@ -39,6 +41,38 @@ test('buildArtifactPrompt — names the task artifact and scratch paths', () => 
   assert.ok(!prompt.includes('Agent Memory'))
 })
 
+test('taskDecisionsPath — composes the record path beside the worktree', () => {
+  assert.equal(
+    taskDecisionsPath('/tmp/vibeflow/vf-abc123', '/workspace/project'),
+    '/workspace/project/vf-abc123.DECISIONS.md'
+  )
+})
+
+test('taskDecisionsPath — null without a workspace, so no relative path is given', () => {
+  // A cwd-relative fallback would land inside the worktree and be committed.
+  assert.equal(taskDecisionsPath('/tmp/vibeflow/vf-abc123', undefined), null)
+  assert.equal(taskDecisionsPath(undefined, '/workspace/project'), null)
+})
+
+test('buildDecisionPrompt — names the record and scopes it to decisions', () => {
+  const prompt = buildDecisionPrompt('/workspace/project/vf-abc123.DECISIONS.md')
+  assert.match(prompt, /本次 session 全程適用/)
+  assert.match(prompt, /\/workspace\/project\/vf-abc123\.DECISIONS\.md/)
+  assert.match(prompt, /mermaid/)
+  // Empty beats padded: an agent told to fill a template will fill it.
+  assert.match(prompt, /沒有任何決策就不要建立/)
+})
+
+test('buildAgentCommand — the launch carries the decision record path', () => {
+  const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
+  assert.ok(cmd.includes('/workspace/project/vf-abc123.DECISIONS.md'))
+})
+
+test('buildAgentCommand — no workspace means no decision-record instructions', () => {
+  const cmd = buildAgentCommand(TASK, '', undefined, undefined)
+  assert.ok(!cmd.includes('決策書'))
+})
+
 test('buildAgentCommand — Claude receives Artifact context as a system prompt', () => {
   const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
   assert.ok(cmd.startsWith('claude '))
@@ -59,7 +93,8 @@ test('buildAgentCommand — Claude system prompt orders built-in, library, then 
       scripts: [],
     },
   }, '/workspace/project')
-  assert.ok(cmd.indexOf('Artifact 設定') < cmd.indexOf('LIBRARY_MARKER'))
+  assert.ok(cmd.indexOf('Artifact 設定') < cmd.indexOf('決策書'))
+  assert.ok(cmd.indexOf('決策書') < cmd.indexOf('LIBRARY_MARKER'))
   assert.ok(cmd.indexOf('LIBRARY_MARKER') < cmd.indexOf('CUSTOM_MARKER'))
 })
 

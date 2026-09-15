@@ -2,7 +2,6 @@ import type {
   AgentCliId,
   BoardCliLaunchInfo,
   LibraryLaunchInfo,
-  MemoryLaunchInfo,
   Task,
 } from '@/lib/types'
 
@@ -76,6 +75,47 @@ export function buildArtifactPrompt(
   ].join('\n')
 }
 
+/**
+ * Suffix of the task's decision record. Must match DECISIONS_FILE_SUFFIX in
+ * main/helpers/decisions.ts (string literal duplicated because the renderer
+ * cannot runtime-import main-process modules).
+ */
+const DECISIONS_FILE_SUFFIX = '.DECISIONS.md'
+
+/**
+ * Absolute path of the task's decision record; null when the workspace or
+ * worktree path is unknown. Unlike the artifacts directory this has no
+ * cwd-relative fallback on purpose: a relative name would land inside the
+ * worktree and end up committed, and the record is meant to outlive it.
+ */
+export function taskDecisionsPath(
+  worktreePath: string | undefined,
+  workspacePath: string | undefined
+): string | null {
+  if (!worktreePath || !workspacePath) return null
+  return `${toShellPath(workspacePath)}/${pathBasename(worktreePath)}${DECISIONS_FILE_SUFFIX}`
+}
+
+/**
+ * Session-level instructions for the decision record — the one account of the
+ * work that survives the worktree, and the only thing a done card can be read
+ * for. It is deliberately scoped to decisions: what the task changed is already
+ * recoverable from git (see captureTaskOutcome), so a record that also narrated
+ * progress would be the part nobody reads. Empty beats padded — an agent told
+ * to fill a template will fill it.
+ */
+export function buildDecisionPrompt(decisionsPath: string): string {
+  return [
+    '決策書（本次 session 全程適用）：',
+    `1. 本任務的決策書是 ${decisionsPath}；做出新決策、或調整既有決策時，當下就更新它（不存在請建立）。`,
+    '2. 只寫「這次新增了什麼決策、調整了什麼既有決策」與理由。需求覆述、進度回報、實作流水帳、本來就成立的慣例都不要寫。',
+    '3. 每則決策一個 `## <一句話講完的決策>` 段落，底下 2-4 行交代：為什麼這樣選、否決了什麼替代方案、誰之後會被這個決策綁住。',
+    '4. 要說明流程、狀態轉換或模組關係時，用 mermaid fence 畫圖，VibeFlow 會直接渲染。',
+    '5. 這次沒有任何決策就不要建立這個檔案；寧可留白，不要湊內容。',
+    '6. 用繁體中文書寫，程式識別字保留英文。',
+  ].join('\n')
+}
+
 /** The permission mode passed to the Claude CLI ("auto mode"). */
 export const DEFAULT_PERMISSION_MODE = 'auto'
 
@@ -130,26 +170,6 @@ function boardEnvPrefix(
  */
 function codexAutoFlag(autoMode?: boolean): string {
   return autoMode ? '--dangerously-bypass-approvals-and-sandbox ' : ''
-}
-
-/**
- * Build the `--mcp-config` flag that registers VibeFlow's built-in agent-memory
- * server for this Claude launch. Inline JSON (the CLI accepts files or strings);
- * paths are forward-slashed so they need no JSON backslash escaping. The server
- * key `agent-memory` overrides any same-named external server (see
- * LaunchOptions.memory). Returns '' when no memory info is provided.
- */
-function buildMemoryMcpFlag(memory?: MemoryLaunchInfo): string {
-  if (!memory) return ''
-  const config = {
-    mcpServers: {
-      'agent-memory': {
-        command: 'node',
-        args: [toShellPath(memory.serverPath), '--db', toShellPath(memory.dbPath)],
-      },
-    },
-  }
-  return ` --mcp-config ${shellQuote(JSON.stringify(config))}`
 }
 
 /**
@@ -273,15 +293,6 @@ export interface LaunchOptions {
    */
   resume?: boolean
   /**
-   * When set, the launch injects VibeFlow's built-in agent-memory MCP server
-   * (`--mcp-config`) so the session can read/write the shared unified store.
-   * The config key `agent-memory` intentionally matches the name a user's own
-   * MCP config would use, so it overrides any external same-named server (e.g.
-   * the standalone Python install) without needing `--strict-mcp-config` — which
-   * would otherwise disable the session's other MCP servers.
-   */
-  memory?: MemoryLaunchInfo
-  /**
    * VibeFlow's own skill / prompt / script library for this launch. Claude
    * loads it as a session-only plugin; Codex gets a CODEX_HOME whose `skills/`
    * VibeFlow assembled, since Codex discovers skills only from there. Absent →
@@ -337,7 +348,6 @@ function assembleCommand(
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const effortFlag = effort ? ` --effort ${effort}` : ''
-    const mcpFlag = buildMemoryMcpFlag(opts?.memory)
     // Library skills ride in as a session-only plugin; --add-dir is what makes
     // its scripts readable and runnable from inside the worktree.
     const library = opts?.library
@@ -345,7 +355,7 @@ function assembleCommand(
       ? ` --plugin-dir ${shellQuote(toShellPath(library.pluginDir))}` +
         ` --add-dir ${shellQuote(toShellPath(library.libraryDir))}`
       : ''
-    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${mcpFlag}${libraryFlags}`
+    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${libraryFlags}`
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
@@ -452,9 +462,13 @@ export function buildAgentCommand(
   const artifactsDir = agentArtifactsDir(task.worktreePath, workspacePath)
     ?? ARTIFACTS_FALLBACK_DIR
   const builtInPrompt = buildArtifactPrompt(artifactsDir)
+  const decisionsPath = taskDecisionsPath(task.worktreePath, workspacePath)
+  const decisionPrompt = decisionsPath ? buildDecisionPrompt(decisionsPath) : ''
   const libraryPrompt = opts?.library?.promptText?.trim()
   const customPrompt = resolveSystemPrompt(systemPrompt)
-  const sys = [builtInPrompt, libraryPrompt, customPrompt].filter(Boolean).join('\n\n')
+  const sys = [builtInPrompt, decisionPrompt, libraryPrompt, customPrompt]
+    .filter(Boolean)
+    .join('\n\n')
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.

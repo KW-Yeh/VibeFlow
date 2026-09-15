@@ -16,7 +16,7 @@ import type {
 } from './helpers/git'
 import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
 import type { BoardCliLaunchInfo } from './helpers/board-cli'
-import type { MemoryCheckpoint, MemoryLaunchInfo } from './helpers/memory'
+import type { TaskDecisions } from './helpers/decisions'
 import type { SubAgentRun } from './helpers/subagents'
 import type { ChatAttachment, Conversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/attachments'
@@ -182,12 +182,9 @@ const vibeflow = {
    */
   openArtifactsDir: (taskId: string): Promise<string> =>
     ipcRenderer.invoke('task:openArtifactsDir', taskId),
-  /** Agent-memory checkpoints for the task (keyed by branch name). */
-  getCheckpoints: (taskId: string): Promise<MemoryCheckpoint[]> =>
-    ipcRenderer.invoke('task:getCheckpoints', taskId),
-  /** Built-in memory MCP server + unified db paths for launch injection. */
-  getMemoryLaunchInfo: (): Promise<MemoryLaunchInfo> =>
-    ipcRenderer.invoke('memory:getLaunchInfo'),
+  /** The task's decision record; null when it has no workspace folder. */
+  getDecisions: (taskId: string): Promise<TaskDecisions | null> =>
+    ipcRenderer.invoke('task:getDecisions', taskId),
   /** Store dir + CLI paths for launch injection, so an agent can write cards. */
   getBoardCliLaunchInfo: (): Promise<BoardCliLaunchInfo> =>
     ipcRenderer.invoke('board:getCliLaunchInfo'),

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BoardState, ColumnId, MemoryCheckpoint, Task } from '@/lib/types'
-import { getCheckpoints, onTermData, persistBoard, termInput } from '@/lib/api'
+import type { BoardState, ColumnId, Task } from '@/lib/types'
+import { onTermData, persistBoard, termInput } from '@/lib/api'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -11,11 +11,10 @@ type RemoteTask = {
   projectName?: string
   column: ColumnId
   launchedAt?: number
-  checkpoints?: MemoryCheckpoint[]
 }
 
-async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask> {
-  const remoteTask: RemoteTask = {
+function buildRemoteTask(task: Task, column: ColumnId): RemoteTask {
+  return {
     id: task.id,
     title: task.title,
     description: task.description,
@@ -23,21 +22,12 @@ async function buildRemoteTask(task: Task, column: ColumnId): Promise<RemoteTask
     column,
     launchedAt: task.launchedAt,
   }
-
-  if (column !== 'done') return remoteTask
-
-  const checkpoints = await getCheckpoints(task.id).catch(() => [])
-
-  return {
-    ...remoteTask,
-    checkpoints,
-  }
 }
 
-async function buildRemoteState(board: BoardState, autoMode: boolean) {
+function buildRemoteState(board: BoardState, autoMode: boolean) {
   const cols: ColumnId[] = ['backlog', 'in_progress', 'done']
-  const tasks = await Promise.all(
-    cols.flatMap((col) => board[col].map((task) => buildRemoteTask(task, col)))
+  const tasks = cols.flatMap((col) =>
+    board[col].map((task) => buildRemoteTask(task, col))
   )
 
   return {
@@ -94,16 +84,11 @@ export function useRemoteHost({
   // ── broadcast state on every board change ────────────────────────────────
   useEffect(() => {
     if (!peersRef.current.size) return
-    let cancelled = false
 
-    void buildRemoteState(board, autoMode).then((state) => {
-      if (cancelled) return
-      for (const conn of peersRef.current) {
-        try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
-      }
-    })
-
-    return () => { cancelled = true }
+    const state = buildRemoteState(board, autoMode)
+    for (const conn of peersRef.current) {
+      try { conn.send({ type: 'vf:state', payload: state }) } catch { /* conn closed */ }
+    }
   }, [board, autoMode])
 
   // ── handle incoming message from a remote client ──────────────────────────
@@ -116,7 +101,7 @@ export function useRemoteHost({
         try {
           conn.send({
             type: 'vf:state',
-            payload: await buildRemoteState(boardRef.current, autoModeRef.current),
+            payload: buildRemoteState(boardRef.current, autoModeRef.current),
           })
         } catch { /* ignored */ }
         break
@@ -177,7 +162,7 @@ export function useRemoteHost({
               conn.send({ type: 'vf:hello', payload: { version: '1.0' } })
               conn.send({
                 type: 'vf:state',
-                payload: await buildRemoteState(boardRef.current, autoModeRef.current),
+                payload: buildRemoteState(boardRef.current, autoModeRef.current),
               })
             } catch { /* ignored */ }
           })()

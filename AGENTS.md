@@ -160,6 +160,7 @@ main/                      Electron main process (ESM, bundled by nextron/webpac
     ├── store.ts           electron-store: VibeFlowState, Task, board mutators (LAZY init)
     ├── git.ts             git via child_process: info / worktree / diff / commit+push
     ├── artifacts.ts       per-task Artifact path, listing, preview, and cleanup
+    ├── decisions.ts       per-task decision record: path, read, delete
     ├── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
     └── create-window.ts   window-state persistence (scaffold)
 
@@ -171,7 +172,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
 │   ├── new-task-dialog.tsx per-task folder picker + git detect + create
-│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/artifacts/diff
+│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策/artifacts/diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM main (single source of truth)
@@ -207,6 +208,15 @@ renderer/                  Next.js app (Pages Router)
   the target project's `.gitignore`.
 - **Dark theme**: the app wraps content in `<div className="dark">`; style with the
   shadcn token classes (`bg-background`, `text-muted-foreground`, etc.), not raw colors.
+- **A task's decision record is the one account that outlives it.** The agent is
+  told at launch (`buildDecisionPrompt` in `renderer/lib/claude.ts`) to keep
+  `<workspacePath>/<worktree-dir>.DECISIONS.md` up to date as it makes decisions.
+  It sits in the workspace folder, not the worktree or the artifacts dir, so
+  completing the task does not delete it — only deleting the card does. It
+  records *decisions and their reasons*, never what changed: that is captured
+  from git into `TaskOutcome` and shown on the task view. Reading it after
+  completion means resolving the path from `task.branch` rather than
+  `worktreePath`, which cleanup clears — see `decisionsKey`.
 - **Markdown renders in the renderer** through
   `components/markdown-content.tsx` → `markdown-body.tsx`. Raw HTML is disabled.
   Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.

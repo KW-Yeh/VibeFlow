@@ -25,7 +25,6 @@ import {
 import {
   getBoardCliLaunchInfo,
   getLibraryLaunchInfo,
-  getMemoryLaunchInfo,
   restartTask,
   termSessionExists,
 } from '@/lib/api'
@@ -41,7 +40,6 @@ import type {
   BoardState,
   ColumnId,
   GitInfo,
-  MemoryLaunchInfo,
   SubAgentRun,
   Task,
 } from '@/lib/types'
@@ -203,15 +201,6 @@ export function KanbanBoard({
     reducedMotion,
   })
 
-  // Built-in agent-memory server + unified db paths are constant for the app
-  // session, so fetch once and reuse for every launch command.
-  const memoryLaunchRef = useRef<MemoryLaunchInfo | null>(null)
-  useEffect(() => {
-    getMemoryLaunchInfo().then((info) => {
-      if (info) memoryLaunchRef.current = info
-    })
-  }, [])
-
   // Store dir and CLI paths are fixed for the app session too — an agent uses
   // them to create sub-cards and rewrite its own card.
   const boardCliRef = useRef<BoardCliLaunchInfo | null>(null)
@@ -235,7 +224,8 @@ export function KanbanBoard({
     }))
   }
 
-  // Library launch info is fetched per launch, not cached like memory: enabling
+  // Library launch info is fetched per launch, not cached like the board CLI:
+  // enabling
   // an entry must take effect on the very next run, and the delivery trees are
   // rebuilt by the same call.
   const armLaunch = async (
@@ -251,7 +241,6 @@ export function KanbanBoard({
         workspacePath: task.workspacePath,
         resume: opts?.resume,
         includeTaskPrompt: opts?.includeTaskPrompt,
-        memory: memoryLaunchRef.current ?? undefined,
         library: library ?? undefined,
         boardCli: boardCliRef.current ?? undefined,
         autoMode,
