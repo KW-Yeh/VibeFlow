@@ -152,10 +152,10 @@ const vibeflow = {
   }): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:updateTask', payload),
   /** Clear prior execution state and prepare a fresh run of this task. */
-  restartTask: (
+  resetTaskRun: (
     taskId: string
   ): Promise<{ state: VibeFlowState; task: Task }> =>
-    ipcRenderer.invoke('vibeflow:restartTask', taskId),
+    ipcRenderer.invoke('vibeflow:resetTaskRun', taskId),
 
   removeTask: (taskId: string): Promise<VibeFlowState> =>
     ipcRenderer.invoke('vibeflow:removeTask', taskId),

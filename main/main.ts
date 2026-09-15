@@ -320,9 +320,11 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getState()
   })
 
-  // Start an in-progress card again as a brand-new run. Keep its worktree and
-  // artifacts; a new runId gives Claude a fresh pinned conversation.
-  ipcMain.handle('vibeflow:restartTask', (event, taskId: string) => {
+  // Discard everything that pins this card to its last run — the PTY session,
+  // the sub-agent timeline, and the conversation id — so whoever launches it
+  // next gets a brand-new conversation instead of resuming the old one. Keeps
+  // the worktree and artifacts. Launching again is the caller's decision.
+  ipcMain.handle('vibeflow:resetTaskRun', (event, taskId: string) => {
     const task = findTask(taskId)
     if (!task?.worktreePath) throw new Error('任務沒有可用的 worktree')
     teardownSession(taskId)
@@ -332,12 +334,12 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
       runId: randomUUID(),
     })
 
-    const restarted = findTask(taskId)
-    if (!restarted) throw new Error('找不到要重新開始的任務')
+    const reset = findTask(taskId)
+    if (!reset) throw new Error('找不到要重置的任務')
     if (!event.sender.isDestroyed()) {
       event.sender.send('subagents:update', { taskId, subAgents: [] })
     }
-    return { state: getState(), task: restarted }
+    return { state: getState(), task: reset }
   })
 
   // Edit an existing card's fields. Most are plain metadata read at launch time

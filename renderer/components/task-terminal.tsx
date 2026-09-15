@@ -6,7 +6,7 @@ import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { termInput, writeAttachments } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
-import { Bot, RotateCcw } from 'lucide-react'
+import { Bot, Undo2 } from 'lucide-react'
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -31,12 +31,12 @@ interface TaskTerminalProps {
    * scrollback from the live session is preserved for review.
    */
   readOnly?: boolean
-  /** Restart the whole task using its latest saved settings and card content. */
-  onRestartTask?: () => Promise<void>
+  /** Reset this run and send the card back to Backlog, without relaunching. */
+  onReturnToBacklog?: () => Promise<void>
   /** Start a fresh agent with settings + Artifact context, without card content. */
   onLaunchAgent?: () => Promise<void>
   /**
-   * Called on real user interaction (keystrokes, file drop, restart) so the
+   * Called on real user interaction (keystrokes, file drop, return) so the
    * host can pin a preview tab. Read through a ref — see `onInteractRef`.
    */
   onInteract?: () => void
@@ -49,7 +49,7 @@ export function TaskTerminal({
   launchCommand,
   launchNonce = 0,
   readOnly = false,
-  onRestartTask,
+  onReturnToBacklog,
   onLaunchAgent,
   onInteract,
 }: TaskTerminalProps) {
@@ -61,7 +61,7 @@ export function TaskTerminal({
   const dragDepthRef = useRef(0)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
-  const [isRestartingTask, setIsRestartingTask] = useState(false)
+  const [isReturningToBacklog, setIsReturningToBacklog] = useState(false)
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
@@ -127,26 +127,30 @@ export function TaskTerminal({
       })
   }, [taskId, sessionKey])
 
-  const restartTaskFromBeginning = useCallback(async () => {
+  const returnToBacklog = useCallback(async () => {
     const term = termRef.current
-    if (!term || !onRestartTask || readOnlyRef.current) return
+    if (!term || !onReturnToBacklog || readOnlyRef.current) return
 
     onInteractRef.current?.()
-    setIsRestartingTask(true)
-    // The main process clears persisted scrollback when the replacement command
-    // starts; clear the mounted xterm too so the new run visibly starts clean.
+    setIsReturningToBacklog(true)
+    // The run this scrollback belongs to is being discarded, so clear the
+    // mounted xterm too rather than leaving the dead run's output on screen.
     term.reset()
     term.clear()
     try {
-      await onRestartTask()
+      await onReturnToBacklog()
+      // Resetting the run kills the PTY, and nothing launches in its place —
+      // the whole point is that the card waits in Backlog. Hand the worktree
+      // back as a plain shell so it stays usable meanwhile.
+      restartInteractiveShell()
       term.focus()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      term.writeln(`\r\n⚠️  重新開始失敗：${message}`)
+      term.writeln(`\r\n⚠️  退回 Backlog 失敗：${message}`)
     } finally {
-      setIsRestartingTask(false)
+      setIsReturningToBacklog(false)
     }
-  }, [onRestartTask])
+  }, [onReturnToBacklog, restartInteractiveShell])
 
   const launchAgentOnly = useCallback(async () => {
     const term = termRef.current
@@ -463,17 +467,17 @@ export function TaskTerminal({
           </span>
         ) : (
           <div className="flex shrink-0 items-center gap-1">
-            {onRestartTask && (
+            {onReturnToBacklog && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
-                onClick={() => void restartTaskFromBeginning()}
-                disabled={!cwd || isRestartingTask || isLaunchingAgent}
-                title="依目前任務設定與內容重新啟動 Agent"
+                onClick={() => void returnToBacklog()}
+                disabled={!cwd || isReturningToBacklog || isLaunchingAgent}
+                title="重置這次執行並退回 Backlog，之後按「開始」才會重新啟動 Agent"
               >
-                <RotateCcw className={cn('size-3', isRestartingTask && 'animate-spin')} />
-                {isRestartingTask ? '重新開始中…' : '重新開始'}
+                <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
+                {isReturningToBacklog ? '退回中…' : '退回 Backlog'}
               </Button>
             )}
             {onLaunchAgent && (
@@ -482,7 +486,7 @@ export function TaskTerminal({
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void launchAgentOnly()}
-                disabled={!cwd || isLaunchingAgent || isRestartingTask}
+                disabled={!cwd || isLaunchingAgent || isReturningToBacklog}
                 title="只帶入 Agent 設定與 Artifact 資訊，不傳入任務內容"
               >
                 <Bot className={cn('size-3', isLaunchingAgent && 'animate-pulse')} />

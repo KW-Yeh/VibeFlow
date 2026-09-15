@@ -202,11 +202,11 @@ export async function updateTask(payload: {
   return b ? b.updateTask(payload) : null
 }
 
-export async function restartTask(
+export async function resetTaskRun(
   taskId: string
 ): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
-  return b ? b.restartTask(taskId) : null
+  return b ? b.resetTaskRun(taskId) : null
 }
 
 

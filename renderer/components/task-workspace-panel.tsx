@@ -211,7 +211,7 @@ interface TaskWorkspacePanelProps {
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
   onStart: (task: Task) => void
-  onRestart: (task: Task) => Promise<void>
+  onReturnToBacklog: (task: Task) => Promise<void>
   onLaunchAgent: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
@@ -1367,7 +1367,7 @@ export function TaskWorkspacePanel({
   subAgents,
   launch,
   onStart,
-  onRestart,
+  onReturnToBacklog,
   onLaunchAgent,
   onComplete,
   onEdit,
@@ -1649,8 +1649,8 @@ export function TaskWorkspacePanel({
             launchCommand={launchCommand}
             launchNonce={launchNonce}
             readOnly={false}
-            onRestartTask={
-              column === 'in_progress' ? () => onRestart(task) : undefined
+            onReturnToBacklog={
+              column === 'in_progress' ? () => onReturnToBacklog(task) : undefined
             }
             onLaunchAgent={
               column === 'in_progress' ? () => onLaunchAgent(task) : undefined

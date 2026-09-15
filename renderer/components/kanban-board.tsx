@@ -25,7 +25,7 @@ import {
 import {
   getBoardCliLaunchInfo,
   getLibraryLaunchInfo,
-  restartTask,
+  resetTaskRun,
   termSessionExists,
 } from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
@@ -313,11 +313,18 @@ export function KanbanBoard({
     void armLaunch(withStamp)
   }
 
-  const restartTaskFromBeginning = async (task: Task) => {
-    const result = await restartTask(task.id)
+  // Send a running card back to Backlog instead of relaunching it on the spot.
+  // The run is reset first, so the later 開始 opens a fresh conversation rather
+  // than resuming the one the card was pinned to.
+  const returnTaskToBacklog = async (task: Task) => {
+    const result = await resetTaskRun(task.id)
     if (!result) throw new Error('Electron bridge 無法使用')
-    onBoardChange(result.state.board)
-    void armLaunch(result.task)
+    const next = result.state.board
+    onBoardChange({
+      backlog: [result.task, ...next.backlog.filter((t) => t.id !== task.id)],
+      in_progress: next.in_progress.filter((t) => t.id !== task.id),
+      done: next.done.filter((t) => t.id !== task.id),
+    })
   }
 
   const launchAgentOnly = async (task: Task) => {
@@ -501,7 +508,7 @@ export function KanbanBoard({
                       subAgents={subAgents[entry.task.id] ?? []}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
-                      onRestart={restartTaskFromBeginning}
+                      onReturnToBacklog={returnTaskToBacklog}
                       onLaunchAgent={launchAgentOnly}
                       onComplete={completeTask}
                       onEdit={onEditTask}
