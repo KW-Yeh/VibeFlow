@@ -223,9 +223,12 @@ renderer/                  Next.js app (Pages Router)
   The single exception is a `mermaid` fence, which `markdown-body` hands to
   `mermaid-diagram.tsx` and which reaches the DOM as markup; `securityLevel: 'strict'`
   plus root-level `htmlLabels: false` are what keep that output inert, and
-  `ui-consistency` fails if either is relaxed. mermaid is imported inside the effect,
-  never at module scope — it is the heaviest chunk in the renderer, and markdown with
-  no diagram in it must not load it.
+  `ui-consistency` fails if either is relaxed. mermaid is imported dynamically, never
+  at module scope — it is the heaviest chunk in the renderer and has no place in the
+  initial bundle. An idle callback in `pages/_app.tsx` warms it once — chunk **and** a
+  throwaway render, since mermaid's first render costs more than its import. Left cold,
+  the first diagram of a session lands ~350ms after the text around it and grows its
+  panel a second time, which reads as a scrollbar flicker.
 
 ---
 
