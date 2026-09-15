@@ -1,5 +1,7 @@
 import type { Element, ElementContent } from 'hast'
+import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import rehypeHighlight from 'rehype-highlight'
@@ -52,66 +54,78 @@ function mermaidSourceOf(node: Element | undefined): string | null {
   return code.children.map(textOf).join('')
 }
 
-export default function MarkdownBody({
-  source,
-  compact,
-}: {
-  source: string
-  compact: boolean
-}) {
+/**
+ * Memoised — react-markdown keys its output on the identity of these functions,
+ * so a fresh `components` map is a fresh component type at every custom tag and
+ * the rendered tree is unmounted and remounted. Invisible for a link, not for a
+ * ```mermaid fence: it restarts its async draw and collapses to a placeholder,
+ * which is a large enough height change for the panel around it to flash a
+ * scrollbar on every poll.
+ */
+function useMarkdownComponents(compact: boolean): Components {
+  return useMemo(
+    () => ({
+      // `node` is the hast element react-markdown hands every custom
+      // component; it must be kept off the DOM elements below.
+      a: ({ children, node, ...props }) => (
+        <a
+          {...props}
+          className="break-words text-primary underline underline-offset-2"
+        >
+          {children}
+        </a>
+      ),
+      code: ({ children, className, node, ...props }) => {
+        // rehype-highlight marks fenced blocks with `language-*`; only inline
+        // code should get the chip styling, or every highlighted block would
+        // pick up an inline background and padding on top of <pre>'s.
+        const isBlock = /\blanguage-/.test(className ?? '')
+        return (
+          <code
+            {...props}
+            className={
+              isBlock
+                ? className
+                : cn('break-words rounded-xs bg-background/70 px-1 py-0.5', className)
+            }
+          >
+            {children}
+          </code>
+        )
+      },
+      pre: ({ children, node, ...props }) => {
+        const mermaid = mermaidSourceOf(node)
+        if (mermaid !== null) {
+          return <MermaidDiagram code={mermaid} compact={compact} />
+        }
+        return (
+          <pre
+            {...props}
+            className={cn(
+              'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
+              compact ? 'text-xs leading-snug' : 'text-sm'
+            )}
+          >
+            {children}
+          </pre>
+        )
+      },
+    }),
+    [compact]
+  )
+}
+
+function MarkdownBody({ source, compact }: { source: string; compact: boolean }) {
+  const components = useMarkdownComponents(compact)
   return (
     <ReactMarkdown
       remarkPlugins={REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
-      components={{
-        // `node` is the hast element react-markdown hands every custom
-        // component; it must be kept off the DOM elements below.
-        a: ({ children, node, ...props }) => (
-          <a
-            {...props}
-            className="break-words text-primary underline underline-offset-2"
-          >
-            {children}
-          </a>
-        ),
-        code: ({ children, className, node, ...props }) => {
-          // rehype-highlight marks fenced blocks with `language-*`; only inline
-          // code should get the chip styling, or every highlighted block would
-          // pick up an inline background and padding on top of <pre>'s.
-          const isBlock = /\blanguage-/.test(className ?? '')
-          return (
-            <code
-              {...props}
-              className={
-                isBlock
-                  ? className
-                  : cn('break-words rounded-xs bg-background/70 px-1 py-0.5', className)
-              }
-            >
-              {children}
-            </code>
-          )
-        },
-        pre: ({ children, node, ...props }) => {
-          const mermaid = mermaidSourceOf(node)
-          if (mermaid !== null) {
-            return <MermaidDiagram code={mermaid} compact={compact} />
-          }
-          return (
-            <pre
-              {...props}
-              className={cn(
-                'max-w-full overflow-x-auto rounded-md bg-background/70 p-3',
-                compact ? 'text-xs leading-snug' : 'text-sm'
-              )}
-            >
-              {children}
-            </pre>
-          )
-        },
-      }}
+      components={components}
     >
       {source}
     </ReactMarkdown>
   )
 }
+
+export default memo(MarkdownBody)
