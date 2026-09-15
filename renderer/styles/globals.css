@@ -83,6 +83,11 @@
   }
   html {
     background-color: var(--color-background);
+    /* The shell is a fixed viewport — the document itself must never scroll.
+       Libraries that measure text append a throwaway node to <body> (mermaid
+       does, on every render), and without this the page grows a scrollbar for
+       the frames that node is alive. */
+    overflow: hidden;
   }
   body {
     background-color: var(--color-background);
