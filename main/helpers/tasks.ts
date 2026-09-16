@@ -35,6 +35,8 @@ export interface CreateTaskInput {
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort
+  /** Absent = inherit the board-wide default (settings.autoMode). */
+  autoMode?: boolean
   attachments?: AttachmentInput[]
   /** CLI-only: explicit store directory; absent = use Electron getStore(). */
   storePath?: string
@@ -133,6 +135,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     agentCli: input.agentCli ?? 'claude',
     model: input.model || undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
+    autoMode: input.autoMode,
   }
 
   try {

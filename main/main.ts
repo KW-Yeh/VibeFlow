@@ -304,6 +304,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         agentCli?: AgentCliId
         model?: string
         effort?: AgentEffort
+        autoMode?: boolean
         attachments?: AttachmentInput[]
       }
     ) => {
@@ -357,6 +358,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         agentCli?: AgentCliId
         model?: string
         effort?: AgentEffort
+        autoMode?: boolean
         projectPath?: string
         baseBranch?: string | null
       }
@@ -437,6 +439,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         effort: payload.effort,
+        autoMode: payload.autoMode,
         ...gitPatch,
       })
       return getState()

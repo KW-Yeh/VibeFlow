@@ -116,8 +116,17 @@ export function buildDecisionPrompt(decisionsPath: string): string {
   ].join('\n')
 }
 
-/** The permission mode passed to the Claude CLI ("auto mode"). */
-export const DEFAULT_PERMISSION_MODE = 'auto'
+/** The Claude permission mode that lets the agent act without asking. */
+export const AUTO_PERMISSION_MODE = 'auto'
+
+/**
+ * Claude's authorization flag, driven by the card's Auto Mode. ON → the agent
+ * acts without stopping for approval; OFF → no flag, so the CLI's own default
+ * asks before each action. The leading space keeps the caller's template tidy.
+ */
+function claudePermissionFlag(autoMode?: boolean): string {
+  return autoMode ? ` --permission-mode ${AUTO_PERMISSION_MODE}` : ''
+}
 
 /** Quote an arbitrary string for safe use as a single shell argument (POSIX). */
 function shellQuote(s: string): string {
@@ -164,9 +173,9 @@ function boardEnvPrefix(
 }
 
 /**
- * Codex authorization flag driven by Auto Mode. ON → bypass approvals + sandbox
- * (unattended); OFF → '' (Codex stays interactive and waits for approval). The
- * trailing space keeps the caller's template tidy.
+ * Codex authorization flag driven by the card's Auto Mode. ON → bypass
+ * approvals + sandbox (unattended); OFF → '' (Codex stays interactive and waits
+ * for approval). The trailing space keeps the caller's template tidy.
  */
 function codexAutoFlag(autoMode?: boolean): string {
   return autoMode ? '--dangerously-bypass-approvals-and-sandbox ' : ''
@@ -306,10 +315,10 @@ export interface LaunchOptions {
    */
   boardCli?: BoardCliLaunchInfo
   /**
-   * Global Auto Mode. For Codex this decides authorization: ON adds
-   * `--dangerously-bypass-approvals-and-sandbox` so the agent runs unattended;
-   * OFF leaves Codex in its default interactive mode (waits for approval each
-   * step). Claude already runs non-interactively via its own flags.
+   * The card's Auto Mode: whether the agent may act without asking for
+   * approval. ON gives Claude `--permission-mode auto` and Codex
+   * `--dangerously-bypass-approvals-and-sandbox`; OFF leaves both in the
+   * interactive mode where every action waits for the user.
    */
   autoMode?: boolean
 }
@@ -355,7 +364,7 @@ function assembleCommand(
       ? ` --plugin-dir ${shellQuote(toShellPath(library.pluginDir))}` +
         ` --add-dir ${shellQuote(toShellPath(library.libraryDir))}`
       : ''
-    const flags = `--chrome --permission-mode ${DEFAULT_PERMISSION_MODE}${modelFlag}${effortFlag}${settings}${addDir}${libraryFlags}`
+    const flags = `--chrome${claudePermissionFlag(opts?.autoMode)}${modelFlag}${effortFlag}${settings}${addDir}${libraryFlags}`
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''

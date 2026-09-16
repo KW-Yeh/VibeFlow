@@ -15,6 +15,7 @@ import {
   DEFAULT_TASK_EFFORT,
   TaskEffortSlider,
 } from '@/components/task-effort-slider'
+import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
@@ -32,6 +33,7 @@ export interface EditTaskPayload {
   agentCli: AgentCliId
   model: string
   effort: AgentEffort
+  autoMode: boolean
   /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
   baseBranch?: string | null
@@ -40,6 +42,8 @@ export interface EditTaskPayload {
 interface EditTaskDialogProps {
   /** The task being edited, or null when the dialog is closed. */
   task: Task | null
+  /** Board-wide Auto Mode, used for cards that carry no value of their own. */
+  defaultAutoMode?: boolean
   detectAgents: () => Promise<AgentCli[]>
   agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
@@ -58,6 +62,7 @@ export function EditTaskDialog({
   loadGitInfo,
   saving,
   error,
+  defaultAutoMode = true,
   onSubmit,
   onClose,
 }: EditTaskDialogProps) {
@@ -66,6 +71,7 @@ export function EditTaskDialog({
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
+  const [autoMode, setAutoMode] = useState(true)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
@@ -92,13 +98,14 @@ export function EditTaskDialog({
     setAgentCli(task.agentCli ?? 'claude')
     setModel(task.model ?? '')
     setEffort(task.effort ?? DEFAULT_TASK_EFFORT)
+    setAutoMode(task.autoMode ?? defaultAutoMode)
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
     setGitInfo(null)
     setLoadingInfo(false)
     setProjectChanged(false)
     setConfirmClose(false)
-  }, [task])
+  }, [task, defaultAutoMode])
 
   // Detect installed agent CLIs when the dialog opens (and on retry).
   useEffect(() => {
@@ -132,6 +139,7 @@ export function EditTaskDialog({
     agentCli !== (displayedTask.agentCli ?? 'claude') ||
     model !== (displayedTask.model ?? '') ||
     effort !== (displayedTask.effort ?? DEFAULT_TASK_EFFORT) ||
+    autoMode !== (displayedTask.autoMode ?? defaultAutoMode) ||
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '')
 
@@ -182,6 +190,7 @@ export function EditTaskDialog({
       agentCli,
       model,
       effort,
+      autoMode,
       ...(canEditProject && projectPath
         ? { projectPath, baseBranch: baseBranch || null }
         : {}),
@@ -271,6 +280,12 @@ export function EditTaskDialog({
         <TaskEffortSlider
           value={effort}
           onChange={setEffort}
+          disabled={saving}
+        />
+
+        <TaskAutoModeToggle
+          value={autoMode}
+          onChange={setAutoMode}
           disabled={saving}
         />
 

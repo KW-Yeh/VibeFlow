@@ -345,6 +345,7 @@ export default function HomePage() {
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
+    taskAutoMode: boolean,
     attachments: AttachmentInput[]
   ) => {
     setCreating(true)
@@ -360,6 +361,7 @@ export default function HomePage() {
         agentCli,
         model: model || undefined,
         effort,
+        autoMode: taskAutoMode,
         attachments,
       })
       if (result) {
@@ -392,6 +394,7 @@ export default function HomePage() {
         agentCli: payload.agentCli,
         model: payload.model || undefined,
         effort: payload.effort,
+        autoMode: payload.autoMode,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
       })
@@ -452,6 +455,9 @@ export default function HomePage() {
     return []
   })
 
+  // Remote control has no entry point for now: nothing calls startSharing, so
+  // the host never registers with the public PeerJS broker. The dialog and the
+  // host stay wired up so the feature can be handed back with one prop.
   const remoteHost = useRemoteHost({
     board,
     autoMode,
@@ -481,10 +487,6 @@ export default function HomePage() {
                 onDeleteProject={handleDeleteProject}
                 autoMode={autoMode}
                 onToggleAutoMode={handleToggleAutoMode}
-                onRemoteShare={() => {
-                  if (!remoteHost.roomCode) remoteHost.startSharing()
-                  setRemoteShareOpen(true)
-                }}
                 remoteActive={!!remoteHost.roomCode}
                 onOpenSettings={() => {
                   setSettingsError(null)
@@ -515,6 +517,7 @@ export default function HomePage() {
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
                   autoMode={autoMode}
+                  workstationPath={workstationPath}
                   systemPrompt={systemPrompt}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
@@ -536,6 +539,7 @@ export default function HomePage() {
             </div>
             <EditTaskDialog
               task={editTask}
+              defaultAutoMode={autoMode}
               detectAgents={detectAgents}
               agentConnections={agentConnections}
               pickFolder={pickFolder}

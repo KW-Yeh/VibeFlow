@@ -259,3 +259,27 @@ test('buildAgentCommand — Codex gets the same board exports', () => {
   assert.ok(cmd.startsWith('export VIBEFLOW_TASK_ID='))
   assert.ok(cmd.includes('; codex '))
 })
+
+test('buildAgentCommand — Auto Mode decides whether Claude may act unprompted', () => {
+  const permissive = buildAgentCommand(TASK, '', { autoMode: true })
+  const guarded = buildAgentCommand(TASK, '', { autoMode: false })
+
+  assert.ok(permissive.includes('--permission-mode auto'))
+  assert.ok(
+    !guarded.includes('--permission-mode'),
+    'without Auto Mode the CLI default must stand, so every action waits for the user'
+  )
+})
+
+test('buildAgentCommand — a card with no Auto Mode never launches permissively', () => {
+  const cmd = buildAgentCommand(TASK, '')
+  assert.ok(!cmd.includes('--permission-mode'))
+})
+
+test('buildAgentCommand — Auto Mode drives Codex authorization the same way', () => {
+  const permissive = buildAgentCommand(CODEX_TASK, '', { autoMode: true })
+  const guarded = buildAgentCommand(CODEX_TASK, '', { autoMode: false })
+
+  assert.ok(permissive.includes('--dangerously-bypass-approvals-and-sandbox'))
+  assert.ok(!guarded.includes('--dangerously-bypass-approvals-and-sandbox'))
+})

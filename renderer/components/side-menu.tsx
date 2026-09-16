@@ -581,7 +581,7 @@ function SettingsDock({
       >
         <IconButton
           aria-label={autoMode ? '關閉 Auto Mode' : '開啟 Auto Mode'}
-          title="Auto Mode：移至 In Progress 時自動執行 Agent"
+          title="Auto Mode：新卡片預設讓 Agent 免確認執行（每張卡可各自調整）"
           onClick={onToggleAutoMode}
           className={cn('size-8', autoMode && 'text-primary hover:text-primary')}
         >
@@ -622,7 +622,7 @@ function SettingsDock({
         role="switch"
         aria-checked={autoMode}
         onClick={onToggleAutoMode}
-        title="開啟時：將卡片移至 In Progress 會自動執行 Agent"
+        title="新卡片的預設值：開啟時 Agent 執行動作不會逐次詢問。每張卡片可在建立或編輯時各自調整。"
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span

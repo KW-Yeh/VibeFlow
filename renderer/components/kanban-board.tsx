@@ -1,8 +1,10 @@
 import {
+  AnimatePresence,
   motion,
   useAnimationControls,
   useReducedMotion,
 } from 'motion/react'
+import { AlertTriangle } from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
@@ -19,6 +21,8 @@ import {
   buildWorkspaceLaunchCommand,
 } from '@/components/task-workspace-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
+import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
 import {
   executorSessionId,
 } from '@/lib/claude'
@@ -50,8 +54,10 @@ interface KanbanBoardProps {
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
-  /** Global Auto Mode: auto-run a card's Claude execution on entering In Progress. */
+  /** Board-wide Auto Mode, used by cards that carry no value of their own. */
   autoMode: boolean
+  /** Workstation root, shown by the create form as the worktree's destination. */
+  workstationPath?: string
   /** Custom system prompt for launches ('' = Artifact instructions only). */
   systemPrompt: string
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
@@ -89,6 +95,7 @@ interface KanbanBoardProps {
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
+    autoMode: boolean,
     attachments: AttachmentInput[]
   ) => void
 }
@@ -161,6 +168,7 @@ export function KanbanBoard({
   onTaskDone,
   onDeleteTask,
   autoMode,
+  workstationPath,
   systemPrompt,
   subAgents,
   selectedTaskId,
@@ -213,6 +221,8 @@ export function KanbanBoard({
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
+  const [confirmDone, setConfirmDone] = useState<Task | null>(null)
+
   const wasLaunched = (task: Task) => task.launchedAt != null
 
   // Direct command dispatch — used by revise (which needs its own full command).
@@ -243,7 +253,7 @@ export function KanbanBoard({
         includeTaskPrompt: opts?.includeTaskPrompt,
         library: library ?? undefined,
         boardCli: boardCliRef.current ?? undefined,
-        autoMode,
+        autoMode: task.autoMode ?? autoMode,
       })
     )
   }
@@ -274,32 +284,17 @@ export function KanbanBoard({
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const moveTask = (
-    task: Task,
-    to: ColumnId,
-    opts?: { forceLaunch?: boolean }
-  ) => {
-    const willLaunch =
-      to === 'in_progress' &&
-      (opts?.forceLaunch === true || (autoMode && !task.launchedAt))
-    const toInsert =
-      willLaunch && !task.launchedAt
-        ? { ...task, launchedAt: Date.now() }
-        : task
-
+  const moveTask = (task: Task, to: ColumnId) => {
     const next: BoardState = {
       backlog: board.backlog.filter((t) => t.id !== task.id),
       in_progress: board.in_progress.filter((t) => t.id !== task.id),
       done: board.done.filter((t) => t.id !== task.id),
     }
-    next[to] = [toInsert, ...next[to]]
+    next[to] = [task, ...next[to]]
     onBoardChange(next)
 
     if (to === 'done') {
       onTaskDone(task.id)
-    }
-    if (willLaunch) {
-      void armLaunch(toInsert, { resume: wasLaunched(task) })
     }
   }
 
@@ -331,7 +326,16 @@ export function KanbanBoard({
     await armLaunch(task, { includeTaskPrompt: false })
   }
 
-  const completeTask = (task: Task) => moveTask(task, 'done')
+  // Completing a card tears down the worktree that holds the work, so the user
+  // confirms before anything is moved — the card stays put until they do.
+  const completeTask = (task: Task) => setConfirmDone(task)
+
+  const confirmTaskDone = () => {
+    if (!confirmDone) return
+    const task = confirmDone
+    setConfirmDone(null)
+    moveTask(task, 'done')
+  }
 
   // ── Board / workspace splitter ────────────────────────────────────────────
   const splitRef = useRef<HTMLDivElement>(null)
@@ -541,6 +545,8 @@ export function KanbanBoard({
                       initRepository={initRepository}
                       detectAgents={detectAgents}
                       agentConnections={agentConnections}
+                      defaultAutoMode={autoMode}
+                      workstationPath={workstationPath}
                       onSubmit={onCreateTask}
                     />
                   </div>
@@ -559,6 +565,55 @@ export function KanbanBoard({
         runs={subAgentDrawerSnapshot?.runs ?? []}
         onClose={() => setSubAgentTaskId(null)}
       />
+
+      <AnimatePresence>
+        {confirmDone && (
+          <DialogShell
+            key="confirm-done-dialog"
+            title="完成任務"
+            onClose={() => setConfirmDone(null)}
+            contentClassName="max-w-md rounded-lg p-5"
+          >
+            <div className="space-y-5">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+                  <AlertTriangle className="size-5" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-lg font-semibold tracking-tight">
+                    完成「{confirmDone.title}」？
+                  </h2>
+                  <p className="text-base leading-6 text-muted-foreground">
+                    這會刪除這張卡的 worktree（尚未 commit 的變更會一起消失）、本地分支
+                    {confirmDone.branch ? `「${confirmDone.branch}」` : ''}與 artifacts，
+                    並把專案切回
+                    {confirmDone.baseBranch ? `「${confirmDone.baseBranch}」` : '基準分支'}
+                    後更新。此操作無法復原，請先確認要保留的變更都已經 commit 或 push。
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => setConfirmDone(null)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="rounded-full active:scale-95 motion-reduce:transform-none"
+                  onClick={confirmTaskDone}
+                >
+                  完成並清理
+                </Button>
+              </div>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

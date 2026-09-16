@@ -182,6 +182,7 @@ export async function createTask(payload: {
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort
+  autoMode?: boolean
   attachments?: AttachmentInput[]
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
@@ -195,6 +196,7 @@ export async function updateTask(payload: {
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort
+  autoMode?: boolean
   projectPath?: string
   baseBranch?: string | null
 }): Promise<VibeFlowState | null> {

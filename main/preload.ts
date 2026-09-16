@@ -137,6 +137,7 @@ const vibeflow = {
     agentCli?: AgentCliId
     model?: string
     effort?: AgentEffort
+    autoMode?: boolean
     attachments?: AttachmentInput[]
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     ipcRenderer.invoke('vibeflow:createTask', payload),
@@ -147,6 +148,7 @@ const vibeflow = {
     agentCli?: AgentCliId
     model?: string
     effort?: AgentEffort
+    autoMode?: boolean
     projectPath?: string
     baseBranch?: string | null
   }): Promise<VibeFlowState> =>

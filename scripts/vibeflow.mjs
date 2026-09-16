@@ -11,6 +11,7 @@ const AGENT_IDS = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
 const SUBCOMMANDS = ['create', 'update']
 const MODES = ['existing', 'new']
+const AUTO_MODES = ['on', 'off']
 
 const USAGE = `
 VibeFlow CLI
@@ -32,6 +33,8 @@ task create options:
   --agent <id>           Task agent: ${AGENT_IDS.join(' | ')}  (default: claude)
   --model <id>           Task model (default: the agent's own default)
   --effort <level>       ${AGENT_EFFORTS.join(' | ')}  (default: medium, same as the UI)
+  --auto-mode <on|off>   Let the agent act without asking for approval
+                         (default: the board-wide setting, same as the UI)
   --attach <path>        Attach a file; repeat the flag for several files
   --store-path <dir>     Explicit electron-store directory
   --profile <name>       dev | prod — shorthand for common store paths
@@ -49,9 +52,8 @@ task update options:
   and project path are provisioned on disk and cannot be changed here.
 
 Notes:
-  A card created with --status in_progress does NOT start running by itself;
-  auto-launch only fires when a card is moved in the app. Leave it in backlog
-  unless you plan to start it from the UI.
+  A card created with --status in_progress does NOT start running by itself.
+  Every launch is started by hand from the app.
 
 Examples:
   node --experimental-strip-types scripts/vibeflow.mjs task create \\
@@ -100,6 +102,7 @@ try {
       agent:         { type: 'string' },
       model:         { type: 'string' },
       effort:        { type: 'string' },
+      'auto-mode':   { type: 'string' },
       attach:        { type: 'string', multiple: true },
       'store-path':  { type: 'string' },
       profile:       { type: 'string' },
@@ -180,6 +183,7 @@ requireOneOf('--status', values.status, STATUSES)
 requireOneOf('--mode', values.mode, MODES)
 requireOneOf('--agent', values.agent, AGENT_IDS)
 requireOneOf('--effort', values.effort, AGENT_EFFORTS)
+requireOneOf('--auto-mode', values['auto-mode'], AUTO_MODES)
 
 let attachments = []
 try {
@@ -200,6 +204,7 @@ try {
     agentCli: values.agent,
     model: values.model,
     effort: values.effort,
+    autoMode: values['auto-mode'] ? values['auto-mode'] === 'on' : undefined,
     attachments,
     storePath,
   })
@@ -216,6 +221,7 @@ try {
       agentCli: task.agentCli,
       model: task.model,
       effort: task.effort,
+      autoMode: task.autoMode,
     },
   }, null, 2) + '\n')
 } catch (err) {

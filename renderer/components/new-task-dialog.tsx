@@ -7,6 +7,7 @@ import {
   FileUp,
   FolderOpen,
   GitBranch,
+  Info,
   Loader2,
   X,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import {
   DEFAULT_TASK_EFFORT,
   TaskEffortSlider,
 } from '@/components/task-effort-slider'
+import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -57,6 +59,7 @@ export interface NewTaskFormProps {
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
+    autoMode: boolean,
     attachments: AttachmentInput[]
   ) => void
   onClose?: () => void
@@ -67,6 +70,10 @@ export interface NewTaskFormProps {
    * same git detection + workspace auto-match as manually picking the folder.
    */
   initialProjectPath?: string | null
+  /** Board-wide Auto Mode, used as the new card's starting value. */
+  defaultAutoMode?: boolean
+  /** Workstation root, so the form can name where the worktree will land. */
+  workstationPath?: string
 }
 
 // Shared field class now lives in ui/field.tsx (single source of truth).
@@ -371,6 +378,8 @@ export function NewTaskForm({
   onClose,
   inline = false,
   initialProjectPath,
+  defaultAutoMode = true,
+  workstationPath,
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [mode, setMode] = useState<ProjectMode>('existing')
@@ -389,6 +398,7 @@ export function NewTaskForm({
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
+  const [autoMode, setAutoMode] = useState(defaultAutoMode)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
@@ -479,6 +489,9 @@ export function NewTaskForm({
 
   const isRepo = gitInfo?.isRepo ?? false
   const hasRemote = gitInfo?.hasRemote ?? false
+  const workspaceDisplayPath = `${workstationPath?.trim() || '~/Desktop'}/${
+    projectPath ? basename(projectPath) : '<專案名>'
+  }`
 
   const isProjectReady =
     mode === 'new'
@@ -501,6 +514,7 @@ export function NewTaskForm({
       agentCli,
       model,
       effort,
+      autoMode,
       attachments.map(({ input }) => input)
     )
   }
@@ -615,6 +629,33 @@ export function NewTaskForm({
               : '填寫後會建立同名分支。'}
           </span>
         </label>
+      </InlineEnterSurface>
+
+      <InlineEnterSurface show={isRepo} enabled={inline}>
+        <div className="space-y-1.5 rounded-lg border border-border/50 bg-muted/20 p-4">
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <Info className="size-3.5 text-muted-foreground" />
+            建立後會立刻做這些事
+          </span>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              在 <code className="text-foreground">{workspaceDisplayPath}</code>{' '}
+              底下建立這張卡專用的 worktree 與分支，你的專案資料夾本身不會被切換。
+            </li>
+            {hasRemote && (
+              <li>把新分支 push 到 origin；遠端會多出一條分支，有 CI 的話可能被觸發。</li>
+            )}
+            <li>
+              把被 git 忽略的檔案（例如 <code className="text-foreground">.env</code>）複製一份進
+              worktree，相依套件資料夾則在背景複製，好讓新 worktree 能直接跑起來。
+            </li>
+            <li>
+              把 VibeFlow 的執行期檔案寫進{' '}
+              <code className="text-foreground">.git/info/exclude</code>，不會動到專案的
+              .gitignore。
+            </li>
+          </ul>
+        </div>
       </InlineEnterSurface>
     </div>
   )
@@ -842,6 +883,12 @@ export function NewTaskForm({
                 disabled={creating}
               />
 
+              <TaskAutoModeToggle
+                value={autoMode}
+                onChange={setAutoMode}
+                disabled={creating}
+              />
+
               {error && (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
                   {error}
@@ -893,6 +940,12 @@ export function NewTaskForm({
               <TaskEffortSlider
                 value={effort}
                 onChange={setEffort}
+                disabled={creating}
+              />
+
+              <TaskAutoModeToggle
+                value={autoMode}
+                onChange={setAutoMode}
                 disabled={creating}
               />
 

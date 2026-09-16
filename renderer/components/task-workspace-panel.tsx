@@ -1743,7 +1743,7 @@ export function buildWorkspaceLaunchCommand({
   library?: LibraryLaunchInfo
   /** Board access for the agent; undefined → it cannot create or edit cards. */
   boardCli?: BoardCliLaunchInfo
-  /** Global Auto Mode — drives Codex authorization at launch. */
+  /** The card's Auto Mode — whether the agent may act without asking. */
   autoMode?: boolean
 }): string {
   return buildAgentCommand(

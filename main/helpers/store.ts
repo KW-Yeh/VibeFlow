@@ -40,6 +40,12 @@ export interface Task {
   model?: string
   /** Reasoning depth. Absent = provider/model default. */
   effort?: AgentEffort
+  /**
+   * Whether this card's agent may act without asking for approval. Absent =
+   * fall back to `AppSettings.autoMode`, so cards created before the field
+   * existed keep the behaviour they were created under.
+   */
+  autoMode?: boolean
   /** Epoch ms when the card was created. */
   createdAt?: number
   /**
@@ -124,8 +130,9 @@ export type BoardState = Record<ColumnId, Task[]>
 /** Global, board-wide user settings. */
 export interface AppSettings {
   /**
-   * When true, dragging a card into In Progress auto-launches its Claude
-   * execution (once). The manual run button works regardless of this flag.
+   * Default for a new card's `autoMode` — whether its agent may act without
+   * asking for approval. Only a card's own value governs a launch; this is
+   * what the create dialog starts from.
    */
   autoMode: boolean
   /**
