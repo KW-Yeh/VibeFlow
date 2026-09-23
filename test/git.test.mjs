@@ -17,6 +17,7 @@ import {
   commitAndPush,
   dropCoveredEntries,
   captureTaskOutcome,
+  resetWorktreeToBase,
 } from '../main/helpers/git.ts'
 import { ARTIFACTS_FALLBACK_DIR } from '../main/helpers/artifacts.ts'
 import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
@@ -499,6 +500,46 @@ test('commitAndPush — clean tree commits nothing', async () => {
     const res = await provision(projectPath, 'abc12345', 'main', 'feature/clean')
     const fin = await commitAndPush(res.worktreePath, 'noop')
     assert.equal(fin.committed, false)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('resetWorktreeToBase — drops commits, edits and untracked files', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/redo')
+    const wt = res.worktreePath
+    const baseHead = await git(wt, 'rev-parse', 'HEAD')
+    await writeFile(wt, 'committed.txt', 'first run\n')
+    await git(wt, 'add', '-A')
+    await git(wt, 'commit', '-m', 'first run')
+    await writeFile(wt, 'README.md', '# edited\n')
+    await writeFile(wt, 'stray/untracked.txt', 'leftover\n')
+
+    await resetWorktreeToBase(wt, 'main')
+
+    assert.equal(await git(wt, 'rev-parse', 'HEAD'), baseHead)
+    assert.equal(await git(wt, 'status', '--porcelain'), '')
+    assert.equal(await exists(path.join(wt, 'committed.txt')), false)
+    assert.equal(await exists(path.join(wt, 'stray')), false)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('resetWorktreeToBase — keeps attachments, removes fallback artifacts', async () => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: true })
+  try {
+    const res = await provision(projectPath, 'abc12345', 'main', 'feature/redo-runtime')
+    const wt = res.worktreePath
+    await writeFile(wt, `${ATTACHMENTS_DIR}/spec.png`, 'png')
+    await writeFile(wt, `${ARTIFACTS_FALLBACK_DIR}/report.md`, 'old run')
+
+    await resetWorktreeToBase(wt, 'main')
+
+    assert.equal(await exists(path.join(wt, ATTACHMENTS_DIR, 'spec.png')), true)
+    assert.equal(await exists(path.join(wt, ARTIFACTS_FALLBACK_DIR)), false)
   } finally {
     await cleanup()
   }

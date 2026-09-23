@@ -211,7 +211,7 @@ interface TaskWorkspacePanelProps {
   subAgents: SubAgentRun[]
   launch?: LaunchEntry
   onStart: (task: Task) => void
-  onReturnToBacklog: (task: Task) => Promise<void>
+  onReturnToBacklog: (task: Task) => Promise<boolean>
   onLaunchAgent: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void

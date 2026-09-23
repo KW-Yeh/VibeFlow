@@ -222,6 +222,10 @@ export function KanbanBoard({
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
   const [confirmDone, setConfirmDone] = useState<Task | null>(null)
+  const [confirmReturn, setConfirmReturn] = useState<{
+    task: Task
+    settle: (confirmed: boolean) => void
+  } | null>(null)
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
@@ -309,9 +313,26 @@ export function KanbanBoard({
   }
 
   // Send a running card back to Backlog instead of relaunching it on the spot.
-  // The run is reset first, so the later 開始 opens a fresh conversation rather
-  // than resuming the one the card was pinned to.
-  const returnTaskToBacklog = async (task: Task) => {
+  // Everything the run produced is thrown away — code, artifacts, decision
+  // record, conversation — so the later 開始 starts over from the base branch.
+  // None of that is recoverable, so the user confirms first; the returned
+  // promise settles false if they back out.
+  const returnTaskToBacklog = (task: Task) =>
+    new Promise<boolean>((resolve, reject) => {
+      setConfirmReturn({
+        task,
+        settle: (confirmed) => {
+          setConfirmReturn(null)
+          if (!confirmed) {
+            resolve(false)
+            return
+          }
+          resetTaskBackToBacklog(task).then(() => resolve(true), reject)
+        },
+      })
+    })
+
+  const resetTaskBackToBacklog = async (task: Task) => {
     const result = await resetTaskRun(task.id)
     if (!result) throw new Error('Electron bridge 無法使用')
     const next = result.state.board
@@ -608,6 +629,56 @@ export function KanbanBoard({
                   onClick={confirmTaskDone}
                 >
                   完成並清理
+                </Button>
+              </div>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmReturn && (
+          <DialogShell
+            key="confirm-return-dialog"
+            title="退回 Backlog"
+            onClose={() => confirmReturn.settle(false)}
+            contentClassName="max-w-md rounded-lg p-5"
+          >
+            <div className="space-y-5">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+                  <AlertTriangle className="size-5" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-lg font-semibold tracking-tight">
+                    把「{confirmReturn.task.title}」退回 Backlog？
+                  </h2>
+                  <p className="text-base leading-6 text-muted-foreground">
+                    這會停止 Agent，並把 worktree 還原到
+                    {confirmReturn.task.baseBranch
+                      ? `「${confirmReturn.task.baseBranch}」`
+                      : '基準分支'}
+                    ——這張卡在本地的 commit 與未 commit 變更都會消失，artifacts
+                    與決策紀錄也會一併刪除。遠端分支不會被改動。此操作無法復原。
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => confirmReturn.settle(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="rounded-full active:scale-95 motion-reduce:transform-none"
+                  onClick={() => confirmReturn.settle(true)}
+                >
+                  清除並退回
                 </Button>
               </div>
             </div>

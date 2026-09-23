@@ -799,6 +799,27 @@ export async function refreshWorktreeBase(
   return { fetched, rebased, conflicts }
 }
 
+/**
+ * Throw away every change the task made on its branch — commits, edits and
+ * untracked files — so the next run starts from the base as if freshly
+ * provisioned. Git-ignored files (copied .env, node_modules, the runtime dirs
+ * the app keeps inside the worktree) survive, because a new worktree would have
+ * them too. The branch on origin is left alone.
+ */
+export async function resetWorktreeToBase(
+  worktreePath: string,
+  baseBranch: string
+): Promise<void> {
+  await fetchBase(worktreePath, baseBranch)
+  const baseRef = await resolveBaseRef(worktreePath, baseBranch)
+  await git(worktreePath, ['reset', '--hard', baseRef])
+  await git(worktreePath, ['clean', '-fd'])
+  await fs.rm(path.join(worktreePath, ARTIFACTS_FALLBACK_DIR), {
+    recursive: true,
+    force: true,
+  })
+}
+
 // --- Review & finalize (Phase 4) ---
 
 /**

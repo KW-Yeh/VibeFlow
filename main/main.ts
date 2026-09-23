@@ -44,6 +44,7 @@ import {
   provisionWorktree,
   refreshWorktreeBase,
   removeWorktree,
+  resetWorktreeToBase,
   syncBaseBranch,
 } from './helpers/git'
 import { captureTaskOutcome } from './helpers/git'
@@ -321,14 +322,19 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getState()
   })
 
-  // Discard everything that pins this card to its last run — the PTY session,
-  // the sub-agent timeline, and the conversation id — so whoever launches it
-  // next gets a brand-new conversation instead of resuming the old one. Keeps
-  // the worktree and artifacts. Launching again is the caller's decision.
-  ipcMain.handle('vibeflow:resetTaskRun', (event, taskId: string) => {
+  // Discard everything the last run left behind — the PTY session, the
+  // sub-agent timeline, the conversation id, the code it changed, its artifacts
+  // and its decision record — so the next launch starts over as if the card
+  // were new. Launching again is the caller's decision.
+  ipcMain.handle('vibeflow:resetTaskRun', async (event, taskId: string) => {
     const task = findTask(taskId)
     if (!task?.worktreePath) throw new Error('任務沒有可用的 worktree')
+    if (!task.baseBranch) throw new Error('任務沒有記錄 base branch，無法還原 worktree')
     teardownSession(taskId)
+    await resetWorktreeToBase(task.worktreePath, task.baseBranch)
+    const workspacePath = task.workspacePath ?? path.dirname(task.worktreePath)
+    deleteArtifacts(workspacePath, task.worktreePath)
+    deleteDecisions(workspacePath, decisionsKey(task.worktreePath, task.branch))
     resetSubAgents(task.worktreePath)
     updateTask(taskId, {
       launchedAt: Date.now(),

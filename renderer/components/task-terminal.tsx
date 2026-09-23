@@ -31,8 +31,11 @@ interface TaskTerminalProps {
    * scrollback from the live session is preserved for review.
    */
   readOnly?: boolean
-  /** Reset this run and send the card back to Backlog, without relaunching. */
-  onReturnToBacklog?: () => Promise<void>
+  /**
+   * Reset this run and send the card back to Backlog, without relaunching.
+   * Resolves false when the user backs out before anything was touched.
+   */
+  onReturnToBacklog?: () => Promise<boolean>
   /** Start a fresh agent with settings + Artifact context, without card content. */
   onLaunchAgent?: () => Promise<void>
   /**
@@ -133,12 +136,12 @@ export function TaskTerminal({
 
     onInteractRef.current?.()
     setIsReturningToBacklog(true)
-    // The run this scrollback belongs to is being discarded, so clear the
-    // mounted xterm too rather than leaving the dead run's output on screen.
-    term.reset()
-    term.clear()
     try {
-      await onReturnToBacklog()
+      if (!(await onReturnToBacklog())) return
+      // The run this scrollback belongs to is being discarded, so clear the
+      // mounted xterm too rather than leaving the dead run's output on screen.
+      term.reset()
+      term.clear()
       // Resetting the run kills the PTY, and nothing launches in its place —
       // the whole point is that the card waits in Backlog. Hand the worktree
       // back as a plain shell so it stays usable meanwhile.
@@ -474,7 +477,7 @@ export function TaskTerminal({
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void returnToBacklog()}
                 disabled={!cwd || isReturningToBacklog || isLaunchingAgent}
-                title="重置這次執行並退回 Backlog，之後按「開始」才會重新啟動 Agent"
+                title="捨棄這次執行的程式碼變更、artifacts 與決策紀錄並退回 Backlog，之後按「開始」才會重新啟動 Agent"
               >
                 <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
                 {isReturningToBacklog ? '退回中…' : '退回 Backlog'}
