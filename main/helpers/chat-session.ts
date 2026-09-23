@@ -1,10 +1,9 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import path from 'path'
-import fs from 'fs'
 import type { WebContents } from 'electron'
 import type { AgentCliId } from './agents'
 import { execEnv } from './env'
+import { findGitBash } from './git-bash'
 import { appendMessage, type ChatAttachment } from './chat-store'
 import { writeAttachments, type AttachmentInput } from './attachments'
 
@@ -123,23 +122,12 @@ function powerShellQuote(s: string): string {
   return `'${s.replace(/'/g, `''`)}'`
 }
 
-function gitBashPath(): string | null {
-  const candidates = [
-    process.env.GIT_BASH_PATH,
-    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : null,
-    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)']!, 'Git', 'bin', 'bash.exe') : null,
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe') : null,
-  ].filter((candidate): candidate is string => Boolean(candidate))
-
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null
-}
-
 function commandShell(): CommandShell {
   if (process.platform !== 'win32') {
     return { command: 'sh', args: (cmd) => ['-lc', cmd], quote: posixShellQuote }
   }
 
-  const bash = gitBashPath()
+  const bash = findGitBash()
   if (bash) return { command: bash, args: (cmd) => ['-lc', cmd], quote: posixShellQuote }
 
   return {

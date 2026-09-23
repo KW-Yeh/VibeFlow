@@ -1,9 +1,5 @@
-import { execFile } from 'child_process'
 import os from 'os'
-import { promisify } from 'util'
-import { execEnv } from './env'
-
-const pexec = promisify(execFile)
+import { runAgentPrint } from './agent-print'
 
 /**
  * Meaningful branch naming for task worktrees.
@@ -87,16 +83,10 @@ async function translateTitleToSlug(title: string): Promise<string | null> {
     '2-6 lowercase words joined by hyphens, no prefix, no quotes, no explanation. ' +
     `Output ONLY the slug.\nTitle: ${title}`
   try {
-    const { stdout } = await pexec(
-      'claude',
-      ['-p', prompt, '--model', 'haiku'],
-      {
-        cwd: os.tmpdir(), // neutral cwd — don't pick up any project's CLAUDE.md
-        timeout: 20_000,
-        maxBuffer: 1024 * 1024,
-        env: execEnv(),
-      }
-    )
+    const stdout = await runAgentPrint('claude', ['-p', '--model', 'haiku'], prompt, {
+      cwd: os.tmpdir(), // neutral cwd — don't pick up any project's CLAUDE.md
+      timeout: 20_000,
+    })
     // Take the last non-empty line and re-sanitize — never trust raw output
     // as a git ref component.
     const lines = stdout

@@ -315,14 +315,29 @@ test('buildCodexHome — links auth and config back, since dropping either break
   const userHome = await makeFakeCodexHome()
   const res = buildCodexHome(root, undefined, userHome)
 
+  // A symlink (macOS/Linux) or a hard link (Windows without Developer Mode):
+  // either way a write to the real file must show through the link.
   for (const file of ['auth.json', 'config.toml']) {
     const link = path.join(res.codexHome, file)
+    await fs.appendFile(path.join(userHome, file), '\n# refreshed')
     assert.equal(
-      fsSync.realpathSync(link),
-      fsSync.realpathSync(path.join(userHome, file)),
-      `${file} must resolve to the real codex home`
+      await fs.readFile(link, 'utf8'),
+      await fs.readFile(path.join(userHome, file), 'utf8'),
+      `${file} must track the real codex home`
     )
   }
+})
+
+test('buildCodexHome — relinking over an existing home still reaches the real files', async () => {
+  const root = await tmpDir()
+  const userHome = await makeFakeCodexHome()
+  buildCodexHome(root, undefined, userHome)
+  const res = buildCodexHome(root, undefined, userHome)
+
+  assert.equal(
+    await fs.readFile(path.join(res.codexHome, 'auth.json'), 'utf8'),
+    '{"token":"x"}'
+  )
 })
 
 test('buildCodexHome — closer source wins and the shadowed one is reported', async () => {

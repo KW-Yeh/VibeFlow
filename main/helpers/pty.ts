@@ -1,8 +1,7 @@
 import * as nodePty from 'node-pty'
 import type { WebContents } from 'electron'
-import { existsSync } from 'fs'
-import path from 'path'
 import { buildEnv } from './env'
+import { findGitBash, GIT_BASH_MISSING_MESSAGE } from './git-bash'
 
 /** Active PTY sessions keyed by session key (= taskId). */
 const sessions = new Map<string, nodePty.IPty>()
@@ -54,21 +53,6 @@ function buildPtyEnv(): Record<string, string> {
   return env
 }
 
-function findGitBash(): string | undefined {
-  const candidates = [
-    process.env['ProgramFiles']
-      ? path.join(process.env['ProgramFiles'], 'Git', 'bin', 'bash.exe')
-      : undefined,
-    process.env['ProgramFiles(x86)']
-      ? path.join(process.env['ProgramFiles(x86)'] as string, 'Git', 'bin', 'bash.exe')
-      : undefined,
-    process.env['LOCALAPPDATA']
-      ? path.join(process.env['LOCALAPPDATA'], 'Programs', 'Git', 'bin', 'bash.exe')
-      : undefined,
-  ]
-  return candidates.filter((p): p is string => !!p).find(existsSync)
-}
-
 function defaultShell(): string {
   if (process.platform === 'win32') {
     // Launch commands are written in POSIX sh syntax; Git Bash is required to run them.
@@ -116,14 +100,19 @@ export function startSession(
   const shell = defaultShell()
   let args: string[]
   // Git Bash (bash.exe) on Windows uses the same POSIX login-shell flags as macOS/Linux.
-  // Fall back to PowerShell args only when Git Bash is unavailable (launch commands
-  // containing POSIX syntax will not work in that case).
+  // PowerShell is only a fallback for a plain interactive shell: launch commands
+  // are POSIX sh and cannot run there, so instead of letting one fail with a
+  // parse error the session says what is missing and exits non-zero — the
+  // renderer then reports the failure and hands back an interactive shell.
   const isPosixShell =
     process.platform !== 'win32' || shell.toLowerCase().endsWith('bash.exe')
   if (isPosixShell) {
     args = command ? ['-lic', command] : ['-l']
+  } else if (command) {
+    const message = GIT_BASH_MISSING_MESSAGE.replace(/'/g, "''")
+    args = ['-NoProfile', '-NonInteractive', '-Command', `Write-Host '${message}' -ForegroundColor Yellow; exit 1`]
   } else {
-    args = command ? ['-NoProfile', '-NonInteractive', '-Command', command] : ['-NoProfile']
+    args = ['-NoProfile']
   }
 
   const proc = nodePty.spawn(shell, args, {

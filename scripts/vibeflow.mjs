@@ -3,6 +3,7 @@
 // Or:      npm run vibeflow -- <command>
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { createTaskFromInput, updateTaskFromInput } from '../main/helpers/tasks.ts'
 import { fileToAttachmentInput } from '../main/helpers/attachments.ts'
 import { AGENT_CLIS, AGENT_EFFORTS } from '../main/helpers/agents.ts'
@@ -65,13 +66,28 @@ Examples:
     --profile dev
 `.trim()
 
-/** Resolve the store directory from --store-path or --profile (macOS only). */
+/**
+ * Electron's `appData` for this platform — the parent of the app's userData.
+ * Mirrors Electron's own resolution so the CLI finds the store without it.
+ */
+function appDataDir() {
+  const home = homedir()
+  if (process.platform === 'darwin') return join(home, 'Library', 'Application Support')
+  if (process.platform === 'win32') return process.env.APPDATA || join(home, 'AppData', 'Roaming')
+  return process.env.XDG_CONFIG_HOME || join(home, '.config')
+}
+
+/**
+ * Resolve the store directory from --store-path or --profile. Electron names
+ * userData after the package.json name (`vibeflow`), and main.ts suffixes it
+ * with " (development)" in dev. macOS and Windows compare these names
+ * case-insensitively, so the long-documented `VibeFlow` spelling is the same
+ * directory there.
+ */
 function resolveStorePath(storePath, profile) {
   if (storePath) return storePath
-  const home = homedir()
-  if (profile === 'dev') return `${home}/Library/Application Support/VibeFlow (development)`
-  // Default to prod path (matches packaged Electron app on macOS).
-  return `${home}/Library/Application Support/VibeFlow`
+  const name = profile === 'dev' ? 'vibeflow (development)' : 'vibeflow'
+  return join(appDataDir(), name)
 }
 
 function fail(code, message) {

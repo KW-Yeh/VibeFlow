@@ -4,6 +4,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import { SUBAGENTS_DIR } from './subagents'
 import { execEnv } from './env'
+import { runAgentPrint } from './agent-print'
 import { ATTACHMENTS_DIR } from './attachments'
 import { ARTIFACTS_FALLBACK_DIR } from './artifacts'
 import type { OutcomeCommit, OutcomeFile, OutcomePr, TaskOutcome } from './store'
@@ -1339,13 +1340,9 @@ export async function generateCommitMessage(
   const flags = cliFlags[agentCli] ?? ['-p']
   const bin = agentCli
 
-  const { stdout } = await pexec(bin, [...flags, prompt], {
-    cwd: worktreePath,
-    maxBuffer: 1 * 1024 * 1024,
-    env: execEnv(),
-  })
+  const stdout = await runAgentPrint(bin, flags, prompt, { cwd: worktreePath })
 
-  const result = stdout.toString().trim()
+  const result = stdout.trim()
   if (!result) throw new Error(`${agentCli} 回傳空的 commit message`)
   return result
 }

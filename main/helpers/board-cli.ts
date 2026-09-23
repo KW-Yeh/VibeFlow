@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import { getStorePath } from './store'
 
 /**
@@ -11,7 +12,11 @@ export interface BoardCliLaunchInfo {
   storeDir: string
   /** `scripts/vibeflow.mjs`; absent when no CLI is reachable — see below. */
   cliPath?: string
-  /** Loader the CLI needs to resolve the TypeScript helpers it imports. */
+  /**
+   * Loader the CLI needs to resolve the TypeScript helpers it imports, as a
+   * `file://` URL: `node --import` takes a module specifier, and a Windows
+   * absolute path (`C:/…`) is rejected as an unknown `c:` URL scheme.
+   */
   loaderPath?: string
 }
 
@@ -31,5 +36,5 @@ export async function boardCliLaunchInfo(): Promise<BoardCliLaunchInfo> {
   const loaderPath = path.join(root, 'test', 'support', 'register.mjs')
   if (!fs.existsSync(cliPath) || !fs.existsSync(loaderPath)) return { storeDir }
 
-  return { storeDir, cliPath, loaderPath }
+  return { storeDir, cliPath, loaderPath: pathToFileURL(loaderPath).href }
 }

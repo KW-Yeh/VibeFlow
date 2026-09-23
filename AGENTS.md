@@ -91,10 +91,11 @@ npm run vibeflow -- task create \
   `main/helpers/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
 - Unknown flags are rejected, so a typo fails loudly instead of being ignored.
-- `--profile dev` writes to
-  `~/Library/Application Support/VibeFlow (development)/vibeflow-state.json`, which is
-  what `npm run dev` uses. Omitting `--profile` writes to the packaged app store at
-  `~/Library/Application Support/VibeFlow/vibeflow-state.json`.
+- `--profile dev` writes to `<appData>/vibeflow (development)/vibeflow-state.json`,
+  which is what `npm run dev` uses. Omitting `--profile` writes to the packaged app
+  store at `<appData>/vibeflow/vibeflow-state.json`. `<appData>` is Electron's:
+  `~/Library/Application Support` on macOS, `%APPDATA%` on Windows,
+  `$XDG_CONFIG_HOME` (or `~/.config`) on Linux.
 - `--store-path <dir>` can override the Electron store directory explicitly.
 - The command provisions the same git isolation as the UI: it creates a task card,
   branch, and worktree under the target project's `.vibeflow/` directory.
@@ -137,7 +138,7 @@ put more cards on the board it is itself running on (see `boardEnvPrefix` in
 | `VIBEFLOW_PROJECT_PATH` | the card's project — what `task create --project` takes |
 | `VIBEFLOW_BRANCH` / `VIBEFLOW_BASE_BRANCH` | the card's branch and its base |
 | `VIBEFLOW_STORE_DIR` | store dir of the **running** app — pass it as `--store-path` instead of guessing `--profile` |
-| `VIBEFLOW_CLI` / `VIBEFLOW_CLI_LOADER` | `scripts/vibeflow.mjs` and the loader it needs; **absent in the packaged app**, which ships no `scripts/` |
+| `VIBEFLOW_CLI` / `VIBEFLOW_CLI_LOADER` | `scripts/vibeflow.mjs` and the loader it needs (a `file://` URL — `node --import` rejects a bare Windows `C:/…` path); **absent in the packaged app**, which ships no `scripts/` |
 | `VIBEFLOW_AUTO_MODE` | `1` / `0` |
 
 `VIBEFLOW_CLI` being absent is the signal that the board is read-only for the agent;

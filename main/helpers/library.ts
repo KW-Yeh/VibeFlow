@@ -409,15 +409,38 @@ export function buildPluginDir(root: string): { pluginDir: string; skills: strin
   return { pluginDir: paths.plugin, skills: enabled.map((e) => e.name) }
 }
 
+/**
+ * Point `linkPath` at `target`: a symlink where the OS allows one, else the
+ * closest thing that works. Windows refuses symlinks without Developer Mode
+ * (EPERM), and skipping them there would leave codex logged out and without
+ * the project's and user's skills. Neither fallback needs privilege: a
+ * directory becomes a junction (the `'junction'` type is ignored off Windows),
+ * a file a hard link on the same volume. The last resort is a copy — a
+ * snapshot, which is enough since every launch rebuilds this home.
+ */
 function linkOrSkip(target: string, linkPath: string): boolean {
   if (!fs.existsSync(target)) return false
-  try {
-    fs.rmSync(linkPath, { recursive: true, force: true })
-    fs.symlinkSync(target, linkPath)
-    return true
-  } catch {
-    return false
+  const source = path.resolve(target) // junctions only take absolute targets
+  const attempts = fs.statSync(source).isDirectory()
+    ? [
+        () => fs.symlinkSync(source, linkPath, 'junction'),
+        () => fs.cpSync(source, linkPath, { recursive: true, dereference: true }),
+      ]
+    : [
+        () => fs.symlinkSync(source, linkPath),
+        () => fs.linkSync(source, linkPath),
+        () => fs.copyFileSync(source, linkPath),
+      ]
+  for (const attempt of attempts) {
+    try {
+      fs.rmSync(linkPath, { recursive: true, force: true })
+      attempt()
+      return true
+    } catch {
+      // fall through to the next, less faithful, way of linking
+    }
   }
+  return false
 }
 
 export interface CodexHomeResult {
