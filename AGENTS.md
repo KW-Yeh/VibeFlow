@@ -161,6 +161,7 @@ main/                      Electron main process (ESM, bundled by nextron/webpac
     ├── git.ts             git via child_process: info / worktree / diff / commit+push
     ├── artifacts.ts       per-task Artifact path, listing, preview, and cleanup
     ├── decisions.ts       per-task decision record: path, read, delete
+    ├── recent-projects.ts recently used project folders for the new-task picker (store v4)
     ├── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
     └── create-window.ts   window-state persistence (scaffold)
 
@@ -171,7 +172,8 @@ renderer/                  Next.js app (Pages Router)
 ├── components/
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
-│   ├── new-task-dialog.tsx per-task folder picker + git detect + create
+│   ├── new-task-dialog.tsx per-task project picker + git detect + create
+│   ├── project-folder-picker.tsx recent-projects select + folder button; flags lost paths
 │   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策/artifacts/diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/

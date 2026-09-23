@@ -22,6 +22,7 @@ import type {
   LibraryKind,
   LibraryLaunchInfo,
   PrStatus,
+  RecentProjectEntry,
   RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
@@ -157,6 +158,12 @@ export async function pickFolder(): Promise<string | null> {
 export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
   const b = bridge()
   return b ? b.getGitInfo(projectPath) : null
+}
+
+/** Recently used project folders ([] without the bridge). */
+export async function listRecentProjects(): Promise<RecentProjectEntry[]> {
+  const b = bridge()
+  return b ? b.listRecentProjects() : []
 }
 
 export async function initRepository(

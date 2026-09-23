@@ -44,6 +44,7 @@ import type {
   BoardState,
   ColumnId,
   GitInfo,
+  RecentProjectEntry,
   SubAgentRun,
   Task,
 } from '@/lib/types'
@@ -81,6 +82,7 @@ interface KanbanBoardProps {
   creating: boolean
   createError: string | null
   pickFolder: () => Promise<string | null>
+  loadRecentProjects: () => Promise<RecentProjectEntry[]>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
@@ -91,7 +93,6 @@ interface KanbanBoardProps {
     projectPath: string,
     baseBranch: string | null,
     branch: string,
-    mode: 'existing' | 'new',
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
@@ -182,6 +183,7 @@ export function KanbanBoard({
   creating,
   createError,
   pickFolder,
+  loadRecentProjects,
   loadGitInfo,
   initRepository,
   detectAgents,
@@ -562,6 +564,7 @@ export function KanbanBoard({
                       creating={creating}
                       error={createError}
                       pickFolder={pickFolder}
+                      loadRecentProjects={loadRecentProjects}
                       loadGitInfo={loadGitInfo}
                       initRepository={initRepository}
                       detectAgents={detectAgents}

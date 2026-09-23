@@ -17,6 +17,7 @@ import type {
 import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
 import type { BoardCliLaunchInfo } from './helpers/board-cli'
 import type { TaskDecisions } from './helpers/decisions'
+import type { RecentProjectEntry } from './helpers/recent-projects'
 import type { SubAgentRun } from './helpers/subagents'
 import type { ChatAttachment, Conversation } from './helpers/chat-store'
 import type { AttachmentInput } from './helpers/attachments'
@@ -121,6 +122,9 @@ const vibeflow = {
     ipcRenderer.invoke('dialog:pickFolder'),
   getGitInfo: (projectPath: string): Promise<GitInfo> =>
     ipcRenderer.invoke('git:getInfo', projectPath),
+  /** Recently used project folders, each flagged when it no longer exists. */
+  listRecentProjects: (): Promise<RecentProjectEntry[]> =>
+    ipcRenderer.invoke('projects:listRecent'),
   /** Initialise a new git repository and return its GitInfo. */
   initRepository: (projectPath: string): Promise<GitInfo> =>
     ipcRenderer.invoke('git:initRepository', projectPath),

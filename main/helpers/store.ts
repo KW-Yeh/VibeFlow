@@ -2,6 +2,7 @@ import Store from 'electron-store'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
+import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
 export type ConnectableAgentId = 'claude' | 'codex'
@@ -168,6 +169,8 @@ export interface VibeFlowState {
   board: BoardState
   /** Global user settings. */
   settings: AppSettings
+  /** Project folders offered by the new-task picker, most recent first. */
+  recentProjects?: RecentProject[]
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -182,9 +185,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 /**
  * Current persisted-state schema version. Bumped when a migration must run on
- * existing stores (see `migrateStore`). v3 introduced workspaces.
+ * existing stores (see `migrateStore`). v3 introduced workspaces; v4 the
+ * recent-projects list.
  */
-const STATE_VERSION = 3
+const STATE_VERSION = 4
 
 const defaults: VibeFlowState = {
   version: STATE_VERSION,
@@ -216,6 +220,9 @@ export function getStore(): Store<VibeFlowState> {
  */
 function migrateStore(store: Store<VibeFlowState>): void {
   const persistedVersion = store.get('version') ?? 1
+  if (persistedVersion < 4 && !store.get('recentProjects')) {
+    store.set('recentProjects', recentProjectsFromBoard(store.get('board')))
+  }
   if (persistedVersion < STATE_VERSION) {
     store.set('version', STATE_VERSION)
   }

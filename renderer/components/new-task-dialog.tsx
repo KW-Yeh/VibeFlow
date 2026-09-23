@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Check,
   FileUp,
-  FolderOpen,
   GitBranch,
   Info,
   Loader2,
@@ -21,6 +20,10 @@ import {
   TaskEffortSlider,
 } from '@/components/task-effort-slider'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
+import {
+  ProjectFolderPicker,
+  isProjectMissing,
+} from '@/components/project-folder-picker'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -32,9 +35,8 @@ import type {
   AgentConnections,
   AttachmentInput,
   GitInfo,
+  RecentProjectEntry,
 } from '@/lib/types'
-
-type ProjectMode = 'existing' | 'new'
 
 interface AttachmentItem {
   id: number
@@ -45,6 +47,7 @@ export interface NewTaskFormProps {
   creating: boolean
   error: string | null
   pickFolder: () => Promise<string | null>
+  loadRecentProjects: () => Promise<RecentProjectEntry[]>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
@@ -55,7 +58,6 @@ export interface NewTaskFormProps {
     projectPath: string,
     baseBranch: string | null,
     branch: string,
-    mode: ProjectMode,
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
@@ -183,83 +185,6 @@ function AttachmentRow({
   )
 }
 
-// ── Segmented control for existing vs new project ──────────────────────────
-function ProjectTypeToggle({
-  mode,
-  onChange,
-  disabled,
-}: {
-  mode: ProjectMode
-  onChange: (m: ProjectMode) => void
-  disabled: boolean
-}) {
-  return (
-    <div className="flex rounded-full bg-muted p-1">
-      {(['existing', 'new'] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => onChange(m)}
-          disabled={disabled}
-          className={cn(
-            'flex-1 rounded-full px-3 py-1 text-base outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
-            mode === m
-              ? 'bg-primary font-medium text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          {m === 'existing' ? '現有專案' : '新專案'}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// ── Folder picker — dashed drop zone (empty) or compact card (selected) ────
-export function FolderPickerZone({
-  mode,
-  projectPath,
-  disabled,
-  onPick,
-}: {
-  mode: ProjectMode
-  projectPath: string | null
-  disabled: boolean
-  onPick: () => void
-}) {
-  if (projectPath) {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
-        <FolderOpen className="size-4 shrink-0 text-primary" />
-        <span className="flex-1 truncate text-base" title={projectPath}>
-          {basename(projectPath)}
-        </span>
-        <button
-          type="button"
-          onClick={onPick}
-          disabled={disabled}
-          className="shrink-0 rounded-sm text-sm text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-        >
-          更換
-        </button>
-      </div>
-    )
-  }
-  return (
-    <button
-      type="button"
-      onClick={onPick}
-      disabled={disabled}
-      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <FolderOpen className="size-5" />
-      <span className="text-sm">
-        {mode === 'new' ? '選擇空資料夾（自動初始化 Git）' : '選擇專案資料夾'}
-      </span>
-    </button>
-  )
-}
-
 // ── Agent CLI selector ─────────────────────────────────────────────────────
 export interface AgentModelFieldsProps {
   title: string
@@ -370,6 +295,7 @@ export function NewTaskForm({
   creating,
   error,
   pickFolder,
+  loadRecentProjects,
   loadGitInfo,
   initRepository,
   detectAgents,
@@ -382,10 +308,10 @@ export function NewTaskForm({
   workstationPath,
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [mode, setMode] = useState<ProjectMode>('existing')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [initializing, setInitializing] = useState(false)
@@ -438,50 +364,67 @@ export function NewTaskForm({
     if (inline) titleRef.current?.focus()
   }, [])
 
-  const handleModeChange = (next: ProjectMode) => {
-    if (next === mode) return
-    setMode(next)
-    setProjectPath(null)
-    setGitInfo(null)
-    setLoadingInfo(false)
-    setInitializing(false)
-    setBaseBranch('')
-  }
+  useEffect(() => {
+    let active = true
+    void loadRecentProjects().then((list) => {
+      if (active) setRecentProjects(list)
+    })
+    return () => {
+      active = false
+    }
+  }, [loadRecentProjects])
 
-  // Shared by manual folder pick and initialProjectPath prefill: record the
-  // path, then run the mode-appropriate git detection.
-  const loadProject = async (path: string) => {
+  const projectMissing = isProjectMissing(recentProjects, projectPath)
+
+  const detectGit = async (path: string) => {
     setProjectPath(path)
     setGitInfo(null)
-
-    if (mode === 'new') {
-      setInitializing(true)
-      try {
-        const info = await initRepository(path)
-        setGitInfo(info)
-      } finally {
-        setInitializing(false)
-      }
-    } else {
-      setLoadingInfo(true)
-      try {
-        const info = await loadGitInfo(path)
-        setGitInfo(info)
-        setBaseBranch(info?.defaultBase ?? '')
-      } finally {
-        setLoadingInfo(false)
-      }
+    setBaseBranch('')
+    setLoadingInfo(true)
+    try {
+      const info = await loadGitInfo(path)
+      setGitInfo(info)
+      setBaseBranch(info?.defaultBase ?? '')
+    } finally {
+      setLoadingInfo(false)
     }
   }
 
-  const handlePick = async () => {
+  // Shared by the recent-project select and the initialProjectPath prefill.
+  const loadProject = async (path: string) => {
+    if (isProjectMissing(recentProjects, path)) {
+      setProjectPath(path)
+      setGitInfo(null)
+      setBaseBranch('')
+      return
+    }
+    await detectGit(path)
+  }
+
+  const handleBrowse = async () => {
     const path = await pickFolder()
     if (!path) return
-    await loadProject(path)
+    // The picked folder exists, so a stale "missing" flag on it must go.
+    setRecentProjects((list) =>
+      list.map((p) => (p.path === path ? { ...p, missing: false } : p))
+    )
+    await detectGit(path)
+  }
+
+  const handleInitRepository = async () => {
+    if (!projectPath) return
+    setInitializing(true)
+    try {
+      const info = await initRepository(projectPath)
+      setGitInfo(info)
+      setBaseBranch(info?.defaultBase ?? '')
+    } finally {
+      setInitializing(false)
+    }
   }
 
   // Inline mode: prefill the given existing project on mount (from the sidebar's
-  // per-project「新增任務」entry). Runs once; default mode is 'existing'.
+  // per-project「新增任務」entry). Runs once.
   useEffect(() => {
     if (inline && initialProjectPath) void loadProject(initialProjectPath)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -494,9 +437,7 @@ export function NewTaskForm({
   }`
 
   const isProjectReady =
-    mode === 'new'
-      ? Boolean(projectPath) && isRepo && !initializing
-      : Boolean(projectPath) && isRepo && !loadingInfo
+    Boolean(projectPath) && !projectMissing && isRepo && !loadingInfo && !initializing
 
   const canGoToStep2 = isProjectReady
   const canSubmit =
@@ -508,9 +449,8 @@ export function NewTaskForm({
       title.trim(),
       description.trim(),
       projectPath,
-      mode === 'existing' && hasRemote ? baseBranch || null : null,
+      hasRemote ? baseBranch || null : null,
       branch.trim(),
-      mode,
       agentCli,
       model,
       effort,
@@ -542,24 +482,14 @@ export function NewTaskForm({
     <div className="space-y-4">
       <div className="space-y-1.5">
         <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          專案類型
+          專案資料夾
         </span>
-        <ProjectTypeToggle
-          mode={mode}
-          onChange={handleModeChange}
-          disabled={creating || loadingInfo || initializing}
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          {mode === 'new' ? '專案位置' : '專案資料夾'}
-        </span>
-        <FolderPickerZone
-          mode={mode}
+        <ProjectFolderPicker
           projectPath={projectPath}
+          recentProjects={recentProjects}
           disabled={creating || initializing || loadingInfo}
-          onPick={handlePick}
+          onSelect={(path) => void loadProject(path)}
+          onBrowse={() => void handleBrowse()}
         />
       </div>
 
@@ -574,12 +504,24 @@ export function NewTaskForm({
       </InlineEnterSurface>
 
       <InlineEnterSurface
-        show={mode === 'existing' && Boolean(projectPath) && !loadingInfo && !isRepo}
+        show={Boolean(gitInfo) && !projectMissing && !loadingInfo && !initializing && !isRepo}
         enabled={inline}
       >
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
-          這個資料夾不是 Git repository，請改選一個 Git 專案。
-        </p>
+        <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+          <p className="text-base">
+            這個資料夾不是 Git repository。請改選一個 Git 專案，或在這裡初始化：會執行
+            <code className="text-foreground"> git init </code>並建立一個空的初始 commit。
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleInitRepository()}
+            disabled={creating}
+            className="rounded-full"
+          >
+            初始化 Git
+          </Button>
+        </div>
       </InlineEnterSurface>
 
       <InlineEnterSurface show={isRepo && hasRemote} enabled={inline}>

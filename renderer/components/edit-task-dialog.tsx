@@ -10,7 +10,11 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { AgentModelFields, F, FolderPickerZone } from '@/components/new-task-dialog'
+import { AgentModelFields, F } from '@/components/new-task-dialog'
+import {
+  ProjectFolderPicker,
+  isProjectMissing,
+} from '@/components/project-folder-picker'
 import {
   DEFAULT_TASK_EFFORT,
   TaskEffortSlider,
@@ -24,6 +28,7 @@ import type {
   AgentEffort,
   AgentConnections,
   GitInfo,
+  RecentProjectEntry,
   Task,
 } from '@/lib/types'
 
@@ -47,6 +52,7 @@ interface EditTaskDialogProps {
   detectAgents: () => Promise<AgentCli[]>
   agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
+  loadRecentProjects: () => Promise<RecentProjectEntry[]>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   saving: boolean
   error: string | null
@@ -59,6 +65,7 @@ export function EditTaskDialog({
   detectAgents,
   agentConnections,
   pickFolder,
+  loadRecentProjects,
   loadGitInfo,
   saving,
   error,
@@ -77,6 +84,7 @@ export function EditTaskDialog({
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [projectChanged, setProjectChanged] = useState(false)
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
 
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
@@ -106,6 +114,17 @@ export function EditTaskDialog({
     setProjectChanged(false)
     setConfirmClose(false)
   }, [task, defaultAutoMode])
+
+  useEffect(() => {
+    if (!task || task.launchedAt) return
+    let active = true
+    void loadRecentProjects().then((list) => {
+      if (active) setRecentProjects(list)
+    })
+    return () => {
+      active = false
+    }
+  }, [task, loadRecentProjects])
 
   // Detect installed agent CLIs when the dialog opens (and on retry).
   useEffect(() => {
@@ -156,12 +175,13 @@ export function EditTaskDialog({
     setAgentCli(next)
     setModel('')
   }
-  const handlePickFolder = async () => {
-    const picked = await pickFolder()
-    if (!picked) return
+  const projectMissing = isProjectMissing(recentProjects, projectPath)
+
+  const selectProject = async (picked: string, knownToExist = false) => {
     setProjectPath(picked)
     setProjectChanged(picked !== displayedTask.projectPath)
     setGitInfo(null)
+    if (!knownToExist && isProjectMissing(recentProjects, picked)) return
     setLoadingInfo(true)
     try {
       const info = await loadGitInfo(picked)
@@ -172,6 +192,16 @@ export function EditTaskDialog({
     }
   }
 
+  const handleBrowse = async () => {
+    const picked = await pickFolder()
+    if (!picked) return
+    // The picked folder exists, so a stale "missing" flag on it must go.
+    setRecentProjects((list) =>
+      list.map((p) => (p.path === picked ? { ...p, missing: false } : p))
+    )
+    await selectProject(picked, true)
+  }
+
   const isRepo = gitInfo?.isRepo ?? true
   const hasRemote = gitInfo?.hasRemote ?? false
 
@@ -179,7 +209,7 @@ export function EditTaskDialog({
     title.trim().length > 0 &&
     !saving &&
     !loadingInfo &&
-    (!projectChanged || isRepo)
+    (!projectChanged || (isRepo && !projectMissing))
 
 
   const handleSubmit = () => {
@@ -297,11 +327,12 @@ export function EditTaskDialog({
           </span>
           {canEditProject ? (
             <>
-              <FolderPickerZone
-                mode="existing"
+              <ProjectFolderPicker
                 projectPath={projectPath}
+                recentProjects={recentProjects}
                 disabled={saving || loadingInfo}
-                onPick={handlePickFolder}
+                onSelect={(path) => void selectProject(path)}
+                onBrowse={() => void handleBrowse()}
               />
               {loadingInfo && (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -309,12 +340,12 @@ export function EditTaskDialog({
                   偵測 Git 狀態中…
                 </p>
               )}
-              {projectChanged && !loadingInfo && !isRepo && (
+              {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
                   這個資料夾不是 Git repository，請改選一個 Git 專案。
                 </p>
               )}
-              {projectChanged && (
+              {projectChanged && !projectMissing && (
                 <p className="text-sm text-muted-foreground">
                   更換專案會在新專案重建 worktree（此任務尚未開始，無變更會遺失）。
                 </p>

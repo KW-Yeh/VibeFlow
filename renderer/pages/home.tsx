@@ -28,6 +28,7 @@ import {
   getRemoteUpdateState,
   initRepository,
   installRemoteUpdate,
+  listRecentProjects,
   loadState,
   onRemoteUpdateState,
   onStateChanged,
@@ -341,7 +342,6 @@ export default function HomePage() {
     projectPath: string,
     baseBranch: string | null,
     branch: string,
-    mode: 'existing' | 'new',
     agentCli: AgentCliId,
     model: string,
     effort: AgentEffort,
@@ -357,7 +357,6 @@ export default function HomePage() {
         projectPath,
         baseBranch,
         branch: branch || undefined,
-        mode,
         agentCli,
         model: model || undefined,
         effort,
@@ -528,6 +527,7 @@ export default function HomePage() {
                   creating={creating}
                   createError={createError}
                   pickFolder={pickFolder}
+                  loadRecentProjects={listRecentProjects}
                   loadGitInfo={getGitInfo}
                   initRepository={initRepository}
                   detectAgents={detectAgents}
@@ -543,6 +543,7 @@ export default function HomePage() {
               detectAgents={detectAgents}
               agentConnections={agentConnections}
               pickFolder={pickFolder}
+              loadRecentProjects={listRecentProjects}
               loadGitInfo={getGitInfo}
               saving={savingEdit}
               error={editError}

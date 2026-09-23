@@ -16,6 +16,7 @@ import {
   provisionWorktree,
 } from './git'
 import { projectWorkstationPath } from './workspace'
+import { recordRecentProject } from './recent-projects'
 import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
 import { writeAttachments, type AttachmentInput } from './attachments'
 
@@ -143,6 +144,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     const col: ColumnId = input.status ?? 'backlog'
     board[col] = [task, ...board[col]]
     store.set('board', board)
+    recordRecentProject(store, projectPath)
   } catch (err) {
     throw Object.assign(
       new Error(`Store 寫入失敗：${(err as Error).message}`),

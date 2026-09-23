@@ -8,6 +8,7 @@ import {
   findTask,
   getSettings,
   getState,
+  getStore,
   getStorePath,
   removeTask,
   resolveWorkstationPath,
@@ -49,6 +50,7 @@ import {
 } from './helpers/git'
 import { captureTaskOutcome } from './helpers/git'
 import { createTaskFromInput } from './helpers/tasks'
+import { listRecentProjects, recordRecentProject } from './helpers/recent-projects'
 import { boardCliLaunchInfo } from './helpers/board-cli'
 import { decisionsKey, deleteDecisions, readDecisions } from './helpers/decisions'
 import {
@@ -280,6 +282,9 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     return getGitInfo(projectPath || '')
   })
 
+  // Projects the new-task picker offers, each flagged when its folder is gone.
+  ipcMain.handle('projects:listRecent', () => listRecentProjects(getStore()))
+
   // Initialise a new git repository at the given path and return its GitInfo.
   // Called by the "new project" flow in the new-task dialog before provisioning
   // a worktree.  Idempotent: safe to call on an already-initialised repo.
@@ -428,6 +433,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
           payload.baseBranch ?? existing.baseBranch ?? null,
           existing.branch
         )
+        recordRecentProject(getStore(), nextProject)
         gitPatch = {
           projectPath: nextProject,
           projectName,

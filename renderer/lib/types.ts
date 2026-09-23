@@ -29,6 +29,10 @@ export type {
 export type { BoardCliLaunchInfo } from '../../main/helpers/board-cli'
 export type { TaskDecisions } from '../../main/helpers/decisions'
 export type {
+  RecentProject,
+  RecentProjectEntry,
+} from '../../main/helpers/recent-projects'
+export type {
   LibraryEntry,
   LibraryKind,
   LibraryLaunchInfo,
