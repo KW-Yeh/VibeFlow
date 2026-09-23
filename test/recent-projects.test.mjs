@@ -105,3 +105,24 @@ test('creating a task records its project as the most recent one', async (t) => 
 
   assert.equal(getStoreAtPath(dir).get('recentProjects')[0].path, projectPath)
 })
+
+test('a v4 store that lost its list is re-seeded from its cards', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-recent-reseed-'))
+  t.after(() => fs.rm(dir, { recursive: true, force: true }))
+  await fs.writeFile(
+    path.join(dir, 'vibeflow-state.json'),
+    JSON.stringify({
+      version: 4,
+      projectPath: null,
+      board: {
+        backlog: [{ id: '1', title: 't', branch: 'b', projectPath: '/p/kept', createdAt: 2 }],
+        in_progress: [],
+        done: [],
+      },
+      settings: { autoMode: true },
+    })
+  )
+  assert.deepEqual(getStoreAtPath(dir).get('recentProjects'), [
+    { path: '/p/kept', name: 'kept', lastUsedAt: 2 },
+  ])
+})

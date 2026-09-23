@@ -220,7 +220,9 @@ export function getStore(): Store<VibeFlowState> {
  */
 function migrateStore(store: Store<VibeFlowState>): void {
   const persistedVersion = store.get('version') ?? 1
-  if (persistedVersion < 4 && !store.get('recentProjects')) {
+  // Keyed on the field, not the version: a binary without the field can
+  // rewrite a v4 store and drop it.
+  if (!store.has('recentProjects')) {
     store.set('recentProjects', recentProjectsFromBoard(store.get('board')))
   }
   if (persistedVersion < STATE_VERSION) {
