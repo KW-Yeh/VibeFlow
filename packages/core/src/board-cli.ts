@@ -29,6 +29,8 @@ export interface BoardCliLaunchInfo {
  */
 export async function boardCliLaunchInfo(): Promise<BoardCliLaunchInfo> {
   const storeDir = path.dirname(getStorePath())
+  const entry = getPlatform().cliEntry?.()
+  if (entry && fs.existsSync(entry)) return { storeDir, cliPath: entry }
   const root = getPlatform().sourceRoot()
   if (!root) return { storeDir }
 

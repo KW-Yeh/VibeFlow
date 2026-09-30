@@ -20,6 +20,11 @@ export interface PlatformServices {
    * The board CLI (`scripts/vibeflow.mjs`) exists only in a checkout.
    */
   sourceRoot(): string | null
+  /**
+   * A plain-JS board CLI an agent can run with `node <path>` (the npm build).
+   * Absent or null = use `scripts/vibeflow.mjs` under `sourceRoot()`, if any.
+   */
+  cliEntry?(): string | null
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>
   /** Open a local path with the OS; resolves to an error string, empty on success. */
@@ -88,6 +93,7 @@ function openWithOs(target: string): Promise<string> {
 export interface NodePlatformOptions {
   userDataDir?: string
   sourceRoot?: string | null
+  cliEntry?: string | null
 }
 
 /** Services for a host without Electron. It has no native picker. */
@@ -97,6 +103,7 @@ export function createNodePlatform(options: NodePlatformOptions = {}): PlatformS
   return {
     userDataDir: () => userData,
     sourceRoot: () => root,
+    cliEntry: () => options.cliEntry ?? null,
     openExternal: async (url) => {
       const err = await openWithOs(url)
       if (err) throw new Error(err)

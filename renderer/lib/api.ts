@@ -20,7 +20,6 @@ import type {
   GitHubCliAuthStatus,
   LibraryEntry,
   LibraryKind,
-  LibraryLaunchInfo,
   PrStatus,
   RecentProjectEntry,
   RemoteUpdateSnapshot,
@@ -29,6 +28,8 @@ import type {
   TaskArtifact,
   TaskDecisions,
   VibeFlowState,
+  LaunchIntent,
+  StartResult,
 } from '@/lib/types'
 
 /**
@@ -42,6 +43,11 @@ function bridge() {
 
 export function hasBridge(): boolean {
   return bridge() !== null
+}
+
+/** Whether `pickFolder` / `pickLibrarySource` open a native dialog (Electron only). */
+export function hasNativePicker(): boolean {
+  return bridge()?.transport === 'ipc'
 }
 
 export async function loadState(): Promise<VibeFlowState | null> {
@@ -150,9 +156,22 @@ export function onGithubAuthEvent(
   return b ? b.onGithubAuthEvent(callback) : () => {}
 }
 
+/**
+ * Ask for a path by typing it: the browser has no dialog that reveals an
+ * absolute path, and core runs on this same machine, so the typed path is the
+ * one it opens.
+ */
+function promptForPath(message: string): string | null {
+  if (typeof window === 'undefined') return null
+  const typed = window.prompt(message)?.trim()
+  return typed ? typed : null
+}
+
 export async function pickFolder(): Promise<string | null> {
   const b = bridge()
-  return b ? b.pickFolder() : null
+  if (!b) return null
+  if (!hasNativePicker()) return promptForPath('輸入專案資料夾的絕對路徑')
+  return b.pickFolder()
 }
 
 export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
@@ -272,7 +291,11 @@ export async function getDecisions(taskId: string): Promise<TaskDecisions | null
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {
   const b = bridge()
-  return b ? b.pickLibrarySource(kind) : null
+  if (!b) return null
+  if (!hasNativePicker()) {
+    return promptForPath(kind === 'skill' ? '輸入 skill 目錄的絕對路徑（需含 SKILL.md）' : `輸入 ${kind} 檔案的絕對路徑`)
+  }
+  return b.pickLibrarySource(kind)
 }
 
 export async function listLibrary(): Promise<LibraryEntry[]> {
@@ -339,13 +362,6 @@ export async function deleteLibraryEntry(
 ): Promise<boolean> {
   const b = bridge()
   return b ? b.deleteLibraryEntry({ kind, name }) : false
-}
-
-export async function getLibraryLaunchInfo(
-  worktreePath?: string
-): Promise<LibraryLaunchInfo | null> {
-  const b = bridge()
-  return b ? b.getLibraryLaunchInfo(worktreePath) : null
 }
 
 export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {
@@ -434,7 +450,6 @@ export async function chatLoad(taskId: string): Promise<Conversation | null> {
 
 export async function chatSend(payload: {
   taskId: string
-  worktreePath: string
   text: string
   attachments?: AttachmentInput[]
   sessionId: string
@@ -442,7 +457,6 @@ export async function chatSend(payload: {
   systemPrompt: string
   agentCli?: AgentCliId
   model: string
-  workspacePath?: string
 }): Promise<void> {
   bridge()?.chat.send(payload)
 }
@@ -467,15 +481,20 @@ export function onChatPhase(callback: (phase: ChatPhase) => void): () => void {
 
 // --- Terminal API wrappers (sessionKey-aware) ---
 
-/** Start a PTY session. `sessionKey` defaults to `taskId`. */
-export async function termStart(
-  taskId: string,
-  cwd: string,
-  command?: string,
+/**
+ * Start a task's terminal: its agent when `launch` is given, else a shell.
+ * Core resolves the cwd and builds the command.
+ */
+export async function termStart(payload: {
+  taskId: string
   sessionKey?: string
-): Promise<{ pid: number } | null> {
+  launch?: LaunchIntent
+  fresh?: boolean
+  cols?: number
+  rows?: number
+}): Promise<StartResult | null> {
   const b = bridge()
-  return b ? b.term.start(taskId, cwd, command, sessionKey) : null
+  return b ? b.term.start(payload) : null
 }
 
 /** Send keystrokes to the session identified by `sessionKey`. */
@@ -493,13 +512,16 @@ export function termKill(sessionKey: string): void {
   bridge()?.term.kill(sessionKey)
 }
 
-/** Whether a pinned Claude conversation already exists on disk for `cwd`. */
-export async function termSessionExists(
-  cwd: string,
-  sessionId: string
-): Promise<boolean> {
+/** Whether the task's pinned Claude conversation already exists on disk. */
+export async function termSessionExists(taskId: string): Promise<boolean> {
   const b = bridge()
-  return b ? b.term.sessionExists(cwd, sessionId) : false
+  return b ? b.term.sessionExists(taskId) : false
+}
+
+/** Which session backend runs terminals, and the sessions it has running. */
+export async function listSessions(): Promise<{ backend: 'pty' | 'tmux'; sessions: string[] } | null> {
+  const b = bridge()
+  return b ? b.term.list() : null
 }
 
 /**

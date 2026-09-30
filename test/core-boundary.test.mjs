@@ -69,3 +69,42 @@ test('packages/core does not reach into main/ or renderer/', () => {
   )
   assert.deepEqual(violations, [])
 })
+
+/**
+ * Modules the renderer bundles at runtime. A value import here would drag
+ * `fs` / `child_process` into the browser build, so they import types only.
+ */
+const RENDERER_SAFE = ['launch.ts', 'client.ts', 'ws-transport.ts', 'remote-update-types.ts']
+
+test('renderer-bundled core modules import types only', () => {
+  const violations = RENDERER_SAFE.flatMap((name) => {
+    const source = fs.readFileSync(path.join(coreSrc, name), 'utf8')
+    return Array.from(source.matchAll(/^import\s+(?!type\b)[^;]*?from\s+['"]([^'"]+)['"]/gm), (m) => `${name} → ${m[1]}`)
+  })
+  assert.deepEqual(violations, [])
+})
+
+/**
+ * Node runs packages/* straight from source with --experimental-strip-types,
+ * which only erases types. Syntax that needs a transform (enums, namespaces,
+ * constructor parameter properties) would crash the CLI at load.
+ */
+test('packages use only erasable TypeScript syntax', () => {
+  const packagesDir = fileURLToPath(new URL('../packages/', import.meta.url))
+  const files = fs
+    .readdirSync(packagesDir)
+    .flatMap((pkg) => {
+      const src = path.join(packagesDir, pkg, 'src')
+      return fs.existsSync(src) ? coreFiles(src) : []
+    })
+  const patterns = [
+    [/^\s*(export\s+)?(const\s+)?enum\s/m, 'enum'],
+    [/^\s*(export\s+)?namespace\s/m, 'namespace'],
+    [/constructor\s*\([^)]*\b(private|public|protected|readonly)\s/s, 'parameter property'],
+  ]
+  const violations = files.flatMap((file) => {
+    const source = fs.readFileSync(file, 'utf8')
+    return patterns.filter(([re]) => re.test(source)).map(([, what]) => `${path.relative(packagesDir, file)}: ${what}`)
+  })
+  assert.deepEqual(violations, [])
+})

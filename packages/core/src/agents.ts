@@ -43,8 +43,8 @@ export interface AgentCli {
 }
 
 /**
- * Registry of supported agents. The renderer owns the matching per-agent
- * launch-command builders (renderer/lib/claude.ts) — keep both in sync when
+ * Registry of supported agents. launch.ts owns the matching per-agent
+ * launch-command builders (launch.ts) — keep both in sync when
  * adding an agent.
  */
 export const AGENT_CLIS: AgentCli[] = [

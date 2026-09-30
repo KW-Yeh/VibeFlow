@@ -4,28 +4,9 @@ import { app, type BrowserWindow } from 'electron'
 
 const require = createRequire(import.meta.url)
 
-export type RemoteUpdateStatus =
-  | 'idle'
-  | 'checking'
-  | 'available'
-  | 'not-available'
-  | 'downloading'
-  | 'downloaded'
-  | 'error'
-  | 'unsupported'
+import type { RemoteUpdateSnapshot } from '../../packages/core/src/remote-update-types'
 
-export interface RemoteUpdateSnapshot {
-  status: RemoteUpdateStatus
-  currentVersion: string
-  version?: string
-  releaseName?: string
-  releaseDate?: string
-  percent?: number
-  transferred?: number
-  total?: number
-  bytesPerSecond?: number
-  message?: string
-}
+export type { RemoteUpdateSnapshot, RemoteUpdateStatus } from '../../packages/core/src/remote-update-types'
 
 interface UpdateInfo {
   version: string

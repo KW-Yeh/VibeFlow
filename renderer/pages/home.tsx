@@ -517,7 +517,6 @@ export default function HomePage() {
                   onDeleteTask={handleDeleteTask}
                   autoMode={autoMode}
                   workstationPath={workstationPath}
-                  systemPrompt={systemPrompt}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}

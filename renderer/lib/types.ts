@@ -58,3 +58,5 @@ export type {
 } from '../../packages/core/src/chat-store'
 export type { AttachmentInput } from '../../packages/core/src/attachments'
 export type { ChatChunk, ChatPhase, PhaseType } from '../../packages/core/src/chat-session'
+export type { LaunchIntent } from '../../packages/core/src/service'
+export type { StartResult } from '../../packages/core/src/session-backend'

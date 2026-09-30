@@ -1,30 +1,15 @@
 import * as nodePty from 'node-pty'
 import type { EventSink } from './events'
+import type { SessionBackend, SessionStartOptions, StartResult } from './session-backend'
 import { buildEnv } from './env'
 import { findGitBash, GIT_BASH_MISSING_MESSAGE } from './git-bash'
-
-/** Active PTY sessions keyed by session key (= taskId). */
-const sessions = new Map<string, nodePty.IPty>()
 
 // Procs we tore down on purpose (session kill / phase switch). node-pty's
 // kill() sends SIGHUP, so the shell exits 129 — an expected teardown, not a
 // crash. The renderer reads this flag to avoid a false「異常結束」warning.
 const intentionalKills = new WeakSet<nodePty.IPty>()
 
-// ---------------------------------------------------------------------------
-// Scrollback ring buffer — survives `killSession` so a remounting terminal
-// can replay what happened before it unmounted. Cleared when a new *command*
-// is given to `startSession` (phase switch = fresh terminal).
-// ---------------------------------------------------------------------------
-
 const MAX_SCROLLBACK = 512 * 1024  // 512 KB per session
-const scrollbacks = new Map<string, string>()
-
-function appendScrollback(key: string, data: string): void {
-  const cur = (scrollbacks.get(key) ?? '') + data
-  // ponytail: slice from the end to keep the most-recent output
-  scrollbacks.set(key, cur.length > MAX_SCROLLBACK ? cur.slice(-MAX_SCROLLBACK) : cur)
-}
 
 // When VibeFlow itself is launched from an agent session (e.g. `npm start` run
 // inside Claude Code), the app process inherits that session's markers and
@@ -47,13 +32,13 @@ const INHERITED_AGENT_SESSION_VARS = [
 ]
 
 /** Shared augmented env (sane PATH) plus the terminal-specific TERM. */
-function buildPtyEnv(): Record<string, string> {
+export function buildPtyEnv(): Record<string, string> {
   const env: Record<string, string> = { ...buildEnv(), TERM: 'xterm-256color' }
   for (const key of INHERITED_AGENT_SESSION_VARS) delete env[key]
   return env
 }
 
-function defaultShell(): string {
+export function defaultShell(): string {
   if (process.platform === 'win32') {
     // Launch commands are written in POSIX sh syntax; Git Bash is required to run them.
     return findGitBash() ?? 'powershell.exe'
@@ -61,120 +46,132 @@ function defaultShell(): string {
   return process.env.SHELL || '/bin/zsh'
 }
 
-export interface StartResult {
-  pid: number
-  /** Previous session's buffered output, replayed by the renderer on remount. */
-  scrollback: string | null
+/**
+ * Login-shell arguments for `shell`: run `command` when given, else stay
+ * interactive. Launch commands are POSIX sh, so on Windows only Git Bash can
+ * run them; the PowerShell fallback reports what is missing and exits 1 so the
+ * renderer shows the failure and hands back an interactive shell.
+ */
+export function shellArgs(shell: string, command?: string): string[] {
+  const isPosixShell =
+    process.platform !== 'win32' || shell.toLowerCase().endsWith('bash.exe')
+  if (isPosixShell) return command ? ['-lic', command] : ['-l']
+  if (command) {
+    const message = GIT_BASH_MISSING_MESSAGE.replace(/'/g, "''")
+    return ['-NoProfile', '-NonInteractive', '-Command', `Write-Host '${message}' -ForegroundColor Yellow; exit 1`]
+  }
+  return ['-NoProfile']
 }
 
 /**
- * Start (or restart) a PTY session for the given session key. When `command`
- * is provided it is run inside a login shell (full PATH); otherwise an
- * interactive login shell is started so the user can drive the CLI. Set
- * `fresh` when the caller is explicitly replacing the terminal session and
- * does not want output from the previous PTY replayed on a later remount.
- * `sessionKey` is the taskId.
- * `onExit` fires when this session ends for any reason (natural exit included),
- * unless it has already been replaced by a newer session for the same key.
+ * Sessions owned by this process: node-pty children of core. They end when
+ * core ends. This is the only backend on Windows, where there is no tmux.
  */
-export function startSession(
-  sessionKey: string,
-  cwd: string,
-  sender: EventSink,
-  command?: string,
-  onExit?: () => void,
-  cols = 80,
-  rows = 24,
-  fresh = false
-): StartResult {
-  // Capture scrollback before the old PTY is killed. A new command means a new
-  // phase (planning → execution), and an explicitly fresh interactive shell
-  // is a new terminal session. Both start with an empty buffer; ordinary
-  // remounts preserve output that arrived while the renderer was unmounted.
-  const clearScrollback = Boolean(command) || fresh
-  const scrollback = clearScrollback ? null : (scrollbacks.get(sessionKey) ?? null)
-  if (clearScrollback) scrollbacks.delete(sessionKey)
+export class PtyBackend implements SessionBackend {
+  readonly kind = 'pty' as const
+  private readonly sessions = new Map<string, nodePty.IPty>()
+  /**
+   * Scrollback ring buffer. It survives `kill` so a remounting terminal can
+   * replay what happened before it unmounted, and is cleared when a new
+   * *command* starts (a phase switch means a fresh terminal).
+   */
+  private readonly scrollbacks = new Map<string, string>()
 
-  killSession(sessionKey)
+  private readonly sink: EventSink
 
-  const shell = defaultShell()
-  let args: string[]
-  // Git Bash (bash.exe) on Windows uses the same POSIX login-shell flags as macOS/Linux.
-  // PowerShell is only a fallback for a plain interactive shell: launch commands
-  // are POSIX sh and cannot run there, so instead of letting one fail with a
-  // parse error the session says what is missing and exits non-zero — the
-  // renderer then reports the failure and hands back an interactive shell.
-  const isPosixShell =
-    process.platform !== 'win32' || shell.toLowerCase().endsWith('bash.exe')
-  if (isPosixShell) {
-    args = command ? ['-lic', command] : ['-l']
-  } else if (command) {
-    const message = GIT_BASH_MISSING_MESSAGE.replace(/'/g, "''")
-    args = ['-NoProfile', '-NonInteractive', '-Command', `Write-Host '${message}' -ForegroundColor Yellow; exit 1`]
-  } else {
-    args = ['-NoProfile']
+  constructor(sink: EventSink) {
+    this.sink = sink
   }
 
-  const proc = nodePty.spawn(shell, args, {
-    name: 'xterm-256color',
-    cwd,
-    env: buildPtyEnv(),
-    cols,
-    rows,
-  })
-  sessions.set(sessionKey, proc)
+  private appendScrollback(key: string, data: string): void {
+    const cur = (this.scrollbacks.get(key) ?? '') + data
+    // ponytail: slice from the end to keep the most-recent output
+    this.scrollbacks.set(key, cur.length > MAX_SCROLLBACK ? cur.slice(-MAX_SCROLLBACK) : cur)
+  }
 
-  proc.onData((data) => {
-    appendScrollback(sessionKey, data)
-    if (!sender.isDestroyed()) sender.send('pty:data', { sessionKey, data })
-  })
-  proc.onExit(({ exitCode }) => {
-    const intentional = intentionalKills.has(proc)
-    if (!sender.isDestroyed())
-      sender.send('pty:exit', { sessionKey, exitCode, intentional })
-    // Guard against a stale exit: a kill-and-restart replaces the map entry
-    // before the old process's exit event fires, and that old event must not
-    // deregister (or fire callbacks for) the new session.
-    if (sessions.get(sessionKey) === proc) {
-      sessions.delete(sessionKey)
-      onExit?.()
+  async start(key: string, options: SessionStartOptions): Promise<StartResult> {
+    const { cwd, command, onExit, cols = 80, rows = 24, fresh = false } = options
+    // Capture scrollback before the old PTY is killed. A new command means a new
+    // phase (planning → execution), and an explicitly fresh interactive shell
+    // is a new terminal session. Both start with an empty buffer; ordinary
+    // remounts preserve output that arrived while the renderer was unmounted.
+    const clearScrollback = Boolean(command) || fresh
+    const scrollback = clearScrollback ? null : (this.scrollbacks.get(key) ?? null)
+    if (clearScrollback) this.scrollbacks.delete(key)
+
+    this.killNow(key)
+
+    const shell = defaultShell()
+    const proc = nodePty.spawn(shell, shellArgs(shell, command), {
+      name: 'xterm-256color',
+      cwd,
+      env: buildPtyEnv(),
+      cols,
+      rows,
+    })
+    this.sessions.set(key, proc)
+
+    proc.onData((data) => {
+      this.appendScrollback(key, data)
+      if (!this.sink.isDestroyed()) this.sink.send('pty:data', { sessionKey: key, data })
+    })
+    proc.onExit(({ exitCode }) => {
+      const intentional = intentionalKills.has(proc)
+      if (!this.sink.isDestroyed())
+        this.sink.send('pty:exit', { sessionKey: key, exitCode, intentional })
+      // Guard against a stale exit: a kill-and-restart replaces the map entry
+      // before the old process's exit event fires, and that old event must not
+      // deregister (or fire callbacks for) the new session.
+      if (this.sessions.get(key) === proc) {
+        this.sessions.delete(key)
+        onExit?.()
+      }
+    })
+
+    return { pid: proc.pid, scrollback }
+  }
+
+  write(key: string, data: string): void {
+    this.sessions.get(key)?.write(data)
+  }
+
+  resize(key: string, cols: number, rows: number): void {
+    try {
+      this.sessions.get(key)?.resize(Math.max(cols, 1), Math.max(rows, 1))
+    } catch {
+      // resize can throw if the pty already exited — safe to ignore
     }
-  })
-
-  return { pid: proc.pid, scrollback }
-}
-
-export function writeSession(sessionKey: string, data: string): void {
-  sessions.get(sessionKey)?.write(data)
-}
-
-export function resizeSession(
-  sessionKey: string,
-  cols: number,
-  rows: number
-): void {
-  try {
-    sessions.get(sessionKey)?.resize(Math.max(cols, 1), Math.max(rows, 1))
-  } catch {
-    // resize can throw if the pty already exited — safe to ignore
   }
-}
 
-export function killSession(sessionKey: string): void {
-  const proc = sessions.get(sessionKey)
-  if (proc) {
+  private killNow(key: string): void {
+    const proc = this.sessions.get(key)
+    if (!proc) return
     intentionalKills.add(proc)
     try {
       proc.kill()
     } catch {
       // already dead
     }
-    sessions.delete(sessionKey)
+    this.sessions.delete(key)
   }
-}
 
-export function killAllSessions(): void {
-  for (const key of Array.from(sessions.keys())) {
-    killSession(key)
+  async kill(key: string): Promise<void> {
+    this.killNow(key)
+  }
+
+  async isAlive(key: string): Promise<boolean> {
+    return this.sessions.has(key)
+  }
+
+  async list(): Promise<string[]> {
+    return Array.from(this.sessions.keys())
+  }
+
+  scrollback(key: string): string | null {
+    return this.scrollbacks.get(key) ?? null
+  }
+
+  shutdown(): void {
+    for (const key of Array.from(this.sessions.keys())) this.killNow(key)
   }
 }

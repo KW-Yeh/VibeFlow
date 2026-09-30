@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 
 # macOS
 .DS_Store
+
+# npm package staging (scripts/build-npm.mjs)
+/dist-npm

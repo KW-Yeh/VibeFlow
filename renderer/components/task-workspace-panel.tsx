@@ -47,10 +47,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
-import {
-  buildAgentCommand,
-  taskArtifactsDir,
-} from '@/lib/claude'
+import { taskArtifactsDir } from '@/lib/claude'
 import {
   retainExistingDiffContents,
   sameDiffEntry,
@@ -72,16 +69,15 @@ import { cn } from '@/lib/utils'
 import type {
   ArtifactContent,
   ArtifactKind,
-  BoardCliLaunchInfo,
   ColumnId,
   DiffEntry,
   DiffFile,
-  LibraryLaunchInfo,
   SubAgentRun,
   Task,
   TaskArtifact,
   TaskDecisions,
   TaskOutcome,
+  LaunchIntent,
 } from '@/lib/types'
 
 /**
@@ -201,7 +197,7 @@ function isVerificationShot(artifact: TaskArtifact): boolean {
 }
 
 interface LaunchEntry {
-  command: string
+  launch: LaunchIntent
   nonce: number
 }
 
@@ -1440,7 +1436,7 @@ export function TaskWorkspacePanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [confirmDelete])
   const canLaunch = column === 'backlog'
-  const launchCommand = launch?.command
+  const launchCommand = launch?.launch
   const launchNonce = launch?.nonce ?? 0
 
   const requestLaunch = () => {
@@ -1720,36 +1716,5 @@ export function TaskWorkspacePanel({
       </main>
       )}
     </div>
-  )
-}
-
-export function buildWorkspaceLaunchCommand({
-  task,
-  systemPrompt,
-  workspacePath,
-  resume,
-  includeTaskPrompt,
-  library,
-  boardCli,
-  autoMode,
-}: {
-  task: Task
-  systemPrompt: string
-  workspacePath?: string
-  resume?: boolean
-  /** False starts an agent with settings + Artifact context, without card text. */
-  includeTaskPrompt?: boolean
-  /** VibeFlow library delivery; undefined → nothing enabled. */
-  library?: LibraryLaunchInfo
-  /** Board access for the agent; undefined → it cannot create or edit cards. */
-  boardCli?: BoardCliLaunchInfo
-  /** The card's Auto Mode — whether the agent may act without asking. */
-  autoMode?: boolean
-}): string {
-  return buildAgentCommand(
-    task,
-    systemPrompt,
-    { resume, includeTaskPrompt, library, boardCli, autoMode },
-    workspacePath
   )
 }
