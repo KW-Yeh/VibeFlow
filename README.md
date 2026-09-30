@@ -71,7 +71,7 @@ core 的 Web 伺服器能啟動 agent 和寫入終端機，因此：
 
 ## 🚢 發佈新版本（Maintainers）
 
-CI（`.github/workflows/release.yml`）在推送 `v*` tag 時會：
+CI（`.github/workflows/release.yml`）在每個 PR 上只跑第 1 步；推送 `v*` tag 時會：
 
 1. 在 Ubuntu、macOS、Windows 上跑 typecheck、`npm test`、Web UI 端對端測試與 `vibeflow doctor`。
 2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`（需要 `NPM_TOKEN` secret）。

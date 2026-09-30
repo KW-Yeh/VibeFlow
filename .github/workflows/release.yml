@@ -1,19 +1,26 @@
-name: Release
+name: CI & Release
 
 # Test on all three platforms, then publish:
 #  - the npm package (`vibeflow`, with provenance) — the main distribution,
 #  - Electron installers to a draft GitHub Release, while the desktop app is kept.
 # Trigger: push a tag like `v0.1.0` (must match the version in package.json),
 # or run manually from the Actions tab (workflow_dispatch tests and builds but
-# does not publish).
+# does not publish). Pull requests run the test job only.
 on:
   push:
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
 
+# A new push to a PR supersedes the run for its previous commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Read-only by default (pull requests included); jobs that publish widen it.
 permissions:
-  contents: write # electron-builder needs this to create the release + upload assets
+  contents: read
 
 jobs:
   test:
@@ -69,6 +76,7 @@ jobs:
 
   npm-package:
     needs: test
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -116,6 +124,9 @@ jobs:
 
   electron:
     needs: test
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write # electron-builder creates the release + uploads assets
     strategy:
       fail-fast: false
       matrix:
