@@ -1,11 +1,30 @@
 # IPC channel → `VibeFlowApi` map
 
-Phase 0 inventory for the core split (see the migration plan). Every channel
-`main/main.ts` handles and every event it pushes, with the `VibeFlowApi`
-method it becomes in Phase 2. Regenerate the channel list with:
+Phase 0 inventory for the core split (see the migration plan): every channel
+the Electron main process handled, and every event it pushed.
+
+**Status (Phase 2 done):** the channel names are kept as the wire protocol.
+The table now lives in `createCore()` (`service.ts`), and every transport
+exposes exactly that table. `main.ts` registers it on `ipcMain`, and
+`web-server.ts` serves it over the WebSocket. `client.ts` builds the typed
+`VibeFlowApi` (`window.vibeflow`) over any transport. Every **Path in** row
+below has been reshaped: those handlers take the task id and resolve paths
+and commands inside core. The only exceptions are project picking and library
+import, where no task exists yet. The two **drop** rows are gone.
+
+Channels added since the inventory:
+
+| Channel | Purpose |
+|---|---|
+| `sessions:list` | Session backend (`pty` / `tmux`) and the running session keys |
+| `pty:peek` | Join a running session without restarting it (TUI terminal view) |
+| `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
+| `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
+
+List the current table with:
 
 ```sh
-grep -oE "ipcMain\.(handle|on)\(\s*'[^']+'" main/main.ts
+grep -oE "^    '[a-z-]+:[A-Za-z]+'" packages/core/src/service.ts
 ```
 
 61 handlers, 10 pushed events. **Where** says which side of the boundary
@@ -43,11 +62,11 @@ are.
 
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
-| `pty:start` | core | `startSession(id)` | **cwd, command** | The renderer builds the agent command line (`renderer/lib/claude.ts`) and sends it along with `cwd`. Over WebSocket that is arbitrary command execution. **Blocker for Phase 3:** move command assembly into core so the API takes only `taskId` |
+| `pty:start` | core | `term.start({ taskId, launch })` | ~~cwd, command~~ | **Done.** The renderer sends a launch intent (`{ resume, includeTaskPrompt }`, or none for a shell). Core resolves the cwd and builds the command (`launch.ts`, formerly `renderer/lib/claude.ts`) |
 | `pty:input` | core | `writeInput(id, data)` | | Keyed by `sessionKey`, not task id (a task has several terminal tabs) |
 | `pty:resize` | core | `resize(id, cols, rows)` | | Same `sessionKey` note |
 | `pty:kill` | core | `stopSession(id)` | | |
-| `claude:sessionExists` | core | `sessionExists(id)` | **cwd** | Resolve the cwd from the task inside core |
+| `claude:sessionExists` | core | `term.sessionExists(taskId)` | ~~cwd~~ | **Done.** Takes the task id |
 
 ## Git and review
 
@@ -79,7 +98,7 @@ are.
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
 | `chat:load` | core | `chat.load(id)` | | |
-| `chat:send` | core | `chat.send(id, text, …)` | **worktreePath** | Resolve it from the task inside core |
+| `chat:send` | core | `chat.send(id, text, …)` | ~~worktreePath~~ | **Done.** Worktree, workspace and agent come from the task |
 | `chat:cancel` | core | `chat.cancel(id)` | | |
 | `chat:compact` | core | `chat.compact(id)` | | |
 | event `chat:chunk` / `chat:phase` | core | `on('chat:chunk')` / `on('chat:phase')` | | Pushed through `EventSink` |
@@ -91,7 +110,7 @@ are.
 | `library:list` | core | `library.list()` | | |
 | `library:import` | core | `library.import(kind, source)` | sourcePath | The user picked it. Web UI needs a path input or an upload |
 | `library:create` / `read` / `update` / `setDescription` / `setEnabled` / `delete` | core | `library.*` | | |
-| `library:getLaunchInfo` | core | `library.launchInfo(id)` | **worktreePath** | Take the task id instead |
+| `library:getLaunchInfo` | — | — | ~~worktreePath~~ | **Removed.** Only launch assembly needed it, and that runs in core now |
 
 ## Agents and accounts
 

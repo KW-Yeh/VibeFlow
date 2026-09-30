@@ -4,61 +4,88 @@ VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。�
 
 ## 🛠 核心技術棧 (Tech Stack)
 
-* **外殼**: Electron (Node.js 原生 API 支援)
-* **前端**: Next.js (React) + Tailwind CSS + shadcn/ui
+* **核心**: `packages/core` — 任務、git worktree、agent 指令組裝、session 管理，不依賴任何 UI
+* **前端**: 本機 Web UI（Next.js 靜態輸出，由 core 提供）· 終端機 TUI（Ink）· Electron 桌面版（選用）
 * **看板**: `@hello-pangea/dnd`
-* **終端**: `xterm.js` + `node-pty` (處理雙向互動式 CLI)
+* **終端**: `xterm.js` ↔ WebSocket ↔ core；session 由 tmux（macOS / Linux）或 `node-pty` 持有
 * **儲存**: core 自有的 JSON store（`packages/core/src/json-store.ts`，沿用原 electron-store 的檔案）
 
-## 📦 下載與安裝
+## 📦 安裝與執行
 
-到 [GitHub Releases](https://github.com/KW-Yeh/VibeFlow/releases) 下載對應平台的安裝檔:
+| 方式 | 指令 | 適合對象 |
+|---|---|---|
+| 免安裝試用 | `npx vibeflow` | 第一次接觸的人 |
+| 全域安裝 | `npm i -g vibeflow`，之後執行 `vibeflow` | 日常使用者 |
+| 從原始碼執行 | `git clone` → `npm install` → `npm start` | 貢獻者、想改程式的人 |
+| 桌面版（Electron） | 從 [GitHub Releases](https://github.com/KW-Yeh/VibeFlow/releases) 下載 | 偏好獨立視窗的人 |
 
-| 平台 | 檔案 |
-|---|---|
-| macOS (Apple Silicon) | `VibeFlow-<版本>-mac-arm64.dmg` |
-| macOS (Intel) | `VibeFlow-<版本>-mac-x64.dmg` |
-| Windows | `VibeFlow-<版本>-win-x64.exe`(實驗性) |
-| Linux | `VibeFlow-<版本>-linux-x86_64.AppImage`(實驗性) |
+`vibeflow` 會在本機啟動 core，並用瀏覽器開啟 Web UI。它不是需要簽章的 App，所以不會被 Gatekeeper 或 SmartScreen 攔下。
 
-### ✅ 使用前提(Prerequisites)
+```bash
+vibeflow                 # 啟動（或沿用已在執行的）core，開啟 Web UI
+vibeflow tui             # 終端機介面，和 Web UI 操作同一份看板與 session
+vibeflow status          # host、執行中的 session、看板摘要
+vibeflow stop <id> | --all   # 停止 agent session
+vibeflow shutdown        # 停止 host（tmux 裡的 agent 會繼續執行）
+vibeflow open <path>     # 把專案資料夾加入最近使用清單，再開啟 Web UI
+vibeflow doctor          # 檢查前置需求，並列出修正指令
+vibeflow task create …   # 不開 UI 直接建卡（vibeflow task --help）
+```
 
-VibeFlow 本身不需要 Node.js 執行環境(Electron 已內建),但它是 Claude Code CLI 與 Git 的「指揮台」,因此你的機器上必須具備:
+同一台機器同時只會有一個 core（`<appData>/vibeflow/core.lock`）。再次執行 `vibeflow` 或 `vibeflow tui` 時，會連到已在執行的那一個。
 
-1. **Git ≥ 2.5**(`git worktree` 的最低需求,建議 2.30+),且 `git` 指令在 PATH 中可用。
-2. **Claude Code CLI 已安裝並登入** — 終端機輸入 `claude` 必須能啟動:
+**任務不綁 UI**：有 tmux 時，每張卡片的 agent 跑在 `tmux -L vibeflow` 的 session 裡。關掉瀏覽器、TUI，甚至 core 本身，agent 都會繼續執行，重新開啟即可接回。沒有 tmux 時（包括 Windows），agent 由 core 直接持有，會隨 core 一起結束。
+
+### ✅ 前置需求
+
+1. **Node.js 22 以上**。
+2. **Git 2.30 以上**，且要操作的專案必須是 Git repository。若要使用「Approve & Push」，推送認證（SSH key 或 credential helper）需事先設定好。
+3. **tmux**（建議；macOS 用 `brew install tmux`）。沒有時會自動改用 node-pty，並在 `vibeflow doctor` 裡提示。
+4. **claude 或 codex CLI 至少一個，已登入**：
    ```bash
-   # 擇一安裝
-   npm install -g @anthropic-ai/claude-code
-   # 或使用官方 installer
-   curl -fsSL https://claude.ai/install.sh | bash
+   npm install -g @anthropic-ai/claude-code   # 或官方 installer：curl -fsSL https://claude.ai/install.sh | bash
    ```
-   並完成 `claude` 首次登入(需要 Claude Pro/Max 訂閱或 Anthropic API key)。
-3. **要操作的專案必須是 Git repository**。若要使用「Approve & Push」,該 repo 的推送認證(SSH key 或 credential helper)需事先設定好;若 repo 使用 Git LFS,需先安裝 `git-lfs`。
-4. **作業系統**:macOS 12+(主要支援、開發平台)。Windows / Linux 版由 CI 產出但未經完整測試,屬實驗性質。
+5. **Windows**：需要 Git for Windows 的 Git Bash（agent 的啟動指令是 POSIX sh）。
 
-### ⚠️ 首次啟動注意事項
+有問題時先執行 `vibeflow doctor`。第一次啟動若偵測到問題，也會自動檢查一次。
 
-- **macOS**:App 僅做 ad-hoc 簽章、未經 Apple 公證,首次開啟會被 Gatekeeper 攔下。請對 App **按右鍵 → 打開**,或執行:
+### 🔒 本機伺服器的安全性
+
+core 的 Web 伺服器能啟動 agent 和寫入終端機，因此：
+
+- 只綁定 `127.0.0.1` / `::1`，使用隨機 port。
+- 必須帶每次啟動時產生的 token 才能進入。`vibeflow` 開啟的網址會帶上 token，載入後換成 HttpOnly、SameSite=Strict 的 cookie，並從網址列移除。
+- WebSocket 握手會同時檢查 cookie 與 `Origin`，其他網頁無法從你的瀏覽器連進來。
+- `Host` 標頭必須是 loopback，用來防範 DNS rebinding。
+- 鎖檔權限為 0600。
+- API 只接受 core 認得的 task id，不接受任意路徑或指令。
+
+### 🖥 桌面版（Electron）注意事項
+
+- **macOS**：App 僅做 ad-hoc 簽章、未經 Apple 公證，首次開啟會被 Gatekeeper 攔下。請對 App **按右鍵 → 打開**，或執行：
   ```bash
   xattr -dr com.apple.quarantine /Applications/VibeFlow.app
   ```
-- **Windows**:未簽章,SmartScreen 會跳出警告,點「其他資訊 → 仍要執行」。
-- **Linux**:下載後先 `chmod +x VibeFlow-*.AppImage` 再執行。
+- **Windows**：未簽章，SmartScreen 會跳出警告，點「其他資訊 → 仍要執行」。
+- **Linux**：下載後先 `chmod +x VibeFlow-*.AppImage` 再執行。
 
-## 🚢 發佈新版本(Maintainers)
+## 🚢 發佈新版本（Maintainers）
 
-CI(`.github/workflows/release.yml`)會在推送 `v*` tag 時自動打包三平台並上傳到 **draft** GitHub Release:
+CI（`.github/workflows/release.yml`）在推送 `v*` tag 時會：
+
+1. 在 Ubuntu、macOS、Windows 上跑 typecheck、`npm test`、Web UI 端對端測試與 `vibeflow doctor`。
+2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`（需要 `NPM_TOKEN` secret）。
+3. 桌面版保留期間，同時打包三平台安裝檔並上傳到 **draft** GitHub Release。
 
 ```bash
-# 1. 更新 package.json 的 version(例如 0.2.0)並 commit
+# 1. 更新 package.json 的 version 並 commit
 # 2. 上 tag 並推送
-git tag v0.2.0
-git push origin v0.2.0
-# 3. 到 GitHub Releases 頁面檢查 draft 的產物,確認後按 Publish release
+git tag v4.0.0
+git push origin v4.0.0
+# 3. 到 GitHub Releases 頁面檢查 draft 的產物，確認後按 Publish release
 ```
 
-本地驗證打包(不會上傳):`npm run build`,產物在 `dist/`。
+本地驗證：`npm run build:npm && npm pack ./dist-npm`（npm 套件），`npm run build`（桌面版，產物在 `dist/`）。
 
 ## 📂 專案資料結構與 Worktree 隔離設計
 
