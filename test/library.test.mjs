@@ -21,7 +21,7 @@ import {
   setEntryEnabled,
   skillNamesIn,
   updateEntry,
-} from '../main/helpers/library.ts'
+} from '../packages/core/src/library.ts'
 
 async function tmpDir(prefix = 'vf-library-') {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix))

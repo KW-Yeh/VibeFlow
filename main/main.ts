@@ -1,9 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
+import { app, ipcMain, type BrowserWindow } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
+import { createElectronPlatform } from './helpers/electron-platform'
+import { getPlatform, setPlatform } from '../packages/core/src/platform'
 import {
   findTask,
   getSettings,
@@ -20,16 +22,16 @@ import {
   type ConnectableAgentId,
   type Task,
   type TaskOutcome,
-} from './helpers/store'
-import { projectWorkstationPath } from './helpers/workspace'
-import { detectAgents, type AgentCliId, type AgentEffort } from './helpers/agents'
-import { fetchAgentModels } from './helpers/agent-connections'
+} from '../packages/core/src/store'
+import { projectWorkstationPath } from '../packages/core/src/workspace'
+import { detectAgents, type AgentCliId, type AgentEffort } from '../packages/core/src/agents'
+import { fetchAgentModels } from '../packages/core/src/agent-connections'
 import {
   cancelGitHubCliLogin,
   getGitHubCliAuthStatus,
   logoutGitHubCli,
   startGitHubCliLogin,
-} from './helpers/github-auth'
+} from '../packages/core/src/github-auth'
 import {
   commitAndPush,
   deleteBranch,
@@ -47,31 +49,31 @@ import {
   removeWorktree,
   resetWorktreeToBase,
   syncBaseBranch,
-} from './helpers/git'
-import { captureTaskOutcome } from './helpers/git'
-import { createTaskFromInput } from './helpers/tasks'
-import { listRecentProjects, recordRecentProject } from './helpers/recent-projects'
-import { boardCliLaunchInfo } from './helpers/board-cli'
-import { decisionsKey, deleteDecisions, readDecisions } from './helpers/decisions'
+} from '../packages/core/src/git'
+import { captureTaskOutcome } from '../packages/core/src/git'
+import { createTaskFromInput } from '../packages/core/src/tasks'
+import { listRecentProjects, recordRecentProject } from '../packages/core/src/recent-projects'
+import { boardCliLaunchInfo } from '../packages/core/src/board-cli'
+import { decisionsKey, deleteDecisions, readDecisions } from '../packages/core/src/decisions'
 import {
   killAllSessions,
   killSession,
   resizeSession,
   startSession,
   writeSession,
-} from './helpers/pty'
+} from '../packages/core/src/pty'
 import {
   agentArtifactsPath,
   deleteArtifacts,
   listArtifacts,
   readArtifact,
-} from './helpers/artifacts'
+} from '../packages/core/src/artifacts'
 import {
   resetSubAgents,
   unwatchAllSubAgents,
   unwatchSubAgents,
   watchSubAgents,
-} from './helpers/subagents'
+} from '../packages/core/src/subagents'
 import {
   relaunchApp,
   stopUpdateWatcher,
@@ -88,9 +90,9 @@ import {
   cancelAllChatSends,
   cancelChatSend,
   startChatSend,
-} from './helpers/chat-session'
-import { clearConversation, clearMessages, loadConversation } from './helpers/chat-store'
-import { writeAttachments, type AttachmentInput } from './helpers/attachments'
+} from '../packages/core/src/chat-session'
+import { clearConversation, clearMessages, loadConversation } from '../packages/core/src/chat-store'
+import { writeAttachments, type AttachmentInput } from '../packages/core/src/attachments'
 import {
   createEntry as createLibraryEntry,
   deleteEntry as deleteLibraryEntry,
@@ -103,17 +105,21 @@ import {
   setEntryEnabled as setLibraryEntryEnabled,
   updateEntry as updateLibraryEntry,
   type LibraryKind,
-} from './helpers/library'
+} from '../packages/core/src/library'
 
 const isProd = process.env.NODE_ENV === 'production'
 
 let storeWatcher: fs.FSWatcher | null = null
+let mainWindowRef: BrowserWindow | null = null
 
 if (isProd) {
   serve({ directory: 'app' })
 } else {
   app.setPath('userData', `${app.getPath('userData')} (development)`)
 }
+
+// After the userData redirect and before anything opens a store.
+setPlatform(createElectronPlatform(() => mainWindowRef))
 
 /**
  * Tear down a task's live session: stop the PTY and sub-agent watcher.
@@ -251,25 +257,22 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('settings:logoutGithubAuth', () => logoutGitHubCli())
 
   // Open a native folder picker and return the chosen path (no global state).
-  ipcMain.handle('dialog:pickFolder', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle('dialog:pickFolder', () =>
+    getPlatform().pickPath({
       title: '選擇本地專案資料夾',
-      properties: ['openDirectory', 'createDirectory'],
+      kind: 'directory',
+      allowCreate: true,
     })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
-  })
+  )
 
   // Pick a library import source: a skill is a directory holding SKILL.md,
   // a prompt or script is a single file.
-  ipcMain.handle('dialog:pickLibrarySource', async (_event, kind: LibraryKind) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+  ipcMain.handle('dialog:pickLibrarySource', (_event, kind: LibraryKind) =>
+    getPlatform().pickPath({
       title: kind === 'skill' ? '選擇 skill 目錄（需含 SKILL.md）' : `選擇 ${kind} 檔案`,
-      properties: [kind === 'skill' ? 'openDirectory' : 'openFile'],
+      kind: kind === 'skill' ? 'directory' : 'file',
     })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
-  })
+  )
 
   // Detect which agent CLIs (claude / codex) exist on PATH, so the
   // new-task dialog can offer only the agents actually installed.
@@ -606,8 +609,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     if (!task?.worktreePath || !task.workspacePath) return 'task has no worktree'
     const dir = agentArtifactsPath(task.workspacePath, task.worktreePath)
     if (!fs.existsSync(dir)) return 'artifacts directory does not exist yet'
-    const { shell } = await import('electron')
-    return shell.openPath(dir)
+    return getPlatform().openPath(dir)
   })
 
   /**
@@ -747,10 +749,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
   )
 
   // Open a URL in the system default browser.
-  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
-    const { shell } = await import('electron')
-    await shell.openExternal(url)
-  })
+  ipcMain.handle('shell:openExternal', (_event, url: string) => getPlatform().openExternal(url))
 
   // Cleanup: finalize a card moved to Done. Tear down the PTY, remove the
   // worktree, delete the local branch, then bring the main working tree back to
@@ -867,24 +866,23 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
 ;(async () => {
   await app.whenReady()
 
-  const mainWindow = createWindow('main', {
+  const mainWindow = (mainWindowRef = createWindow('main', {
     width: 1000,
     height: 600,
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.js'),
     },
-  })
+  }))
 
   mainWindow.maximize()
 
   registerIpcHandlers(mainWindow)
 
-  // Watch the electron-store backing file for external writes (e.g. CLI) and
+  // Watch the store's backing file for external writes (e.g. CLI) and
   // push fresh state to the renderer so the board refreshes automatically.
   //
-  // Watch the containing directory, not the file: conf writes through
-  // `atomically`, which renames a temp file over the target and so replaces the
-  // inode on every save. A watcher bound to the file stops receiving events
+  // Watch the containing directory, not the file: JsonStore renames a temp
+  // file over the target and so replaces the inode on every save. A watcher bound to the file stops receiving events
   // after the first external write; the directory's inode is stable.
   const storeFile = path.basename(getStorePath())
   let storeWatchDebounce: ReturnType<typeof setTimeout> | null = null

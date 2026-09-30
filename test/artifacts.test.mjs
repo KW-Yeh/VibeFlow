@@ -12,7 +12,7 @@ import {
   MAX_ARTIFACTS,
   MAX_VIDEO_BYTES,
   SCRATCH_DIR_NAME,
-} from '../main/helpers/artifacts.ts'
+} from '../packages/core/src/artifacts.ts'
 
 async function tmpDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'vf-artifacts-'))

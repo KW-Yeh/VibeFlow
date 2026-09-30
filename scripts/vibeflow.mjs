@@ -2,11 +2,10 @@
 // Run via: node --experimental-strip-types scripts/vibeflow.mjs <command>
 // Or:      npm run vibeflow -- <command>
 import { parseArgs } from 'node:util'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { createTaskFromInput, updateTaskFromInput } from '../main/helpers/tasks.ts'
-import { fileToAttachmentInput } from '../main/helpers/attachments.ts'
-import { AGENT_CLIS, AGENT_EFFORTS } from '../main/helpers/agents.ts'
+import { createTaskFromInput, updateTaskFromInput } from '../packages/core/src/tasks.ts'
+import { fileToAttachmentInput } from '../packages/core/src/attachments.ts'
+import { AGENT_CLIS, AGENT_EFFORTS } from '../packages/core/src/agents.ts'
+import { createNodePlatform, defaultUserDataDir, setPlatform } from '../packages/core/src/platform.ts'
 
 const AGENT_IDS = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
@@ -37,7 +36,7 @@ task create options:
   --auto-mode <on|off>   Let the agent act without asking for approval
                          (default: the board-wide setting, same as the UI)
   --attach <path>        Attach a file; repeat the flag for several files
-  --store-path <dir>     Explicit electron-store directory
+  --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
   -h, --help             Show this help
 
@@ -46,7 +45,7 @@ task update options:
   --title <text>         New card title
   --prompt <text>        New card description (empty string clears it)
   --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
-  --store-path <dir>     Explicit electron-store directory
+  --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
 
   At least one of --title / --prompt / --status is required. Branch, worktree
@@ -66,28 +65,9 @@ Examples:
     --profile dev
 `.trim()
 
-/**
- * Electron's `appData` for this platform — the parent of the app's userData.
- * Mirrors Electron's own resolution so the CLI finds the store without it.
- */
-function appDataDir() {
-  const home = homedir()
-  if (process.platform === 'darwin') return join(home, 'Library', 'Application Support')
-  if (process.platform === 'win32') return process.env.APPDATA || join(home, 'AppData', 'Roaming')
-  return process.env.XDG_CONFIG_HOME || join(home, '.config')
-}
-
-/**
- * Resolve the store directory from --store-path or --profile. Electron names
- * userData after the package.json name (`vibeflow`), and main.ts suffixes it
- * with " (development)" in dev. macOS and Windows compare these names
- * case-insensitively, so the long-documented `VibeFlow` spelling is the same
- * directory there.
- */
+/** Resolve the store directory from --store-path or --profile. */
 function resolveStorePath(storePath, profile) {
-  if (storePath) return storePath
-  const name = profile === 'dev' ? 'vibeflow (development)' : 'vibeflow'
-  return join(appDataDir(), name)
+  return storePath || defaultUserDataDir(profile === 'dev' ? 'dev' : 'prod')
 }
 
 function fail(code, message) {
@@ -140,6 +120,7 @@ if (values.help || (!cmd && !values.project)) {
 }
 
 const storePath = resolveStorePath(values['store-path'], values.profile)
+setPlatform(createNodePlatform({ userDataDir: storePath }))
 
 if (cmd !== 'task' || !SUBCOMMANDS.includes(sub)) {
   fail(

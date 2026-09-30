@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { updateTaskFromInput } from '../main/helpers/tasks.ts'
-import { getStoreAtPath } from '../main/helpers/store.ts'
+import { updateTaskFromInput } from '../packages/core/src/tasks.ts'
+import { getStoreAtPath } from '../packages/core/src/store.ts'
 
 const CARD = {
   id: 'abc12345',

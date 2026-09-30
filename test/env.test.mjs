@@ -21,7 +21,7 @@ const customEntry = process.platform === 'win32'
 process.env[envPathKey] = [duplicateEntry, customEntry].join(delimiter)
 process.env.VF_ENV_TEST_EXISTING = 'present'
 
-const { buildEnv } = await import('../main/helpers/env.ts')
+const { buildEnv } = await import('../packages/core/src/env.ts')
 
 function pathParts() {
   const env = buildEnv()

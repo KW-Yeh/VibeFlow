@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import path from 'path'
-import type Store from 'electron-store'
+import type { JsonStore } from './json-store'
 import type { BoardState, VibeFlowState } from './store'
 
 export interface RecentProject {
@@ -58,13 +58,13 @@ export function recentProjectsFromBoard(board: BoardState): RecentProject[] {
 }
 
 export function listRecentProjects(
-  store: Store<VibeFlowState>,
+  store: JsonStore<VibeFlowState>,
   exists: PathExists = existsSync
 ): RecentProjectEntry[] {
   return (store.get('recentProjects') ?? []).map((p) => ({ ...p, missing: !exists(p.path) }))
 }
 
-export function recordRecentProject(store: Store<VibeFlowState>, projectPath: string): void {
+export function recordRecentProject(store: JsonStore<VibeFlowState>, projectPath: string): void {
   store.set(
     'recentProjects',
     rememberProject(store.get('recentProjects') ?? [], projectPath, Date.now())

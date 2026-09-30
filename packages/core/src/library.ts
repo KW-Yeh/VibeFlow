@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { getPlatform } from './platform'
 
 /**
  * VibeFlow's own store of reusable skills / prompts / scripts, so a task's
@@ -76,8 +77,7 @@ export function libraryPaths(root: string): LibraryPaths {
  * so this must never be captured at import time.
  */
 export async function libraryRoot(): Promise<string> {
-  const { app } = await import('electron')
-  return path.join(app.getPath('userData'), LIBRARY_DIR)
+  return path.join(getPlatform().userDataDir(), LIBRARY_DIR)
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {

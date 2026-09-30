@@ -10,7 +10,7 @@ import type {
  * logs to `<workspacePath>/<worktree-dir>.artifacts/` (see agentFilePaths) —
  * outside the worktree so git never sees it — falling back to this bare,
  * cwd-relative name only when paths are unknown. Must match
- * ARTIFACTS_DIR_SUFFIX in main/helpers/artifacts.ts (string literal duplicated
+ * ARTIFACTS_DIR_SUFFIX in packages/core/src/artifacts.ts (string literal duplicated
  * because the renderer cannot runtime-import main-process modules).
  */
 const ARTIFACTS_DIR_SUFFIX = '.artifacts'
@@ -18,7 +18,7 @@ const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 /**
  * Subdirectory the agent keeps its own working files in, so the Artifacts view
  * can separate them from the screenshots and reports meant for the user. Must
- * match SCRATCH_DIR_NAME in main/helpers/artifacts.ts (string literal duplicated
+ * match SCRATCH_DIR_NAME in packages/core/src/artifacts.ts (string literal duplicated
  * because the renderer cannot runtime-import main-process modules).
  */
 const SCRATCH_DIR_NAME = 'scratch'
@@ -77,7 +77,7 @@ export function buildArtifactPrompt(
 
 /**
  * Suffix of the task's decision record. Must match DECISIONS_FILE_SUFFIX in
- * main/helpers/decisions.ts (string literal duplicated because the renderer
+ * packages/core/src/decisions.ts (string literal duplicated because the renderer
  * cannot runtime-import main-process modules).
  */
 const DECISIONS_FILE_SUFFIX = '.DECISIONS.md'
@@ -211,7 +211,7 @@ function claudeResumeOrFresh(
 /**
  * Directory the Claude hooks append one JSON file per Task-tool event into,
  * relative to the session cwd. Must match SUBAGENTS_DIR in
- * main/helpers/subagents.ts (the watcher reading these files).
+ * packages/core/src/subagents.ts (the watcher reading these files).
  */
 const SUBAGENTS_DIR = '.vibeflow-subagents'
 
@@ -394,14 +394,14 @@ function assembleCommand(
   return cmd
 }
 
-/** Display names for the supported agent CLIs (mirrors main/helpers/agents.ts). */
+/** Display names for the supported agent CLIs (mirrors packages/core/src/agents.ts). */
 export const AGENT_NAMES: Record<AgentCliId, string> = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
 }
 
 /**
- * Lightweight default model per agent, mirrored from main/helpers/agents.ts
+ * Lightweight default model per agent, mirrored from packages/core/src/agents.ts
  * (the renderer cannot runtime-import main-process values). Used as a fallback
  * for tasks created before the model field existed.
  */

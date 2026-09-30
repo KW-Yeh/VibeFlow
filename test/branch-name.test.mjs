@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   slugify,
   buildCandidateBranch,
-} from '../main/helpers/branch-name.ts'
+} from '../packages/core/src/branch-name.ts'
 
 test('slugify — happy path', () => {
   assert.equal(slugify('Hello World'), 'hello-world')

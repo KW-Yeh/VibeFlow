@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { JsonStore } from './json-store'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
@@ -197,16 +197,16 @@ const defaults: VibeFlowState = {
   settings: DEFAULT_SETTINGS,
 }
 
-let _store: Store<VibeFlowState> | null = null
+let _store: JsonStore<VibeFlowState> | null = null
 
 /**
- * Lazily construct the store on first use. This must happen AFTER the app is
- * ready and `userData` has been finalized (main.ts redirects it in dev) —
- * constructing at import time would bind the store to the wrong userData path.
+ * Lazily construct the store on first use. This must happen AFTER the host has
+ * registered its PlatformServices and finalized `userData` (main.ts redirects
+ * it in dev) — constructing at import time would bind the wrong directory.
  */
-export function getStore(): Store<VibeFlowState> {
+export function getStore(): JsonStore<VibeFlowState> {
   if (!_store) {
-    _store = new Store<VibeFlowState>({ name: 'vibeflow-state', defaults })
+    _store = new JsonStore<VibeFlowState>({ name: 'vibeflow-state', defaults })
     migrateStore(_store)
   }
   return _store
@@ -218,7 +218,7 @@ export function getStore(): Store<VibeFlowState> {
  * and per-task `roleId`; both are simply no longer read, so the user's own
  * data is never destroyed by an upgrade.
  */
-function migrateStore(store: Store<VibeFlowState>): void {
+function migrateStore(store: JsonStore<VibeFlowState>): void {
   const persistedVersion = store.get('version') ?? 1
   // Keyed on the field, not the version: a binary without the field can
   // rewrite a v4 store and drop it.
@@ -309,15 +309,15 @@ export function removeTask(taskId: string): void {
 
 /**
  * Create a store instance pointing at an explicit directory. Used by the CLI
- * to target the correct electron-store profile without Electron's app.getPath.
+ * to target a profile's store directory without a registered platform.
  */
-export function getStoreAtPath(cwd: string): Store<VibeFlowState> {
-  const store = new Store<VibeFlowState>({ name: 'vibeflow-state', defaults, cwd })
+export function getStoreAtPath(cwd: string): JsonStore<VibeFlowState> {
+  const store = new JsonStore<VibeFlowState>({ name: 'vibeflow-state', defaults, cwd })
   migrateStore(store)
   return store
 }
 
-/** Absolute path of the backing JSON file for the current Electron store. */
+/** Absolute path of the backing JSON file for the app's store. */
 export function getStorePath(): string {
   return getStore().path
 }

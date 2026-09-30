@@ -1,0 +1,128 @@
+# IPC channel → `VibeFlowApi` map
+
+Phase 0 inventory for the core split (see the migration plan). Every channel
+`main/main.ts` handles and every event it pushes, with the `VibeFlowApi`
+method it becomes in Phase 2. Regenerate the channel list with:
+
+```sh
+grep -oE "ipcMain\.(handle|on)\(\s*'[^']+'" main/main.ts
+```
+
+61 handlers, 10 pushed events. **Where** says which side of the boundary
+the channel lands on:
+
+- **core**: becomes a `VibeFlowApi` method, the same for every frontend.
+- **platform**: goes through `PlatformServices` (`packages/core/src/platform.ts`).
+  Each host implements it in its own way.
+- **electron**: meaningful only in the desktop shell. Stays in `main/`.
+- **drop**: no caller in the renderer.
+
+**Path in** marks a handler that takes a filesystem path or a command from the
+renderer. The plan requires the API to take task ids, not paths. These are the
+channels Phase 2 has to reshape. The web transport cannot expose them as they
+are.
+
+## Board and tasks
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `vibeflow:getState` | core | `getState()` | | Board + settings in one read; the plan's `listTasks()` + `getSettings()` |
+| `vibeflow:setBoard` | core | `setBoard(board)` | | The renderer replaces the whole board to reorder and move. `moveTask(id, to)` alone cannot express a position in the column. Keep it or add `moveTask(id, to, index)` |
+| `vibeflow:createTask` | core | `createTask(input)` | projectPath | The user picks the project path. Valid input, but validate it with a schema |
+| `vibeflow:updateTask` | core | `updateTask(id, patch)` | | |
+| `vibeflow:removeTask` | core | `removeTask(id)` | | |
+| `vibeflow:resetTaskRun` | core | `resetTaskRun(id)` | | "Return to Backlog" wipes the run |
+| `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |
+| `vibeflow:deleteTask` | core | `deleteTask(id)` | | Also deletes the decision record |
+| `vibeflow:setSettings` | core | `updateSettings(patch)` | | |
+| `projects:listRecent` | core | `listRecentProjects()` | | |
+| `board:getCliLaunchInfo` | core | `getCliLaunchInfo()` | | Now reads `PlatformServices.sourceRoot()` |
+| `attachments:write` | core | `writeAttachments(id, files)` | | |
+
+## Sessions (PTY)
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `pty:start` | core | `startSession(id)` | **cwd, command** | The renderer builds the agent command line (`renderer/lib/claude.ts`) and sends it along with `cwd`. Over WebSocket that is arbitrary command execution. **Blocker for Phase 3:** move command assembly into core so the API takes only `taskId` |
+| `pty:input` | core | `writeInput(id, data)` | | Keyed by `sessionKey`, not task id (a task has several terminal tabs) |
+| `pty:resize` | core | `resize(id, cols, rows)` | | Same `sessionKey` note |
+| `pty:kill` | core | `stopSession(id)` | | |
+| `claude:sessionExists` | core | `sessionExists(id)` | **cwd** | Resolve the cwd from the task inside core |
+
+## Git and review
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `git:getInfo` | core | `inspectProject(path)` | projectPath | Runs before a task exists, so a path is the only possible input |
+| `git:initRepository` | core | `initRepository(path)` | projectPath | Same |
+| `git:getDiff` | core | `getDiff(id)` | | |
+| `git:getDiffEntries` | core | `getDiffEntries(id, opts)` | | |
+| `git:getDiffFile` | core | `getDiffFile(id, file)` | | `file` is relative to the worktree. Keep the containment check |
+| `git:approve` | core | `approve(id, message)` | | |
+| `git:generateCommitMessage` | core | `generateCommitMessage(id)` | | |
+| `git:getPrStatus` | core | `getPrStatus(id)` | | |
+| `git:getGithubCompareUrl` | core | `getCompareUrl(id)` | | |
+| `git:refreshBase` | drop | | | Handler with no preload or renderer caller |
+
+## Artifacts, decisions, sub-agents
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `task:listArtifacts` | core | `listArtifacts(id)` | | |
+| `task:readArtifact` | core | `readArtifact(id, name)` | | |
+| `task:openArtifactsDir` | platform | `openArtifactsDir(id)` → `openPath` | | Core resolves the directory, and the host opens it. That works for the Web UI too, because core runs on the user's machine |
+| `task:getDecisions` | core | `getDecisions(id)` | | |
+| event `subagents:update` | core | `on('subagents:changed')` | | |
+
+## Chat
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `chat:load` | core | `chat.load(id)` | | |
+| `chat:send` | core | `chat.send(id, text, …)` | **worktreePath** | Resolve it from the task inside core |
+| `chat:cancel` | core | `chat.cancel(id)` | | |
+| `chat:compact` | core | `chat.compact(id)` | | |
+| event `chat:chunk` / `chat:phase` | core | `on('chat:chunk')` / `on('chat:phase')` | | Pushed through `EventSink` |
+
+## Library
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `library:list` | core | `library.list()` | | |
+| `library:import` | core | `library.import(kind, source)` | sourcePath | The user picked it. Web UI needs a path input or an upload |
+| `library:create` / `read` / `update` / `setDescription` / `setEnabled` / `delete` | core | `library.*` | | |
+| `library:getLaunchInfo` | core | `library.launchInfo(id)` | **worktreePath** | Take the task id instead |
+
+## Agents and accounts
+
+| Channel | Where | `VibeFlowApi` | Path in | Notes |
+|---|---|---|---|---|
+| `env:detectAgents` | core | `detectAgents()` | | |
+| `settings:connectAgent` | core | `connectAgent(agent, apiKey)` | | |
+| `settings:refreshAgentModels` | core | `refreshAgentModels(agent)` | | |
+| `settings:githubAuthStatus` | core | `github.status()` | | |
+| `settings:startGithubAuthLogin` | core | `github.startLogin()` | | Streams `github-auth:event` to the requesting frontend |
+| `settings:cancelGithubAuthLogin` | core | `github.cancelLogin()` | | |
+| `settings:logoutGithubAuth` | core | `github.logout()` | | |
+| event `github-auth:event` | core | `on('github:auth')` | | |
+
+## Host-specific
+
+| Channel | Where | Replacement | Notes |
+|---|---|---|---|
+| `dialog:pickFolder` | platform | `PlatformServices.pickPath` | Returns `null` in the Node platform. The Web UI uses the path input plus the recent-projects list |
+| `dialog:pickLibrarySource` | platform | `PlatformServices.pickPath` | Same |
+| `shell:openExternal` | platform | `PlatformServices.openExternal` | The browser frontend can simply `window.open` |
+| `app:getVersion` | core | `getVersion()` | Read from `package.json` instead of `app.getVersion()` |
+| `app:relaunch` | electron | | Hot update of the `.app` |
+| `remote-update:getState` / `check` / `download` / `install` | electron | | electron-updater. npm installs update through npm |
+| event `remote-update:state` / `update:available` | electron | | |
+| event `state:changed` | core | `on('task:changed')` … | Today this pushes the full state after a CLI write. Also emit it after every core mutation, so a second frontend stays in sync |
+| `message` | drop | | nextron scaffold echo |
+
+## Pushed events via `EventSink`
+
+`pty.ts` and `chat-session.ts` now take an `EventSink`
+(`packages/core/src/events.ts`) instead of Electron's `WebContents`.
+`WebContents` satisfies that interface structurally, so `main.ts` still passes
+`event.sender`. A WebSocket connection will be the second implementation.

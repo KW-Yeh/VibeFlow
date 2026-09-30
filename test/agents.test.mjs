@@ -6,7 +6,7 @@ import {
   AGENT_EFFORTS,
   DEFAULT_TASK_EFFORT,
   defaultModelFor,
-} from '../main/helpers/agents.ts'
+} from '../packages/core/src/agents.ts'
 
 test('AGENT_CLIS — keeps the supported agent registry lightweight and static', () => {
   assert.deepEqual(AGENT_CLIS.map((agent) => agent.id), ['claude', 'codex'])

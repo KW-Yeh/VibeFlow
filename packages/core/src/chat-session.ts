@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import type { WebContents } from 'electron'
+import type { EventSink } from './events'
 import type { AgentCliId } from './agents'
 import { execEnv } from './env'
 import { findGitBash } from './git-bash'
@@ -147,7 +147,7 @@ function commandShell(): CommandShell {
  */
 export function sendChatMessage(
   opts: SendOptions,
-  sender: WebContents,
+  sender: EventSink,
 ): () => void {
   const {
     taskId,
@@ -354,7 +354,7 @@ export function cancelAllChatSends(): void {
 }
 
 /** Start a send; cancel any previous in-flight one for the same task. */
-export function startChatSend(opts: SendOptions, sender: WebContents): void {
+export function startChatSend(opts: SendOptions, sender: EventSink): void {
   cancelChatSend(opts.taskId)
   const kill = sendChatMessage(opts, sender)
   activeProcs.set(opts.taskId, kill)

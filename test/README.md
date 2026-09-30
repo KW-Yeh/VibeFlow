@@ -30,9 +30,12 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 
 | Suite | Target | Style |
 |---|---|---|
-| `branch-name.test.mjs` | `main/helpers/branch-name.ts` | pure unit — slug/ticket derivation, edge & malformed input |
-| `env.test.mjs` | `main/helpers/env.ts` | pure unit — PATH augmentation + memoisation |
-| `git.test.mjs` | `main/helpers/git.ts` | integration against throwaway repos (+ a bare remote) |
+| `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | pure unit — slug/ticket derivation, edge & malformed input |
+| `env.test.mjs` | `packages/core/src/env.ts` | pure unit — PATH augmentation + memoisation |
+| `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote) |
+| `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
+| `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
+| `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reach into main/ or renderer/ |
 
 `test/support/` holds the harness: the resolve hook, its registrar, and
 `repo.mjs` (creates isolated throwaway git repos with deterministic identity so
@@ -40,8 +43,8 @@ tests never touch the user's git config or network).
 
 ## Known gaps (not covered here)
 
-- `main/helpers/store.ts` — board mutators are inseparable from
-  `electron-store`, which requires an Electron `app` runtime. Best verified via
-  the CDP-driven live-app path in `CLAUDE.md`.
+- `main/helpers/*` — the Electron shell (window state, hot update,
+  electron-updater, the Electron `PlatformServices`). Best verified via the
+  CDP-driven live-app path in `CLAUDE.md`.
 - `main/main.ts` IPC handlers, `pty.ts`, and the renderer components — need an
   Electron/DOM runtime; out of scope for the headless suite.

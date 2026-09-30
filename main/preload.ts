@@ -5,32 +5,32 @@ import type {
   ConnectableAgentId,
   Task,
   VibeFlowState,
-} from './helpers/store'
-import type { AgentCli, AgentCliId, AgentEffort } from './helpers/agents'
+} from '../packages/core/src/store'
+import type { AgentCli, AgentCliId, AgentEffort } from '../packages/core/src/agents'
 import type {
   DiffEntry,
   DiffFile,
   FinalizeResult,
   GitInfo,
   PrStatus,
-} from './helpers/git'
-import type { ArtifactContent, TaskArtifact } from './helpers/artifacts'
-import type { BoardCliLaunchInfo } from './helpers/board-cli'
-import type { TaskDecisions } from './helpers/decisions'
-import type { RecentProjectEntry } from './helpers/recent-projects'
-import type { SubAgentRun } from './helpers/subagents'
-import type { ChatAttachment, Conversation } from './helpers/chat-store'
-import type { AttachmentInput } from './helpers/attachments'
+} from '../packages/core/src/git'
+import type { ArtifactContent, TaskArtifact } from '../packages/core/src/artifacts'
+import type { BoardCliLaunchInfo } from '../packages/core/src/board-cli'
+import type { TaskDecisions } from '../packages/core/src/decisions'
+import type { RecentProjectEntry } from '../packages/core/src/recent-projects'
+import type { SubAgentRun } from '../packages/core/src/subagents'
+import type { ChatAttachment, Conversation } from '../packages/core/src/chat-store'
+import type { AttachmentInput } from '../packages/core/src/attachments'
 import type {
   LibraryEntry,
   LibraryKind,
   LibraryLaunchInfo,
-} from './helpers/library'
-import type { ChatChunk, ChatPhase } from './helpers/chat-session'
+} from '../packages/core/src/library'
+import type { ChatChunk, ChatPhase } from '../packages/core/src/chat-session'
 import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
-} from './helpers/github-auth'
+} from '../packages/core/src/github-auth'
 import type { RemoteUpdateSnapshot } from './helpers/remote-update'
 
 const handler = {

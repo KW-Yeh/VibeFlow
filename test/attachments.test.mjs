@@ -7,7 +7,7 @@ import {
   ATTACHMENTS_DIR,
   fileToAttachmentInput,
   writeAttachments,
-} from '../main/helpers/attachments.ts'
+} from '../packages/core/src/attachments.ts'
 import { git, makeRepo } from './support/repo.mjs'
 
 test('writeAttachments writes exact bytes with safe filenames and stays ignored', async () => {

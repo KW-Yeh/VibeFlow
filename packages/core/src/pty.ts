@@ -1,5 +1,5 @@
 import * as nodePty from 'node-pty'
-import type { WebContents } from 'electron'
+import type { EventSink } from './events'
 import { buildEnv } from './env'
 import { findGitBash, GIT_BASH_MISSING_MESSAGE } from './git-bash'
 
@@ -80,7 +80,7 @@ export interface StartResult {
 export function startSession(
   sessionKey: string,
   cwd: string,
-  sender: WebContents,
+  sender: EventSink,
   command?: string,
   onExit?: () => void,
   cols = 80,

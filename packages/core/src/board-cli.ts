@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
+import { getPlatform } from './platform'
 import { getStorePath } from './store'
 
 /**
@@ -27,11 +28,10 @@ export interface BoardCliLaunchInfo {
  * than emit a command that cannot run.
  */
 export async function boardCliLaunchInfo(): Promise<BoardCliLaunchInfo> {
-  const { app } = await import('electron')
   const storeDir = path.dirname(getStorePath())
-  if (app.isPackaged) return { storeDir }
+  const root = getPlatform().sourceRoot()
+  if (!root) return { storeDir }
 
-  const root = app.getAppPath()
   const cliPath = path.join(root, 'scripts', 'vibeflow.mjs')
   const loaderPath = path.join(root, 'test', 'support', 'register.mjs')
   if (!fs.existsSync(cliPath) || !fs.existsSync(loaderPath)) return { storeDir }

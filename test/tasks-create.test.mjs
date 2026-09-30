@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { createTaskFromInput } from '../main/helpers/tasks.ts'
-import { getStoreAtPath } from '../main/helpers/store.ts'
+import { createTaskFromInput } from '../packages/core/src/tasks.ts'
+import { getStoreAtPath } from '../packages/core/src/store.ts'
 import { makeRepo } from './support/repo.mjs'
 
 /**

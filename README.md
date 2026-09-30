@@ -8,7 +8,7 @@ VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。�
 * **前端**: Next.js (React) + Tailwind CSS + shadcn/ui
 * **看板**: `@hello-pangea/dnd`
 * **終端**: `xterm.js` + `node-pty` (處理雙向互動式 CLI)
-* **儲存**: `electron-store` (本地持久化)
+* **儲存**: core 自有的 JSON store（`packages/core/src/json-store.ts`，沿用原 electron-store 的檔案）
 
 ## 📦 下載與安裝
 

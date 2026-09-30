@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { JsonStore } from './json-store'
 
 export interface ChatAttachment {
   id: string
@@ -33,11 +33,11 @@ interface ChatStoreSchema {
   conversations: Record<string, Conversation>
 }
 
-let _chatStore: Store<ChatStoreSchema> | null = null
+let _chatStore: JsonStore<ChatStoreSchema> | null = null
 
-function getChatStore(): Store<ChatStoreSchema> {
+function getChatStore(): JsonStore<ChatStoreSchema> {
   if (!_chatStore) {
-    _chatStore = new Store<ChatStoreSchema>({
+    _chatStore = new JsonStore<ChatStoreSchema>({
       name: 'vibeflow-chats',
       defaults: { conversations: {} },
     })
@@ -45,31 +45,36 @@ function getChatStore(): Store<ChatStoreSchema> {
   return _chatStore
 }
 
+function setConversation(taskId: string, conversation: Conversation | null): void {
+  const store = getChatStore()
+  const conversations = { ...store.get('conversations') }
+  if (conversation) conversations[taskId] = conversation
+  else delete conversations[taskId]
+  store.set('conversations', conversations)
+}
+
 export function loadConversation(taskId: string): Conversation | null {
-  return getChatStore().get(`conversations.${taskId}`) ?? null
+  return getChatStore().get('conversations')[taskId] ?? null
 }
 
 export function appendMessage(taskId: string, message: ChatMessage): void {
-  const store = getChatStore()
-  const existing = store.get(`conversations.${taskId}`) ?? {
+  const existing = loadConversation(taskId) ?? {
     taskId,
     messages: [],
     updatedAt: 0,
   }
   existing.messages.push(message)
   existing.updatedAt = Date.now()
-  store.set(`conversations.${taskId}`, existing)
+  setConversation(taskId, existing)
 }
 
 export function clearConversation(taskId: string): void {
-  const store = getChatStore()
-  store.delete(`conversations.${taskId}` as keyof ChatStoreSchema)
+  setConversation(taskId, null)
 }
 
 /** Clear all messages and pin a new session ID so the next send starts fresh. */
 export function clearMessages(taskId: string, newSessionId: string): void {
-  const store = getChatStore()
-  store.set(`conversations.${taskId}`, {
+  setConversation(taskId, {
     taskId,
     messages: [],
     updatedAt: Date.now(),

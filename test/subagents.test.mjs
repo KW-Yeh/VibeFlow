@@ -7,7 +7,7 @@ import fs from 'node:fs/promises'
 import {
   resetSubAgents,
   SUBAGENTS_DIR,
-} from '../main/helpers/subagents.ts'
+} from '../packages/core/src/subagents.ts'
 
 test('resetSubAgents — removes prior hook events without touching worktree files', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-subagents-'))

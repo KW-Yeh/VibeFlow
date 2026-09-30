@@ -136,7 +136,7 @@ const POLL_INTERVAL_MS = 3000
 
 /**
  * Cap the diff list is truncated at, so the UI can say so instead of silently
- * showing a short list. Must match MAX_DIFF_FILES in main/helpers/git.ts (value
+ * showing a short list. Must match MAX_DIFF_FILES in packages/core/src/git.ts (value
  * duplicated because the renderer cannot runtime-import main-process modules).
  */
 const MAX_DIFF_FILES = 80

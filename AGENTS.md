@@ -19,7 +19,7 @@ the project folder is chosen **per task** at creation time (there is no global
 - **Styling**: Tailwind CSS v4 + shadcn/ui foundation (`cn`, `Button`, design tokens, `components.json`)
 - **Kanban DnD**: `@hello-pangea/dnd`
 - **Terminal**: `@xterm/xterm` + `@xterm/addon-fit` (renderer) ↔ `node-pty` (main, native)
-- **Persistence**: `electron-store`
+- **Persistence**: core's own `JsonStore` (`packages/core/src/json-store.ts`) — same `vibeflow-state.json` electron-store used to write
 - **Diff viewer**: `react-diff-viewer-continued`
 - **Diagrams**: `mermaid` — lazy-loaded, `mermaid` markdown fences only
 - **Icons**: `lucide-react`
@@ -43,7 +43,7 @@ the project folder is chosen **per task** at creation time (there is no global
 | Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev app store and omit it for the packaged app store. `--help` lists every option |
 | Typecheck (main) | `npx tsc --noEmit -p tsconfig.json` | Checks `main/**/*.ts` only |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |
-| Tests | `npm test` | `node --test` over `test/**/*.test.mjs` with TS type-stripping, so tests import `main/helpers/*.ts` directly. Headless — no Electron, no dev server. |
+| Tests | `npm test` | `node --test` over `test/**/*.test.mjs` with TS type-stripping, so tests import `packages/core/src/*.ts` directly. Headless — no Electron, no dev server. |
 | One test file | `NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" node --test ./test/git.test.mjs` | Same harness, single file — use while iterating |
 | Renderer build only | `cd renderer && NODE_ENV=production npx next build` | Faster than full package; outputs to `../app`. Uses the default Turbopack compiler for local development. |
 | Renderer build only (restricted runner) | `npm run build:renderer:webpack` | Same renderer build but forces `next build --webpack`; use this in Codex sandbox, Docker, or CI when Turbopack IPC / port binding is blocked. |
@@ -52,7 +52,7 @@ There is **no linter configured** (no ESLint/Biome/Prettier). Do not invent one 
 asked. "Lint" in the global playbook maps to **typecheck** here.
 
 There **is** a test runner: `npm test` drives Node's built-in `node --test` (no
-Jest/Vitest). Run it for any change under `main/helpers/` — that is where the existing
+Jest/Vitest). Run it for any change under `packages/core/` — that is where the existing
 coverage lives. See "Runtime verification" below for what belongs in a test versus what
 has to be checked in the live app.
 
@@ -88,7 +88,7 @@ npm run vibeflow -- task create \
   and checked out so the card continues that work instead of starting a new
   branch off the base. Same field, same rules, in the new-task dialog.
 - `--effort` defaults to `medium`, matching the UI. The default lives in
-  `main/helpers/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
+  `packages/core/src/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
 - Unknown flags are rejected, so a typo fails loudly instead of being ignored.
 - `--profile dev` writes to `<appData>/vibeflow (development)/vibeflow-state.json`,
@@ -130,7 +130,7 @@ npm run vibeflow -- task update \
 
 Every launch exports the running card's identity into its shell, so an agent can
 put more cards on the board it is itself running on (see `boardEnvPrefix` in
-`renderer/lib/claude.ts` and `main/helpers/board-cli.ts`):
+`renderer/lib/claude.ts` and `packages/core/src/board-cli.ts`):
 
 | Variable | Value |
 |---|---|
@@ -154,17 +154,24 @@ node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" 
 ## Project structure
 
 ```
-main/                      Electron main process (ESM, bundled by nextron/webpack)
+packages/                  npm workspaces (core split — see packages/core/IPC_API_MAP.md)
+├── core/src/              ALL business logic; no electron / react / next (test/core-boundary)
+│   ├── platform.ts        PlatformServices: userData dir, source root, open, pick path (host-injected)
+│   ├── events.ts          EventSink: where core pushes events (WebContents satisfies it)
+│   ├── json-store.ts      JsonStore: electron-store-compatible JSON file, atomic writes
+│   ├── store.ts           VibeFlowState, Task, board mutators (LAZY init)
+│   ├── tasks.ts           create / update a card (UI and CLI share it)
+│   ├── git.ts             git via child_process: info / worktree / diff / commit+push
+│   ├── artifacts.ts       per-task Artifact path, listing, preview, and cleanup
+│   ├── decisions.ts       per-task decision record: path, read, delete
+│   ├── recent-projects.ts recently used project folders for the new-task picker (store v4)
+│   └── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
+├── web/ tui/ cli/         empty shells for later phases
+
+main/                      Electron shell (ESM, bundled by nextron/webpack; bundles core by relative path)
 ├── main.ts                App bootstrap + ALL ipcMain handlers (registerIpcHandlers)
 ├── preload.ts             contextBridge: window.ipc + window.vibeflow (typed API)
-└── helpers/
-    ├── store.ts           electron-store: VibeFlowState, Task, board mutators (LAZY init)
-    ├── git.ts             git via child_process: info / worktree / diff / commit+push
-    ├── artifacts.ts       per-task Artifact path, listing, preview, and cleanup
-    ├── decisions.ts       per-task decision record: path, read, delete
-    ├── recent-projects.ts recently used project folders for the new-task picker (store v4)
-    ├── pty.ts             node-pty session manager (per-task, PATH-injected login shell)
-    └── create-window.ts   window-state persistence (scaffold)
+└── helpers/               Electron-only: electron-platform, create-window, update, remote-update
 
 renderer/                  Next.js app (Pages Router)
 ├── pages/
@@ -178,7 +185,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策/artifacts/diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/
-│   ├── types.ts           re-exports domain types FROM main (single source of truth)
+│   ├── types.ts           re-exports domain types FROM core (single source of truth)
 │   ├── api.ts             bridge-safe wrappers over window.vibeflow
 │   └── utils.ts           cn()
 ├── styles/globals.css     Tailwind v4 + shadcn design tokens (dark theme)
@@ -190,17 +197,22 @@ renderer/                  Next.js app (Pages Router)
 ## Architecture & conventions
 
 - **IPC is the only main↔renderer channel.** Add a feature in this order:
-  1. Logic in `main/helpers/*.ts`.
+  1. Logic in `packages/core/src/*.ts` (anything Electron-specific goes through `PlatformServices`).
   2. `ipcMain.handle('ns:action', ...)` inside `registerIpcHandlers` in `main.ts`.
   3. Method on the `vibeflow` object in `preload.ts` (typed).
   4. Wrapper in `renderer/lib/api.ts` (must no-op / return null when the bridge is absent — static export & plain-browser safety).
   5. Use it from a component via `lib/api`.
-- **Single source of truth for types**: domain types live in `main/helpers/*.ts`;
+- **Single source of truth for types**: domain types live in `packages/core/src/*.ts`;
   `renderer/lib/types.ts` re-exports them with `export type` (erased at build — no
   runtime import of main code into the renderer). Don't duplicate type definitions.
-- **`electron-store` must be constructed lazily** (`getStore()` in `store.ts`), never
-  at import time — the store binds to `userData`, which `main.ts` redirects in dev
-  (`… (development)`). Eager construction binds the wrong path. (This was a real bug.)
+- **The store must be constructed lazily** (`getStore()` in `store.ts`), never
+  at import time — it binds to `PlatformServices.userDataDir()`, which `main.ts`
+  registers after redirecting `userData` in dev (`… (development)`). Eager
+  construction binds the wrong path. (This was a real bug.)
+- **`main/` must not depend on `@vibeflow/core` by package name.** It imports
+  `../packages/core/src/*` by relative path: nextron's webpack externalizes every
+  root `dependencies` entry, so a `@vibeflow/core` dependency would leave core out of
+  the bundle.
 - **Each Task carries its own `projectPath`/`projectName`.** Anything touching a
   worktree (cleanup, delete, diff, terminal cwd) resolves it from the task, not a global.
 - **Terminal**: `task-terminal.tsx` dynamically imports xterm inside `useEffect`
@@ -241,7 +253,7 @@ A change is done only when, on the affected scope:
 
 1. `npx tsc --noEmit -p tsconfig.json` — clean (if `main/` touched).
 2. `npx tsc --noEmit -p renderer/tsconfig.json` — clean (if `renderer/` touched).
-3. `npm test` — green. Add cases for new `main/helpers/` behaviour; the `ui-consistency`
+3. `npm test` — green. Add cases for new `packages/core/` behaviour; the `ui-consistency`
    suite also guards renderer class conventions, so renderer changes can trip it.
 4. `cd renderer && NODE_ENV=production npx next build` — succeeds for local renderer changes. In Docker, sandbox, or CI-like restricted runners, use `npm run build:renderer:webpack` instead.
 5. For behavioral changes, a **runtime check** in the live app (see below).
@@ -255,7 +267,7 @@ If you packaged (`npm run build`), confirm the `.app` boots without a crash loop
 Two layers: `npm test` covers anything reachable without Electron; everything else is
 driven in the live app over CDP.
 
-- **`main/helpers/*` logic** belongs in `test/<helper>.test.mjs` (`node:test` +
+- **`packages/core/src/*` logic** belongs in `test/<helper>.test.mjs` (`node:test` +
   `node:assert/strict`). The harness strips types, so tests import the `.ts` helper
   directly. `test/support/repo.mjs` provides `makeRepo()` for a throwaway repo with an
   optional bare remote, plus `git()` / `writeFile()` / `exists()` — use it instead of

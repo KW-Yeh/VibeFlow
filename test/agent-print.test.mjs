@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { runAgentPrint } from '../main/helpers/agent-print.ts'
+import { runAgentPrint } from '../packages/core/src/agent-print.ts'
 
 const isWindows = process.platform === 'win32'
 

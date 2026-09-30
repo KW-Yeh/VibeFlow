@@ -5,7 +5,7 @@ import {
   BrowserWindowConstructorOptions,
   Rectangle,
 } from 'electron'
-import Store from 'electron-store'
+import { JsonStore } from '../../packages/core/src/json-store'
 
 export const createWindow = (
   windowName: string,
@@ -13,14 +13,14 @@ export const createWindow = (
 ): BrowserWindow => {
   const key = 'window-state'
   const name = `window-state-${windowName}`
-  const store = new Store<Rectangle>({ name })
+  const store = new JsonStore<Partial<Record<typeof key, Rectangle>>>({ name, defaults: {} })
   const defaultSize = {
     width: options.width,
     height: options.height,
   }
   let state = {}
 
-  const restore = () => store.get(key, defaultSize) as Rectangle
+  const restore = () => (store.get(key) ?? defaultSize) as Rectangle
 
   const getCurrentPosition = () => {
     const position = win.getPosition()
@@ -66,7 +66,7 @@ export const createWindow = (
     if (!win.isMinimized() && !win.isMaximized()) {
       Object.assign(state, getCurrentPosition())
     }
-    store.set(key, state)
+    store.set(key, state as Rectangle)
   }
 
   state = ensureVisibleOnSomeDisplay(restore())
