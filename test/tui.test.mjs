@@ -38,3 +38,21 @@ test('Ctrl+] is found as a plain byte and in win32-input-mode', async () => {
   // Key up of the same key does not count, nor does another key.
   assert.equal(findDetachKey('\x1b[221;27;29;0;8;1_\x1b[88;45;120;1;0;1_'), -1)
 })
+
+test('the diff pager waits for q unless the user configured less or has delta', async () => {
+  const { diffEnv } = await import('../packages/tui/src/index.ts')
+  assert.equal(diffEnv({}, false).LESS, 'R')
+  assert.equal(diffEnv({ LESS: '-FX' }, false).LESS, '-FX')
+  const withDelta = diffEnv({}, true)
+  assert.match(withDelta.GIT_PAGER, /delta --side-by-side --paging=always/)
+  assert.equal(withDelta.LESS, undefined)
+})
+
+test('the help page says what q does for this backend and host', async () => {
+  const { quitHelp } = await import('../packages/tui/src/index.ts')
+  assert.match(quitHelp('tmux', true), /tmux 中會繼續執行/)
+  assert.match(quitHelp('tmux', false), /tmux 中會繼續執行/)
+  assert.match(quitHelp('pty', true), /會一起結束/)
+  assert.match(quitHelp('pty', false), /會繼續執行/)
+  assert.doesNotMatch(quitHelp('pty', true), /tmux/)
+})

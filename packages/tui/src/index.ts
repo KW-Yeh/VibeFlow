@@ -39,6 +39,28 @@ export function findDetachKey(text: string): number {
 export const RESET_TERMINAL_MODES =
   '\x1b[?9001l\x1b[?1004l\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1049l\x1b[?25h'
 
+/** Clear the screen before the board draws again, so nothing of the diff or terminal is left above it. */
+export const CLEAR_SCREEN = '\x1b[2J\x1b[H'
+
+/** What `q` does here, as the help page says it. */
+export function quitHelp(backend: 'pty' | 'tmux', isHost: boolean): string {
+  if (backend === 'tmux') return 'q         離開（agent 在 tmux 中會繼續執行）'
+  if (isHost) return 'q         離開（這個 TUI 就是 host，執行中的 agent 會一起結束）'
+  return 'q         離開（agent 由執行中的 host 持有，會繼續執行）'
+}
+
+/**
+ * Environment for the diff pager. Git runs less as `LESS=FRX` when LESS is
+ * unset, which quits at once on a one-screen diff and returns to the board
+ * before it can be read; plain `R` keeps less open until `q`.
+ */
+export function diffEnv(base: NodeJS.ProcessEnv, hasDelta: boolean): NodeJS.ProcessEnv {
+  const env = { ...base }
+  if (hasDelta) env.GIT_PAGER = 'delta --side-by-side --paging=always'
+  else if (env.LESS === undefined) env.LESS = 'R'
+  return env
+}
+
 export interface TuiOptions {
   api: VibeFlowApi
   /** Where TmuxBackend keeps its config (`<dir>/tmux.conf`). */
@@ -108,10 +130,11 @@ function truncate(text: string, width: number): string {
 interface BoardViewProps {
   opts: TuiOptions
   initial: Selection
+  initialMessage?: string
   onAction: (action: TuiAction, sel: Selection) => void
 }
 
-function BoardView({ opts, initial, onAction }: BoardViewProps) {
+function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) {
   const { api } = opts
   const { exit } = useApp()
   const { stdout } = useStdout()
@@ -119,7 +142,7 @@ function BoardView({ opts, initial, onAction }: BoardViewProps) {
   const [sel, setSel] = useState<Selection>(initial)
   const [running, setRunning] = useState<Set<string>>(new Set())
   const [backend, setBackend] = useState<'pty' | 'tmux'>('pty')
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialMessage ?? '')
   const [confirm, setConfirm] = useState<{ prompt: string; run: () => void } | null>(null)
   const [help, setHelp] = useState(false)
 
@@ -268,7 +291,7 @@ function BoardView({ opts, initial, onAction }: BoardViewProps) {
       ),
       h(Text, null, 'd         看 diff（有 delta 時為 side-by-side）'),
       h(Text, null, 'w         在瀏覽器開啟 Web UI'),
-      h(Text, null, 'q         離開（agent 在 tmux 中會繼續執行）'),
+      h(Text, null, quitHelp(backend, opts.isHost)),
       h(Text, { dimColor: true }, '按任意鍵返回')
     )
   }
@@ -319,13 +342,14 @@ function BoardView({ opts, initial, onAction }: BoardViewProps) {
 }
 
 /** Resolve after the board view exits with an action. */
-function showBoard(opts: TuiOptions, initial: Selection): Promise<{ action: TuiAction; sel: Selection }> {
+function showBoard(opts: TuiOptions, initial: Selection, initialMessage?: string): Promise<{ action: TuiAction; sel: Selection }> {
   return new Promise((resolve) => {
     let result: { action: TuiAction; sel: Selection } = { action: { type: 'quit' }, sel: initial }
     const instance = render(
       h(BoardView, {
         opts,
         initial,
+        initialMessage,
         onAction: (action, sel) => {
           result = { action, sel }
         },
@@ -343,8 +367,7 @@ function hasCommand(cmd: string, args: string[]): boolean {
 /** `git diff <base>` through git's pager, side by side via delta when it is installed. */
 export function showDiff(task: Task): void {
   const base = task.baseBranch ?? 'HEAD'
-  const env = { ...process.env }
-  if (hasCommand('delta', ['--version'])) env.GIT_PAGER = 'delta --side-by-side --paging=always'
+  const env = diffEnv(process.env, hasCommand('delta', ['--version']))
   spawnSync('git', ['-C', task.worktreePath!, '-c', 'color.ui=always', 'diff', base], {
     stdio: 'inherit',
     env,
@@ -370,7 +393,7 @@ function tmuxAttach(opts: TuiOptions, sessionName: string): void {
  * keystrokes out, Ctrl+] to return. Works the same whether core is in this
  * process or behind a WebSocket.
  */
-function ptyPassthrough(api: VibeFlowApi, key: string, scrollback: string | null): Promise<void> {
+function ptyPassthrough(api: VibeFlowApi, key: string, scrollback: string | null): Promise<string | undefined> {
   return new Promise((resolve) => {
     const stdin = process.stdin
     const stdout = process.stdout
@@ -387,8 +410,7 @@ function ptyPassthrough(api: VibeFlowApi, key: string, scrollback: string | null
       if (stdin.isTTY) stdin.setRawMode(false)
       stdin.pause()
       stdout.write(RESET_TERMINAL_MODES)
-      if (note) stdout.write(`\r\n${note}\r\n`)
-      resolve()
+      resolve(note)
     }
     const offExit = api.term.onExit(({ sessionKey, exitCode }) => {
       if (sessionKey === key) done(`［session 已結束，exit ${exitCode}］`)
@@ -412,7 +434,7 @@ function ptyPassthrough(api: VibeFlowApi, key: string, scrollback: string | null
   })
 }
 
-async function openTerminal(opts: TuiOptions, task: Task): Promise<void> {
+async function openTerminal(opts: TuiOptions, task: Task): Promise<string | undefined> {
   const { api } = opts
   const key = task.id
   const info = await api.term.list()
@@ -429,24 +451,29 @@ async function openTerminal(opts: TuiOptions, task: Task): Promise<void> {
     })
     peek = { alive: true, scrollback: null }
   }
-  if (info.backend === 'tmux') tmuxAttach(opts, `vf-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`)
-  else await ptyPassthrough(api, key, peek.scrollback)
+  if (info.backend === 'tmux') {
+    tmuxAttach(opts, `vf-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`)
+    return undefined
+  }
+  return ptyPassthrough(api, key, peek.scrollback)
 }
 
 /** Run the board until the user quits. */
 export async function runTui(opts: TuiOptions): Promise<void> {
   let sel: Selection = { column: 1, index: 0 }
+  let message: string | undefined
   for (;;) {
-    const result = await showBoard(opts, sel)
+    const result = await showBoard(opts, sel, message)
     sel = result.sel
+    message = undefined
     const { action } = result
     if (action.type === 'quit') return
     try {
-      if (action.type === 'attach') await openTerminal(opts, action.task)
+      if (action.type === 'attach') message = await openTerminal(opts, action.task)
       else if (action.type === 'diff') showDiff(action.task)
     } catch (err) {
-      process.stdout.write(`\n失敗：${(err as Error).message}\n`)
-      await new Promise((r) => setTimeout(r, 1500))
+      message = `失敗：${(err as Error).message}`
     }
+    process.stdout.write(CLEAR_SCREEN)
   }
 }
