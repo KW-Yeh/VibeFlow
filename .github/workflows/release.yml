@@ -1,8 +1,7 @@
 name: CI & Release
 
-# Test on all three platforms, then publish:
-#  - the npm package (`vibeflow`, with provenance) — the main distribution,
-#  - Electron installers to a draft GitHub Release, while the desktop app is kept.
+# Test on all three platforms, then publish the npm package (`vibeflow`, with
+# provenance).
 # Trigger: push a tag like `v0.1.0` (must match the version in package.json),
 # or run manually from the Actions tab (workflow_dispatch tests and builds but
 # does not publish). Pull requests run the test job only.
@@ -121,55 +120,3 @@ jobs:
         run: npm publish ./dist-npm --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  electron:
-    needs: test
-    if: github.event_name != 'pull_request'
-    permissions:
-      contents: write # electron-builder creates the release + uploads assets
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            # Apple Silicon + Intel from the same runner (clang cross-compiles node-pty)
-            build_args: --mac --arm64 --x64
-          - os: windows-latest
-            build_args: --win
-          - os: ubuntu-latest
-            build_args: --linux
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Pin npm 11
-        run: npm install -g npm@11
-
-      # node-pty is native, but VibeFlow uses node-pty's prebuilt binaries where
-      # available. Root postinstall only verifies that the native binary loads;
-      # electron-builder native rebuilds stay disabled because Windows rebuilds
-      # fail in bundled winpty/MSVC and are unnecessary for the prebuild path.
-      - name: Install dependencies
-        run: npm ci --verbose
-
-      - name: Build and publish
-        # On workflow_dispatch (no tag) skip uploading — just verify the build packages.
-        run: npm run build:webpack -- ${{ matrix.build_args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts (workflow run)
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: vibeflow-${{ matrix.os }}
-          path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
-          if-no-files-found: warn

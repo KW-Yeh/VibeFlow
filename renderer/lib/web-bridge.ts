@@ -5,10 +5,8 @@ import { createWsTransport, type WebSocketLike } from '../../packages/core/src/w
 export const CONNECTION_EVENT = 'vibeflow:connection'
 
 /**
- * In a plain browser (the Web UI served by `vibeflow`), build `window.vibeflow`
- * over a WebSocket to the core that served this page. Electron's preload has
- * already installed it there, so this is a no-op in the desktop app. The
- * auth cookie rides along automatically: the socket is same-origin.
+ * Build `window.vibeflow` over a WebSocket to the core that served this page.
+ * The auth cookie rides along automatically: the socket is same-origin.
  */
 export function installWebBridge(): void {
   if (typeof window === 'undefined' || window.vibeflow) return

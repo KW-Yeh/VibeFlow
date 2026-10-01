@@ -70,8 +70,8 @@ const IMAGE_MIME: Record<string, string> = {
 
 /**
  * Extensions a <video> tag can render, mapped to the MIME the data URL needs.
- * Deliberately short: Electron ships Chromium's proprietary codecs, so H.264 in
- * .mp4/.m4v and VP8/VP9/AV1 in .webm play. Containers Chromium cannot demux
+ * Deliberately short: Chromium-based browsers ship the proprietary codecs, so
+ * H.264 in .mp4/.m4v and VP8/VP9/AV1 in .webm play. Containers Chromium cannot demux
  * (.mkv, .avi) are left out on purpose.
  *
  * .mov maps to video/mp4, not video/quicktime: Chromium's canPlayType rejects

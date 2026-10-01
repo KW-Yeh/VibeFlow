@@ -97,7 +97,7 @@ interface LaunchEntry {
 }
 
 /** Height of the board pane, in px. Renderer-local UI state — deliberately not
-    in the electron store, so it needs no schema migration. */
+    in the core store, so it needs no schema migration. */
 const SPLIT_STORAGE_KEY = 'vibeflow:board-split-px'
 const MIN_BOARD_HEIGHT = 180
 const MIN_WORKSPACE_HEIGHT = 260
@@ -293,7 +293,7 @@ export function KanbanBoard({
 
   const resetTaskBackToBacklog = async (task: Task) => {
     const result = await resetTaskRun(task.id)
-    if (!result) throw new Error('Electron bridge 無法使用')
+    if (!result) throw new Error('未連線到 VibeFlow core')
     const next = result.state.board
     onBoardChange({
       backlog: [result.task, ...next.backlog.filter((t) => t.id !== task.id)],

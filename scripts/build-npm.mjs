@@ -54,7 +54,7 @@ if (!fs.existsSync(path.join(webSrc, 'home', 'index.html'))) {
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 console.log('==> Copying the Web UI')
-// app/ also holds the Electron main/preload bundles when those were built.
+// A checkout that predates the Electron removal may still hold its main/preload bundles in app/.
 const ELECTRON_FILES = /^(main|preload)\.js(\.map)?$/
 fs.cpSync(webSrc, path.join(out, 'dist', 'web'), {
   recursive: true,

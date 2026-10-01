@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Static export of the renderer into ./app (the same build Electron loads and
-// `vibeflow` serves). Pass --webpack in runners where Turbopack cannot bind.
+// Static export of the renderer into ./app (the build `vibeflow` serves).
+// Pass --webpack in runners where Turbopack cannot bind.
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

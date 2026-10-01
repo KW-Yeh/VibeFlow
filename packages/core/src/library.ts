@@ -73,8 +73,8 @@ export function libraryPaths(root: string): LibraryPaths {
 }
 
 /**
- * The library root for the running app. Electron redirects `userData` in dev,
- * so this must never be captured at import time.
+ * The library root for the running app. The host registers its platform (and
+ * so its data directory) at startup, so this must never be captured at import time.
  */
 export async function libraryRoot(): Promise<string> {
   return path.join(getPlatform().userDataDir(), LIBRARY_DIR)

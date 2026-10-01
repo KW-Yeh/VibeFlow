@@ -139,7 +139,7 @@ const MAX_DIFF_FILES = 80
 
 /**
  * Width of the workspace's right column, in px. Renderer-local UI state (same
- * rationale as the board splitter: no electron-store schema to migrate), held
+ * rationale as the board splitter: no store schema to migrate), held
  * as a CSS variable on <html> rather than React state so a drag repaints
  * without re-rendering every mounted task panel — and so all of them stay in
  * sync, since they read the same variable.

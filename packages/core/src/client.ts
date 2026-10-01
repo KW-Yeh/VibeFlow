@@ -1,7 +1,6 @@
 /*
- * The frontend API, the same for every transport. Electron's preload builds it
- * on ipcRenderer, the browser on a WebSocket, and the TUI on an in-process
- * call. Frontends import this module at runtime, so it imports types only.
+ * The frontend API, the same for every transport. The browser builds it on a
+ * WebSocket, and the TUI on an in-process call or a WebSocket. Frontends import this module at runtime, so it imports types only.
  */
 import type {
   AppSettings,
@@ -34,14 +33,13 @@ import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
 } from './github-auth'
-import type { RemoteUpdateSnapshot } from './remote-update-types'
 import type { LaunchIntent } from './service'
 import type { StartResult } from './session-backend'
 
 /** How a frontend reaches core. `invoke` answers; `send` is fire-and-forget. */
 export interface BridgeTransport {
-  /** `ipc` = Electron, `ws` = browser or a remote TUI, `local` = same process. */
-  readonly kind: 'ipc' | 'ws' | 'local'
+  /** `ws` = browser or a remote TUI, `local` = same process. */
+  readonly kind: 'ws' | 'local'
   invoke<T>(channel: string, ...args: unknown[]): Promise<T>
   send(channel: string, ...args: unknown[]): void
   /** Subscribe to an event channel; returns the unsubscribe. */
@@ -50,31 +48,11 @@ export interface BridgeTransport {
 
 export function createBridge(t: BridgeTransport) {
   return {
-    /** Only Electron has native file dialogs; other frontends type a path. */
     transport: t.kind,
   getState: (): Promise<VibeFlowState> =>
     t.invoke('vibeflow:getState'),
   /** Running app version (package.json version baked into the build). */
   getVersion: (): Promise<string> => t.invoke('app:getVersion'),
-  /** Restart the app — picks up a newer build installed over the bundle. */
-  relaunch: (): Promise<void> => t.invoke('app:relaunch'),
-  /** Fired once when a newer build has replaced the running bundle on disk. */
-  onUpdateAvailable: (callback: () => void): (() => void) => {
-    return t.on('update:available', () => callback())
-  },
-  getRemoteUpdateState: (): Promise<RemoteUpdateSnapshot> =>
-    t.invoke('remote-update:getState'),
-  checkForRemoteUpdate: (): Promise<RemoteUpdateSnapshot> =>
-    t.invoke('remote-update:check'),
-  downloadRemoteUpdate: (): Promise<RemoteUpdateSnapshot> =>
-    t.invoke('remote-update:download'),
-  installRemoteUpdate: (): Promise<void> =>
-    t.invoke('remote-update:install'),
-  onRemoteUpdateState: (
-    callback: (state: RemoteUpdateSnapshot) => void
-  ): (() => void) => {
-    return t.on('remote-update:state', (payload) => callback(payload as never))
-  },
   /**
    * Fired when an external write (e.g. CLI) changes the store backing file.
    * The main process debounces and emits the fresh state so the board can
@@ -107,9 +85,6 @@ export function createBridge(t: BridgeTransport) {
     ): (() => void) => {
       return t.on('github-auth:event', (payload) => callback(payload as never))
     },
-  /** Native folder picker — returns the chosen absolute path, or null. */
-  pickFolder: (): Promise<string | null> =>
-    t.invoke('dialog:pickFolder'),
   getGitInfo: (projectPath: string): Promise<GitInfo> =>
     t.invoke('git:getInfo', projectPath),
   /** Recently used project folders, each flagged when it no longer exists. */
@@ -184,9 +159,6 @@ export function createBridge(t: BridgeTransport) {
   /** Store dir + CLI paths for launch injection, so an agent can write cards. */
   getBoardCliLaunchInfo: (): Promise<BoardCliLaunchInfo> =>
     t.invoke('board:getCliLaunchInfo'),
-  /** Native picker for a library import source (dir for skills, file otherwise). */
-  pickLibrarySource: (kind: LibraryKind): Promise<string | null> =>
-    t.invoke('dialog:pickLibrarySource', kind),
   /** VibeFlow's own skill / prompt / script store. */
   listLibrary: (): Promise<LibraryEntry[]> => t.invoke('library:list'),
   importLibraryEntry: (payload: {

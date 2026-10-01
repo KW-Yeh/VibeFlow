@@ -1,7 +1,4 @@
-/**
- * Where core pushes events to one connected frontend. Electron's `WebContents`
- * satisfies it structurally; a WebSocket client is another implementation.
- */
+/** Where core pushes events to one connected frontend, e.g. a WebSocket client. */
 export interface EventSink {
   send(channel: string, payload: unknown): void
   /** True once the frontend is gone, so pushes can be skipped. */

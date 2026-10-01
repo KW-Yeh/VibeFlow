@@ -22,7 +22,6 @@ import type {
   LibraryKind,
   PrStatus,
   RecentProjectEntry,
-  RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
   TaskArtifact,
@@ -33,8 +32,8 @@ import type {
 } from '@/lib/types'
 
 /**
- * Returns the preload-exposed VibeFlow bridge, or null when it is unavailable
- * (e.g. during static export / running the renderer in a plain browser).
+ * Returns the bridge to core, or null when it is unavailable (e.g. during the
+ * static export, before `installWebBridge` runs).
  */
 function bridge() {
   if (typeof window === 'undefined') return null
@@ -45,11 +44,6 @@ export function hasBridge(): boolean {
   return bridge() !== null
 }
 
-/** Whether `pickFolder` / `pickLibrarySource` open a native dialog (Electron only). */
-export function hasNativePicker(): boolean {
-  return bridge()?.transport === 'ipc'
-}
-
 export async function loadState(): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.getState() : null
@@ -58,48 +52,6 @@ export async function loadState(): Promise<VibeFlowState | null> {
 export async function getAppVersion(): Promise<string | null> {
   const b = bridge()
   return b ? b.getVersion() : null
-}
-
-/** Restart the app to pick up a newer build (no-op without the bridge). */
-export async function relaunchApp(): Promise<void> {
-  const b = bridge()
-  if (b) await b.relaunch()
-}
-
-/**
- * Subscribe to the "a newer build replaced the running bundle" signal.
- * Returns an unsubscribe function (no-op when the bridge is absent).
- */
-export function onUpdateAvailable(callback: () => void): () => void {
-  const b = bridge()
-  return b ? b.onUpdateAvailable(callback) : () => {}
-}
-
-export async function getRemoteUpdateState(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.getRemoteUpdateState() : null
-}
-
-export async function checkForRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.checkForRemoteUpdate() : null
-}
-
-export async function downloadRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.downloadRemoteUpdate() : null
-}
-
-export async function installRemoteUpdate(): Promise<void> {
-  const b = bridge()
-  if (b) await b.installRemoteUpdate()
-}
-
-export function onRemoteUpdateState(
-  callback: (state: RemoteUpdateSnapshot) => void
-): () => void {
-  const b = bridge()
-  return b ? b.onRemoteUpdateState(callback) : () => {}
 }
 
 export async function persistBoard(board: BoardState): Promise<void> {
@@ -168,10 +120,8 @@ function promptForPath(message: string): string | null {
 }
 
 export async function pickFolder(): Promise<string | null> {
-  const b = bridge()
-  if (!b) return null
-  if (!hasNativePicker()) return promptForPath('輸入專案資料夾的絕對路徑')
-  return b.pickFolder()
+  if (!bridge()) return null
+  return promptForPath('輸入專案資料夾的絕對路徑')
 }
 
 export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
@@ -290,12 +240,8 @@ export async function getDecisions(taskId: string): Promise<TaskDecisions | null
 }
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {
-  const b = bridge()
-  if (!b) return null
-  if (!hasNativePicker()) {
-    return promptForPath(kind === 'skill' ? '輸入 skill 目錄的絕對路徑（需含 SKILL.md）' : `輸入 ${kind} 檔案的絕對路徑`)
-  }
-  return b.pickLibrarySource(kind)
+  if (!bridge()) return null
+  return promptForPath(kind === 'skill' ? '輸入 skill 目錄的絕對路徑（需含 SKILL.md）' : `輸入 ${kind} 檔案的絕對路徑`)
 }
 
 export async function listLibrary(): Promise<LibraryEntry[]> {

@@ -13,10 +13,9 @@ function fail(message, error) {
   if (error) console.error(error)
   console.error(
     [
-      '[node-pty] VibeFlow intentionally does not run `electron-builder install-app-deps` here.',
       '[node-pty] node-pty 1.1.0 ships prebuilt binaries for our Windows/macOS targets;',
-      '[node-pty] forcing an Electron native rebuild on Windows requires MSVC and fails in winpty.',
-      '[node-pty] If this breaks after bumping Electron or node-pty, check prebuild support first.',
+      '[node-pty] a from-source rebuild on Windows requires MSVC and fails in winpty.',
+      '[node-pty] If this breaks after bumping Node or node-pty, check prebuild support first.',
     ].join('\n')
   )
   process.exit(1)
@@ -189,6 +188,6 @@ try {
 // The exit waits for the write to flush — stdout is async when it points at a
 // Windows TTY, so a bare `process.exit()` can truncate the line.
 process.stdout.write(
-  `[node-pty] OK: source=${source}; helper=${helper}; mode=${helperMode}; smoke=${smokeToken}; Electron rebuild skipped.\n`,
+  `[node-pty] OK: source=${source}; helper=${helper}; mode=${helperMode}; smoke=${smokeToken}\n`,
   () => process.exit(0)
 )

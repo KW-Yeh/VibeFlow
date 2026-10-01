@@ -16,7 +16,7 @@ test('using core before a host registers its platform fails loudly', () => {
   assert.throws(() => getPlatform(), /setPlatform/)
 })
 
-test('appDataDir mirrors Electron per OS', () => {
+test('appDataDir matches the former Electron app per OS, so old boards carry over', () => {
   const home = os.homedir()
   const expected = {
     darwin: path.join(home, 'Library', 'Application Support'),
@@ -25,14 +25,13 @@ test('appDataDir mirrors Electron per OS', () => {
   assert.equal(appDataDir(), expected)
 })
 
-test('the dev profile is the " (development)" userData main.ts redirects to', () => {
+test('the dev profile is the former Electron dev app\'s " (development)" userData', () => {
   assert.equal(defaultUserDataDir('prod'), path.join(appDataDir(), 'vibeflow'))
   assert.equal(defaultUserDataDir('dev'), path.join(appDataDir(), 'vibeflow (development)'))
 })
 
-test('the Node platform has no picker and no source root unless told', async () => {
+test('the Node platform has no source root unless told', () => {
   setPlatform(createNodePlatform({ userDataDir: '/tmp/vf' }))
   assert.equal(getPlatform().userDataDir(), '/tmp/vf')
   assert.equal(getPlatform().sourceRoot(), null)
-  assert.equal(await getPlatform().pickPath({ title: 't', kind: 'directory' }), null)
 })

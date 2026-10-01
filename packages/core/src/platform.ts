@@ -3,16 +3,14 @@ import { homedir } from 'os'
 import path from 'path'
 
 /**
- * Everything core needs from the host it runs in. Core never imports electron:
- * the Electron shell registers an implementation backed by `app` / `shell` /
- * `dialog`, and a plain Node host (CLI, tests, the future Web UI server)
- * registers `createNodePlatform()`.
+ * Everything core needs from the host it runs in. The CLI host and tests
+ * register `createNodePlatform()`.
  */
 export interface PlatformServices {
   /**
    * Directory holding the app's persisted state (`vibeflow-state.json`, the
-   * library, …). Electron's `userData`; resolved per call because Electron
-   * redirects it in dev before anything is read.
+   * library, …). Same directory the former Electron app used as `userData`,
+   * so existing boards carry over.
    */
   userDataDir(): string
   /**
@@ -29,15 +27,6 @@ export interface PlatformServices {
   openExternal(url: string): Promise<void>
   /** Open a local path with the OS; resolves to an error string, empty on success. */
   openPath(target: string): Promise<string>
-  /** Ask the user for a path; `null` when cancelled or the host has no picker. */
-  pickPath(options: PickPathOptions): Promise<string | null>
-}
-
-export interface PickPathOptions {
-  title: string
-  kind: 'directory' | 'file'
-  /** Offer a "New Folder" button (directories only). */
-  allowCreate?: boolean
 }
 
 let _platform: PlatformServices | null = null
@@ -96,7 +85,7 @@ export interface NodePlatformOptions {
   cliEntry?: string | null
 }
 
-/** Services for a host without Electron. It has no native picker. */
+/** Services for a plain Node host. */
 export function createNodePlatform(options: NodePlatformOptions = {}): PlatformServices {
   const userData = options.userDataDir ?? defaultUserDataDir()
   const root = options.sourceRoot ?? null
@@ -109,6 +98,5 @@ export function createNodePlatform(options: NodePlatformOptions = {}): PlatformS
       if (err) throw new Error(err)
     },
     openPath: (target) => openWithOs(target),
-    pickPath: async () => null,
   }
 }

@@ -44,10 +44,6 @@ export type {
   GitHubCliAuthStatus,
 } from '../../packages/core/src/github-auth'
 export type {
-  RemoteUpdateSnapshot,
-  RemoteUpdateStatus,
-} from '../../main/helpers/remote-update'
-export type {
   SubAgentRun,
   SubAgentStatus,
 } from '../../packages/core/src/subagents'

@@ -5,10 +5,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * packages/core must run in any host — the Electron shell, the CLI, the
- * future Web UI server and TUI. Anything UI- or Electron-specific reaches core
- * through PlatformServices / EventSink instead of an import. The repo has no
- * linter, so this test is the guard.
+ * packages/core must run in any host — the CLI, the Web UI server and the TUI.
+ * Anything UI-specific reaches core through PlatformServices / EventSink
+ * instead of an import. The repo has no linter, so this test is the guard.
  */
 const coreSrc = fileURLToPath(new URL('../packages/core/src/', import.meta.url))
 
@@ -57,7 +56,7 @@ test('packages/core imports no electron, react or next', () => {
   assert.deepEqual(violations, [])
 })
 
-test('packages/core does not reach into main/ or renderer/', () => {
+test('packages/core does not reach outside its own sources', () => {
   const violations = coreFiles().flatMap((file) =>
     specifiers(fs.readFileSync(file, 'utf8'))
       .filter((spec) => spec.startsWith('.'))
@@ -74,7 +73,7 @@ test('packages/core does not reach into main/ or renderer/', () => {
  * Modules the renderer bundles at runtime. A value import here would drag
  * `fs` / `child_process` into the browser build, so they import types only.
  */
-const RENDERER_SAFE = ['launch.ts', 'client.ts', 'ws-transport.ts', 'remote-update-types.ts']
+const RENDERER_SAFE = ['launch.ts', 'client.ts', 'ws-transport.ts']
 
 test('renderer-bundled core modules import types only', () => {
   const violations = RENDERER_SAFE.flatMap((name) => {

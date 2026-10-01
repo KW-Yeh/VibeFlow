@@ -7,7 +7,6 @@ import { createNodePlatform, setPlatform } from '../../core/src/platform'
 import { createCore, type Core, type CoreHandlers } from '../../core/src/service'
 import { createSessionBackend } from '../../core/src/sessions'
 import { startWebServer, type WebServer } from '../../core/src/web-server'
-import type { RemoteUpdateSnapshot } from '../../core/src/remote-update-types'
 
 export interface HostOptions {
   userDataDir: string
@@ -30,22 +29,6 @@ export interface RunningHost {
 }
 
 export type HostStart = { kind: 'started'; host: RunningHost } | { kind: 'running'; lock: LockInfo }
-
-/** Answers for channels that only the Electron shell implements. */
-function webOnlyHandlers(version: string): CoreHandlers {
-  const unsupported = (): RemoteUpdateSnapshot => ({
-    status: 'unsupported',
-    currentVersion: version,
-    message: '以 npm 安裝的版本請執行 npm update -g vibeflow 更新。',
-  })
-  return {
-    'app:relaunch': () => undefined,
-    'remote-update:getState': unsupported,
-    'remote-update:check': unsupported,
-    'remote-update:download': unsupported,
-    'remote-update:install': () => undefined,
-  }
-}
 
 /** Wait for a host that holds the lock but has not written its port yet. */
 async function waitForPort(userDataDir: string, timeoutMs = 10_000): Promise<LockInfo | null> {
@@ -96,7 +79,6 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
     let stopping: Promise<void> | null = null
     const handlers: CoreHandlers = {
       ...core.handlers,
-      ...webOnlyHandlers(options.version),
       // `vibeflow shutdown`. Replies first, then stops.
       'host:shutdown': () => {
         setTimeout(() => void stop(), 50)

@@ -367,17 +367,6 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     },
     'settings:logoutGithubAuth': () => logoutGitHubCli(),
 
-    'dialog:pickFolder': () =>
-      getPlatform().pickPath({ title: '選擇本地專案資料夾', kind: 'directory', allowCreate: true }),
-
-    'dialog:pickLibrarySource': (kind) => {
-      const k = libraryKind(kind)
-      return getPlatform().pickPath({
-        title: k === 'skill' ? '選擇 skill 目錄（需含 SKILL.md）' : `選擇 ${k} 檔案`,
-        kind: k === 'skill' ? 'directory' : 'file',
-      })
-    },
-
     'env:detectAgents': () => detectAgents(),
 
     // A task does not exist yet when a project is picked, so these two are the
@@ -827,12 +816,3 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     },
   }
 }
-
-/** Channels that only mean something inside the Electron shell. */
-export const ELECTRON_ONLY_CHANNELS = [
-  'app:relaunch',
-  'remote-update:getState',
-  'remote-update:check',
-  'remote-update:download',
-  'remote-update:install',
-] as const

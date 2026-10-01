@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
  * (`packages/core/src/*.ts`) directly.
  *
  * The source files use extensionless relative imports (e.g. `from './env'`)
- * because they are bundled by webpack/nextron for the real build. Node's ESM
+ * because the renderer's bundler and the npm build's esbuild resolve them. Node's ESM
  * loader does NOT do extension resolution, so those imports fail under a plain
  * `node --test` run. This hook resolves normally first and, only when that
  * fails for a relative/absolute specifier with no recognised extension, retries

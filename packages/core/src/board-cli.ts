@@ -22,10 +22,9 @@ export interface BoardCliLaunchInfo {
 }
 
 /**
- * Resolve board-CLI access for a launch. The packaged app ships only
- * `package.json` + `app` (see electron-builder.yml), so the CLI exists in a repo
- * checkout only; callers get no `cliPath` otherwise and must degrade rather
- * than emit a command that cannot run.
+ * Resolve board-CLI access for a launch: the npm build's bundled CLI, else
+ * `scripts/vibeflow.mjs` in a repo checkout. Callers get no `cliPath` when
+ * neither exists and must degrade rather than emit a command that cannot run.
  */
 export async function boardCliLaunchInfo(): Promise<BoardCliLaunchInfo> {
   const storeDir = path.dirname(getStorePath())

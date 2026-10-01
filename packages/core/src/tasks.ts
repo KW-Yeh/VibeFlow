@@ -39,7 +39,7 @@ export interface CreateTaskInput {
   /** Absent = inherit the board-wide default (settings.autoMode). */
   autoMode?: boolean
   attachments?: AttachmentInput[]
-  /** CLI-only: explicit store directory; absent = use Electron getStore(). */
+  /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
 
@@ -161,7 +161,7 @@ export interface UpdateTaskInput {
   /** Empty string clears the description; absent leaves it untouched. */
   description?: string
   status?: ColumnId
-  /** CLI-only: explicit store directory; absent = use Electron getStore(). */
+  /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
 

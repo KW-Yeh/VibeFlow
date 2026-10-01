@@ -1,20 +1,15 @@
 {
   "private": true,
   "name": "vibeflow",
-  "description": "意圖驅動的本地開發看板 — Electron + Next.js + Claude Code CLI + Git Worktree",
+  "description": "意圖驅動的本地開發看板 — 本機 Web UI / TUI + Claude Code CLI + Git Worktree",
   "version": "3.1.0",
   "author": "KW-Yeh",
   "type": "module",
-  "main": "app/main.js",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "dev": "nextron --startup-delay 60000",
-    "build": "nextron build",
-    "build:webpack": "node scripts/build-webpack.mjs",
     "build:renderer:webpack": "cd renderer && NODE_ENV=production npx next build --webpack",
-    "rebuild": "./rebuild.sh",
     "check:node-pty": "node scripts/check-node-pty.mjs",
     "test": "node scripts/run-tests.mjs",
     "vibeflow": "node --experimental-strip-types --import ./test/support/register.mjs scripts/vibeflow.mjs",
@@ -26,8 +21,6 @@
     "doctor": "node --experimental-strip-types --import ./test/support/register.mjs scripts/vibeflow.mjs doctor"
   },
   "dependencies": {
-    "electron-serve": "^3.0.0",
-    "electron-updater": "^6.8.9",
     "motion": "^12.42.2",
     "node-pty": "^1.1.0",
     "peerjs": "^1.5.5",
@@ -45,15 +38,12 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "electron": "^41.0.3",
-    "electron-builder": "^26.8.1",
     "esbuild": "^0.28.2",
     "highlight.js": "^11.11.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.17.0",
     "mermaid": "^12.0.0",
     "next": "^16.2.1",
-    "nextron": "^10.0.0",
     "playwright-core": "^1.63.0",
     "postcss": "^8.5.8",
     "react": "^19.2.7",

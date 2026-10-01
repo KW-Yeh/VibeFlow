@@ -1,6 +1,6 @@
 # Tests
 
-Headless tests for the Electron main-process helpers — no Electron, no test
+Headless tests for `packages/core` and the CLI — no browser, no test
 framework, no extra dependencies. They run on Node's built-in test runner
 (`node:test`) with native TypeScript type-stripping, matching the
 "runtime verification" approach documented in the repo `CLAUDE.md`.
@@ -35,7 +35,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote) |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
-| `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reach into main/ or renderer/ |
+| `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no relative imports outside core |
 
 `test/support/` holds the harness: the resolve hook, its registrar, and
 `repo.mjs` (creates isolated throwaway git repos with deterministic identity so
@@ -43,8 +43,5 @@ tests never touch the user's git config or network).
 
 ## Known gaps (not covered here)
 
-- `main/helpers/*` — the Electron shell (window state, hot update,
-  electron-updater, the Electron `PlatformServices`). Best verified via the
-  CDP-driven live-app path in `CLAUDE.md`.
-- `main/main.ts` IPC handlers, `pty.ts`, and the renderer components — need an
-  Electron/DOM runtime; out of scope for the headless suite.
+- The renderer components — need a DOM runtime; out of scope for the headless
+  suite. `e2e/web.e2e.mjs` (`npm run test:e2e`) drives the Web UI end to end.
