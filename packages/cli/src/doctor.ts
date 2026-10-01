@@ -6,6 +6,7 @@ import { AGENT_CLIS, detectAgents } from '../../core/src/agents'
 import { execEnv } from '../../core/src/env'
 import { findGitBash } from '../../core/src/git-bash'
 import { hasTmux } from '../../core/src/tmux-backend'
+import { ensurePtySpawnHelper } from '../../core/src/pty-helper'
 
 const pexec = promisify(execFile)
 
@@ -60,6 +61,16 @@ function installHint(tool: 'git' | 'tmux' | 'node'): string {
 
 /** A pty can be spawned: node-pty's native binary loads on this Node. */
 async function checkNodePty(): Promise<Check> {
+  const unrepaired = ensurePtySpawnHelper()
+  if (unrepaired.length > 0) {
+    return {
+      id: 'node-pty',
+      name: 'node-pty',
+      level: 'fail',
+      detail: `spawn-helper 沒有執行權限：${unrepaired[0].error}`,
+      fix: unrepaired.map((f) => `chmod +x "${f.path}"`).join(' && '),
+    }
+  }
   try {
     const pty = await import('node-pty')
     const ok = await new Promise<boolean>((resolve) => {

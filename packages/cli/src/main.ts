@@ -9,6 +9,7 @@ import { recordRecentProject } from '../../core/src/recent-projects'
 import { createBridge } from '../../core/src/client'
 import { createLocalTransport } from '../../core/src/local-transport'
 import { TmuxBackend, hasTmux } from '../../core/src/tmux-backend'
+import { ensurePtySpawnHelper } from '../../core/src/pty-helper'
 import { runTaskCommand, resolveStorePath, TASK_USAGE } from './task-command'
 import { isWebDir, loginUrl, startHost, type HostOptions, type RunningHost } from './host'
 import { connectToHost } from './remote'
@@ -311,6 +312,7 @@ async function cmdOpen(values: Values, target: string | undefined, layout: Layou
 }
 
 export async function main(argv: string[]): Promise<number> {
+  ensurePtySpawnHelper()
   if (argv[0] === 'task') {
     if (argv.includes('--help') || argv.includes('-h') || argv.length === 1) {
       console.log(TASK_USAGE)
