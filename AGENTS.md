@@ -36,6 +36,7 @@ the project folder is chosen **per task** at creation time (there is no global
 
 | Task | Command | Notes |
 |---|---|---|
+| One-click start | `./start.command` | macOS/Linux; Finder double-click works. `npm ci` only when `package-lock.json` is newer than the last install, then `npm run build:web` and `npm start` (extra args pass through). |
 | Web UI from source | `npm start` | Builds `app/` once if missing, then runs the `vibeflow` CLI from source (`npm start -- tui`, `npm start -- --profile dev --no-open`). |
 | Any CLI command | `npm run vibeflow -- <command>` | `status`, `stop`, `shutdown`, `open <path>`, `doctor`, `tui`, `task …` — see `vibeflow --help` |
 | Build Web UI | `npm run build:web` | Static export of the renderer into `app/` (what `vibeflow` serves). `-- --webpack` on restricted runners. |
