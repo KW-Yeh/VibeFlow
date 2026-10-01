@@ -183,6 +183,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 ├── cli/src/               `vibeflow` command: main.ts (dispatch), host.ts (lock+core+server),
 │                          remote.ts (client of a running host), doctor.ts, task-command.ts
 ├── tui/src/index.ts       Ink board; Enter = tmux attach, or pty passthrough (Ctrl+] back)
+│   └── task-form.ts       n / e: the new-task and edit-task forms (Web UI fields; description in $EDITOR)
 └── web/                   placeholder — the Web UI is still /renderer
 
 renderer/                  Next.js app (Pages Router)

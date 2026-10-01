@@ -5,6 +5,7 @@ import { Box, Text, render, useApp, useInput, useStdout } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
 import type { BoardState, ColumnId, Task } from '../../core/src/store'
 import { TMUX_SOCKET } from '../../core/src/tmux-backend'
+import { editFormState, editInEditor, loadFormContext, newFormState, showForm } from './task-form'
 
 const h = React.createElement
 
@@ -75,6 +76,8 @@ export type TuiAction =
   | { type: 'quit' }
   | { type: 'attach'; task: Task }
   | { type: 'diff'; task: Task }
+  | { type: 'new' }
+  | { type: 'edit'; task: Task }
 
 export interface Selection {
   column: number
@@ -243,6 +246,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
       return
     }
     if (input === '?') return setHelp(true)
+    if (input === 'n') return leave({ type: 'new' })
     if (input === 'h' || key.leftArrow) return setSel((s) => clampSelection(board, { column: s.column - 1, index: s.index }))
     if (input === 'l' || key.rightArrow) return setSel((s) => clampSelection(board, { column: s.column + 1, index: s.index }))
     if (input === 'k' || key.upArrow) return setSel((s) => clampSelection(board, { ...s, index: s.index - 1 }))
@@ -257,6 +261,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
       return
     }
     if (!selected) return
+    if (input === 'e') return leave({ type: 'edit', task: selected })
     if (key.return) {
       if (!selected.worktreePath && !selected.projectPath) return setMessage('這張卡沒有工作目錄')
       if (COLUMNS[sel.column] === 'done') return setMessage('已完成的卡片沒有終端')
@@ -289,6 +294,8 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
           ? '          tmux：Ctrl+b d 回到看板（在 tmux 裡執行時按 Ctrl+b Ctrl+b d）'
           : '          Ctrl+] 回到看板'
       ),
+      h(Text, null, 'n         新增任務'),
+      h(Text, null, 'e         編輯選中的卡片'),
       h(Text, null, 'd         看 diff（有 delta 時為 side-by-side）'),
       h(Text, null, 'w         在瀏覽器開啟 Web UI'),
       h(Text, null, quitHelp(backend, opts.isHost)),
@@ -336,7 +343,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
         : h(
             Text,
             { dimColor: true },
-            `h/l 切欄 · j/k 選卡 · H/L 移動 · Enter 終端 · d diff · w Web · ? 說明 · q 離開   [${backend}]`
+            `h/l 切欄 · j/k 選卡 · H/L 移動 · Enter 終端 · n 新增 · e 編輯 · d diff · w Web · ? 說明 · q 離開   [${backend}]`
           )
   )
 }
@@ -458,6 +465,28 @@ async function openTerminal(opts: TuiOptions, task: Task): Promise<string | unde
   return ptyPassthrough(api, key, peek.scrollback)
 }
 
+/** The new / edit form, until it is saved or cancelled. Returns the board's message and selection. */
+async function runForm(opts: TuiOptions, action: { type: 'new' } | { type: 'edit'; task: Task }): Promise<{ message: string; sel?: Selection }> {
+  const { ctx, autoMode } = await loadFormContext(opts.api)
+  const pristine = action.type === 'new' ? newFormState(autoMode, ctx.agents) : editFormState(action.task, autoMode)
+  let state = pristine
+  let focus = 0
+  let note: string | undefined
+  for (;;) {
+    const r = await showForm(opts.api, ctx, state, pristine, focus, note)
+    note = undefined
+    if (r.type === 'cancel') return { message: '已取消' }
+    if (r.type === 'created') return { message: `已建立「${r.task.title}」`, sel: { column: 0, index: 0 } }
+    if (r.type === 'updated') return { message: '已儲存變更' }
+    process.stdout.write(CLEAR_SCREEN)
+    const edited = editInEditor(r.state.description)
+    state = 'text' in edited ? { ...r.state, description: edited.text } : r.state
+    if ('error' in edited) note = edited.error
+    focus = r.focus
+    process.stdout.write(CLEAR_SCREEN)
+  }
+}
+
 /** Run the board until the user quits. */
 export async function runTui(opts: TuiOptions): Promise<void> {
   let sel: Selection = { column: 1, index: 0 }
@@ -471,6 +500,12 @@ export async function runTui(opts: TuiOptions): Promise<void> {
     try {
       if (action.type === 'attach') message = await openTerminal(opts, action.task)
       else if (action.type === 'diff') showDiff(action.task)
+      else {
+        process.stdout.write(CLEAR_SCREEN)
+        const done = await runForm(opts, action)
+        message = done.message
+        if (done.sel) sel = done.sel
+      }
     } catch (err) {
       message = `失敗：${(err as Error).message}`
     }
