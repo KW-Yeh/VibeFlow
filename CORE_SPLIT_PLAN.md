@@ -215,7 +215,7 @@ TUI 本身跑在 tmux 外時，開啟卡片會暫停 TUI 畫面並 `tmux attach`
 
 - [ ] 發布到 npm（含 provenance），更新 README 的安裝說明。
 - [x] 完成 `vibeflow doctor`。
-- [ ] 決定 Electron 版的去留（見「時程估算與待決事項」）。
+- [x] 決定 Electron 版的去留：停止維護並移除（2026-10-01）。`main/`、electron-builder 打包與 CI 的安裝檔 job 都已刪除；core 仍讀同一個 appData 目錄與 electron-store 檔案格式，舊看板直接沿用。
 
 ## 安全性設計
 
@@ -324,8 +324,8 @@ Phase 1 開始前，先把 Electron 版的主要流程錄成端對端測試（�
 
 **待決事項**
 
-- [ ] Electron 版在 4.0.0 之後的定位：保留為選用包裝，或停止維護。
-- [ ] 是否把 Apple Developer ID 簽章與公證列入後續計畫（只在保留 Electron 時需要）。
+- [x] Electron 版在 4.0.0 之後的定位：停止維護，已移除（2026-10-01）。
+- [x] 是否把 Apple Developer ID 簽章與公證列入後續計畫：不需要，Electron 已移除。
 - [ ] TUI 的 diff 檢視要自己實作 side-by-side，或依賴使用者安裝 delta。
 - [ ] Windows 是否列為正式支援平台（影響 PtyBackend 的測試投入）。
 - [ ] LIBRARY\_PLAN 與 REMOTE\_SPEC 要在 Phase 1 之前完成，還是改在 core 上實作。

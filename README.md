@@ -5,10 +5,10 @@ VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。�
 ## 🛠 核心技術棧 (Tech Stack)
 
 * **核心**: `packages/core` — 任務、git worktree、agent 指令組裝、session 管理，不依賴任何 UI
-* **前端**: 本機 Web UI（Next.js 靜態輸出，由 core 提供）· 終端機 TUI（Ink）· Electron 桌面版（選用）
+* **前端**: 本機 Web UI（Next.js 靜態輸出，由 core 提供）· 終端機 TUI（Ink）
 * **看板**: `@hello-pangea/dnd`
 * **終端**: `xterm.js` ↔ WebSocket ↔ core；session 由 tmux（macOS / Linux）或 `node-pty` 持有
-* **儲存**: core 自有的 JSON store（`packages/core/src/json-store.ts`，沿用原 electron-store 的檔案）
+* **儲存**: core 自有的 JSON store（`packages/core/src/json-store.ts`，沿用舊版桌面 App 的 electron-store 檔案，舊看板會直接接上）
 
 ## 📦 安裝與執行
 
@@ -17,7 +17,6 @@ VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。�
 | 免安裝試用 | `npx vibeflow` | 第一次接觸的人 |
 | 全域安裝 | `npm i -g vibeflow`，之後執行 `vibeflow` | 日常使用者 |
 | 從原始碼執行 | `git clone` → `npm install` → `npm start` | 貢獻者、想改程式的人 |
-| 桌面版（Electron） | 從 [GitHub Releases](https://github.com/KW-Yeh/VibeFlow/releases) 下載 | 偏好獨立視窗的人 |
 
 `vibeflow` 會在本機啟動 core，並用瀏覽器開啟 Web UI。它不是需要簽章的 App，所以不會被 Gatekeeper 或 SmartScreen 攔下。
 
@@ -60,32 +59,21 @@ core 的 Web 伺服器能啟動 agent 和寫入終端機，因此：
 - 鎖檔權限為 0600。
 - API 只接受 core 認得的 task id，不接受任意路徑或指令。
 
-### 🖥 桌面版（Electron）注意事項
-
-- **macOS**：App 僅做 ad-hoc 簽章、未經 Apple 公證，首次開啟會被 Gatekeeper 攔下。請對 App **按右鍵 → 打開**，或執行：
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/VibeFlow.app
-  ```
-- **Windows**：未簽章，SmartScreen 會跳出警告，點「其他資訊 → 仍要執行」。
-- **Linux**：下載後先 `chmod +x VibeFlow-*.AppImage` 再執行。
-
 ## 🚢 發佈新版本（Maintainers）
 
 CI（`.github/workflows/release.yml`）在每個 PR 上只跑第 1 步；推送 `v*` tag 時會：
 
 1. 在 Ubuntu、macOS、Windows 上跑 typecheck、`npm test`、Web UI 端對端測試與 `vibeflow doctor`。
 2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`（需要 `NPM_TOKEN` secret）。
-3. 桌面版保留期間，同時打包三平台安裝檔並上傳到 **draft** GitHub Release。
 
 ```bash
 # 1. 更新 package.json 的 version 並 commit
 # 2. 上 tag 並推送
 git tag v4.0.0
 git push origin v4.0.0
-# 3. 到 GitHub Releases 頁面檢查 draft 的產物，確認後按 Publish release
 ```
 
-本地驗證：`npm run build:npm && npm pack ./dist-npm`（npm 套件），`npm run build`（桌面版，產物在 `dist/`）。
+本地驗證：`npm run build:npm && npm pack ./dist-npm`。
 
 ## 📂 專案資料結構與 Worktree 隔離設計
 
@@ -113,7 +101,7 @@ VibeFlow 會在您開啟的專案中建立一個隱藏的暫存空間，確保�
 
 ### 2. 交互執行 (Execution & Live Terminal)
 
-* **PTY 整合**: 當卡片拖入 `In Progress` 或點擊執行，Electron 主進程透過 `node-pty` 在該 Worktree 路徑啟動 `claude` CLI。
+* **PTY 整合**: 當卡片拖入 `In Progress` 或點擊執行，core 在該 Worktree 路徑啟動 `claude` CLI（tmux session，或沒有 tmux 時的 `node-pty`）。
 * **互動模式 (Type A)**:
    * 卡片展開為 **互動式終端機**。
    * 使用者可直接在畫面上回答 Claude 的提問（例如：`y/n` 或確認指令）。
@@ -152,6 +140,6 @@ VibeFlow 會在您開啟的專案中建立一個隱藏的暫存空間，確保�
 
 ## ⚠️ 開發提醒
 
-1. **Native Modules**: `node-pty` uses packaged prebuilt binaries where available. Do not run `electron-builder install-app-deps` / `electron-rebuild` for routine verification; use `npm run check:node-pty` to confirm the installed binary loads.
+1. **Native Modules**: `node-pty` uses packaged prebuilt binaries where available; use `npm run check:node-pty` to confirm the installed binary loads.
 2. **互動處理**: 確保 `xterm.js` 的輸入能即時傳回 PTY，這對於 Claude Code 的互動式提問（Type A）至關重要。
-3. **環境變數**: Electron 呼叫 `claude` 時需手動注入使用者的 `PATH`，否則會找不到指令。
+3. **環境變數**: core 呼叫 `claude` 時需手動注入使用者的 `PATH`（`packages/core/src/env.ts`），否則會找不到指令。

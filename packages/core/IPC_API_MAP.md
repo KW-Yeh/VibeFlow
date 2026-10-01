@@ -5,12 +5,17 @@ the Electron main process handled, and every event it pushed.
 
 **Status (Phase 2 done):** the channel names are kept as the wire protocol.
 The table now lives in `createCore()` (`service.ts`), and every transport
-exposes exactly that table. `main.ts` registers it on `ipcMain`, and
-`web-server.ts` serves it over the WebSocket. `client.ts` builds the typed
+exposes exactly that table: `web-server.ts` serves it over the WebSocket, and
+`local-transport.ts` calls it in-process for the TUI. `client.ts` builds the typed
 `VibeFlowApi` (`window.vibeflow`) over any transport. Every **Path in** row
 below has been reshaped: those handlers take the task id and resolve paths
 and commands inside core. The only exceptions are project picking and library
 import, where no task exists yet. The two **drop** rows are gone.
+
+**Status (Electron removed):** the desktop shell is gone, and so are the
+**electron** rows (`app:relaunch`, `remote-update:*`, `update:available`) and
+both `dialog:*` channels: the Web UI asks for a typed path instead of a native
+picker.
 
 Channels added since the inventory:
 
@@ -33,7 +38,7 @@ the channel lands on:
 - **core**: becomes a `VibeFlowApi` method, the same for every frontend.
 - **platform**: goes through `PlatformServices` (`packages/core/src/platform.ts`).
   Each host implements it in its own way.
-- **electron**: meaningful only in the desktop shell. Stays in `main/`.
+- **electron**: meaningful only in the former desktop shell. Removed with it.
 - **drop**: no caller in the renderer.
 
 **Path in** marks a handler that takes a filesystem path or a command from the
@@ -129,19 +134,18 @@ are.
 
 | Channel | Where | Replacement | Notes |
 |---|---|---|---|
-| `dialog:pickFolder` | platform | `PlatformServices.pickPath` | Returns `null` in the Node platform. The Web UI uses the path input plus the recent-projects list |
-| `dialog:pickLibrarySource` | platform | `PlatformServices.pickPath` | Same |
+| `dialog:pickFolder` | removed | | The Web UI uses the path input plus the recent-projects list |
+| `dialog:pickLibrarySource` | removed | | The Web UI asks for a typed path |
 | `shell:openExternal` | platform | `PlatformServices.openExternal` | The browser frontend can simply `window.open` |
 | `app:getVersion` | core | `getVersion()` | Read from `package.json` instead of `app.getVersion()` |
-| `app:relaunch` | electron | | Hot update of the `.app` |
-| `remote-update:getState` / `check` / `download` / `install` | electron | | electron-updater. npm installs update through npm |
-| event `remote-update:state` / `update:available` | electron | | |
+| `app:relaunch` | electron (removed) | | Hot update of the `.app` |
+| `remote-update:getState` / `check` / `download` / `install` | electron (removed) | | electron-updater. npm installs update through npm |
+| event `remote-update:state` / `update:available` | electron (removed) | | |
 | event `state:changed` | core | `on('task:changed')` … | Today this pushes the full state after a CLI write. Also emit it after every core mutation, so a second frontend stays in sync |
 | `message` | drop | | nextron scaffold echo |
 
 ## Pushed events via `EventSink`
 
 `pty.ts` and `chat-session.ts` now take an `EventSink`
-(`packages/core/src/events.ts`) instead of Electron's `WebContents`.
-`WebContents` satisfies that interface structurally, so `main.ts` still passes
-`event.sender`. A WebSocket connection will be the second implementation.
+(`packages/core/src/events.ts`) instead of Electron's `WebContents`; the
+WebSocket connections behind `EventBus` implement it.
