@@ -658,8 +658,9 @@ export function SideMenu({
             initial="hidden"
             animate="visible"
             variants={contentVariants}
-            className="text-[15px] font-semibold tracking-tight text-foreground"
+            className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground"
           >
+            <img src="/logo.svg" alt="" className="size-5" />
             VibeFlow
           </motion.span>
         )}
@@ -667,10 +668,14 @@ export function SideMenu({
           aria-label={collapsed ? '展開選單' : '收合選單'}
           onClick={onToggleCollapse}
           title={collapsed ? '展開選單' : '收合選單'}
-          className="p-1"
+          className="group p-1"
         >
           {collapsed ? (
-            <PanelLeftOpen className="size-4" />
+            <>
+              {/* The rail has room for one control: the logo, which turns into the expand icon on hover or focus. */}
+              <img src="/logo.svg" alt="" className="size-5 group-hover:hidden group-focus-visible:hidden" />
+              <PanelLeftOpen className="hidden size-4 group-hover:block group-focus-visible:block" />
+            </>
           ) : (
             <PanelLeftClose className="size-4" />
           )}
