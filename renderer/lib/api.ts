@@ -20,20 +20,20 @@ import type {
   GitHubCliAuthStatus,
   LibraryEntry,
   LibraryKind,
-  LibraryLaunchInfo,
   PrStatus,
   RecentProjectEntry,
-  RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
   TaskArtifact,
   TaskDecisions,
   VibeFlowState,
+  LaunchIntent,
+  StartResult,
 } from '@/lib/types'
 
 /**
- * Returns the preload-exposed VibeFlow bridge, or null when it is unavailable
- * (e.g. during static export / running the renderer in a plain browser).
+ * Returns the bridge to core, or null when it is unavailable (e.g. during the
+ * static export, before `installWebBridge` runs).
  */
 function bridge() {
   if (typeof window === 'undefined') return null
@@ -52,48 +52,6 @@ export async function loadState(): Promise<VibeFlowState | null> {
 export async function getAppVersion(): Promise<string | null> {
   const b = bridge()
   return b ? b.getVersion() : null
-}
-
-/** Restart the app to pick up a newer build (no-op without the bridge). */
-export async function relaunchApp(): Promise<void> {
-  const b = bridge()
-  if (b) await b.relaunch()
-}
-
-/**
- * Subscribe to the "a newer build replaced the running bundle" signal.
- * Returns an unsubscribe function (no-op when the bridge is absent).
- */
-export function onUpdateAvailable(callback: () => void): () => void {
-  const b = bridge()
-  return b ? b.onUpdateAvailable(callback) : () => {}
-}
-
-export async function getRemoteUpdateState(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.getRemoteUpdateState() : null
-}
-
-export async function checkForRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.checkForRemoteUpdate() : null
-}
-
-export async function downloadRemoteUpdate(): Promise<RemoteUpdateSnapshot | null> {
-  const b = bridge()
-  return b ? b.downloadRemoteUpdate() : null
-}
-
-export async function installRemoteUpdate(): Promise<void> {
-  const b = bridge()
-  if (b) await b.installRemoteUpdate()
-}
-
-export function onRemoteUpdateState(
-  callback: (state: RemoteUpdateSnapshot) => void
-): () => void {
-  const b = bridge()
-  return b ? b.onRemoteUpdateState(callback) : () => {}
 }
 
 export async function persistBoard(board: BoardState): Promise<void> {
@@ -150,9 +108,20 @@ export function onGithubAuthEvent(
   return b ? b.onGithubAuthEvent(callback) : () => {}
 }
 
+/**
+ * Ask for a path by typing it: the browser has no dialog that reveals an
+ * absolute path, and core runs on this same machine, so the typed path is the
+ * one it opens.
+ */
+function promptForPath(message: string): string | null {
+  if (typeof window === 'undefined') return null
+  const typed = window.prompt(message)?.trim()
+  return typed ? typed : null
+}
+
 export async function pickFolder(): Promise<string | null> {
-  const b = bridge()
-  return b ? b.pickFolder() : null
+  if (!bridge()) return null
+  return promptForPath('輸入專案資料夾的絕對路徑')
 }
 
 export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {
@@ -271,8 +240,8 @@ export async function getDecisions(taskId: string): Promise<TaskDecisions | null
 }
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {
-  const b = bridge()
-  return b ? b.pickLibrarySource(kind) : null
+  if (!bridge()) return null
+  return promptForPath(kind === 'skill' ? '輸入 skill 目錄的絕對路徑（需含 SKILL.md）' : `輸入 ${kind} 檔案的絕對路徑`)
 }
 
 export async function listLibrary(): Promise<LibraryEntry[]> {
@@ -339,13 +308,6 @@ export async function deleteLibraryEntry(
 ): Promise<boolean> {
   const b = bridge()
   return b ? b.deleteLibraryEntry({ kind, name }) : false
-}
-
-export async function getLibraryLaunchInfo(
-  worktreePath?: string
-): Promise<LibraryLaunchInfo | null> {
-  const b = bridge()
-  return b ? b.getLibraryLaunchInfo(worktreePath) : null
 }
 
 export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {
@@ -434,7 +396,6 @@ export async function chatLoad(taskId: string): Promise<Conversation | null> {
 
 export async function chatSend(payload: {
   taskId: string
-  worktreePath: string
   text: string
   attachments?: AttachmentInput[]
   sessionId: string
@@ -442,7 +403,6 @@ export async function chatSend(payload: {
   systemPrompt: string
   agentCli?: AgentCliId
   model: string
-  workspacePath?: string
 }): Promise<void> {
   bridge()?.chat.send(payload)
 }
@@ -467,15 +427,20 @@ export function onChatPhase(callback: (phase: ChatPhase) => void): () => void {
 
 // --- Terminal API wrappers (sessionKey-aware) ---
 
-/** Start a PTY session. `sessionKey` defaults to `taskId`. */
-export async function termStart(
-  taskId: string,
-  cwd: string,
-  command?: string,
+/**
+ * Start a task's terminal: its agent when `launch` is given, else a shell.
+ * Core resolves the cwd and builds the command.
+ */
+export async function termStart(payload: {
+  taskId: string
   sessionKey?: string
-): Promise<{ pid: number } | null> {
+  launch?: LaunchIntent
+  fresh?: boolean
+  cols?: number
+  rows?: number
+}): Promise<StartResult | null> {
   const b = bridge()
-  return b ? b.term.start(taskId, cwd, command, sessionKey) : null
+  return b ? b.term.start(payload) : null
 }
 
 /** Send keystrokes to the session identified by `sessionKey`. */
@@ -493,13 +458,16 @@ export function termKill(sessionKey: string): void {
   bridge()?.term.kill(sessionKey)
 }
 
-/** Whether a pinned Claude conversation already exists on disk for `cwd`. */
-export async function termSessionExists(
-  cwd: string,
-  sessionId: string
-): Promise<boolean> {
+/** Whether the task's pinned Claude conversation already exists on disk. */
+export async function termSessionExists(taskId: string): Promise<boolean> {
   const b = bridge()
-  return b ? b.term.sessionExists(cwd, sessionId) : false
+  return b ? b.term.sessionExists(taskId) : false
+}
+
+/** Which session backend runs terminals, and the sessions it has running. */
+export async function listSessions(): Promise<{ backend: 'pty' | 'tmux'; sessions: string[] } | null> {
+  const b = bridge()
+  return b ? b.term.list() : null
 }
 
 /**

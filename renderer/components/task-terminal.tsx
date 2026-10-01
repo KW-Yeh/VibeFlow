@@ -3,7 +3,8 @@ import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
-import { termInput, writeAttachments } from '@/lib/api'
+import { hasBridge, termInput, termKill, termStart, writeAttachments } from '@/lib/api'
+import type { LaunchIntent } from '@/lib/types'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
 import { Bot, Undo2 } from 'lucide-react'
@@ -19,10 +20,10 @@ interface TaskTerminalProps {
   /** Working directory: the task's worktree, or the project root as fallback. */
   cwd: string | null
   /**
-   * Shell command to launch once the PTY is ready (e.g. the Claude auto-run).
-   * Sent at most once per distinct `launchNonce` value.
+   * Agent launch to run once the PTY is ready (e.g. the Claude auto-run). Core
+   * builds the command from it. Sent at most once per distinct `launchNonce`.
    */
-  launchCommand?: string | null
+  launchCommand?: LaunchIntent | null
   /** Bump whenever a new agent command needs to replace the current PTY. */
   launchNonce?: number
   /**
@@ -73,7 +74,7 @@ export function TaskTerminal({
   const readyRef = useRef(false)
   const sentNonceRef = useRef(-1)
   const runningCommandRef = useRef(false)
-  const launchCmdRef = useRef<string | null | undefined>(launchCommand)
+  const launchCmdRef = useRef<LaunchIntent | null | undefined>(launchCommand)
   const launchNonceRef = useRef(launchNonce)
   launchCmdRef.current = launchCommand
   launchNonceRef.current = launchNonce
@@ -89,15 +90,11 @@ export function TaskTerminal({
   const onInteractRef = useRef(onInteract)
   onInteractRef.current = onInteract
 
-  // Run the launch command AS the login shell's argument (`zsh -lic <cmd>`)
-  // rather than typing it into the interactive line editor. The command is often
-  // multi-KB (full system prompt + task prompt); pasting that into ZLE stalls
-  // under the user's .zshrc plugins (syntax-highlighting / autosuggestions /
-  // bracketed-paste-magic) and the trailing CR never submits. -c skips ZLE
-  // entirely. The trailing CR (a "submit" key for typing) must be stripped — as
-  // a -c argument it corrupts the final shell word.
+  // Core runs the launch command AS the login shell's argument (`zsh -lic <cmd>`)
+  // rather than typing it into the interactive line editor: the command is often
+  // multi-KB and pasting it into ZLE stalls under the user's .zshrc plugins.
   const launchWithCommand = useCallback(
-    (cmd: string) => {
+    (launch: LaunchIntent) => {
       const startCwd = cwdRef.current
       const term = termRef.current
       if (!startCwd) return
@@ -105,8 +102,7 @@ export function TaskTerminal({
       // the already-mounted terminal and starts with a fresh buffer.
       readyRef.current = false
       runningCommandRef.current = true
-      void window.vibeflow?.term
-        .start(taskId, startCwd, cmd.replace(/\r$/, ''), sessionKey, term?.cols, term?.rows)
+      void termStart({ taskId, sessionKey, launch, cols: term?.cols, rows: term?.rows })
         .then(() => {
           readyRef.current = true
           termRef.current?.focus()
@@ -118,12 +114,10 @@ export function TaskTerminal({
   const restartInteractiveShell = useCallback(() => {
     const startCwd = cwdRef.current
     const term = termRef.current
-    const api = typeof window !== 'undefined' ? window.vibeflow : undefined
-    if (!startCwd || !term || !api || readOnlyRef.current) return
+    if (!startCwd || !term || !hasBridge() || readOnlyRef.current) return
     readyRef.current = false
     runningCommandRef.current = false
-    void api.term
-      .start(taskId, startCwd, undefined, sessionKey, term.cols, term.rows)
+    void termStart({ taskId, sessionKey, cols: term.cols, rows: term.rows })
       .then(() => {
         readyRef.current = true
         term.focus()
@@ -260,7 +254,7 @@ export function TaskTerminal({
 
       const api = typeof window !== 'undefined' ? window.vibeflow : undefined
       if (!api) {
-        term.writeln('⚠️  Electron bridge 無法使用（僅在 app 內可開啟終端）。')
+        term.writeln('⚠️  未連線到 VibeFlow core，無法開啟終端。')
         return
       }
       // A Done card mounted fresh (e.g. after reload): show a note, no PTY.
@@ -280,14 +274,13 @@ export function TaskTerminal({
       const armedCmd = !readOnlyRef.current ? launchCmdRef.current : null
       if (armedCmd) sentNonceRef.current = launchNonceRef.current
       runningCommandRef.current = Boolean(armedCmd)
-      const { scrollback } = await api.term.start(
+      const { scrollback } = await api.term.start({
         taskId,
-        startCwd,
-        armedCmd ? armedCmd.replace(/\r$/, '') : undefined,
         sessionKey,
-        term.cols,
-        term.rows
-      )
+        launch: armedCmd ?? undefined,
+        cols: term.cols,
+        rows: term.rows,
+      })
       // Replay buffered output from before this terminal instance was mounted
       // (e.g. after the component unmounted while the agent was still running).
       if (scrollback) term.write(scrollback)
@@ -391,7 +384,7 @@ export function TaskTerminal({
       offExit?.()
       resizeObs?.disconnect()
       // Kill this session's PTY on unmount.
-      window.vibeflow?.term.kill(sessionKey)
+      termKill(sessionKey)
       termRef.current?.dispose()
       termRef.current = null
     }

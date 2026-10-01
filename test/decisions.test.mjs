@@ -9,7 +9,7 @@ import {
   decisionsPath,
   deleteDecisions,
   readDecisions,
-} from '../main/helpers/decisions.ts'
+} from '../packages/core/src/decisions.ts'
 
 async function tmpDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'vf-decisions-'))

@@ -21,7 +21,7 @@ import {
   setEntryEnabled,
   skillNamesIn,
   updateEntry,
-} from '../main/helpers/library.ts'
+} from '../packages/core/src/library.ts'
 
 async function tmpDir(prefix = 'vf-library-') {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix))
@@ -98,7 +98,7 @@ test('createEntry — writes each kind to its own directory and lists it back', 
   assert.equal(prompt.description, 'a prompt', 'other kinds carry the typed description')
 })
 
-test('createEntry — a script is executable, so an agent can run it as a tool', async () => {
+test('createEntry — a script is executable, so an agent can run it as a tool', { skip: process.platform === 'win32' && 'Windows has no POSIX execute bit' }, async () => {
   const root = await tmpDir()
   createEntry(root, 'script', 'run.sh', '#!/bin/sh\n')
   const mode = fsSync.statSync(entryPath(root, 'script', 'run.sh')).mode

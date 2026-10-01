@@ -47,10 +47,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
-import {
-  buildAgentCommand,
-  taskArtifactsDir,
-} from '@/lib/claude'
+import { taskArtifactsDir } from '@/lib/claude'
 import {
   retainExistingDiffContents,
   sameDiffEntry,
@@ -72,16 +69,15 @@ import { cn } from '@/lib/utils'
 import type {
   ArtifactContent,
   ArtifactKind,
-  BoardCliLaunchInfo,
   ColumnId,
   DiffEntry,
   DiffFile,
-  LibraryLaunchInfo,
   SubAgentRun,
   Task,
   TaskArtifact,
   TaskDecisions,
   TaskOutcome,
+  LaunchIntent,
 } from '@/lib/types'
 
 /**
@@ -136,14 +132,14 @@ const POLL_INTERVAL_MS = 3000
 
 /**
  * Cap the diff list is truncated at, so the UI can say so instead of silently
- * showing a short list. Must match MAX_DIFF_FILES in main/helpers/git.ts (value
+ * showing a short list. Must match MAX_DIFF_FILES in packages/core/src/git.ts (value
  * duplicated because the renderer cannot runtime-import main-process modules).
  */
 const MAX_DIFF_FILES = 80
 
 /**
  * Width of the workspace's right column, in px. Renderer-local UI state (same
- * rationale as the board splitter: no electron-store schema to migrate), held
+ * rationale as the board splitter: no store schema to migrate), held
  * as a CSS variable on <html> rather than React state so a drag repaints
  * without re-rendering every mounted task panel — and so all of them stay in
  * sync, since they read the same variable.
@@ -201,7 +197,7 @@ function isVerificationShot(artifact: TaskArtifact): boolean {
 }
 
 interface LaunchEntry {
-  command: string
+  launch: LaunchIntent
   nonce: number
 }
 
@@ -1440,7 +1436,7 @@ export function TaskWorkspacePanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [confirmDelete])
   const canLaunch = column === 'backlog'
-  const launchCommand = launch?.command
+  const launchCommand = launch?.launch
   const launchNonce = launch?.nonce ?? 0
 
   const requestLaunch = () => {
@@ -1720,36 +1716,5 @@ export function TaskWorkspacePanel({
       </main>
       )}
     </div>
-  )
-}
-
-export function buildWorkspaceLaunchCommand({
-  task,
-  systemPrompt,
-  workspacePath,
-  resume,
-  includeTaskPrompt,
-  library,
-  boardCli,
-  autoMode,
-}: {
-  task: Task
-  systemPrompt: string
-  workspacePath?: string
-  resume?: boolean
-  /** False starts an agent with settings + Artifact context, without card text. */
-  includeTaskPrompt?: boolean
-  /** VibeFlow library delivery; undefined → nothing enabled. */
-  library?: LibraryLaunchInfo
-  /** Board access for the agent; undefined → it cannot create or edit cards. */
-  boardCli?: BoardCliLaunchInfo
-  /** The card's Auto Mode — whether the agent may act without asking. */
-  autoMode?: boolean
-}): string {
-  return buildAgentCommand(
-    task,
-    systemPrompt,
-    { resume, includeTaskPrompt, library, boardCli, autoMode },
-    workspacePath
   )
 }

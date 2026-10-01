@@ -1,4 +1,5 @@
-import { FolderOpen, TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
+import { CornerDownLeft, FolderOpen, TriangleAlert } from 'lucide-react'
 
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
@@ -46,6 +47,13 @@ export function ProjectFolderPicker({
   for (const p of options) nameCounts.set(p.name, (nameCounts.get(p.name) ?? 0) + 1)
 
   const missing = isProjectMissing(recentProjects, projectPath)
+  const [typedPath, setTypedPath] = useState('')
+  const applyTypedPath = () => {
+    const next = typedPath.trim()
+    if (!next) return
+    onSelect(next)
+    setTypedPath('')
+  }
 
   return (
     <div className="space-y-1.5">
@@ -78,6 +86,34 @@ export function ProjectFolderPicker({
           className="rounded-md border border-border p-2"
         >
           <FolderOpen className="size-4" />
+        </IconButton>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          name="project-path"
+          aria-label="輸入專案資料夾路徑"
+          placeholder="或輸入資料夾的絕對路徑，按 Enter 套用"
+          value={typedPath}
+          onChange={(e) => setTypedPath(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              applyTypedPath()
+            }
+          }}
+          disabled={disabled}
+          spellCheck={false}
+          className={cn(fieldClass, 'min-w-0 flex-1 font-mono text-sm')}
+        />
+        <IconButton
+          aria-label="套用輸入的路徑"
+          title="套用輸入的路徑"
+          onClick={applyTypedPath}
+          disabled={disabled || typedPath.trim() === ''}
+          className="rounded-md border border-border p-2"
+        >
+          <CornerDownLeft className="size-4" />
         </IconButton>
       </div>
       {projectPath && !missing && (

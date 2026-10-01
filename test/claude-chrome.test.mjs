@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildAgentCommand } from '../renderer/lib/claude.ts'
+import { buildAgentCommand } from '../packages/core/src/launch.ts'
 
 const CLAUDE_TASK = {
   id: 'abcd1234',

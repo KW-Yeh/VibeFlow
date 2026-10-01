@@ -16,19 +16,11 @@ import {
 
 import { BoardColumns } from '@/components/board-columns'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
-import {
-  TaskWorkspacePanel,
-  buildWorkspaceLaunchCommand,
-} from '@/components/task-workspace-panel'
+import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import {
-  executorSessionId,
-} from '@/lib/claude'
-import {
-  getBoardCliLaunchInfo,
-  getLibraryLaunchInfo,
   resetTaskRun,
   termSessionExists,
 } from '@/lib/api'
@@ -40,12 +32,12 @@ import type {
   AgentEffort,
   AgentConnections,
   AttachmentInput,
-  BoardCliLaunchInfo,
   BoardState,
   ColumnId,
   GitInfo,
   RecentProjectEntry,
   SubAgentRun,
+  LaunchIntent,
   Task,
 } from '@/lib/types'
 
@@ -59,8 +51,6 @@ interface KanbanBoardProps {
   autoMode: boolean
   /** Workstation root, shown by the create form as the worktree's destination. */
   workstationPath?: string
-  /** Custom system prompt for launches ('' = Artifact instructions only). */
-  systemPrompt: string
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
   /** Currently selected task id (shown in the workspace panel). */
@@ -102,12 +92,12 @@ interface KanbanBoardProps {
 }
 
 interface LaunchEntry {
-  command: string
+  launch: LaunchIntent
   nonce: number
 }
 
 /** Height of the board pane, in px. Renderer-local UI state — deliberately not
-    in the electron store, so it needs no schema migration. */
+    in the core store, so it needs no schema migration. */
 const SPLIT_STORAGE_KEY = 'vibeflow:board-split-px'
 const MIN_BOARD_HEIGHT = 180
 const MIN_WORKSPACE_HEIGHT = 260
@@ -170,7 +160,6 @@ export function KanbanBoard({
   onDeleteTask,
   autoMode,
   workstationPath,
-  systemPrompt,
   subAgents,
   selectedTaskId,
   onSelectTask,
@@ -211,15 +200,6 @@ export function KanbanBoard({
     reducedMotion,
   })
 
-  // Store dir and CLI paths are fixed for the app session too — an agent uses
-  // them to create sub-cards and rewrite its own card.
-  const boardCliRef = useRef<BoardCliLaunchInfo | null>(null)
-  useEffect(() => {
-    getBoardCliLaunchInfo().then((info) => {
-      if (info) boardCliRef.current = info
-    })
-  }, [])
-
   const markMounted = (taskId: string) =>
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
@@ -231,37 +211,15 @@ export function KanbanBoard({
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
-  // Direct command dispatch — used by revise (which needs its own full command).
-  const armTerminalCommand = (taskId: string, command: string) => {
-    markMounted(taskId)
+  // Arm a launch for the task's terminal; bumping the nonce fires it. Core
+  // builds the command (library, board CLI, prompts) at launch time, so an
+  // entry enabled in the library takes effect on the very next run.
+  const armLaunch = async (task: Task, launch: LaunchIntent = {}) => {
+    markMounted(task.id)
     setTerminalLaunch((prev) => ({
       ...prev,
-      [taskId]: { command, nonce: (prev[taskId]?.nonce ?? 0) + 1 },
+      [task.id]: { launch, nonce: (prev[task.id]?.nonce ?? 0) + 1 },
     }))
-  }
-
-  // Library launch info is fetched per launch, not cached like the board CLI:
-  // enabling
-  // an entry must take effect on the very next run, and the delivery trees are
-  // rebuilt by the same call.
-  const armLaunch = async (
-    task: Task,
-    opts?: { resume?: boolean; includeTaskPrompt?: boolean }
-  ) => {
-    const library = await getLibraryLaunchInfo(task.worktreePath)
-    armTerminalCommand(
-      task.id,
-      buildWorkspaceLaunchCommand({
-        task,
-        systemPrompt,
-        workspacePath: task.workspacePath,
-        resume: opts?.resume,
-        includeTaskPrompt: opts?.includeTaskPrompt,
-        library: library ?? undefined,
-        boardCli: boardCliRef.current ?? undefined,
-        autoMode: task.autoMode ?? autoMode,
-      })
-    )
   }
 
   // Auto-mount the selected task terminal so TaskWorkspacePanel renders it immediately.
@@ -279,9 +237,8 @@ export function KanbanBoard({
     // Selecting a task must not start a fresh run. Auto-resume only when the
     // pinned conversation actually exists on disk; otherwise leave it for the
     // user with an interactive terminal for manual commands.
-    const sessionId = executorSessionId(task.id, task.runId)
     let cancelled = false
-    void termSessionExists(cwd, sessionId).then((exists) => {
+    void termSessionExists(task.id).then((exists) => {
       if (cancelled || !exists || terminalLaunchRef.current[task.id]) return
       void armLaunch(task, { resume: true })
     })
@@ -336,7 +293,7 @@ export function KanbanBoard({
 
   const resetTaskBackToBacklog = async (task: Task) => {
     const result = await resetTaskRun(task.id)
-    if (!result) throw new Error('Electron bridge 無法使用')
+    if (!result) throw new Error('未連線到 VibeFlow core')
     const next = result.state.board
     onBoardChange({
       backlog: [result.task, ...next.backlog.filter((t) => t.id !== task.id)],

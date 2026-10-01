@@ -1,30 +1,32 @@
-name: Release
+name: CI & Release
 
-# Build installers and upload them to a draft GitHub Release.
+# Test on all three platforms, then publish the npm package (`vibeflow`, with
+# provenance).
 # Trigger: push a tag like `v0.1.0` (must match the version in package.json),
-# or run manually from the Actions tab (workflow_dispatch builds but does not publish).
+# or run manually from the Actions tab (workflow_dispatch tests and builds but
+# does not publish). Pull requests run the test job only.
 on:
   push:
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
 
+# A new push to a PR supersedes the run for its previous commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Read-only by default (pull requests included); jobs that publish widen it.
 permissions:
-  contents: write # electron-builder needs this to create the release + upload assets
+  contents: read
 
 jobs:
-  release:
+  test:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            # Apple Silicon + Intel from the same runner (clang cross-compiles node-pty)
-            build_args: --mac --arm64 --x64
-          - os: windows-latest
-            build_args: --win
-          - os: ubuntu-latest
-            build_args: --linux
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -40,26 +42,81 @@ jobs:
       - name: Pin npm 11
         run: npm install -g npm@11
 
-      # node-pty is native, but VibeFlow uses node-pty's prebuilt binaries where
-      # available. Root postinstall only verifies that the native binary loads;
-      # electron-builder native rebuilds stay disabled because Windows rebuilds
-      # fail in bundled winpty/MSVC and are unnecessary for the prebuild path.
+      # So TmuxBackend's real-tmux test runs instead of skipping.
+      - name: Install tmux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install tmux
+        if: runner.os == 'macOS'
+        run: brew install tmux
+
       - name: Install dependencies
-        run: npm ci --verbose
+        run: npm ci
 
-      - name: Build and publish
-        # On workflow_dispatch (no tag) skip uploading — just verify the build packages.
-        run: npm run build:webpack -- ${{ matrix.build_args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Typecheck
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npx tsc --noEmit -p renderer/tsconfig.json
 
-      - name: Upload artifacts (workflow run)
-        uses: actions/upload-artifact@v7.0.1
+      - name: Unit, integration and security tests
+        run: npm test
+
+      # Runners have no Turbopack-friendly IPC; build with webpack.
+      - name: Build the Web UI
+        run: npm run build:web -- --webpack
+
+      # Playwright drives the runner's preinstalled Chrome / Edge.
+      - name: End-to-end (Web UI + fake agent)
+        run: npm run test:e2e
+
+      # No claude/codex on the runner.
+      - name: vibeflow doctor
+        run: npm run doctor -- --skip agents
+
+  npm-package:
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
-          name: vibeflow-${{ matrix.os }}
-          path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
-          if-no-files-found: warn
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin npm 11
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stage the package
+        run: |
+          npm run build:web -- --webpack
+          npm run build:npm
+
+      # What a user gets: pack, install globally from the tarball in a clean
+      # prefix, and start it.
+      - name: Install from the tarball and run it
+        shell: bash
+        run: |
+          npm pack ./dist-npm --pack-destination "$RUNNER_TEMP"
+          npm i -g --prefix "$RUNNER_TEMP/prefix" "$RUNNER_TEMP"/vibeflow-*.tgz
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN="$RUNNER_TEMP/prefix"; else BIN="$RUNNER_TEMP/prefix/bin"; fi
+          "$BIN/vibeflow" --version
+          "$BIN/vibeflow" doctor --skip agents --store-path "$RUNNER_TEMP/store"
+
+      - name: Publish to npm
+        if: github.ref_type == 'tag' && runner.os == 'Linux'
+        run: npm publish ./dist-npm --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

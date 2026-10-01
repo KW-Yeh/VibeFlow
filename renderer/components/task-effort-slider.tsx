@@ -14,7 +14,7 @@ const EFFORT_OPTIONS: ReadonlyArray<{
 ]
 
 /**
- * Mirror of DEFAULT_TASK_EFFORT in main/helpers/agents.ts. The renderer must
+ * Mirror of DEFAULT_TASK_EFFORT in packages/core/src/agents.ts. The renderer must
  * not import main at runtime, so the value is duplicated on purpose — change
  * both together (test/agents.test.mjs guards the pair).
  */

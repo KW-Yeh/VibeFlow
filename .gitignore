@@ -79,7 +79,7 @@ web_modules/
 out
 next-env.d.ts
 
-# Nextron / Electron build output
+# Web UI static export (npm run build:web)
 /app
 
 # VibeFlow runtime worktrees (per-project, but ignore here defensively)
@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 
 # macOS
 .DS_Store
+
+# npm package staging (scripts/build-npm.mjs)
+/dist-npm

@@ -7,7 +7,7 @@ import {
   executorSessionId,
   resolveSystemPrompt,
   taskDecisionsPath,
-} from '../renderer/lib/claude.ts'
+} from '../packages/core/src/launch.ts'
 
 const TASK = {
   id: 'abcd1234',

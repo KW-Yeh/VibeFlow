@@ -7,9 +7,9 @@ import {
   listRecentProjects,
   recentProjectsFromBoard,
   rememberProject,
-} from '../main/helpers/recent-projects.ts'
-import { getStoreAtPath } from '../main/helpers/store.ts'
-import { createTaskFromInput } from '../main/helpers/tasks.ts'
+} from '../packages/core/src/recent-projects.ts'
+import { getStoreAtPath } from '../packages/core/src/store.ts'
+import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { makeRepo } from './support/repo.mjs'
 
 const existsOnly = (...paths) => (p) => paths.includes(p)

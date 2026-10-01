@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
     "module": "preserve",
     "strict": true,
     "noEmit": true,
@@ -12,6 +13,6 @@
     "isolatedModules": true,
     "resolveJsonModule": true
   },
-  "include": ["main/**/*.ts"],
+  "include": ["packages/*/src/**/*.ts"],
   "exclude": ["node_modules", "app", "dist"]
 }

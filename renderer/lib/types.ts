@@ -13,48 +13,46 @@ export type {
   AgentConnections,
   ConnectableAgentId,
   VibeFlowState,
-} from '../../main/helpers/store'
+} from '../../packages/core/src/store'
 export type {
   GitInfo,
   DiffEntry,
   DiffFile,
   FinalizeResult,
   PrStatus,
-} from '../../main/helpers/git'
+} from '../../packages/core/src/git'
 export type {
   ArtifactContent,
   ArtifactKind,
   TaskArtifact,
-} from '../../main/helpers/artifacts'
-export type { BoardCliLaunchInfo } from '../../main/helpers/board-cli'
-export type { TaskDecisions } from '../../main/helpers/decisions'
+} from '../../packages/core/src/artifacts'
+export type { BoardCliLaunchInfo } from '../../packages/core/src/board-cli'
+export type { TaskDecisions } from '../../packages/core/src/decisions'
 export type {
   RecentProject,
   RecentProjectEntry,
-} from '../../main/helpers/recent-projects'
+} from '../../packages/core/src/recent-projects'
 export type {
   LibraryEntry,
   LibraryKind,
   LibraryLaunchInfo,
   LibraryScript,
-} from '../../main/helpers/library'
-export type { AgentCli, AgentCliId, AgentEffort } from '../../main/helpers/agents'
+} from '../../packages/core/src/library'
+export type { AgentCli, AgentCliId, AgentEffort } from '../../packages/core/src/agents'
 export type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
-} from '../../main/helpers/github-auth'
-export type {
-  RemoteUpdateSnapshot,
-  RemoteUpdateStatus,
-} from '../../main/helpers/remote-update'
+} from '../../packages/core/src/github-auth'
 export type {
   SubAgentRun,
   SubAgentStatus,
-} from '../../main/helpers/subagents'
+} from '../../packages/core/src/subagents'
 export type {
   ChatMessage,
   ChatAttachment,
   Conversation,
-} from '../../main/helpers/chat-store'
-export type { AttachmentInput } from '../../main/helpers/attachments'
-export type { ChatChunk, ChatPhase, PhaseType } from '../../main/helpers/chat-session'
+} from '../../packages/core/src/chat-store'
+export type { AttachmentInput } from '../../packages/core/src/attachments'
+export type { ChatChunk, ChatPhase, PhaseType } from '../../packages/core/src/chat-session'
+export type { LaunchIntent } from '../../packages/core/src/service'
+export type { StartResult } from '../../packages/core/src/session-backend'

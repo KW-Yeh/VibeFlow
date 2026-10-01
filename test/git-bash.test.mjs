@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { gitBashCandidates } from '../main/helpers/git-bash.ts'
+import { gitBashCandidates } from '../packages/core/src/git-bash.ts'
 
 test('gitBashCandidates — explicit overrides come before the install locations', () => {
   const candidates = gitBashCandidates({

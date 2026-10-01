@@ -18,9 +18,9 @@ import {
   dropCoveredEntries,
   captureTaskOutcome,
   resetWorktreeToBase,
-} from '../main/helpers/git.ts'
-import { ARTIFACTS_FALLBACK_DIR } from '../main/helpers/artifacts.ts'
-import { ATTACHMENTS_DIR } from '../main/helpers/attachments.ts'
+} from '../packages/core/src/git.ts'
+import { ARTIFACTS_FALLBACK_DIR } from '../packages/core/src/artifacts.ts'
+import { ATTACHMENTS_DIR } from '../packages/core/src/attachments.ts'
 import {
   makeRepo,
   git,

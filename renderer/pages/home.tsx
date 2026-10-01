@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import Head from 'next/head'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
 
 import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
@@ -17,31 +17,23 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
-  checkForRemoteUpdate,
   connectAgent,
   refreshAgentModels,
   createTask,
   deleteTask,
   detectAgents,
-  downloadRemoteUpdate,
   getGitInfo,
-  getRemoteUpdateState,
   initRepository,
-  installRemoteUpdate,
   listRecentProjects,
   loadState,
-  onRemoteUpdateState,
   onStateChanged,
   onSubAgentsUpdate,
-  onUpdateAvailable,
   persistBoard,
   pickFolder,
-  relaunchApp,
   setSettings,
   updateTask,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { createEnterVariants } from '@/lib/motion'
 import type {
   AgentCliId,
   AgentEffort,
@@ -49,13 +41,12 @@ import type {
   AttachmentInput,
   BoardState,
   ConnectableAgentId,
-  RemoteUpdateSnapshot,
   SubAgentRun,
   Task,
 } from '@/lib/types'
 
-// Rendered until the persisted state loads, and as a fallback when the
-// Electron bridge is unavailable (plain browser / static export preview).
+// Rendered until the persisted state loads, and as a fallback when core is
+// unreachable (static export preview).
 const FALLBACK_BOARD: BoardState = {
   backlog: [],
   in_progress: [],
@@ -73,7 +64,6 @@ function findTask(board: BoardState, taskId: string): Task | null {
 }
 
 export default function HomePage() {
-  const reducedMotion = useReducedMotion() ?? false
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
   // Sub-agent runs are session-only (never persisted to the store), so they
   // live in their own state keyed by task id — kept out of `board` so a
@@ -86,7 +76,6 @@ export default function HomePage() {
   const [workstationPath, setWorkstationPath] = useState('')
   const [agentConnections, setAgentConnections] = useState<AgentConnections>({})
   const [loaded, setLoaded] = useState(false)
-  const [remoteUpdate, setRemoteUpdate] = useState<RemoteUpdateSnapshot | null>(null)
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -101,11 +90,6 @@ export default function HomePage() {
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
-
-  // A newer build has replaced the running bundle (rebuild.sh --install);
-  // offer a one-click restart instead of requiring a manual quit + reopen.
-  const [updateReady, setUpdateReady] = useState(false)
-  const [relaunching, setRelaunching] = useState(false)
 
   // Remote share state
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
@@ -157,22 +141,6 @@ export default function HomePage() {
     })
   }, [])
 
-  useEffect(() => {
-    return onUpdateAvailable(() => setUpdateReady(true))
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    void getRemoteUpdateState().then((state) => {
-      if (active && state) setRemoteUpdate(state)
-    })
-    const unsubscribe = onRemoteUpdateState((state) => setRemoteUpdate(state))
-    return () => {
-      active = false
-      unsubscribe()
-    }
-  }, [])
-
   // Refresh board when the CLI (or any external writer) changes the store file.
   useEffect(() => {
     return onStateChanged((state) => {
@@ -196,27 +164,6 @@ export default function HomePage() {
     )
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
-
-  const handleRelaunch = () => {
-    setRelaunching(true)
-    void relaunchApp()
-  }
-
-  const handleCheckForRemoteUpdate = () => {
-    void checkForRemoteUpdate().then((state) => {
-      if (state) setRemoteUpdate(state)
-    })
-  }
-
-  const handleDownloadRemoteUpdate = () => {
-    void downloadRemoteUpdate().then((state) => {
-      if (state) setRemoteUpdate(state)
-    })
-  }
-
-  const handleInstallRemoteUpdate = () => {
-    void installRemoteUpdate()
-  }
 
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
@@ -491,10 +438,6 @@ export default function HomePage() {
                   setSettingsError(null)
                   setSettingsOpen(true)
                 }}
-                remoteUpdate={remoteUpdate}
-                onCheckForUpdate={handleCheckForRemoteUpdate}
-                onDownloadUpdate={handleDownloadRemoteUpdate}
-                onInstallUpdate={handleInstallRemoteUpdate}
               />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <div className="min-h-0 flex-1">
@@ -517,7 +460,6 @@ export default function HomePage() {
                   onDeleteTask={handleDeleteTask}
                   autoMode={autoMode}
                   workstationPath={workstationPath}
-                  systemPrompt={systemPrompt}
                   subAgents={subAgents}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}
@@ -654,34 +596,6 @@ export default function HomePage() {
                 />
               )}
             </AnimatePresence>
-            {updateReady && (
-              <motion.div
-                role="status"
-                initial="hidden"
-                animate="visible"
-                variants={createEnterVariants({
-                  timing: 'standard',
-                  transform: { y: 8 },
-                  reducedMotion,
-                })}
-                className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-border/40 bg-card py-2 pl-4 pr-2 text-base shadow-lg"
-              >
-                <span className="text-foreground">
-                  新版本已建置完成
-                  <span className="ml-1.5 text-muted-foreground">
-                    重新啟動以套用
-                  </span>
-                </span>
-                <Button
-                  size="sm"
-                  className="rounded-full active:scale-95 motion-reduce:transform-none"
-                  disabled={relaunching}
-                  onClick={handleRelaunch}
-                >
-                  {relaunching ? '重新啟動中…' : '立即重啟'}
-                </Button>
-              </motion.div>
-            )}
           </>
         ) : (
           <div className="flex min-h-screen items-center justify-center bg-background text-base text-muted-foreground">
