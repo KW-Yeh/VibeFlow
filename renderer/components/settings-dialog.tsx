@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { LibraryPanel } from '@/components/library-panel'
+import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
@@ -63,11 +64,13 @@ interface SettingsDialogProps {
   systemPrompt: string
   /** Current global workstation path ('' = the ~/Desktop default is in effect). */
   workstationPath: string
+  /** Board-wide Auto Mode: the value new cards start with. */
+  autoMode: boolean
   agentConnections?: AgentConnections
   saving: boolean
   error: string | null
-  /** Called with the new custom prompt ('' = default) and workstation path ('' = default). */
-  onSave: (systemPrompt: string, workstationPath: string) => void
+  /** Called with the new custom prompt ('' = default), workstation path ('' = default) and Auto Mode. */
+  onSave: (systemPrompt: string, workstationPath: string, autoMode: boolean) => void
   onConnectAgent: (agentId: ConnectableAgentId, apiKey: string) => Promise<string | null>
   onRefreshModels?: (agentId: ConnectableAgentId) => Promise<void>
   /** Native folder picker — returns the chosen absolute path, or null. */
@@ -79,6 +82,7 @@ export function SettingsDialog({
   open,
   systemPrompt,
   workstationPath,
+  autoMode,
   agentConnections,
   saving,
   error,
@@ -90,6 +94,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [text, setText] = useState('')
   const [workstation, setWorkstation] = useState('')
+  const [auto, setAuto] = useState(true)
   const [agentPage, setAgentPage] = useState<AgentInfo | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -109,6 +114,7 @@ export function SettingsDialog({
     if (open) {
       setText(systemPrompt)
       setWorkstation(workstationPath)
+      setAuto(autoMode)
       setAgentPage(null)
       setGithubPage(false)
       setApiKey('')
@@ -121,7 +127,7 @@ export function SettingsDialog({
       setCopiedCode(false)
       void getGithubAuthStatus().then(setGithubStatus)
     }
-  }, [open, systemPrompt, workstationPath])
+  }, [open, systemPrompt, workstationPath, autoMode])
 
   useEffect(() => {
     if (!open) return
@@ -173,7 +179,7 @@ export function SettingsDialog({
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSave(trimmed, workstation.trim())
+    onSave(trimmed, workstation.trim(), auto)
   }
 
   const handlePickWorkstation = async () => {
@@ -488,6 +494,13 @@ export function SettingsDialog({
         <LibraryPanel onEditingChange={setLibraryEditing} />
       ) : (
         <div className="space-y-6">
+          <section className="space-y-2">
+            <TaskAutoModeToggle value={auto} onChange={setAuto} />
+            <p className="text-sm text-muted-foreground">
+              新卡片的預設值；每張卡片可在建立或編輯時各自調整。
+            </p>
+          </section>
+
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-base font-medium">

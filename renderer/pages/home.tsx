@@ -131,7 +131,7 @@ export default function HomePage() {
 
   // The sidebar no longer auto-opens: the board's three columns already list
   // every task, so an expanded sidebar would repeat them. It stays collapsed to
-  // its icon rail (projects, Auto Mode, settings) until opened by hand.
+  // its icon rail (projects, settings) until opened by hand.
 
   // Live sub-agent updates pushed from main while sessions run. Kept in a
   // dedicated state map (not merged into `board`) so they stay session-only.
@@ -233,22 +233,22 @@ export default function HomePage() {
     setSelectedTaskId(null)
   }
 
-  const handleToggleAutoMode = () => {
-    const next = !autoMode
-    setAutoMode(next) // optimistic; persisted below
-    void setSettings({ autoMode: next })
-  }
-
-  const handleSaveSettings = async (nextPrompt: string, nextWorkstation: string) => {
+  const handleSaveSettings = async (
+    nextPrompt: string,
+    nextWorkstation: string,
+    nextAutoMode: boolean
+  ) => {
     setSavingSettings(true)
     setSettingsError(null)
     try {
       await setSettings({
         systemPrompt: nextPrompt,
         workstationPath: nextWorkstation || undefined,
+        autoMode: nextAutoMode,
       })
       setSystemPrompt(nextPrompt)
       setWorkstationPath(nextWorkstation)
+      setAutoMode(nextAutoMode)
       setSettingsOpen(false)
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err))
@@ -431,8 +431,6 @@ export default function HomePage() {
                 onNewTask={handleOpenNewTask}
                 onNewTaskForProject={handleNewTaskForProject}
                 onDeleteProject={handleDeleteProject}
-                autoMode={autoMode}
-                onToggleAutoMode={handleToggleAutoMode}
                 remoteActive={!!remoteHost.roomCode}
                 onOpenSettings={() => {
                   setSettingsError(null)
@@ -496,6 +494,7 @@ export default function HomePage() {
               open={settingsOpen}
               systemPrompt={systemPrompt}
               workstationPath={workstationPath}
+              autoMode={autoMode}
               agentConnections={agentConnections}
               saving={savingSettings}
               error={settingsError}

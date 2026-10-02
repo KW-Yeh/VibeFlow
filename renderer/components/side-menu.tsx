@@ -14,7 +14,6 @@ import {
   Smartphone,
   Trash2,
   X,
-  Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { compareTasksByNewestFirst } from '@/lib/task-order'
@@ -44,9 +43,6 @@ interface SideMenuProps {
   onNewTaskForProject: (projectPath: string | null) => void
   /** Delete an entire project: every listed task (worktree + branch + conversation). */
   onDeleteProject: (name: string, taskIds: string[]) => void
-  /** Global Auto Mode: auto-run a card's execution on entering In Progress. */
-  autoMode: boolean
-  onToggleAutoMode: () => void
   onRemoteShare?: () => void
   remoteActive?: boolean
   onOpenSettings: () => void
@@ -411,15 +407,11 @@ function SidebarModeContent({
 /** Settings-related controls docked at the bottom of the sidebar. */
 function SettingsDock({
   collapsed,
-  autoMode,
-  onToggleAutoMode,
   onRemoteShare,
   remoteActive,
   onOpenSettings,
 }: {
   collapsed: boolean
-  autoMode: boolean
-  onToggleAutoMode: () => void
   onRemoteShare?: () => void
   remoteActive?: boolean
   onOpenSettings: () => void
@@ -430,14 +422,6 @@ function SettingsDock({
         mode="collapsed"
         className="flex flex-col items-center gap-1 border-t border-border p-2"
       >
-        <IconButton
-          aria-label={autoMode ? '關閉 Auto Mode' : '開啟 Auto Mode'}
-          title="Auto Mode：新卡片預設讓 Agent 免確認執行（每張卡可各自調整）"
-          onClick={onToggleAutoMode}
-          className={cn('size-8', autoMode && 'text-primary hover:text-primary')}
-        >
-          <Zap className={cn('size-4', autoMode && 'fill-current')} />
-        </IconButton>
         {onRemoteShare && (
           <IconButton
             aria-label="遠端控制"
@@ -466,31 +450,8 @@ function SettingsDock({
   return (
     <SidebarModeContent
       mode="expanded"
-      className="space-y-1 border-t border-border p-2"
+      className="border-t border-border p-2"
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={autoMode}
-        onClick={onToggleAutoMode}
-        title="新卡片的預設值：開啟時 Agent 執行動作不會逐次詢問。每張卡片可在建立或編輯時各自調整。"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <span
-          className={cn(
-            'relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors motion-reduce:transition-none',
-            autoMode ? 'bg-primary' : 'bg-border'
-          )}
-        >
-          <span
-            className={cn(
-              'absolute left-0 top-0.5 size-3 rounded-full bg-foreground ring-1 ring-border transition-transform motion-reduce:transform-none motion-reduce:transition-none',
-              autoMode ? 'translate-x-3.5' : 'translate-x-0.5'
-            )}
-          />
-        </span>
-        Auto Mode
-      </button>
       <div className="flex items-center gap-1 px-1">
         {onRemoteShare && (
           <IconButton
@@ -566,8 +527,6 @@ export function SideMenu({
   onNewTask,
   onNewTaskForProject,
   onDeleteProject,
-  autoMode,
-  onToggleAutoMode,
   onRemoteShare,
   remoteActive,
   onOpenSettings,
@@ -785,8 +744,6 @@ export function SideMenu({
 
       <SettingsDock
         collapsed={collapsed}
-        autoMode={autoMode}
-        onToggleAutoMode={onToggleAutoMode}
         onRemoteShare={onRemoteShare}
         remoteActive={remoteActive}
         onOpenSettings={onOpenSettings}
