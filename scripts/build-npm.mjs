@@ -5,7 +5,7 @@
 //   package.json       runtime dependencies only (node-pty, ws, ink, react)
 //
 //   npm run build:npm                 # then: npm pack ./dist-npm
-//   npm run build:npm -- --name @kw-yeh/vibeflow
+//   npm run build:npm -- --name <other-name>
 import { build } from 'esbuild'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const { values } = parseArgs({ options: { name: { type: 'string', default: 'vibeflow' } } })
+const { values } = parseArgs({ options: { name: { type: 'string', default: '@kw-yeh/vibeflow' } } })
 const out = path.join(root, 'dist-npm')
 const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 

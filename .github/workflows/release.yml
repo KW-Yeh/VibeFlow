@@ -1,6 +1,6 @@
 name: CI & Release
 
-# Test on all three platforms, then publish the npm package (`vibeflow`, with
+# Test on all three platforms, then publish the npm package (`@kw-yeh/vibeflow`, with
 # provenance).
 # Trigger: push a tag like `v0.1.0` (must match the version in package.json),
 # or run manually from the Actions tab (workflow_dispatch tests and builds but
@@ -109,8 +109,8 @@ jobs:
       - name: Install from the tarball and run it
         shell: bash
         run: |
-          npm pack ./dist-npm --pack-destination "$RUNNER_TEMP"
-          npm i -g --prefix "$RUNNER_TEMP/prefix" "$RUNNER_TEMP"/vibeflow-*.tgz
+          TARBALL=$(npm pack ./dist-npm --pack-destination "$RUNNER_TEMP" | tail -n 1)
+          npm i -g --prefix "$RUNNER_TEMP/prefix" "$RUNNER_TEMP/$TARBALL"
           if [ "$RUNNER_OS" = "Windows" ]; then BIN="$RUNNER_TEMP/prefix"; else BIN="$RUNNER_TEMP/prefix/bin"; fi
           "$BIN/vibeflow" --version
           "$BIN/vibeflow" doctor --skip agents --store-path "$RUNNER_TEMP/store"

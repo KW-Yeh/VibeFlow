@@ -14,8 +14,8 @@ VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。�
 
 | 方式 | 指令 | 適合對象 |
 |---|---|---|
-| 免安裝試用 | `npx vibeflow` | 第一次接觸的人 |
-| 全域安裝 | `npm i -g vibeflow`，之後執行 `vibeflow` | 日常使用者 |
+| 免安裝試用 | `npx @kw-yeh/vibeflow` | 第一次接觸的人 |
+| 全域安裝 | `npm i -g @kw-yeh/vibeflow`，之後執行 `vibeflow` | 日常使用者 |
 | 從原始碼執行 | `git clone` → `npm install` → `npm start` | 貢獻者、想改程式的人 |
 | 從原始碼一鍵啟動 | macOS / Linux：雙擊 `start.command`（或執行 `./start.command`）；Windows：雙擊 `start.cmd` | 用 clone 下來的版本日常使用：自動安裝相依、建置 Web UI 並開啟網頁 |
 
