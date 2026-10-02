@@ -3,13 +3,21 @@ import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
-import { hasBridge, termInput, termKill, termStart, writeAttachments } from '@/lib/api'
+import {
+  hasBridge,
+  termInput,
+  termKill,
+  termScrollToBottom,
+  termStart,
+  writeAttachments,
+} from '@/lib/api'
 import type { LaunchIntent } from '@/lib/types'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
-import { Bot, Undo2 } from 'lucide-react'
+import { ArrowDown, Bot, Undo2 } from 'lucide-react'
 
 const RESIZE_SETTLE_MS = 100
+const SCROLL_CHECK_MS = 150
 
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
@@ -69,6 +77,9 @@ export function TaskTerminal({
   const [isAttaching, setIsAttaching] = useState(false)
   const [isReturningToBacklog, setIsReturningToBacklog] = useState(false)
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false)
+  // History lives in xterm's own buffer (pty) or in the session's (tmux copy-mode).
+  const [isViewScrolledBack, setIsViewScrolledBack] = useState(false)
+  const [isSessionScrolledBack, setIsSessionScrolledBack] = useState(false)
 
   // PTY readiness + de-dupe of launch sends. Refs (not state) so the async
   // PTY-start flow and the nonce effect read the latest values without
@@ -196,6 +207,8 @@ export function TaskTerminal({
     let offExit: (() => void) | undefined
     let resizeObs: ResizeObserver | undefined
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
+    let scrollCheckTimer: ReturnType<typeof setTimeout> | undefined
+    let offWheel: (() => void) | undefined
 
     void (async () => {
       const { Terminal } = await import('@xterm/xterm')
@@ -356,7 +369,25 @@ export function TaskTerminal({
         if (readOnlyRef.current) return
         onInteractRef.current?.()
         api.term.input(sessionKey, data)
+        checkSessionScroll()
       })
+
+      term.onScroll(() => {
+        const buffer = term.buffer.active
+        setIsViewScrolledBack(buffer.viewportY < buffer.baseY)
+      })
+      // The session only enters or leaves copy-mode on a wheel or a keystroke.
+      const checkSessionScroll = () => {
+        clearTimeout(scrollCheckTimer)
+        scrollCheckTimer = setTimeout(() => {
+          void api.term.isScrolledBack(sessionKey).then((scrolled) => {
+            if (!disposed && termRef.current === term) setIsSessionScrolledBack(scrolled)
+          })
+        }, SCROLL_CHECK_MS)
+      }
+      const host = containerRef.current
+      host?.addEventListener('wheel', checkSessionScroll, { capture: true, passive: true })
+      offWheel = () => host?.removeEventListener('wheel', checkSessionScroll, { capture: true })
 
       // A layout still settling fires many observations; the agent should get
       // one SIGWINCH for where it lands, and none when the grid is unchanged.
@@ -388,6 +419,8 @@ export function TaskTerminal({
       offExit?.()
       resizeObs?.disconnect()
       clearTimeout(resizeTimer)
+      clearTimeout(scrollCheckTimer)
+      offWheel?.()
       // Kill this session's PTY on unmount.
       termKill(sessionKey)
       termRef.current?.dispose()
@@ -417,6 +450,14 @@ export function TaskTerminal({
     } finally {
       setIsAttaching(false)
     }
+  }
+
+  const scrollToLatest = async () => {
+    termRef.current?.scrollToBottom()
+    setIsViewScrolledBack(false)
+    await termScrollToBottom(sessionKey)
+    setIsSessionScrolledBack(false)
+    termRef.current?.focus()
   }
 
   return (
@@ -497,11 +538,22 @@ export function TaskTerminal({
           </div>
         )}
       </div>
-      <div className="min-h-0 w-full flex-1 overflow-hidden bg-background p-1">
+      <div className="relative min-h-0 w-full flex-1 overflow-hidden bg-background p-1">
         {/* Keep visual padding outside the element FitAddon measures. Padding
             on this inner host overcounts columns; padding on `.xterm` exposes
             its black viewport along the right and bottom edges. */}
         <div ref={containerRef} className="h-full w-full overflow-hidden" />
+        {(isViewScrolledBack || isSessionScrolledBack) && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="absolute bottom-3 right-5 h-7 px-2 text-xs shadow-md"
+            onClick={() => void scrollToLatest()}
+          >
+            <ArrowDown className="size-3" />
+            回到最新
+          </Button>
+        )}
       </div>
     </div>
   )

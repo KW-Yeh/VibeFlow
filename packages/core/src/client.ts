@@ -281,6 +281,12 @@ export function createBridge(t: BridgeTransport) {
       t.send('pty:resize', { sessionKey, cols, rows }),
     /** Kill a task's PTY session (tears down the session and its watchers). */
     kill: (sessionKey: string): void => t.send('pty:kill', sessionKey),
+    /** Whether the session's own history view (tmux copy-mode) is off the live output. */
+    isScrolledBack: (sessionKey: string): Promise<boolean> =>
+      t.invoke('pty:scrolled', sessionKey),
+    /** Return the session's own history view to the live output. */
+    scrollToBottom: (sessionKey: string): Promise<void> =>
+      t.invoke('pty:scroll-bottom', sessionKey),
     /** Whether the task's pinned Claude conversation already exists on disk. */
     sessionExists: (taskId: string): Promise<boolean> =>
       t.invoke('claude:sessionExists', taskId),

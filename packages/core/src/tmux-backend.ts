@@ -196,6 +196,19 @@ export class TmuxBackend implements SessionBackend {
     return null
   }
 
+  /** The attached client sits on the alternate screen, so history is tmux copy-mode. */
+  async isScrolledBack(key: string): Promise<boolean> {
+    const { code, stdout } = await this.tmux(
+      'display-message', '-p', '-t', `=${this.sessionName(key)}:`, '#{pane_in_mode}'
+    )
+    return code === 0 && stdout.trim() === '1'
+  }
+
+  async scrollToBottom(key: string): Promise<void> {
+    // Fails harmlessly ("not in a mode") when already live; never reaches the pane's program.
+    await this.tmux('send-keys', '-t', `=${this.sessionName(key)}:`, '-X', 'cancel')
+  }
+
   attachArgs(key: string): string[] {
     return ['-L', TMUX_SOCKET, '-f', this.confPath, 'attach-session', '-t', `=${this.sessionName(key)}`]
   }

@@ -180,7 +180,7 @@ test('terminal inset stays outside the host measured by FitAddon', () => {
   const terminal = read(join(rendererRoot, 'components/task-terminal.tsx'))
   assert.ok(
     terminal.includes(
-      '<div className="min-h-0 w-full flex-1 overflow-hidden bg-background p-1">'
+      '<div className="relative min-h-0 w-full flex-1 overflow-hidden bg-background p-1">'
     ) && terminal.includes(
       '<div ref={containerRef} className="h-full w-full overflow-hidden" />'
     ),

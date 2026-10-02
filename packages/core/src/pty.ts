@@ -171,6 +171,12 @@ export class PtyBackend implements SessionBackend {
     return this.scrollbacks.get(key) ?? null
   }
 
+  async isScrolledBack(): Promise<boolean> {
+    return false
+  }
+
+  async scrollToBottom(): Promise<void> {}
+
   shutdown(): void {
     for (const key of Array.from(this.sessions.keys())) this.killNow(key)
   }

@@ -23,6 +23,7 @@ Channels added since the inventory:
 |---|---|
 | `sessions:list` | Session backend (`pty` / `tmux`) and the running session keys |
 | `pty:peek` | Join a running session without restarting it (TUI terminal view) |
+| `pty:scrolled` / `pty:scroll-bottom` | Whether a session's own history view (tmux copy-mode) is off the live output, and return it there |
 | `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
 

@@ -458,6 +458,17 @@ export function termKill(sessionKey: string): void {
   bridge()?.term.kill(sessionKey)
 }
 
+/** Whether the session's own history view (tmux copy-mode) is off the live output. */
+export async function termIsScrolledBack(sessionKey: string): Promise<boolean> {
+  const b = bridge()
+  return b ? b.term.isScrolledBack(sessionKey) : false
+}
+
+/** Return the session's own history view to the live output. */
+export async function termScrollToBottom(sessionKey: string): Promise<void> {
+  await bridge()?.term.scrollToBottom(sessionKey)
+}
+
 /** Whether the task's pinned Claude conversation already exists on disk. */
 export async function termSessionExists(taskId: string): Promise<boolean> {
   const b = bridge()

@@ -558,6 +558,10 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
 
     'pty:kill': (sessionKey) => teardownSession(requireSessionKey(sessionKey)),
 
+    // History a frontend cannot scroll itself (tmux copy-mode).
+    'pty:scrolled': (sessionKey) => sessions.isScrolledBack(requireSessionKey(sessionKey)),
+    'pty:scroll-bottom': (sessionKey) => sessions.scrollToBottom(requireSessionKey(sessionKey)),
+
     // Does the task's pinned Claude conversation exist on disk? Used to decide
     // whether selecting a task may auto-resume (session present) or should
     // leave the interactive terminal for manual commands.

@@ -43,6 +43,13 @@ export interface SessionBackend {
    * restarting it. Null when the backend redraws on attach instead (tmux).
    */
   scrollback(key: string): string | null
+  /**
+   * Whether the session's own history view is scrolled away from the live
+   * output. Always false where the frontend's terminal holds the history (pty).
+   */
+  isScrolledBack(key: string): Promise<boolean>
+  /** Return the session's history view to the live output. */
+  scrollToBottom(key: string): Promise<void>
   /** Keys of the sessions currently running. */
   list(): Promise<string[]>
   /**

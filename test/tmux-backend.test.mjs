@@ -11,6 +11,7 @@ function harness(t) {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-tmux-'))
   t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }))
   const sessions = new Set()
+  const inMode = new Set()
   const calls = []
   const clients = []
   const run = async (args) => {
@@ -27,6 +28,9 @@ function harness(t) {
       sessions.delete(target())
       for (const c of clients) if (!c.dead) c.exit()
       return { code: 0, stdout: '' }
+    }
+    if (cmd === 'display-message') {
+      return { code: 0, stdout: inMode.has(target().replace(/:$/, '')) ? '1\n' : '0\n' }
     }
     if (cmd === 'list-sessions') return { code: 0, stdout: [...sessions, 'user-own'].join('\n') + '\n' }
     return { code: 0, stdout: '' }
@@ -55,7 +59,7 @@ function harness(t) {
   const events = []
   const sink = { send: (channel, payload) => events.push([channel, payload]), isDestroyed: () => false }
   const backend = new TmuxBackend(sink, { stateDir, run, attach })
-  return { backend, sessions, calls, clients, events, stateDir }
+  return { backend, sessions, inMode, calls, clients, events, stateDir }
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 10))
@@ -136,4 +140,14 @@ test('against a real tmux: the session outlives the backend', { skip: !hasTmux()
   assert.ok((await second.list()).includes(key))
   await second.kill(key)
   assert.equal(await second.isAlive(key), false)
+})
+
+test('scroll state reads copy-mode from the session pane, and scrolling to bottom cancels it', async (t) => {
+  const { backend, inMode, calls } = harness(t)
+  inMode.add('vf-abc12345')
+  assert.equal(await backend.isScrolledBack('abc12345'), true)
+  assert.equal(await backend.isScrolledBack('other'), false)
+  await backend.scrollToBottom('abc12345')
+  const cancel = calls.find((c) => c[4] === 'send-keys')
+  assert.deepEqual(cancel.slice(5), ['-t', '=vf-abc12345:', '-X', 'cancel'])
 })
