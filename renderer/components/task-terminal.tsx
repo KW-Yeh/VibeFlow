@@ -9,6 +9,8 @@ import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { cn } from '@/lib/utils'
 import { Bot, Undo2 } from 'lucide-react'
 
+const RESIZE_SETTLE_MS = 100
+
 function quoteTerminalPath(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
 }
@@ -193,6 +195,7 @@ export function TaskTerminal({
     let offData: (() => void) | undefined
     let offExit: (() => void) | undefined
     let resizeObs: ResizeObserver | undefined
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined
 
     void (async () => {
       const { Terminal } = await import('@xterm/xterm')
@@ -249,8 +252,14 @@ export function TaskTerminal({
         )
         if (safeCols !== term.cols) term.resize(safeCols, term.rows)
       }
-      fitToVisibleViewport()
       termRef.current = term
+      // The PTY must be born at the size it will keep: whatever the agent draws
+      // before a resize reaches it is laid out for the old width, and its
+      // relative-cursor redraws then drift until the next full repaint.
+      await document.fonts.ready
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      if (disposed || termRef.current !== term) return
+      fitToVisibleViewport()
 
       const api = typeof window !== 'undefined' ? window.vibeflow : undefined
       if (!api) {
@@ -349,28 +358,23 @@ export function TaskTerminal({
         api.term.input(sessionKey, data)
       })
 
+      // A layout still settling fires many observations; the agent should get
+      // one SIGWINCH for where it lands, and none when the grid is unchanged.
       resizeObs = new ResizeObserver(() => {
-        try {
-          fitToVisibleViewport()
-          api.term.resize(sessionKey, term.cols, term.rows)
-        } catch {
-          // ignore transient resize errors
-        }
-      })
-      resizeObs.observe(containerRef.current)
-      api.term.resize(sessionKey, term.cols, term.rows)
-
-      // The initial fit.fit() (above, pre-mount) ran before xterm measured its
-      // actual cell size, so cols/rows undercounted and the container stayed
-      // narrow with no further resize to correct it. Re-fit one paint later,
-      // once cell metrics are real.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+        clearTimeout(resizeTimer)
+        resizeTimer = setTimeout(() => {
           if (disposed || termRef.current !== term) return
-          fitToVisibleViewport()
-          api.term.resize(sessionKey, term.cols, term.rows)
-        })
+          try {
+            const { cols, rows } = term
+            fitToVisibleViewport()
+            if (term.cols === cols && term.rows === rows) return
+            api.term.resize(sessionKey, term.cols, term.rows)
+          } catch {
+            // ignore transient resize errors
+          }
+        }, RESIZE_SETTLE_MS)
       })
+      if (containerRef.current) resizeObs.observe(containerRef.current)
 
       // PTY is live: send any armed launch command (e.g. auto-run on expand).
       readyRef.current = true
@@ -383,6 +387,7 @@ export function TaskTerminal({
       offData?.()
       offExit?.()
       resizeObs?.disconnect()
+      clearTimeout(resizeTimer)
       // Kill this session's PTY on unmount.
       termKill(sessionKey)
       termRef.current?.dispose()
