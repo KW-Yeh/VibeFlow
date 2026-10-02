@@ -83,7 +83,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing (OIDC) + provenance
     steps:
       - uses: actions/checkout@v5
 
@@ -118,5 +118,3 @@ jobs:
       - name: Publish to npm
         if: github.ref_type == 'tag' && runner.os == 'Linux'
         run: npm publish ./dist-npm --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -65,7 +65,7 @@ core 的 Web 伺服器能啟動 agent 和寫入終端機，因此：
 CI（`.github/workflows/release.yml`）在每個 PR 上只跑第 1 步；推送 `v*` tag 時會：
 
 1. 在 Ubuntu、macOS、Windows 上跑 typecheck、`npm test`、Web UI 端對端測試與 `vibeflow doctor`。
-2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`（需要 `NPM_TOKEN` secret）。
+2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`。發布以 npm Trusted Publishing（OIDC）驗證，不需要 token；npmjs.com 上 `@kw-yeh/vibeflow` 的 Trusted Publisher 須指向本 repo 的 `release.yml`。
 
 ```bash
 # 1. 更新 package.json 的 version 並 commit
