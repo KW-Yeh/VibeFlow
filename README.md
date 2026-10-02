@@ -5,7 +5,8 @@
 每張卡片是一個任務。卡片一開始，VibeFlow 就幫它開一條獨立的 Git 分支與 worktree，在裡面啟動 Claude Code 或 Codex，並把即時終端機放在卡片旁邊。好幾張卡可以同時跑，彼此不會改到同一份檔案，你的專案資料夾本身也不會被切換分支。
 
 ```bash
-npx @kw-yeh/vibeflow
+npm i -g @kw-yeh/vibeflow@latest
+vibeflow
 ```
 
 一切都在你的電腦上執行：不需要另外註冊帳號，看板與程式碼都留在本機。
@@ -37,10 +38,11 @@ npx @kw-yeh/vibeflow
 | tmux（建議） | macOS：`brew install tmux`。沒有也能用，只是關掉 VibeFlow 時 agent 會一起結束 |
 | Git Bash（僅 Windows） | 隨 [Git for Windows](https://git-scm.com/download/win) 安裝 |
 
-### 2. 啟動
+### 2. 安裝並啟動
 
 ```bash
-npx @kw-yeh/vibeflow
+npm i -g @kw-yeh/vibeflow@latest
+vibeflow
 ```
 
 VibeFlow 會在本機啟動，並自動用瀏覽器開啟看板。第一次啟動時如果偵測到缺了什麼，會直接告訴你該怎麼補。
@@ -57,7 +59,7 @@ VibeFlow 會在本機啟動，並自動用瀏覽器開啟看板。第一次啟�
 有問題時先跑：
 
 ```bash
-npx @kw-yeh/vibeflow doctor
+vibeflow doctor
 ```
 
 它會逐項檢查 Node、Git、tmux、終端機模組與 agent CLI，並列出修正指令。
@@ -68,13 +70,13 @@ npx @kw-yeh/vibeflow doctor
 
 | 方式 | 指令 | 適合 |
 |---|---|---|
-| 免安裝試用 | `npx @kw-yeh/vibeflow` | 第一次試試看 |
-| 全域安裝 | `npm i -g @kw-yeh/vibeflow`，之後執行 `vibeflow` | 日常使用（啟動較快，版本固定） |
+| **全域安裝（建議）** | `npm i -g @kw-yeh/vibeflow@latest`，之後執行 `vibeflow` | 大多數人 |
+| 免安裝試用 | `npx @kw-yeh/vibeflow` | 只想先看看、不想安裝 |
 | 從原始碼一鍵啟動 | clone 後雙擊 `start.command`（macOS／Linux）或 `start.cmd`（Windows） | 想用最新的 `main`，或要改程式 |
 
 三種方式讀寫的是同一份看板，可以隨時換。
 
-更新全域安裝的版本：
+之後要更新到最新版，再執行一次同一行安裝指令即可：
 
 ```bash
 npm i -g @kw-yeh/vibeflow@latest
@@ -95,7 +97,7 @@ vibeflow doctor              # 檢查前置需求
 vibeflow task create …       # 不開 UI 直接建卡，選項見 vibeflow task --help
 ```
 
-用 `npx` 時把 `vibeflow` 換成 `npx @kw-yeh/vibeflow`。
+沒有全域安裝、改用 `npx` 時，把 `vibeflow` 換成 `npx @kw-yeh/vibeflow`。
 
 ---
 
