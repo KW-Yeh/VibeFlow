@@ -1,146 +1,149 @@
 # VibeFlow
 
-VibeFlow 是一款專為本地開發設計的「意圖驅動」看板平台。它將 Claude Code CLI 的強大生成能力與 Git Worktree 的多工隔離機制結合，讓開發者能透過視覺化看板同時管理多個開發任務，並在獨立的工作區中安全地進行代碼實驗與自動化實作。
+**讓多個 coding agent 同時開工的本機看板。**
 
-## 🛠 核心技術棧 (Tech Stack)
+每張卡片是一個任務。卡片一開始，VibeFlow 就幫它開一條獨立的 Git 分支與 worktree，在裡面啟動 Claude Code 或 Codex，並把即時終端機放在卡片旁邊。好幾張卡可以同時跑，彼此不會改到同一份檔案，你的專案資料夾本身也不會被切換分支。
 
-* **核心**: `packages/core` — 任務、git worktree、agent 指令組裝、session 管理，不依賴任何 UI
-* **前端**: 本機 Web UI（Next.js 靜態輸出，由 core 提供）· 終端機 TUI（Ink）
-* **看板**: `@hello-pangea/dnd`
-* **終端**: `xterm.js` ↔ WebSocket ↔ core；session 由 tmux（macOS / Linux）或 `node-pty` 持有
-* **儲存**: core 自有的 JSON store（`packages/core/src/json-store.ts`，沿用舊版桌面 App 的 electron-store 檔案，舊看板會直接接上）
+```bash
+npx @kw-yeh/vibeflow
+```
 
-## 📦 安裝與執行
+一切都在你的電腦上執行：不需要另外註冊帳號，看板與程式碼都留在本機。
 
-| 方式 | 指令 | 適合對象 |
+---
+
+## 它能幫你做什麼
+
+- **一卡一分支一 worktree**：建卡時自動建立分支與 worktree、複製 `.env` 等被忽略的檔案，相依套件也在背景複製好，worktree 建好就能直接跑。
+- **看板式管理多個 agent**：Backlog → In Progress → Done。把卡片拖進 In Progress，agent 就在它的 worktree 裡開始工作。
+- **即時終端機**：每張卡都有自己的互動式終端機，agent 要你確認時直接在畫面上回答。
+- **關掉也不會中斷**：裝了 tmux 時，agent 跑在背景 session 裡；關掉瀏覽器甚至 VibeFlow 本身，任務都會繼續，重新開啟就接回來。
+- **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及一份會保留下來的決策紀錄（agent 做了哪些決定、為什麼）。
+- **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。
+- **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
+- **也能用指令操作**：`vibeflow task create` 不開 UI 直接建卡；agent 自己也能在看板上建立後續的卡片。
+
+---
+
+## 快速開始
+
+### 1. 先準備好這些
+
+| 需要 | 說明 |
+|---|---|
+| **Node.js 22+** | [nodejs.org](https://nodejs.org) |
+| **Git 2.30+** | 要操作的專案必須是 Git repository |
+| **Claude Code 或 Codex CLI，且已登入** | 至少一個。Claude Code：`npm install -g @anthropic-ai/claude-code`（或 `curl -fsSL https://claude.ai/install.sh \| bash`），裝完執行一次 `claude` 完成登入 |
+| tmux（建議） | macOS：`brew install tmux`。沒有也能用，只是關掉 VibeFlow 時 agent 會一起結束 |
+| Git Bash（僅 Windows） | 隨 [Git for Windows](https://git-scm.com/download/win) 安裝 |
+
+### 2. 啟動
+
+```bash
+npx @kw-yeh/vibeflow
+```
+
+VibeFlow 會在本機啟動，並自動用瀏覽器開啟看板。第一次啟動時如果偵測到缺了什麼，會直接告訴你該怎麼補。
+
+### 3. 開第一張卡
+
+1. 按側邊欄的 **＋**，或 Backlog 欄的 **新建任務**。
+2. 選一個專案資料夾（必須是 Git repo），選要從哪條分支開始。
+3. 寫下標題與你要 agent 做的事，選 agent，按建立。
+4. 把卡片拖到 **In Progress**，agent 就開始工作；點開卡片就能看到它的即時終端機。
+5. 做完之後在卡片上檢查 diff；要留下的變更請讓 agent commit、push 或開 PR。
+6. 把卡片移到 **Done**：VibeFlow 會刪掉這張卡的 worktree 與本地分支。**尚未 commit 的變更會一起消失**，移動前會再跟你確認一次。
+
+有問題時先跑：
+
+```bash
+npx @kw-yeh/vibeflow doctor
+```
+
+它會逐項檢查 Node、Git、tmux、終端機模組與 agent CLI，並列出修正指令。
+
+---
+
+## 安裝方式
+
+| 方式 | 指令 | 適合 |
 |---|---|---|
-| 免安裝試用 | `npx @kw-yeh/vibeflow` | 第一次接觸的人 |
-| 全域安裝 | `npm i -g @kw-yeh/vibeflow`，之後執行 `vibeflow` | 日常使用者 |
-| 從原始碼執行 | `git clone` → `npm install` → `npm start` | 貢獻者、想改程式的人 |
-| 從原始碼一鍵啟動 | macOS / Linux：雙擊 `start.command`（或執行 `./start.command`）；Windows：雙擊 `start.cmd` | 用 clone 下來的版本日常使用：自動安裝相依、建置 Web UI 並開啟網頁 |
+| 免安裝試用 | `npx @kw-yeh/vibeflow` | 第一次試試看 |
+| 全域安裝 | `npm i -g @kw-yeh/vibeflow`，之後執行 `vibeflow` | 日常使用（啟動較快，版本固定） |
+| 從原始碼一鍵啟動 | clone 後雙擊 `start.command`（macOS／Linux）或 `start.cmd`（Windows） | 想用最新的 `main`，或要改程式 |
 
-`vibeflow` 會在本機啟動 core，並用瀏覽器開啟 Web UI。它不是需要簽章的 App，所以不會被 Gatekeeper 或 SmartScreen 攔下。
+三種方式讀寫的是同一份看板，可以隨時換。
 
-```bash
-vibeflow                 # 啟動（或沿用已在執行的）core，開啟 Web UI
-vibeflow tui             # 終端機介面，和 Web UI 操作同一份看板與 session
-vibeflow status          # host、執行中的 session、看板摘要
-vibeflow stop <id> | --all   # 停止 agent session
-vibeflow shutdown        # 停止 host（tmux 裡的 agent 會繼續執行）
-vibeflow open <path>     # 把專案資料夾加入最近使用清單，再開啟 Web UI
-vibeflow doctor          # 檢查前置需求，並列出修正指令
-vibeflow task create …   # 不開 UI 直接建卡（vibeflow task --help）
-```
-
-同一台機器同時只會有一個 core（`<appData>/vibeflow/core.lock`）。再次執行 `vibeflow` 或 `vibeflow tui` 時，會連到已在執行的那一個。
-
-**任務不綁 UI**：有 tmux 時，每張卡片的 agent 跑在 `tmux -L vibeflow` 的 session 裡。關掉瀏覽器、TUI，甚至 core 本身，agent 都會繼續執行，重新開啟即可接回。沒有 tmux 時（包括 Windows），agent 由 core 直接持有，會隨 core 一起結束。
-
-### ✅ 前置需求
-
-1. **Node.js 22 以上**。
-2. **Git 2.30 以上**，且要操作的專案必須是 Git repository。若要使用「Approve & Push」，推送認證（SSH key 或 credential helper）需事先設定好。
-3. **tmux**（建議；macOS 用 `brew install tmux`）。沒有時會自動改用 node-pty，並在 `vibeflow doctor` 裡提示。
-4. **claude 或 codex CLI 至少一個，已登入**：
-   ```bash
-   npm install -g @anthropic-ai/claude-code   # 或官方 installer：curl -fsSL https://claude.ai/install.sh | bash
-   ```
-5. **Windows**：需要 Git for Windows 的 Git Bash（agent 的啟動指令是 POSIX sh）。
-
-有問題時先執行 `vibeflow doctor`。第一次啟動若偵測到問題，也會自動檢查一次。
-
-### 🔒 本機伺服器的安全性
-
-core 的 Web 伺服器能啟動 agent 和寫入終端機，因此：
-
-- 只綁定 `127.0.0.1` / `::1`，使用隨機 port。
-- 必須帶每次啟動時產生的 token 才能進入。`vibeflow` 開啟的網址會帶上 token，載入後換成 HttpOnly、SameSite=Strict 的 cookie，並從網址列移除。
-- WebSocket 握手會同時檢查 cookie 與 `Origin`，其他網頁無法從你的瀏覽器連進來。
-- `Host` 標頭必須是 loopback，用來防範 DNS rebinding。
-- 鎖檔權限為 0600。
-- API 只接受 core 認得的 task id，不接受任意路徑或指令。
-
-## 🚢 發佈新版本（Maintainers）
-
-CI（`.github/workflows/release.yml`）在每個 PR 上只跑第 1 步；推送 `v*` tag 時會：
-
-1. 在 Ubuntu、macOS、Windows 上跑 typecheck、`npm test`、Web UI 端對端測試與 `vibeflow doctor`。
-2. `npm pack` 後以全域安裝方式驗證能啟動，再執行 `npm publish --provenance`。發布以 npm Trusted Publishing（OIDC）驗證，不需要 token；npmjs.com 上 `@kw-yeh/vibeflow` 的 Trusted Publisher 須指向本 repo 的 `release.yml`。
+更新全域安裝的版本：
 
 ```bash
-# 1. 更新 package.json 的 version 並 commit
-# 2. 上 tag 並推送
-git tag v4.0.0
-git push origin v4.0.0
+npm i -g @kw-yeh/vibeflow@latest
 ```
 
-本地驗證：`npm run build:npm && npm pack ./dist-npm`。
+---
 
-## 📂 專案資料結構與 Worktree 隔離設計
+## 常用指令
 
-VibeFlow 會在您開啟的專案中建立一個隱藏的暫存空間，確保主目錄程式碼在開發過程中保持乾淨：
-
+```bash
+vibeflow                     # 啟動（或連到已在執行的）VibeFlow，開啟 Web UI
+vibeflow tui                 # 終端機介面，和 Web UI 操作同一個看板
+vibeflow status              # 目前的 host、執行中的 session、看板摘要
+vibeflow stop <id> | --all   # 停止某張卡（或全部）的 agent
+vibeflow shutdown            # 關閉 VibeFlow（tmux 裡的 agent 會繼續執行）
+vibeflow open <path>         # 把專案資料夾加進最近使用清單並開啟 Web UI
+vibeflow doctor              # 檢查前置需求
+vibeflow task create …       # 不開 UI 直接建卡，選項見 vibeflow task --help
 ```
-[專案目錄] /
-├── .vibeflow/                      <-- 自動加入 .gitignore
-│   ├── task-uuid-1/                <-- 卡片 A 的獨立 Worktree (分支: vf-task-1)
-│   └── task-uuid-2/                <-- 卡片 B 的獨立 Worktree (分支: vf-task-2)
-├── src/
-└── package.json
+
+用 `npx` 時把 `vibeflow` 換成 `npx @kw-yeh/vibeflow`。
+
+---
+
+## 運作方式
+
+**檔案放在哪裡**
+
+- 每張卡的 worktree 建在「工作站資料夾」底下：`<工作站>/<專案名>/<分支名>`。工作站預設是 `~/Desktop`，可在 **設定** 裡改。
+- 你的專案資料夾本身不會被切換分支，也不會多出 worktree。
+- 專案有 remote 時，新分支會在建卡時 push 到 origin；有設 CI 的話可能會被觸發。
+- 看板資料存在 `~/Library/Application Support/vibeflow/`（macOS）、`%APPDATA%\vibeflow\`（Windows）或 `~/.config/vibeflow/`（Linux）。
+
+**同一台電腦只有一個 VibeFlow**
+
+再次執行 `vibeflow` 或 `vibeflow tui` 時，會連到已在執行的那一個，不會開出第二份。
+
+**本機伺服器的安全性**
+
+VibeFlow 的本機伺服器能啟動 agent、寫入終端機，因此：
+
+- 只綁定 `127.0.0.1`／`::1`，使用隨機 port。
+- 每次啟動產生一組 token，網址帶上它才能進入；載入後換成 HttpOnly、SameSite=Strict 的 cookie，並從網址列移除。
+- WebSocket 連線同時檢查 cookie 與 `Origin`，`Host` 必須是 loopback，其他網頁無法從你的瀏覽器連進來。
+- API 只接受 VibeFlow 認得的卡片 id，不接受任意路徑或指令。
+
+---
+
+## 參與開發
+
+```bash
+git clone https://github.com/KW-Yeh/VibeFlow.git
+cd VibeFlow
+./start.command          # 或：npm install && npm start
 ```
 
-## 🚀 核心工作流
+架構、慣例、測試指令與完成標準都在 [AGENTS.md](AGENTS.md)。
 
-### 1. 任務初始化 (Task Creation)
+### 發佈新版本（Maintainers）
 
-* **路徑偵測**: 使用者選擇本地專案資料夾，App 自動檢查 Git 狀態與 Remote 資訊。
-* **分支策略**: 若有 Remote，彈窗讓使用者選擇基準分支（Base Branch）。
-* **背景準備**:
-   1. 自動將 `.vibeflow/` 寫入 `.gitignore`。
-   2. 執行 `git worktree add -b vf-[id] .vibeflow/vf-[id] origin/[選定分支]`。
-   3. 執行 `git push -u origin vf-[id]` 將工作分支同步至雲端。
+推送 `v*` tag 會觸發 [CI](.github/workflows/release.yml)：在 Ubuntu、macOS、Windows 上跑 typecheck、測試、端對端測試與 `vibeflow doctor`，打包後實際安裝驗證，再以 npm Trusted Publishing（OIDC，不需要 token）發佈 `@kw-yeh/vibeflow`。
 
-### 2. 交互執行 (Execution & Live Terminal)
+```bash
+npm version <x.y.z> -m "chore: release v%s"
+git push origin main --follow-tags
+```
 
-* **PTY 整合**: 當卡片拖入 `In Progress` 或點擊執行，core 在該 Worktree 路徑啟動 `claude` CLI（tmux session，或沒有 tmux 時的 `node-pty`）。
-* **互動模式 (Type A)**:
-   * 卡片展開為 **互動式終端機**。
-   * 使用者可直接在畫面上回答 Claude 的提問（例如：`y/n` 或確認指令）。
-* **多工並行**: 支援同時啟動多張卡片，每張卡片擁有獨立的 PTY 進程與 Worktree 環境，互不干擾。
+本地驗證打包：`npm run build:npm && npm pack ./dist-npm`。
 
-### 3. 審查與清理 (Review & Finalize)
+## License
 
-* **視覺化 Diff**: 任務完成後，讀取該 Worktree 的 `git diff` 並以 Side-by-side 模式呈現。
-* **一鍵合併**: 使用者點擊 Approve 後，App 在 Worktree 執行 `git commit` 與 `git push`。
-* **自動清理**: 卡片移至 `Done` 後，App 自動執行 `git worktree remove`，徹底刪除 `.vibeflow/` 下的暫存資料夾，保持硬碟整潔。
-
-## 📅 開發階段 (Milestones)
-
-### 第一階段：基礎架構 (Day 1-2)
-
-* [x] 搭建 Electron + Next.js 環境。
-* [x] 實作看板拖曳介面。
-* [x] 整合 `electron-store` 紀錄本地專案路徑與卡片狀態。
-
-### 第二階段：Git 自動化 (Day 3-4)
-
-* [x] 實作 `git remote` 偵測與分支選擇彈窗。
-* [x] 實作自動建立 Worktree 與分支推送的後端邏輯。
-* [x] 確保 `.vibeflow/` 資料夾被正確忽略。
-
-### 第三階段：互動終端 (Day 5-7)
-
-* [x] 在主進程封裝 `node-pty` 與 `claude` CLI。
-* [x] 前端整合 `xterm.js`，達成雙向串流（輸出顯示 + 鍵盤輸入）。
-* [x] 實作多卡片並行的 PTY 進程管理。
-
-### 第四階段：Review & Cleanup (Day 8-10)
-
-* [x] 整合 `react-diff-viewer` 呈現程式碼變更。
-* [x] 實作 Approve 後的自動提交與 Worktree 清理機制。
-
-## ⚠️ 開發提醒
-
-1. **Native Modules**: `node-pty` uses packaged prebuilt binaries where available; use `npm run check:node-pty` to confirm the installed binary loads.
-2. **互動處理**: 確保 `xterm.js` 的輸入能即時傳回 PTY，這對於 Claude Code 的互動式提問（Type A）至關重要。
-3. **環境變數**: core 呼叫 `claude` 時需手動注入使用者的 `PATH`（`packages/core/src/env.ts`），否則會找不到指令。
+[MIT](LICENSE)
