@@ -14,7 +14,7 @@ import {
   visibleFields,
 } from '../packages/tui/src/task-form.ts'
 
-const ctx = (over = {}) => ({ recent: [], agents: [], connections: {}, workstationPath: '', ...over })
+const ctx = (over = {}) => ({ recent: [], agents: [], models: {}, workstationPath: '', ...over })
 const repo = (over = {}) => ({ isRepo: true, hasRemote: true, remoteUrl: 'x', currentBranch: 'main', branches: ['dev', 'main'], defaultBase: 'main', ...over })
 
 test('a new card defaults like the Web UI: claude, medium, the board Auto Mode', () => {
@@ -80,8 +80,8 @@ test('the update payload sends the project only while the card is unstarted', ()
   assert.equal('baseBranch' in launched, false)
 })
 
-test('model choices are the default, the connected list, and a model not on it', () => {
-  const c = ctx({ connections: { claude: { connected: true, models: ['opus', 'sonnet'] } } })
+test('model choices are the default, the agent list, and a model not on it', () => {
+  const c = ctx({ models: { claude: ['opus', 'sonnet'] } })
   assert.deepEqual(modelOptions(c, 'claude', ''), ['', 'opus', 'sonnet'])
   assert.deepEqual(modelOptions(c, 'claude', 'haiku'), ['', 'opus', 'sonnet', 'haiku'])
   assert.deepEqual(modelOptions(c, 'codex', ''), [''])

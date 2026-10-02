@@ -26,7 +26,6 @@ import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
-  AgentConnections,
   GitInfo,
   RecentProjectEntry,
   Task,
@@ -50,7 +49,6 @@ interface EditTaskDialogProps {
   /** Board-wide Auto Mode, used for cards that carry no value of their own. */
   defaultAutoMode?: boolean
   detectAgents: () => Promise<AgentCli[]>
-  agentConnections?: AgentConnections
   pickFolder: () => Promise<string | null>
   loadRecentProjects: () => Promise<RecentProjectEntry[]>
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
@@ -63,7 +61,6 @@ interface EditTaskDialogProps {
 export function EditTaskDialog({
   task,
   detectAgents,
-  agentConnections,
   pickFolder,
   loadRecentProjects,
   loadGitInfo,
@@ -408,7 +405,6 @@ export function EditTaskDialog({
                 onAgentChange={handleAgentChange}
                 model={model}
                 onModelChange={setModel}
-                agentConnections={agentConnections}
               />
             </div>
           )}

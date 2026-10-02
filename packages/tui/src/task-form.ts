@@ -8,7 +8,7 @@ import type { VibeFlowApi } from '../../core/src/client'
 import type { AgentCli, AgentCliId, AgentEffort } from '../../core/src/agents'
 import type { GitInfo } from '../../core/src/git'
 import type { RecentProjectEntry } from '../../core/src/recent-projects'
-import type { AgentConnections, Task, VibeFlowState } from '../../core/src/store'
+import type { Task, VibeFlowState } from '../../core/src/store'
 import { fileToAttachmentInput } from '../../core/src/attachments'
 
 const h = React.createElement
@@ -63,7 +63,8 @@ export interface FormContext {
   recent: RecentProjectEntry[]
   /** null while detection timed out. */
   agents: AgentCli[] | null
-  connections: AgentConnections
+  /** Model ids each detected agent's CLI offers. */
+  models: Partial<Record<AgentCliId, string[]>>
   workstationPath: string
 }
 
@@ -136,9 +137,9 @@ export function visibleFields(s: FormState, ctx: FormContext): FieldId[] {
   return fields
 }
 
-/** Model choices: '' (agent default), the connected agent's list, and the current model if it is not listed. */
+/** Model choices: '' (agent default), the agent's list, and the current model if it is not listed. */
 export function modelOptions(ctx: FormContext, agentCli: AgentCliId, current: string): string[] {
-  const listed = ctx.connections[agentCli]?.models ?? []
+  const listed = ctx.models[agentCli] ?? []
   const options = ['', ...listed]
   if (current && !listed.includes(current)) options.push(current)
   return options
@@ -437,7 +438,7 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         return `‹ ${ctx.agents.find((a) => a.id === s.agentCli)?.name ?? s.agentCli} ›`
       }
       case 'model':
-        return modelOptions(ctx, s.agentCli, s.model).length > 1 ? `‹ ${s.model || '使用預設 model'} ›` : '尚未連線或無法取得 model list，將使用預設 model'
+        return modelOptions(ctx, s.agentCli, s.model).length > 1 ? `‹ ${s.model || '使用預設 model'} ›` : '無法取得 model list，將使用預設 model'
       case 'submit':
         return busy ?? (s.mode === 'new' ? '［ 建立任務 ］' : '［ 儲存變更 ］')
     }
@@ -528,11 +529,17 @@ export async function loadFormContext(api: VibeFlowApi): Promise<{ ctx: FormCont
     api.listRecentProjects(),
     Promise.race([api.detectAgents(), timeout]).catch(() => null),
   ]).finally(() => clearTimeout(timer))
+  const lists = await Promise.all(
+    (agents ?? []).map(async (a) => {
+      const list = await api.listAgentModels(a.id).catch(() => null)
+      return [a.id, list ? list.models.map((m) => m.id) : []] as const
+    })
+  )
   return {
     ctx: {
       recent,
       agents,
-      connections: state.settings.agentConnections ?? {},
+      models: Object.fromEntries(lists),
       workstationPath: state.settings.workstationPath?.trim() ?? '',
     },
     autoMode: state.settings.autoMode,

@@ -30,7 +30,6 @@ import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
-  AgentConnections,
   AttachmentInput,
   BoardState,
   ColumnId,
@@ -76,7 +75,6 @@ interface KanbanBoardProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
-  agentConnections?: AgentConnections
   onCreateTask: (
     title: string,
     description: string,
@@ -176,7 +174,6 @@ export function KanbanBoard({
   loadGitInfo,
   initRepository,
   detectAgents,
-  agentConnections,
   onCreateTask,
 }: KanbanBoardProps) {
   // Task whose sub-agent drawer is open (null = closed).
@@ -525,7 +522,6 @@ export function KanbanBoard({
                       loadGitInfo={loadGitInfo}
                       initRepository={initRepository}
                       detectAgents={detectAgents}
-                      agentConnections={agentConnections}
                       defaultAutoMode={autoMode}
                       workstationPath={workstationPath}
                       onSubmit={onCreateTask}

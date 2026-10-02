@@ -135,14 +135,19 @@ test('a board write can move cards but not add them or rewrite their worktree', 
   assert.equal(state.board.done.some((t2) => t2.id === 'forged01'), false)
 })
 
-test('settings writes cannot overwrite stored API keys', async (t) => {
+test('agents:listModels validates the agent and serves the builtin claude aliases', async (t) => {
   const { core } = await coreWithTask(t)
-  const state = core.handlers['vibeflow:setSettings']({
-    systemPrompt: 'be brief',
-    agentConnections: { claude: { connected: true, apiKey: 'sk-injected' } },
-  })
-  assert.equal(state.settings.systemPrompt, 'be brief')
-  assert.equal(state.settings.agentConnections, undefined)
+  const list = await core.handlers['agents:listModels']({ agentId: 'claude' })
+  assert.equal(list.source, 'builtin')
+  assert.ok(list.models.some((m) => m.id === 'sonnet'))
+  assert.throws(() => core.handlers['agents:listModels']({ agentId: 'gemini' }), { code: 'INVALID_REQUEST' })
+  assert.throws(() => core.handlers['agents:listModels']('claude'), { code: 'INVALID_REQUEST' })
+})
+
+test('the API-key connection channels are gone', async (t) => {
+  const { core } = await coreWithTask(t)
+  assert.equal(core.handlers['settings:connectAgent'], undefined)
+  assert.equal(core.handlers['settings:refreshAgentModels'], undefined)
 })
 
 test('only http(s) links can be opened on the host', async (t) => {

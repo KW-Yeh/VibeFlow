@@ -9,9 +9,6 @@ export type {
   TaskOutcome,
   BoardState,
   AppSettings,
-  AgentConnection,
-  AgentConnections,
-  ConnectableAgentId,
   VibeFlowState,
 } from '../../packages/core/src/store'
 export type {
@@ -38,7 +35,7 @@ export type {
   LibraryLaunchInfo,
   LibraryScript,
 } from '../../packages/core/src/library'
-export type { AgentCli, AgentCliId, AgentEffort } from '../../packages/core/src/agents'
+export type { AgentCli, AgentCliId, AgentEffort, AgentModel } from '../../packages/core/src/agents'
 export type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
@@ -56,3 +53,7 @@ export type { AttachmentInput } from '../../packages/core/src/attachments'
 export type { ChatChunk, ChatPhase, PhaseType } from '../../packages/core/src/chat-session'
 export type { LaunchIntent } from '../../packages/core/src/service'
 export type { StartResult } from '../../packages/core/src/session-backend'
+export type {
+  AgentModelList,
+  AgentModelSource,
+} from '../../packages/core/src/agent-models'

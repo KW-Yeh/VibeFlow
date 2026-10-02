@@ -17,8 +17,6 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
-  connectAgent,
-  refreshAgentModels,
   createTask,
   deleteTask,
   detectAgents,
@@ -37,10 +35,8 @@ import { Button } from '@/components/ui/button'
 import type {
   AgentCliId,
   AgentEffort,
-  AgentConnections,
   AttachmentInput,
   BoardState,
-  ConnectableAgentId,
   SubAgentRun,
   Task,
 } from '@/lib/types'
@@ -74,7 +70,6 @@ export default function HomePage() {
   const [systemPrompt, setSystemPrompt] = useState('')
   // Global workstation path ('' = the ~/Desktop default is in effect).
   const [workstationPath, setWorkstationPath] = useState('')
-  const [agentConnections, setAgentConnections] = useState<AgentConnections>({})
   const [loaded, setLoaded] = useState(false)
 
   // Settings dialog state
@@ -120,7 +115,6 @@ export default function HomePage() {
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
-        setAgentConnections(state.settings.agentConnections ?? {})
       }
       setLoaded(true)
     })
@@ -148,7 +142,6 @@ export default function HomePage() {
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
-      setAgentConnections(state.settings.agentConnections ?? {})
     })
   }, [])
 
@@ -255,32 +248,6 @@ export default function HomePage() {
     } finally {
       setSavingSettings(false)
     }
-  }
-
-  const handleConnectAgent = async (
-    agentId: ConnectableAgentId,
-    apiKey: string
-  ): Promise<string | null> => {
-    setSavingSettings(true)
-    setSettingsError(null)
-    try {
-      const state = await connectAgent(agentId, apiKey)
-      if (state) {
-        setAgentConnections(state.settings.agentConnections ?? {})
-      }
-      return null
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      setSettingsError(message)
-      return message
-    } finally {
-      setSavingSettings(false)
-    }
-  }
-
-  const handleRefreshAgentModels = async (agentId: ConnectableAgentId): Promise<void> => {
-    const state = await refreshAgentModels(agentId)
-    if (state) setAgentConnections(state.settings.agentConnections ?? {})
   }
 
   const handleCreateTask = async (
@@ -471,7 +438,6 @@ export default function HomePage() {
                   loadGitInfo={getGitInfo}
                   initRepository={initRepository}
                   detectAgents={detectAgents}
-                  agentConnections={agentConnections}
                   onCreateTask={handleCreateTask}
                 />
                 </div>
@@ -481,7 +447,6 @@ export default function HomePage() {
               task={editTask}
               defaultAutoMode={autoMode}
               detectAgents={detectAgents}
-              agentConnections={agentConnections}
               pickFolder={pickFolder}
               loadRecentProjects={listRecentProjects}
               loadGitInfo={getGitInfo}
@@ -495,12 +460,9 @@ export default function HomePage() {
               systemPrompt={systemPrompt}
               workstationPath={workstationPath}
               autoMode={autoMode}
-              agentConnections={agentConnections}
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}
-              onConnectAgent={handleConnectAgent}
-              onRefreshModels={handleRefreshAgentModels}
               onPickFolder={pickFolder}
               onClose={() => setSettingsOpen(false)}
             />

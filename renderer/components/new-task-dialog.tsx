@@ -24,6 +24,7 @@ import {
   ProjectFolderPicker,
   isProjectMissing,
 } from '@/components/project-folder-picker'
+import { listAgentModels } from '@/lib/api'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -32,7 +33,7 @@ import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
-  AgentConnections,
+  AgentModel,
   AttachmentInput,
   GitInfo,
   RecentProjectEntry,
@@ -51,7 +52,6 @@ export interface NewTaskFormProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
-  agentConnections?: AgentConnections
   onSubmit: (
     title: string,
     description: string,
@@ -195,8 +195,9 @@ export interface AgentModelFieldsProps {
   onAgentChange: (agentCli: AgentCliId) => void
   model: string
   onModelChange: (model: string) => void
-  agentConnections?: AgentConnections
 }
+
+const CUSTOM_MODEL = '__custom__'
 
 export function AgentModelFields({
   title,
@@ -207,16 +208,28 @@ export function AgentModelFields({
   onAgentChange,
   model,
   onModelChange,
-  agentConnections,
 }: AgentModelFieldsProps) {
-  const connectableAgent = agentCli === 'claude' || agentCli === 'codex' ? agentCli : null
-  const fetchedModels = connectableAgent
-    ? agentConnections?.[connectableAgent]?.models ?? []
-    : []
-  const modelOptions = model && !fetchedModels.includes(model)
-    ? [model, ...fetchedModels]
-    : fetchedModels
-  const canSelectModel = modelOptions.length > 0
+  const [models, setModels] = useState<AgentModel[] | null>(null)
+  const [customOpen, setCustomOpen] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setModels(null)
+    setCustomOpen(false)
+    void listAgentModels(agentCli)
+      .then((list) => {
+        if (!cancelled) setModels(list?.models ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setModels([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [agentCli])
+  const listed = models ?? []
+  const modelOptions = model && !customOpen && !listed.some((m) => m.id === model)
+    ? [{ id: model, label: model }, ...listed]
+    : listed
   return (
     <div className="space-y-3 rounded-lg border border-border/50 p-4">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -266,24 +279,42 @@ export function AgentModelFields({
       </div>
       <div className="space-y-1.5">
         <span className="text-sm font-medium text-muted-foreground">Model</span>
-        {canSelectModel ? (
-          <select
-            name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
-            value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-            className={F}
-          >
-            <option value="">使用預設 model</option>
-            {modelOptions.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p className="rounded-md border border-border/50 bg-muted/20 p-2 text-sm text-muted-foreground">
-            尚未連線或無法取得 model list，將使用預設 model。
+        <select
+          name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
+          value={customOpen ? CUSTOM_MODEL : model}
+          onChange={(e) => {
+            if (e.target.value === CUSTOM_MODEL) {
+              setCustomOpen(true)
+              return
+            }
+            setCustomOpen(false)
+            onModelChange(e.target.value)
+          }}
+          className={F}
+        >
+          <option value="">使用預設 model</option>
+          {modelOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          <option value={CUSTOM_MODEL}>自訂…</option>
+        </select>
+        {models === null && (
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            讀取 model list…
           </p>
+        )}
+        {customOpen && (
+          <input
+            name={`${title.toLowerCase().replace(/\s+/g, '-')}-custom-model`}
+            value={model}
+            onChange={(e) => onModelChange(e.target.value.trim())}
+            placeholder="輸入完整 model id，例如 claude-opus-5-5"
+            autoFocus
+            className={F}
+          />
         )}
       </div>
     </div>
@@ -299,7 +330,6 @@ export function NewTaskForm({
   loadGitInfo,
   initRepository,
   detectAgents,
-  agentConnections,
   onSubmit,
   onClose,
   inline = false,
@@ -637,7 +667,6 @@ export function NewTaskForm({
             }}
             model={model}
             onModelChange={setModel}
-            agentConnections={agentConnections}
           />
       </InlineEnterSurface>
     </div>

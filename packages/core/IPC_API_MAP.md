@@ -123,8 +123,8 @@ are.
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
 | `env:detectAgents` | core | `detectAgents()` | | |
-| `settings:connectAgent` | core | `connectAgent(agent, apiKey)` | | |
-| `settings:refreshAgentModels` | core | `refreshAgentModels(agent)` | | |
+| `agents:listModels` | core | `listAgentModels(agent, refresh?)` | | From the agent CLI's own catalog (no API key); `refresh` spawns `codex debug models` |
+| `settings:connectAgent` / `settings:refreshAgentModels` | — | — | | **Removed.** Model lists no longer need a provider API key |
 | `settings:githubAuthStatus` | core | `github.status()` | | |
 | `settings:startGithubAuthLogin` | core | `github.startLogin()` | | Streams `github-auth:event` to the requesting frontend |
 | `settings:cancelGithubAuthLogin` | core | `github.cancelLogin()` | | |

@@ -5,18 +5,6 @@ import type { AgentCliId, AgentEffort } from './agents'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
-export type ConnectableAgentId = 'claude' | 'codex'
-
-export interface AgentConnection {
-  connected: boolean
-  apiKey?: string
-  models?: string[]
-  error?: string
-  updatedAt?: number
-}
-
-export type AgentConnections = Partial<Record<ConnectableAgentId, AgentConnection>>
-
 export interface Task {
   id: string
   title: string
@@ -146,8 +134,6 @@ export interface AppSettings {
    * `<workstationPath>/<projectName>/`. Absent = default to `~/Desktop`.
    */
   workstationPath?: string
-  /** Local-only API keys + model lists for providers that expose model APIs. */
-  agentConnections?: AgentConnections
 }
 
 /**
@@ -224,6 +210,13 @@ function migrateStore(store: JsonStore<VibeFlowState>): void {
   // rewrite a v4 store and drop it.
   if (!store.has('recentProjects')) {
     store.set('recentProjects', recentProjectsFromBoard(store.get('board')))
+  }
+  // Earlier builds kept provider API keys here in plaintext. Model lists now
+  // come from the agent CLIs, so nothing reads them and they must not linger.
+  const settings = store.get('settings') as (AppSettings & { agentConnections?: unknown }) | undefined
+  if (settings && 'agentConnections' in settings) {
+    const { agentConnections: _dropped, ...rest } = settings
+    store.set('settings', rest)
   }
   if (persistedVersion < STATE_VERSION) {
     store.set('version', STATE_VERSION)

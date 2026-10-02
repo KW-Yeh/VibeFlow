@@ -2,6 +2,7 @@ import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
+  AgentModelList,
   AppSettings,
   ArtifactContent,
   AttachmentInput,
@@ -11,7 +12,6 @@ import type {
   ChatAttachment,
   ChatPhase,
   Conversation,
-  ConnectableAgentId,
   DiffEntry,
   DiffFile,
   FinalizeResult,
@@ -64,21 +64,6 @@ export async function setSettings(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.setSettings(patch) : null
-}
-
-export async function connectAgent(
-  agentId: ConnectableAgentId,
-  apiKey: string
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.connectAgent(agentId, apiKey) : null
-}
-
-export async function refreshAgentModels(
-  agentId: ConnectableAgentId
-): Promise<VibeFlowState | null> {
-  const b = bridge()
-  return b ? b.refreshAgentModels(agentId) : null
 }
 
 export async function getGithubAuthStatus(): Promise<GitHubCliAuthStatus | null> {
@@ -146,6 +131,14 @@ export async function initRepository(
 export async function detectAgents(): Promise<AgentCli[]> {
   const b = bridge()
   return b ? b.detectAgents() : []
+}
+
+export async function listAgentModels(
+  agentId: AgentCliId,
+  refresh = false
+): Promise<AgentModelList | null> {
+  const b = bridge()
+  return b ? b.listAgentModels(agentId, refresh) : null
 }
 
 export async function createTask(payload: {

@@ -5,11 +5,11 @@
 import type {
   AppSettings,
   BoardState,
-  ConnectableAgentId,
   Task,
   VibeFlowState,
 } from './store'
 import type { AgentCli, AgentCliId, AgentEffort } from './agents'
+import type { AgentModelList } from './agent-models'
 import type {
   DiffEntry,
   DiffFile,
@@ -65,13 +65,6 @@ export function createBridge(t: BridgeTransport) {
     t.invoke('vibeflow:setBoard', board),
     setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
       t.invoke('vibeflow:setSettings', patch),
-    connectAgent: (
-      agentId: ConnectableAgentId,
-      apiKey: string
-    ): Promise<VibeFlowState> =>
-      t.invoke('settings:connectAgent', { agentId, apiKey }),
-    refreshAgentModels: (agentId: ConnectableAgentId): Promise<VibeFlowState> =>
-      t.invoke('settings:refreshAgentModels', agentId),
     getGithubAuthStatus: (): Promise<GitHubCliAuthStatus> =>
       t.invoke('settings:githubAuthStatus'),
     startGithubAuthLogin: (): Promise<void> =>
@@ -96,6 +89,9 @@ export function createBridge(t: BridgeTransport) {
   /** Agent CLIs (claude / codex) actually installed on PATH. */
   detectAgents: (): Promise<AgentCli[]> =>
     t.invoke('env:detectAgents'),
+  /** Models the agent's own CLI offers; `refresh` asks the CLI instead of its cache. */
+  listAgentModels: (agentId: AgentCliId, refresh = false): Promise<AgentModelList> =>
+    t.invoke('agents:listModels', { agentId, refresh }),
   createTask: (payload: {
     title: string
     description?: string

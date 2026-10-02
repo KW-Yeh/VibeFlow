@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
 import {
   AlertTriangle,
@@ -6,8 +6,6 @@ import {
   CheckCircle2,
   Clipboard,
   ExternalLink,
-  Eye,
-  EyeOff,
   Loader2,
   Library,
   LogOut,
@@ -22,6 +20,7 @@ import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
   getGithubAuthStatus,
+  listAgentModels,
   logoutGithubAuth,
   onGithubAuthEvent,
   openExternal,
@@ -29,32 +28,22 @@ import {
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
-  AgentConnections,
-  ConnectableAgentId,
+  AgentCliId,
+  AgentModelList,
+  AgentModelSource,
   GitHubCliAuthStatus,
 } from '@/lib/types'
 
-interface AgentInfo {
-  id: ConnectableAgentId
-  name: string
-  platform: string
-  keyUrl: string
-}
-
-const CONNECTABLE_AGENTS: AgentInfo[] = [
-  {
-    id: 'claude',
-    name: 'Claude',
-    platform: 'Anthropic Console',
-    keyUrl: 'https://platform.claude.com/settings/workspaces/default/keys',
-  },
-  {
-    id: 'codex',
-    name: 'Codex',
-    platform: 'OpenAI Platform',
-    keyUrl: 'https://platform.openai.com/api-keys',
-  },
+const MODEL_AGENTS: { id: AgentCliId; name: string }[] = [
+  { id: 'claude', name: 'Claude Code' },
+  { id: 'codex', name: 'Codex CLI' },
 ]
+
+const MODEL_SOURCE_LABELS: Record<AgentModelSource, string> = {
+  builtin: '內建清單',
+  'codex-cache': 'Codex 本機快取',
+  'codex-cli': 'Codex CLI',
+}
 
 type GithubAuthPhase = 'idle' | 'starting' | 'waiting' | 'success' | 'error'
 
@@ -66,13 +55,10 @@ interface SettingsDialogProps {
   workstationPath: string
   /** Board-wide Auto Mode: the value new cards start with. */
   autoMode: boolean
-  agentConnections?: AgentConnections
   saving: boolean
   error: string | null
   /** Called with the new custom prompt ('' = default), workstation path ('' = default) and Auto Mode. */
   onSave: (systemPrompt: string, workstationPath: string, autoMode: boolean) => void
-  onConnectAgent: (agentId: ConnectableAgentId, apiKey: string) => Promise<string | null>
-  onRefreshModels?: (agentId: ConnectableAgentId) => Promise<void>
   /** Native folder picker — returns the chosen absolute path, or null. */
   onPickFolder: () => Promise<string | null>
   onClose: () => void
@@ -83,24 +69,17 @@ export function SettingsDialog({
   systemPrompt,
   workstationPath,
   autoMode,
-  agentConnections,
   saving,
   error,
   onSave,
-  onConnectAgent,
-  onRefreshModels,
   onPickFolder,
   onClose,
 }: SettingsDialogProps) {
   const [text, setText] = useState('')
   const [workstation, setWorkstation] = useState('')
   const [auto, setAuto] = useState(true)
-  const [agentPage, setAgentPage] = useState<AgentInfo | null>(null)
-  const [apiKey, setApiKey] = useState('')
-  const [showKey, setShowKey] = useState(false)
-  const [connectError, setConnectError] = useState<string | null>(null)
-  const [connecting, setConnecting] = useState(false)
-  const [refreshing, setRefreshing] = useState<ConnectableAgentId | null>(null)
+  const [modelLists, setModelLists] = useState<Partial<Record<AgentCliId, AgentModelList | null>>>({})
+  const [refreshing, setRefreshing] = useState<AgentCliId | null>(null)
   const [githubPage, setGithubPage] = useState(false)
   const [githubStatus, setGithubStatus] = useState<GitHubCliAuthStatus | null>(null)
   const [githubPhase, setGithubPhase] = useState<GithubAuthPhase>('idle')
@@ -115,12 +94,7 @@ export function SettingsDialog({
       setText(systemPrompt)
       setWorkstation(workstationPath)
       setAuto(autoMode)
-      setAgentPage(null)
       setGithubPage(false)
-      setApiKey('')
-      setShowKey(false)
-      setConnectError(null)
-      setConnecting(false)
       setGithubPhase('idle')
       setGithubCode('')
       setGithubError(null)
@@ -128,6 +102,32 @@ export function SettingsDialog({
       void getGithubAuthStatus().then(setGithubStatus)
     }
   }, [open, systemPrompt, workstationPath, autoMode])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setModelLists({})
+    for (const agent of MODEL_AGENTS) {
+      void listAgentModels(agent.id)
+        .catch(() => null)
+        .then((list) => {
+          if (!cancelled) setModelLists((prev) => ({ ...prev, [agent.id]: list }))
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  const refreshModels = async (agentId: AgentCliId) => {
+    setRefreshing(agentId)
+    try {
+      const list = await listAgentModels(agentId, true).catch(() => null)
+      setModelLists((prev) => ({ ...prev, [agentId]: list }))
+    } finally {
+      setRefreshing(null)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -164,18 +164,9 @@ export function SettingsDialog({
 
   const [libraryPage, setLibraryPage] = useState(false)
   const [libraryEditing, setLibraryEditing] = useState(false)
-  const selectedConnection = agentPage ? agentConnections?.[agentPage.id] : undefined
-
-  const connectedModelCount = useMemo(() => {
-    return CONNECTABLE_AGENTS.reduce((sum, agent) => {
-      const models = agentConnections?.[agent.id]?.models ?? []
-      return sum + models.length
-    }, 0)
-  }, [agentConnections])
-
   const trimmed = text.trim()
   const isUnset = trimmed === ''
-  const canSubmit = !saving && !agentPage && !githubPage
+  const canSubmit = !saving && !githubPage
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -185,20 +176,6 @@ export function SettingsDialog({
   const handlePickWorkstation = async () => {
     const picked = await onPickFolder()
     if (picked) setWorkstation(picked)
-  }
-
-  const handleConnect = async () => {
-    if (!agentPage || connecting) return
-    setConnecting(true)
-    setConnectError(null)
-    const err = await onConnectAgent(agentPage.id, apiKey)
-    if (!err) {
-      setApiKey('')
-      setAgentPage(null)
-    } else {
-      setConnectError(err)
-    }
-    setConnecting(false)
   }
 
   const openGithubLoginPage = async () => {
@@ -266,8 +243,6 @@ export function SettingsDialog({
       title={
         githubPage
           ? '登入 GitHub CLI'
-          : agentPage
-          ? `連結 ${agentPage.name}`
           : libraryPage
           ? 'Library'
           : '設定'
@@ -275,13 +250,11 @@ export function SettingsDialog({
       description={
         githubPage
           ? '使用 GitHub CLI 的網頁授權流程登入 github.com。'
-          : agentPage
-          ? '綁定個人 API key 以取得可用 model list。'
           : libraryPage
           ? 'VibeFlow 自有的 skill / prompt / script，啟動任務時投遞給 Claude 與 Codex。'
           : '調整 system prompt 與 agent 帳號連線。'
       }
-      saving={saving || connecting || githubBusy}
+      saving={saving || githubBusy}
       onClose={handleClose}
       showHeader
       contentClassName="max-w-2xl"
@@ -302,27 +275,7 @@ export function SettingsDialog({
               </Button>
             )}
           </>
-        ) : agentPage ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAgentPage(null)}
-              disabled={connecting}
-            >
-              取消
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleConnect}
-              disabled={connecting || apiKey.trim().length === 0}
-              className={cn(connecting && 'opacity-80')}
-            >
-              {connecting && <Loader2 className="animate-spin" />}
-              {connecting ? '驗證中…' : '儲存 API key'}
-            </Button>
-          </>
-        ) : libraryPage ? (
+                ) : libraryPage ? (
           libraryEditing ? null : (
             <Button variant="ghost" size="sm" onClick={() => setLibraryPage(false)}>
               <ArrowLeft className="size-3.5" />
@@ -434,63 +387,7 @@ export function SettingsDialog({
             </div>
           )}
         </div>
-      ) : agentPage ? (
-        <div className="space-y-5">
-          <button
-            type="button"
-            onClick={() => setAgentPage(null)}
-            disabled={connecting}
-            className="inline-flex items-center gap-1.5 rounded-sm text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-          >
-            <ArrowLeft className="size-4" />
-            返回設定
-          </button>
-
-          <div className="space-y-3">
-            <p className="text-base leading-6 text-muted-foreground">
-              為了使用 AI 功能，請綁定您的個人 API 金鑰。前往 {agentPage.platform}
-              後台建立 API 金鑰並手動貼上。這是個本地執行的應用程式，因此不會將您所儲存的資訊上傳到任何地方。
-            </p>
-            <button
-              type="button"
-              onClick={() => void openExternal(agentPage.keyUrl)}
-              className="inline-flex items-center gap-1.5 rounded-sm text-base text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              前往 {agentPage.platform}
-              <ExternalLink className="size-3.5" />
-            </button>
-          </div>
-
-          <label className="block space-y-1.5">
-            <span className="text-base font-medium">API key</span>
-            <div className="flex rounded-md border bg-background focus-within:ring-[3px] focus-within:ring-ring/50">
-              <input
-                name={`${agentPage.id}-api-key`}
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                type={showKey ? 'text' : 'password'}
-                placeholder={selectedConnection?.connected ? '輸入新的 API key 以更新連線' : '貼上 API key'}
-                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-base outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="flex w-9 items-center justify-center rounded-r-md text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
-                aria-label={showKey ? '隱藏 API key' : '顯示 API key'}
-              >
-                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-          </label>
-
-          {(connectError || selectedConnection?.error) && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
-              {connectError ?? selectedConnection?.error}
-            </p>
-          )}
-        </div>
-      ) : libraryPage ? (
+            ) : libraryPage ? (
         <LibraryPanel onEditingChange={setLibraryEditing} />
       ) : (
         <div className="space-y-6">
@@ -589,63 +486,54 @@ export function SettingsDialog({
             <div>
               <h3 className="text-base font-medium">CLI 與帳號設定</h3>
               <p className="text-sm text-muted-foreground">
-                設定 Agent CLI 的 API key 以同步 model；設定 GitHub CLI 以支援本機 GitHub 操作。
+                Model 清單直接取自已登入的 Agent CLI，不需要 API key；設定 GitHub CLI 以支援本機 GitHub 操作。
               </p>
             </div>
             <div className="grid gap-2">
-              {CONNECTABLE_AGENTS.map((agent) => {
-                const connection = agentConnections?.[agent.id]
-                const connected = connection?.connected && (connection.models?.length ?? 0) > 0
+              {MODEL_AGENTS.map((agent) => {
+                const list = modelLists[agent.id]
+                const loading = list === undefined || refreshing === agent.id
                 return (
                   <div
                     key={agent.id}
                     className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2.5"
                   >
-                    {connected ? (
-                      <CheckCircle2 className="size-4 shrink-0 text-success" />
-                    ) : connection?.error ? (
+                    {loading ? (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                    ) : list?.error || !list ? (
                       <AlertTriangle className="size-4 shrink-0 text-destructive" />
                     ) : (
-                      <span className="size-4 shrink-0 rounded-full border border-muted-foreground/50" />
+                      <CheckCircle2 className="size-4 shrink-0 text-success" />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-base font-medium">{agent.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {connected
-                          ? `${connection?.models?.length ?? 0} 個 models 可用`
-                          : connection?.error ?? '尚未連線'}
+                      <p className="truncate text-sm text-muted-foreground">
+                        {list === undefined
+                          ? '讀取 model 清單…'
+                          : !list
+                          ? '無法取得 model 清單'
+                          : `${list.models.length} 個 models 可用・來源：${MODEL_SOURCE_LABELS[list.source]}`}
                       </p>
+                      {list?.error && (
+                        <p className="truncate text-sm text-destructive" title={list.error}>
+                          {list.error}
+                        </p>
+                      )}
                     </div>
-                    {connected && onRefreshModels && (
+                    {agent.id === 'codex' && (
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0"
                         disabled={refreshing === agent.id}
-                        aria-label="重新整理 model 列表"
-                        onClick={async () => {
-                          setRefreshing(agent.id)
-                          await onRefreshModels(agent.id)
-                          setRefreshing(null)
-                        }}
+                        aria-label="向 Codex CLI 重新取得 model 清單"
+                        title="向 Codex CLI 重新取得 model 清單"
+                        onClick={() => void refreshModels(agent.id)}
                       >
                         <RefreshCw className={cn('size-4', refreshing === agent.id && 'animate-spin')} />
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setAgentPage(agent)
-                        setApiKey('')
-                        setShowKey(false)
-                        setConnectError(null)
-                      }}
-                    >
-                      {connected ? '設定' : 'Connect'}
-                    </Button>
                   </div>
                 )
               })}
@@ -714,11 +602,6 @@ export function SettingsDialog({
             {githubError && !githubPage && (
               <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
                 {githubError}
-              </p>
-            )}
-            {connectedModelCount > 0 && (
-              <p className="text-sm text-muted-foreground">
-                目前共有 {connectedModelCount} 個已同步 model 可供 task 選擇。
               </p>
             )}
           </section>

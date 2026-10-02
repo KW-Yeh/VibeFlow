@@ -16,14 +16,13 @@ import {
   type AppSettings,
   type BoardState,
   type ColumnId,
-  type ConnectableAgentId,
   type Task,
   type TaskOutcome,
   type VibeFlowState,
 } from './store'
 import { projectWorkstationPath } from './workspace'
 import { AGENT_EFFORTS, detectAgents, type AgentCliId, type AgentEffort } from './agents'
-import { fetchAgentModels } from './agent-connections'
+import { listAgentModels } from './agent-models'
 import {
   cancelGitHubCliLogin,
   getGitHubCliAuthStatus,
@@ -161,9 +160,9 @@ function libraryKind(value: unknown): LibraryKind {
   return value as LibraryKind
 }
 
-function agentId(value: unknown): ConnectableAgentId {
+function agentId(value: unknown): AgentCliId {
   if (!AGENT_IDS.includes(value as string)) invalid('agentId must be claude | codex')
-  return value as ConnectableAgentId
+  return value as AgentCliId
 }
 
 /** Only ids core already knows are accepted; nothing addresses a task by path. */
@@ -292,69 +291,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     },
 
     'vibeflow:setSettings': (patch) => {
-      const p = obj<Partial<AppSettings>>(patch, 'patch')
-      // Connections carry API keys and are written only by the connect handlers.
-      const { agentConnections: _ignored, ...rest } = p
-      setSettings(rest)
-      return getState()
-    },
-
-    'settings:connectAgent': async (payload) => {
-      const { agentId: rawId, apiKey } = obj<{ agentId: unknown; apiKey: unknown }>(payload, 'payload')
-      const id = agentId(rawId)
-      const key = str(apiKey, 'apiKey')
-      const models = await fetchAgentModels(id, key)
-      const state = getState()
-      setSettings({
-        agentConnections: {
-          ...(state.settings.agentConnections ?? {}),
-          [id]: {
-            connected: true,
-            apiKey: key.trim(),
-            models,
-            error: undefined,
-            updatedAt: Date.now(),
-          },
-        },
-      })
-      return getState()
-    },
-
-    'settings:refreshAgentModels': async (rawId) => {
-      const id = agentId(rawId)
-      const connections = getState().settings.agentConnections ?? {}
-      const existing = connections[id]
-      if (!existing?.apiKey) {
-        setSettings({
-          agentConnections: {
-            ...connections,
-            [id]: { connected: false, models: [], error: '尚未綁定 API key。', updatedAt: Date.now() },
-          },
-        })
-        return getState()
-      }
-      try {
-        const models = await fetchAgentModels(id, existing.apiKey)
-        setSettings({
-          agentConnections: {
-            ...connections,
-            [id]: { ...existing, connected: true, models, error: undefined, updatedAt: Date.now() },
-          },
-        })
-      } catch (err) {
-        setSettings({
-          agentConnections: {
-            ...connections,
-            [id]: {
-              ...existing,
-              connected: false,
-              models: [],
-              error: err instanceof Error ? err.message : String(err),
-              updatedAt: Date.now(),
-            },
-          },
-        })
-      }
+      setSettings(obj<Partial<AppSettings>>(patch, 'patch'))
       return getState()
     },
 
@@ -368,6 +305,11 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     'settings:logoutGithubAuth': () => logoutGitHubCli(),
 
     'env:detectAgents': () => detectAgents(),
+
+    'agents:listModels': (payload) => {
+      const { agentId: rawId, refresh } = obj<{ agentId: unknown; refresh?: unknown }>(payload, 'payload')
+      return listAgentModels(agentId(rawId), { refresh: refresh === true })
+    },
 
     // A task does not exist yet when a project is picked, so these two are the
     // ones that must take a path. They only inspect or `git init` it.
