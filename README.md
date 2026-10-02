@@ -1,5 +1,9 @@
 # VibeFlow
 
+[![npm version](https://img.shields.io/npm/v/@kw-yeh/vibeflow.svg)](https://www.npmjs.com/package/@kw-yeh/vibeflow)
+[![npm downloads](https://img.shields.io/npm/dm/@kw-yeh/vibeflow.svg)](https://www.npmjs.com/package/@kw-yeh/vibeflow)
+[![node](https://img.shields.io/node/v/@kw-yeh/vibeflow.svg)](https://www.npmjs.com/package/@kw-yeh/vibeflow)
+
 **讓多個 coding agent 同時開工的本機看板。**
 
 每張卡片是一個任務。卡片一開始，VibeFlow 就幫它開一條獨立的 Git 分支與 worktree，在裡面啟動 Claude Code 或 Codex，並把即時終端機放在卡片旁邊。好幾張卡可以同時跑，彼此不會改到同一份檔案，你的專案資料夾本身也不會被切換分支。
