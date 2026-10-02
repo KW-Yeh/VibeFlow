@@ -98,6 +98,8 @@ const TAB_LABEL: Record<TaskTab, string> = {
 
 const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions', 'artifacts', 'diff']
 const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions']
+// A backlog card has not run yet: nothing has been decided, produced or changed.
+const BACKLOG_TASK_TABS: readonly TaskTab[] = ['task']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -1381,16 +1383,17 @@ export function TaskWorkspacePanel({
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
-  const diff = useTaskDiff(task.id, column !== 'done')
+  const diff = useTaskDiff(task.id, column === 'in_progress')
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
 
   // Polled here rather than inside ArtifactsContent so the tab's count stays
   // live while the tab is closed. A completed task has no artifacts left (the
-  // directory is cleaned with its worktree), so skip the poll entirely there.
+  // directory is cleaned with its worktree) and a backlog one has not produced
+  // any, so only a running task is polled.
   useEffect(() => {
-    if (column === 'done') {
+    if (column !== 'in_progress') {
       setArtifacts([])
       return
     }
@@ -1451,7 +1454,12 @@ export function TaskWorkspacePanel({
 
   // Completing a task swaps the tab set under the selection, so clamp rather
   // than store — an out-of-set tab falls back to the column's first one.
-  const tabs = column === 'done' ? DONE_TASK_TABS : ACTIVE_TASK_TABS
+  const tabs =
+    column === 'done'
+      ? DONE_TASK_TABS
+      : column === 'backlog'
+        ? BACKLOG_TASK_TABS
+        : ACTIVE_TASK_TABS
   const activeTab = tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
 
   const tabStrip = (
@@ -1611,7 +1619,18 @@ export function TaskWorkspacePanel({
         )}
       </header>
 
-      {column === 'done' ? (
+      {column === 'backlog' ? (
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
+          <InfoSection title={TAB_LABEL.task}>
+            <TaskInfo
+              task={task}
+              column={column}
+              subAgents={subAgents}
+              onOpenSubAgents={onOpenSubAgents}
+            />
+          </InfoSection>
+        </main>
+      ) : column === 'done' ? (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
           <InfoSection heading={tabStrip}>
             <div
