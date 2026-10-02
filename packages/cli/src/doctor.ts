@@ -6,7 +6,7 @@ import { AGENT_CLIS, detectAgents } from '../../core/src/agents'
 import { execEnv } from '../../core/src/env'
 import { findGitBash } from '../../core/src/git-bash'
 import { hasTmux } from '../../core/src/tmux-backend'
-import { ensurePtySpawnHelper } from '../../core/src/pty-helper'
+import { ensurePtySpawnHelper, spawnHelperFixCommand } from '../../core/src/pty-helper'
 
 const pexec = promisify(execFile)
 
@@ -67,8 +67,10 @@ async function checkNodePty(): Promise<Check> {
       id: 'node-pty',
       name: 'node-pty',
       level: 'fail',
-      detail: `spawn-helper 沒有執行權限：${unrepaired[0].error}`,
-      fix: unrepaired.map((f) => `chmod +x "${f.path}"`).join(' && '),
+      detail: unrepaired.some((f) => f.ownedByOther)
+        ? 'spawn-helper 沒有執行權限，而且檔案屬於其他使用者（通常是用 sudo 全域安裝），VibeFlow 無法自行修正'
+        : `spawn-helper 沒有執行權限：${unrepaired[0].error}`,
+      fix: spawnHelperFixCommand(unrepaired),
     }
   }
   try {

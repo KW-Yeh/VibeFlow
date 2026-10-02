@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Assemble the npm package in ./dist-npm:
 //   dist/vibeflow.mjs  core + cli + tui bundled by esbuild (plain JS, Node 22+)
+//   dist/postinstall.mjs  makes node-pty's spawn-helper executable at install time
 //   dist/web/          the renderer's static export, served by core
 //   package.json       runtime dependencies only (node-pty, ws, ink, react)
 //
@@ -29,10 +30,9 @@ const RUNTIME_DEPS = ['node-pty', 'ws', 'ink', 'react']
 fs.rmSync(out, { recursive: true, force: true })
 fs.mkdirSync(path.join(out, 'dist'), { recursive: true })
 
-console.log('==> Bundling the CLI (core + cli + tui)')
-await build({
-  entryPoints: [path.join(root, 'packages', 'cli', 'src', 'bin.ts')],
-  outfile: path.join(out, 'dist', 'vibeflow.mjs'),
+const bundle = (entry, outName) => build({
+  entryPoints: [path.join(root, 'packages', 'cli', 'src', entry)],
+  outfile: path.join(out, 'dist', outName),
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -46,6 +46,10 @@ await build({
   legalComments: 'none',
   logLevel: 'warning',
 })
+
+console.log('==> Bundling the CLI (core + cli + tui)')
+await bundle('bin.ts', 'vibeflow.mjs')
+await bundle('postinstall.ts', 'postinstall.mjs')
 
 const webSrc = path.join(root, 'app')
 if (!fs.existsSync(path.join(webSrc, 'home', 'index.html'))) {
@@ -69,6 +73,7 @@ const pkg = {
   author: rootPkg.author,
   type: 'module',
   bin: { vibeflow: 'dist/vibeflow.mjs' },
+  scripts: { postinstall: 'node dist/postinstall.mjs' },
   files: ['dist', 'README.md', 'LICENSE'],
   engines: { node: '>=22' },
   repository: { type: 'git', url: 'git+https://github.com/KW-Yeh/VibeFlow.git' },

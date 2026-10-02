@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { ensurePtySpawnHelper } from '../packages/core/src/pty-helper.ts'
+import { ensurePtySpawnHelper, spawnHelperFixCommand } from '../packages/core/src/pty-helper.ts'
 
 const posix = process.platform !== 'win32'
 
@@ -29,4 +29,11 @@ test('an executable helper and a missing build dir are left alone', { skip: !pos
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   assert.deepEqual(ensurePtySpawnHelper(root), [])
   assert.equal(fs.statSync(helper).mode & 0o777, 0o750)
+})
+
+test('the fix command needs sudo only when a helper belongs to another user', () => {
+  const mine = { path: '/a/spawn-helper', error: 'EPERM', ownedByOther: false }
+  const root = { path: '/b/spawn-helper', error: 'EPERM', ownedByOther: true }
+  assert.equal(spawnHelperFixCommand([mine]), 'chmod +x "/a/spawn-helper"')
+  assert.equal(spawnHelperFixCommand([mine, root]), 'sudo chmod +x "/a/spawn-helper" "/b/spawn-helper"')
 })

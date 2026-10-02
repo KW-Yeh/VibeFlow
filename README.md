@@ -82,6 +82,20 @@ vibeflow doctor
 npm i -g @kw-yeh/vibeflow@latest
 ```
 
+### 安裝時出現 `EACCES: permission denied`
+
+代表 npm 的全域目錄屬於系統管理員（從 nodejs.org 下載安裝檔裝 Node 時常見）。建議不要用 `sudo`，改成讓全域套件裝在你自己的家目錄：
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+npm i -g @kw-yeh/vibeflow@latest
+```
+
+用 Homebrew（`brew install node`）或 [nvm](https://github.com/nvm-sh/nvm) 裝的 Node 本來就不需要 `sudo`。已經用 `sudo` 裝好也能正常使用；若 `vibeflow doctor` 回報終端機模組沒有執行權限，照它列出的 `sudo chmod +x …` 指令執行一次即可。
+
 ---
 
 ## 常用指令

@@ -5,6 +5,8 @@ import { createRequire } from 'module'
 export interface HelperRepairFailure {
   path: string
   error: string
+  /** Owned by another user (typically root after `sudo npm i -g`), so only that user can chmod it. */
+  ownedByOther: boolean
 }
 
 function nodePtyRoot(): string | null {
@@ -30,9 +32,9 @@ export function ensurePtySpawnHelper(root: string | null = nodePtyRoot()): Helpe
   ]
   const failures: HelperRepairFailure[] = []
   for (const file of candidates) {
-    let mode: number
+    let stat: fs.Stats
     try {
-      mode = fs.statSync(file).mode
+      stat = fs.statSync(file)
     } catch {
       continue
     }
@@ -43,10 +45,17 @@ export function ensurePtySpawnHelper(root: string | null = nodePtyRoot()): Helpe
       // not executable for us: repair below
     }
     try {
-      fs.chmodSync(file, (mode & 0o7777) | 0o111)
+      fs.chmodSync(file, (stat.mode & 0o7777) | 0o111)
     } catch (err) {
-      failures.push({ path: file, error: (err as Error).message })
+      const uid = process.getuid?.()
+      failures.push({ path: file, error: (err as Error).message, ownedByOther: uid !== undefined && stat.uid !== uid })
     }
   }
   return failures
+}
+
+/** A shell command the user can paste to repair `failures`. */
+export function spawnHelperFixCommand(failures: HelperRepairFailure[]): string {
+  const sudo = failures.some((f) => f.ownedByOther) ? 'sudo ' : ''
+  return `${sudo}chmod +x ${failures.map((f) => `"${f.path}"`).join(' ')}`
 }
