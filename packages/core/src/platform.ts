@@ -23,6 +23,11 @@ export interface PlatformServices {
    * Absent or null = use `scripts/vibeflow.mjs` under `sourceRoot()`, if any.
    */
   cliEntry?(): string | null
+  /**
+   * Skills VibeFlow ships into every library (`library-builtins.ts`).
+   * Absent or null = this install carries none.
+   */
+  builtinSkillsDir?(): string | null
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>
   /** Open a local path with the OS; resolves to an error string, empty on success. */
