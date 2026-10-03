@@ -10,6 +10,7 @@ import {
   deleteEntry,
   ensureLibrary,
   hashSkillDir,
+  importEntry,
   listLibrary,
   setEntryEnabled,
   updateEntry,
@@ -185,4 +186,81 @@ test('the shipped pr skill pushes unpushed commits and never edits another branc
   const md = fsSync.readFileSync(path.resolve('packages/core/builtin-skills/pr/SKILL.md'), 'utf8')
   assert.match(md, /@\{upstream\}\.\.HEAD/, 'checks for commits the upstream lacks')
   assert.match(md, /headRefName/, 'update mode compares the PR head with the current branch')
+})
+
+// --- hardening ---
+
+async function danglingJunction(t, at) {
+  const gone = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-gone-'))
+  await fs.symlink(gone, at, 'junction')
+  await fs.rm(gone, { recursive: true })
+  t.after(() => fs.rm(at, { force: true }))
+}
+
+test('the shipped skills use LF, so their hash is the same on every checkout', () => {
+  const dir = path.resolve('packages/core/builtin-skills')
+  for (const rel of ['pr/SKILL.md', 'visual-parity/SKILL.md', 'visual-parity/scripts/parity.py']) {
+    assert.ok(!fsSync.readFileSync(path.join(dir, rel)).includes(13), `${rel} has CR`)
+  }
+})
+
+test('one broken shipped skill does not stop the others from syncing', async (t) => {
+  const { root, shipped } = await setup(t)
+  await danglingJunction(t, path.join(shipped, 'other', 'shared'))
+  assert.deepEqual(syncBuiltinSkills(root, shipped).installed, ['probe'])
+})
+
+test('a failed update keeps the previous copy and does not read as a delete', async (t) => {
+  const { root, shipped } = await setup(t)
+  syncBuiltinSkills(root, shipped)
+  await release(shipped, 'probe', 'v2\n')
+  await danglingJunction(t, path.join(shipped, 'probe', 'shared'))
+
+  syncBuiltinSkills(root, shipped)
+  syncBuiltinSkills(root, shipped)
+  assert.doesNotMatch(read(root, 'probe'), /v2/)
+  assert.ok(index(root).entries['skill/probe'].builtinHash)
+  assert.deepEqual(listLibrary(root, shipped).map((e) => e.name), ['other', 'probe'])
+})
+
+test('a corrupt index is left untouched by sync and kept aside by the next write', async (t) => {
+  const { root, shipped } = await setup(t)
+  syncBuiltinSkills(root, shipped)
+  await fs.writeFile(path.join(root, 'index.json'), '{ not json')
+
+  assert.deepEqual(syncBuiltinSkills(root, shipped), { installed: [], updated: [] })
+  assert.equal(fsSync.readFileSync(path.join(root, 'index.json'), 'utf8'), '{ not json')
+
+  setEntryEnabled(root, 'skill', 'probe', false)
+  const kept = fsSync.readdirSync(root).filter((f) => f.startsWith('index.json.corrupt-'))
+  assert.equal(kept.length, 1)
+  assert.equal(fsSync.readFileSync(path.join(root, kept[0]), 'utf8'), '{ not json')
+  assert.equal(index(root).entries['skill/probe'].enabled, false)
+})
+
+test("importing over a built-in makes it the user's own", async (t) => {
+  const { root, shipped } = await setup(t)
+  syncBuiltinSkills(root, shipped)
+  const src = path.join(path.dirname(root), 'mine', 'probe')
+  await fs.mkdir(src, { recursive: true })
+  await fs.writeFile(path.join(src, 'SKILL.md'), skillMd('probe', 'imported\n'))
+
+  importEntry(root, 'skill', src)
+  assert.equal(listLibrary(root, shipped).find((e) => e.name === 'probe').builtin, undefined)
+  assert.equal(index(root).entries['skill/probe'].builtinHash, undefined)
+  await release(shipped, 'probe', 'v2\n')
+  syncBuiltinSkills(root, shipped)
+  assert.match(read(root, 'probe'), /imported/)
+})
+
+test('restore drops import provenance left on a built-in record', async (t) => {
+  const { root, shipped } = await setup(t)
+  syncBuiltinSkills(root, shipped)
+  annotate(root, 'skill/probe', { sourcePath: '/somewhere/probe' })
+  assert.equal(restoreBuiltinSkill(root, shipped, 'probe').sourcePath, undefined)
+})
+
+test('visual-parity tells macOS users about python3', () => {
+  const md = fsSync.readFileSync(path.resolve('packages/core/builtin-skills/visual-parity/SKILL.md'), 'utf8')
+  assert.match(md, /python3/)
 })

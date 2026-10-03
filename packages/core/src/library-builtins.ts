@@ -6,6 +6,7 @@ import {
   entryKey,
   entryPath,
   hashSkillDir,
+  indexIsCorrupt,
   libraryRoot,
   listLibrary,
   markBuiltinDeleted,
@@ -29,15 +30,28 @@ export function builtinSkillsDir(): string | null {
   return getPlatform().builtinSkillsDir?.() ?? null
 }
 
-/** Copy one shipped skill over the library's; returns the hash of what landed. */
+/**
+ * Copy one shipped skill over the library's; returns the hash of what landed.
+ * The copy goes to a dot-named sibling first (the listing skips dot names) and
+ * replaces the old one only once complete, so a failed copy leaves the
+ * previous version in place instead of a directory without SKILL.md — which
+ * the next sync would read as "the user deleted it".
+ */
 function installBuiltin(root: string, builtinDir: string, name: string): string {
   const target = entryPath(root, 'skill', name)
-  fs.rmSync(target, { recursive: true, force: true })
-  fs.cpSync(path.join(builtinDir, name), target, {
-    recursive: true,
-    dereference: true,
-    filter: (src) => path.basename(src) !== '__pycache__',
-  })
+  const staging = entryPath(root, 'skill', `.${name}.installing`)
+  fs.rmSync(staging, { recursive: true, force: true })
+  try {
+    fs.cpSync(path.join(builtinDir, name), staging, {
+      recursive: true,
+      dereference: true,
+      filter: (src) => path.basename(src) !== '__pycache__',
+    })
+    fs.rmSync(target, { recursive: true, force: true })
+    fs.renameSync(staging, target)
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true })
+  }
   return hashSkillDir(target)
 }
 
@@ -54,37 +68,57 @@ export function syncBuiltinSkills(
   if (!builtinDir) return result
   const names = skillNamesIn(builtinDir)
   if (names.length === 0) return result
+  // Unreadable provenance would make every built-in look user-owned and bring
+  // deleted ones back; leave the library as it is until a user write sets it aside.
+  if (indexIsCorrupt(root)) {
+    console.error('Library index.json is unreadable; skipping built-in skill sync')
+    return result
+  }
   ensureLibrary(root)
 
   for (const name of names) {
-    const key = entryKey('skill', name)
-    const record = readIndex(root).entries[key] ?? {}
-    if (record.builtinDeleted) continue
-    const target = entryPath(root, 'skill', name)
-
-    if (!record.builtinHash) {
-      // Something already holds the name: the user's own entry, not ours to take.
-      if (fs.existsSync(target)) continue
-      annotate(root, key, {
-        builtinHash: installBuiltin(root, builtinDir, name),
-        enabled: true,
-        importedAt: Date.now(),
-      })
-      result.installed.push(name)
-      continue
+    try {
+      syncOne(root, builtinDir, name, result)
+    } catch (err) {
+      // One broken skill must not hold back the rest.
+      console.error(`Failed to sync built-in skill "${name}":`, err)
     }
-
-    if (!fs.existsSync(path.join(target, 'SKILL.md'))) {
-      // Removed by hand rather than through the panel: same intent.
-      markBuiltinDeleted(root, key)
-      continue
-    }
-    if (hashSkillDir(path.join(builtinDir, name)) === record.builtinHash) continue
-    if (hashSkillDir(target) !== record.builtinHash) continue
-    annotate(root, key, { builtinHash: installBuiltin(root, builtinDir, name) })
-    result.updated.push(name)
   }
   return result
+}
+
+function syncOne(
+  root: string,
+  builtinDir: string,
+  name: string,
+  result: { installed: string[]; updated: string[] }
+): void {
+  const key = entryKey('skill', name)
+  const record = readIndex(root).entries[key] ?? {}
+  if (record.builtinDeleted) return
+  const target = entryPath(root, 'skill', name)
+
+  if (!record.builtinHash) {
+    // Something already holds the name: the user's own entry, not ours to take.
+    if (fs.existsSync(target)) return
+    annotate(root, key, {
+      builtinHash: installBuiltin(root, builtinDir, name),
+      enabled: true,
+      importedAt: Date.now(),
+    })
+    result.installed.push(name)
+    return
+  }
+
+  if (!fs.existsSync(path.join(target, 'SKILL.md'))) {
+    // Removed by hand rather than through the panel: same intent.
+    markBuiltinDeleted(root, key)
+    return
+  }
+  if (hashSkillDir(path.join(builtinDir, name)) === record.builtinHash) return
+  if (hashSkillDir(target) !== record.builtinHash) return
+  annotate(root, key, { builtinHash: installBuiltin(root, builtinDir, name) })
+  result.updated.push(name)
 }
 
 /** Overwrite (or bring back) a built-in with the shipped version. */
@@ -107,6 +141,8 @@ export function restoreBuiltinSkill(
   const index = readIndex(root)
   const record = { ...index.entries[key], builtinHash, enabled: true, importedAt: Date.now() }
   delete record.builtinDeleted
+  // Shipped, not imported: no source to re-import from.
+  delete record.sourcePath
   index.entries[key] = record
   writeIndex(root, index)
   const entry = listLibrary(root, builtinDir).find((e) => e.key === key)

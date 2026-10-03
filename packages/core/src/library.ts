@@ -127,22 +127,48 @@ function indexPath(root: string): string {
   return path.join(root, INDEX_FILE)
 }
 
-export function readIndex(root: string): LibraryIndex {
+/** The index as stored; `null` when the file exists but cannot be understood. */
+function readIndexFile(root: string): LibraryIndex | null {
+  let raw: string
   try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath(root), 'utf8')) as unknown
+    raw = fs.readFileSync(indexPath(root), 'utf8')
+  } catch {
+    return { version: 1, entries: {} }
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === 'object' && 'entries' in parsed) {
       const entries = (parsed as LibraryIndex).entries
       if (entries && typeof entries === 'object') return { version: 1, entries }
     }
   } catch {
-    // Absent or corrupt index just means no provenance is known yet.
+    // Falls through to null.
   }
-  return { version: 1, entries: {} }
+  return null
 }
 
+/** A corrupt index is read as empty, so the library still lists from disk. */
+export function readIndex(root: string): LibraryIndex {
+  return readIndexFile(root) ?? { version: 1, entries: {} }
+}
+
+/** True when an index file exists but cannot be parsed. */
+export function indexIsCorrupt(root: string): boolean {
+  return readIndexFile(root) === null
+}
+
+/**
+ * Atomic (temp file + rename), so a crash mid-write cannot corrupt it. A
+ * corrupt index is moved aside first rather than overwritten: it may hold
+ * the user's disabled flags, and it is the only copy.
+ */
 export function writeIndex(root: string, index: LibraryIndex): void {
   fs.mkdirSync(root, { recursive: true })
-  fs.writeFileSync(indexPath(root), `${JSON.stringify(index, null, 2)}\n`)
+  const file = indexPath(root)
+  if (indexIsCorrupt(root)) fs.renameSync(file, `${file}.corrupt-${Date.now()}`)
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, `${JSON.stringify(index, null, 2)}\n`)
+  fs.renameSync(tmp, file)
 }
 
 /** Ensure the three kind directories exist so the UI has somewhere to write. */
@@ -329,11 +355,13 @@ export function importEntry(
   fs.cpSync(resolved, target, { recursive: kind === 'skill', dereference: true })
   if (kind === 'script') fs.chmodSync(target, 0o755)
 
-  annotate(root, entryKey(kind, name), {
-    sourcePath: resolved,
-    importedAt: Date.now(),
-    enabled: true,
-  })
+  // Imported files are the user's own: a built-in of the same name stops
+  // being tracked, so sync never updates over the import.
+  const key = entryKey(kind, name)
+  const index = readIndex(root)
+  const { builtinHash: _hash, builtinDeleted: _deleted, ...kept } = index.entries[key] ?? {}
+  index.entries[key] = { ...kept, sourcePath: resolved, importedAt: Date.now(), enabled: true }
+  writeIndex(root, index)
   return requireEntry(root, kind, name)
 }
 
