@@ -35,3 +35,17 @@ test('the Node platform has no source root unless told', () => {
   assert.equal(getPlatform().userDataDir(), '/tmp/vf')
   assert.equal(getPlatform().sourceRoot(), null)
 })
+
+test('built-in skills live beside the bundle, or under core in a checkout', () => {
+  const bundle = path.join('/opt', 'vibeflow', 'dist', 'vibeflow.mjs')
+  assert.equal(
+    createNodePlatform({ cliEntry: bundle }).builtinSkillsDir(),
+    path.join('/opt', 'vibeflow', 'dist', 'builtin-skills')
+  )
+  assert.equal(
+    createNodePlatform({ sourceRoot: '/src/vf' }).builtinSkillsDir(),
+    path.join('/src/vf', 'packages', 'core', 'builtin-skills')
+  )
+  assert.equal(createNodePlatform({}).builtinSkillsDir(), null)
+  assert.equal(createNodePlatform({ sourceRoot: '/src/vf', builtinSkillsDir: '/x' }).builtinSkillsDir(), '/x')
+})

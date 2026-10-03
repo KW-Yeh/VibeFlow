@@ -117,6 +117,8 @@ are.
 | `library:list` | core | `library.list()` | | |
 | `library:import` | core | `library.import(kind, source)` | sourcePath | The user picked it. Web UI needs a path input or an upload |
 | `library:create` / `read` / `update` / `setDescription` / `setEnabled` / `delete` | core | `library.*` | | |
+| `library:restoreBuiltin` | core | `library.restoreBuiltin(name)` | | Name only; must be a skill this install ships |
+| `library:removedBuiltins` | core | `library.removedBuiltins()` | | Shipped skills the user deleted |
 | `library:getLaunchInfo` | — | — | ~~worktreePath~~ | **Removed.** Only launch assembly needed it, and that runs in core now |
 
 ## Agents and accounts

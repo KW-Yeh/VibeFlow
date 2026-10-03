@@ -178,3 +178,29 @@ test('events reach every bus listener', async (t) => {
   bus.emit('pty:data', { sessionKey: 'k', data: 'y' })
   assert.deepEqual(seen, [['pty:data', { sessionKey: 'k', data: 'x' }]])
 })
+
+test('library built-in handlers validate input and use the registered shipped dir', async (t) => {
+  const shipped = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-service-builtin-'))
+  t.after(() => {
+    setPlatform(createNodePlatform({ userDataDir: storeDir }))
+    return fs.rm(shipped, { recursive: true, force: true })
+  })
+  await fs.mkdir(path.join(shipped, 'probe'))
+  await fs.writeFile(path.join(shipped, 'probe', 'SKILL.md'), '---\nname: probe\ndescription: p\n---\n')
+  setPlatform(createNodePlatform({ userDataDir: storeDir, builtinSkillsDir: shipped }))
+  const core = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
+  t.after(() => core.shutdown())
+
+  assert.deepEqual(await core.handlers['library:removedBuiltins'](), [])
+  await assert.rejects(core.handlers['library:restoreBuiltin']({ name: 42 }), { code: 'INVALID_REQUEST' })
+  await assert.rejects(core.handlers['library:restoreBuiltin']({ name: '../etc' }), /內建/)
+
+  const entry = await core.handlers['library:restoreBuiltin']({ name: 'probe' })
+  assert.equal(entry.name, 'probe')
+  assert.deepEqual(entry.builtin, { modified: false, updateAvailable: false })
+  const listed = (await core.handlers['library:list']()).find((e) => e.name === 'probe')
+  assert.deepEqual(listed.builtin, { modified: false, updateAvailable: false })
+
+  await core.handlers['library:delete']({ kind: 'skill', name: 'probe' })
+  assert.deepEqual(await core.handlers['library:removedBuiltins'](), ['probe'])
+})

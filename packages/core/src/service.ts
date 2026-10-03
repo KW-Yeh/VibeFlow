@@ -69,6 +69,7 @@ import {
   updateEntry as updateLibraryEntry,
   type LibraryKind,
 } from './library'
+import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId } from './launch'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
@@ -576,7 +577,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
 
     'board:getCliLaunchInfo': () => boardCliLaunchInfo(),
 
-    'library:list': async () => listLibrary(await libraryRoot()),
+    'library:list': async () => listLibrary(await libraryRoot(), builtinSkillsDir()),
     // The source path was picked by the user (native picker or typed path).
     'library:import': async (payload) => {
       const p = obj<{ kind: unknown; sourcePath: unknown }>(payload, 'payload')
@@ -615,6 +616,12 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       deleteLibraryEntry(await libraryRoot(), libraryKind(p.kind), str(p.name, 'name'))
       return true
     },
+    'library:restoreBuiltin': async (payload) => {
+      const p = obj<{ name: unknown }>(payload, 'payload')
+      return restoreBuiltinSkill(await libraryRoot(), builtinSkillsDir(), str(p.name, 'name'))
+    },
+    'library:removedBuiltins': async () =>
+      removedBuiltinSkills(await libraryRoot(), builtinSkillsDir()),
 
     // Approve: commit everything in the worktree and push the branch upstream.
     'git:approve': async (payload) => {

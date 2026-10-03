@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { EventBus } from '../../core/src/events'
 import { acquireLock, liveHost, releaseLock, updateLock, type LockInfo } from '../../core/src/lock'
 import { createNodePlatform, setPlatform } from '../../core/src/platform'
+import { syncBuiltinsAtStartup } from '../../core/src/library-builtins'
 import { createCore, type Core, type CoreHandlers } from '../../core/src/service'
 import { createSessionBackend } from '../../core/src/sessions'
 import { startWebServer, type WebServer } from '../../core/src/web-server'
@@ -70,6 +71,8 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
   }
 
   try {
+    // Only the lock holder writes the library, so this runs after acquiring it.
+    await syncBuiltinsAtStartup()
     const bus = new EventBus()
     const sessions = createSessionBackend(bus.sink(), {
       prefer: options.backend,

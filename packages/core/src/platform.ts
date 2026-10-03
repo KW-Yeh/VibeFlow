@@ -88,6 +88,8 @@ export interface NodePlatformOptions {
   userDataDir?: string
   sourceRoot?: string | null
   cliEntry?: string | null
+  /** Overrides the location derived from `cliEntry` / `sourceRoot`. */
+  builtinSkillsDir?: string | null
 }
 
 /** Services for a plain Node host. */
@@ -98,6 +100,13 @@ export function createNodePlatform(options: NodePlatformOptions = {}): PlatformS
     userDataDir: () => userData,
     sourceRoot: () => root,
     cliEntry: () => options.cliEntry ?? null,
+    builtinSkillsDir: () => {
+      if (options.builtinSkillsDir !== undefined) return options.builtinSkillsDir
+      // npm build: dist/vibeflow.mjs with dist/builtin-skills beside it.
+      if (options.cliEntry) return path.join(path.dirname(options.cliEntry), 'builtin-skills')
+      if (root) return path.join(root, 'packages', 'core', 'builtin-skills')
+      return null
+    },
     openExternal: async (url) => {
       const err = await openWithOs(url)
       if (err) throw new Error(err)

@@ -303,6 +303,16 @@ export async function deleteLibraryEntry(
   return b ? b.deleteLibraryEntry({ kind, name }) : false
 }
 
+export async function restoreBuiltinSkill(name: string): Promise<LibraryEntry | null> {
+  const b = bridge()
+  return b ? b.restoreBuiltinSkill({ name }) : null
+}
+
+export async function listRemovedBuiltinSkills(): Promise<string[]> {
+  const b = bridge()
+  return b ? b.listRemovedBuiltinSkills() : []
+}
+
 export async function getBoardCliLaunchInfo(): Promise<BoardCliLaunchInfo | null> {
   const b = bridge()
   return b ? b.getBoardCliLaunchInfo() : null

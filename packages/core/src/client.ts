@@ -186,6 +186,11 @@ export function createBridge(t: BridgeTransport) {
   }): Promise<boolean> => t.invoke('library:setEnabled', payload),
   deleteLibraryEntry: (payload: { kind: LibraryKind; name: string }): Promise<boolean> =>
     t.invoke('library:delete', payload),
+  /** Overwrite or bring back a shipped skill with the version this install carries. */
+  restoreBuiltinSkill: (payload: { name: string }): Promise<LibraryEntry> =>
+    t.invoke('library:restoreBuiltin', payload),
+  /** Shipped skills the user deleted, offered for restore. */
+  listRemovedBuiltinSkills: (): Promise<string[]> => t.invoke('library:removedBuiltins'),
   approve: (
     taskId: string,
     message: string
