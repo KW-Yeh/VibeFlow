@@ -486,7 +486,13 @@ export function dropCoveredEntries(entries: string[]): string[] {
   })
 }
 
-async function copyIgnoredEntry(
+/**
+ * Copy an ignored path into the worktree. Links are recreated by
+ * `copyIgnoredLink` instead of `fs.cp`, which makes them with an untyped
+ * `symlink()` — Windows refuses that without Developer Mode (EPERM), and the
+ * rejection aborts the whole copy, leaving a half-populated `node_modules`.
+ */
+export async function copyIgnoredEntry(
   projectPath: string,
   worktreePath: string,
   entry: string
@@ -494,7 +500,58 @@ async function copyIgnoredEntry(
   const src = path.join(projectPath, entry)
   const dest = path.join(worktreePath, entry)
   await fs.mkdir(path.dirname(dest), { recursive: true })
-  await fs.cp(src, dest, { recursive: true })
+  await fs.cp(src, dest, {
+    recursive: true,
+    filter: async (from, to) => {
+      if (!(await fs.lstat(from)).isSymbolicLink()) return true
+      await copyIgnoredLink(projectPath, worktreePath, from, to)
+      return false
+    },
+  })
+}
+
+/**
+ * Recreate one link. A target inside the source project is re-pointed at the
+ * same path in the worktree, so an npm workspace link (`node_modules/@scope/pkg`
+ * → `packages/pkg`) resolves to the worktree's own package. On Windows a
+ * directory becomes a junction and a file falls back to a copy, neither of
+ * which needs privilege. A dangling link is dropped.
+ */
+async function copyIgnoredLink(
+  projectPath: string,
+  worktreePath: string,
+  from: string,
+  to: string
+): Promise<void> {
+  const raw = (await fs.readlink(from)).replace(/^\\\\\?\\/, '')
+  const resolved = path.resolve(path.dirname(from), raw)
+  const inProject = path.relative(projectPath, resolved)
+  const insideProject =
+    inProject !== '' && !inProject.startsWith('..') && !path.isAbsolute(inProject)
+  const target = insideProject ? path.join(worktreePath, inProject) : resolved
+
+  let isDirectory: boolean
+  try {
+    isDirectory = (await fs.stat(resolved)).isDirectory()
+  } catch {
+    return
+  }
+  await fs.mkdir(path.dirname(to), { recursive: true })
+
+  if (process.platform !== 'win32') {
+    // Keep a relative link relative: it already resolves inside the copy.
+    await fs.symlink(path.isAbsolute(raw) ? target : raw, to)
+    return
+  }
+  if (isDirectory) {
+    await fs.symlink(target, to, 'junction')
+    return
+  }
+  try {
+    await fs.symlink(target, to, 'file')
+  } catch {
+    await fs.copyFile(resolved, to)
+  }
 }
 
 /**
