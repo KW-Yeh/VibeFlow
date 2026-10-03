@@ -1,6 +1,6 @@
 # Spec：Library 內建 skill
 
-- 狀態：已確認設計，待審 spec
+- 狀態：已實作
 - Ticket：尚無
 - 需求來源：使用者要求「內建的 pr 與 visual-parity skill 出現在設定的 Library 上，方便用戶自己調整」
 - 更新日期：2026-10-03

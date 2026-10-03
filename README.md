@@ -26,6 +26,7 @@ vibeflow
 - **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及一份會保留下來的決策紀錄（agent 做了哪些決定、為什麼）。
 - **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。
 - **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
+- **內建 skill，可自行調整**：每個人的 Library（設定 → Library）都附帶 `visual-parity`、`pr` 兩個 skill，兩個 agent 都會載入。可以直接編輯、停用或刪除，隨時能還原成 VibeFlow 出貨的版本；沒改過的會跟著 VibeFlow 升級更新。`visual-parity` 需要 Python 與 `pip install playwright && playwright install chromium`。
 - **也能用指令操作**：`vibeflow task create` 不開 UI 直接建卡；agent 自己也能在看板上建立後續的卡片。
 
 ---

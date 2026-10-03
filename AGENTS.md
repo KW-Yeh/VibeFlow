@@ -180,7 +180,9 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── store.ts           VibeFlowState, Task, board mutators (LAZY init)
 │   ├── tasks.ts           create / update a card (UI and CLI share it)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
+│   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
+├── core/builtin-skills/   skills VibeFlow ships (copied to dist/builtin-skills by build:npm)
 ├── cli/src/               `vibeflow` command: main.ts (dispatch), host.ts (lock+core+server),
 │                          remote.ts (client of a running host), doctor.ts, task-command.ts
 ├── tui/src/index.ts       Ink board; Enter = tmux attach, or pty passthrough (Ctrl+] back)
