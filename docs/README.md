@@ -36,6 +36,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | Feature | Summary |
 |---|---|
 | [organize-files](features/organize-files/spec.md) | Move the root-level docs into `docs/` and add this index |
+| [builtin-skills](features/builtin-skills/spec.md) | Ship built-in skills (visual-parity, generic pr) in every user's Library |
 
 ## Adding a document
 
