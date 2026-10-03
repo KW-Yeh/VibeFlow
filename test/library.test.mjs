@@ -5,11 +5,13 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import {
+  annotate,
   buildCodexHome,
   buildPluginDir,
   createEntry,
   deleteEntry,
   ensureLibrary,
+  hashSkillDir,
   entryPath,
   importEntry,
   libraryLaunchInfoAt,
@@ -414,4 +416,62 @@ test('libraryLaunchInfoAt — omits the script section when there are no scripts
   createEntry(root, 'prompt', 'p.md', 'just a prompt')
   const info = libraryLaunchInfoAt(root, undefined, userHome)
   assert.ok(!info.promptText.includes('可用的工具腳本'))
+})
+
+// --- built-in status ---
+
+test('hashSkillDir — stable, content-sensitive, ignores __pycache__', async () => {
+  const root = await tmpDir()
+  const dir = await makeSkillDir(root)
+  const first = hashSkillDir(dir)
+  assert.equal(hashSkillDir(dir), first)
+
+  await fs.mkdir(path.join(dir, 'scripts', '__pycache__'), { recursive: true })
+  await fs.writeFile(path.join(dir, 'scripts', '__pycache__', 'x.pyc'), 'bytecode')
+  assert.equal(hashSkillDir(dir), first, '__pycache__ must not count as a modification')
+
+  await fs.writeFile(path.join(dir, 'scripts', 'run.py'), 'print(1)')
+  assert.notEqual(hashSkillDir(dir), first)
+})
+
+test('listLibrary — reports modified / updateAvailable only for built-in skills', async () => {
+  const root = await tmpDir()
+  const shippedRoot = await tmpDir('vf-builtin-')
+  const shipped = await makeSkillDir(shippedRoot)
+  const lib = ensureLibrary(root)
+  await fs.cp(shipped, path.join(lib.skills, 'probe'), { recursive: true })
+  annotate(root, 'skill/probe', { builtinHash: hashSkillDir(shipped), enabled: true })
+  await makeSkillDir(lib.skills, 'mine')
+
+  let [mine, probe] = listLibrary(root, shippedRoot)
+  assert.equal(mine.builtin, undefined)
+  assert.deepEqual(probe.builtin, { modified: false, updateAvailable: false })
+
+  await fs.appendFile(path.join(lib.skills, 'probe', 'SKILL.md'), 'user edit\n')
+  ;[, probe] = listLibrary(root, shippedRoot)
+  assert.deepEqual(probe.builtin, { modified: true, updateAvailable: false })
+
+  await fs.appendFile(path.join(shipped, 'SKILL.md'), 'new release\n')
+  ;[, probe] = listLibrary(root, shippedRoot)
+  assert.deepEqual(probe.builtin, { modified: true, updateAvailable: true })
+
+  ;[, probe] = listLibrary(root)
+  assert.deepEqual(probe.builtin, { modified: true, updateAvailable: false }, 'no shipped dir, no update')
+})
+
+test('deleteEntry — a built-in skill leaves a tombstone, a user entry leaves nothing', async () => {
+  const root = await tmpDir()
+  const lib = ensureLibrary(root)
+  await makeSkillDir(lib.skills, 'probe')
+  await makeSkillDir(lib.skills, 'mine')
+  annotate(root, 'skill/probe', { builtinHash: 'abc', enabled: true })
+  annotate(root, 'skill/mine', { enabled: true })
+
+  deleteEntry(root, 'skill', 'probe')
+  deleteEntry(root, 'skill', 'mine')
+
+  const index = JSON.parse(await fs.readFile(path.join(root, 'index.json'), 'utf8'))
+  assert.deepEqual(index.entries['skill/probe'], { builtinDeleted: true })
+  assert.equal(index.entries['skill/mine'], undefined)
+  assert.equal(fsSync.existsSync(path.join(lib.skills, 'probe')), false)
 })

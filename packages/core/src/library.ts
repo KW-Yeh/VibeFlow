@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -36,15 +37,30 @@ export interface LibraryEntry {
   importedAt?: number
   /** Whether this entry is delivered to agents. */
   enabled: boolean
+  /** Set for skills VibeFlow ships; see syncBuiltinSkills. */
+  builtin?: {
+    /** The files no longer match what VibeFlow installed. */
+    modified: boolean
+    /** Modified, and the shipped version moved on since — "restore" would update it. */
+    updateAvailable: boolean
+  }
 }
 
 /** Provenance + enablement. Disk decides what exists; this only annotates it. */
-interface LibraryIndex {
+export interface IndexRecord {
+  sourcePath?: string
+  importedAt?: number
+  enabled?: boolean
+  description?: string
+  /** Hash of the built-in version VibeFlow last installed. Present = built-in. */
+  builtinHash?: string
+  /** The user deleted this built-in; sync must not bring it back. */
+  builtinDeleted?: boolean
+}
+
+export interface LibraryIndex {
   version: 1
-  entries: Record<
-    string,
-    { sourcePath?: string; importedAt?: number; enabled?: boolean; description?: string }
-  >
+  entries: Record<string, IndexRecord>
 }
 
 const INDEX_FILE = 'index.json'
@@ -111,7 +127,7 @@ function indexPath(root: string): string {
   return path.join(root, INDEX_FILE)
 }
 
-function readIndex(root: string): LibraryIndex {
+export function readIndex(root: string): LibraryIndex {
   try {
     const parsed = JSON.parse(fs.readFileSync(indexPath(root), 'utf8')) as unknown
     if (parsed && typeof parsed === 'object' && 'entries' in parsed) {
@@ -124,7 +140,7 @@ function readIndex(root: string): LibraryIndex {
   return { version: 1, entries: {} }
 }
 
-function writeIndex(root: string, index: LibraryIndex): void {
+export function writeIndex(root: string, index: LibraryIndex): void {
   fs.mkdirSync(root, { recursive: true })
   fs.writeFileSync(indexPath(root), `${JSON.stringify(index, null, 2)}\n`)
 }
@@ -166,12 +182,57 @@ export function entryPath(root: string, kind: LibraryKind, name: string): string
   return path.join(root, KIND_DIR[kind], name)
 }
 
+/** Files a runtime drops into a skill that say nothing about its content. */
+const HASH_IGNORED = new Set(['__pycache__', '.DS_Store'])
+
+/**
+ * Content hash of a skill directory: every file's relative path and bytes, in
+ * path order. Line endings are not normalized — both sides of a comparison
+ * are always on the same machine.
+ */
+export function hashSkillDir(dir: string): string {
+  const files: string[] = []
+  const walk = (rel: string) => {
+    for (const dirent of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      if (HASH_IGNORED.has(dirent.name)) continue
+      const child = rel ? `${rel}/${dirent.name}` : dirent.name
+      if (fs.statSync(path.join(dir, child)).isDirectory()) walk(child)
+      else files.push(child)
+    }
+  }
+  walk('')
+  const hash = createHash('sha256')
+  for (const rel of files.sort()) {
+    hash.update(rel).update('\0').update(fs.readFileSync(path.join(dir, rel))).update('\0')
+  }
+  return hash.digest('hex')
+}
+
+function builtinStatus(
+  full: string,
+  name: string,
+  recorded: string,
+  builtinDir: string | null | undefined
+): NonNullable<LibraryEntry['builtin']> {
+  const modified = hashSkillDir(full) !== recorded
+  let updateAvailable = false
+  if (modified && builtinDir) {
+    const shipped = path.join(builtinDir, name)
+    if (fs.existsSync(path.join(shipped, 'SKILL.md'))) {
+      updateAvailable = hashSkillDir(shipped) !== recorded
+    }
+  }
+  return { modified, updateAvailable }
+}
+
 /**
  * Every entry present on disk, annotated from the index. Disk is authoritative:
  * an index record whose files are gone is ignored, so deleting a directory by
- * hand cannot leave a phantom entry in the UI.
+ * hand cannot leave a phantom entry in the UI. `builtinDir` is where this
+ * install's shipped skills live, used to tell whether an edited built-in has a
+ * newer shipped version.
  */
-export function listLibrary(root: string): LibraryEntry[] {
+export function listLibrary(root: string, builtinDir?: string | null): LibraryEntry[] {
   const index = readIndex(root)
   const entries: LibraryEntry[] = []
 
@@ -213,6 +274,10 @@ export function listLibrary(root: string): LibraryEntry[] {
         sourcePath: record.sourcePath,
         importedAt: record.importedAt,
         enabled: record.enabled !== false,
+        builtin:
+          wantsDirectory && record.builtinHash
+            ? builtinStatus(full, name, record.builtinHash, builtinDir)
+            : undefined,
       })
     }
   }
@@ -220,11 +285,7 @@ export function listLibrary(root: string): LibraryEntry[] {
   return entries.sort((a, b) => a.key.localeCompare(b.key))
 }
 
-function annotate(
-  root: string,
-  key: string,
-  patch: { sourcePath?: string; importedAt?: number; enabled?: boolean; description?: string }
-): void {
+export function annotate(root: string, key: string, patch: Partial<IndexRecord>): void {
   const index = readIndex(root)
   index.entries[key] = { ...index.entries[key], ...patch }
   writeIndex(root, index)
@@ -327,10 +388,23 @@ export function readEntryContent(
   return fs.readFileSync(kind === 'skill' ? path.join(target, 'SKILL.md') : target, 'utf8')
 }
 
+/** Forget a built-in's provenance but remember the user removed it. */
+export function markBuiltinDeleted(root: string, key: string): void {
+  const index = readIndex(root)
+  index.entries[key] = { builtinDeleted: true }
+  writeIndex(root, index)
+}
+
 export function deleteEntry(root: string, kind: LibraryKind, name: string): void {
   fs.rmSync(entryPath(root, kind, name), { recursive: true, force: true })
+  const key = entryKey(kind, name)
+  const record = readIndex(root).entries[key]
+  if (record?.builtinHash || record?.builtinDeleted) {
+    markBuiltinDeleted(root, key)
+    return
+  }
   const index = readIndex(root)
-  delete index.entries[entryKey(kind, name)]
+  delete index.entries[key]
   writeIndex(root, index)
 }
 
