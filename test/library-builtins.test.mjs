@@ -170,3 +170,13 @@ test('the shipped skills are well-formed and do not depend on a checkout path', 
   }
   assert.ok(fsSync.existsSync(path.join(dir, 'visual-parity', 'scripts', 'parity.py')))
 })
+
+test('restore refuses to overwrite an entry the user owns (stale panel)', async (t) => {
+  const { root, shipped } = await setup(t)
+  syncBuiltinSkills(root, shipped)
+  deleteEntry(root, 'skill', 'probe')
+  createEntry(root, 'skill', 'probe', skillMd('probe', 'my own\n'))
+
+  assert.throws(() => restoreBuiltinSkill(root, shipped, 'probe'), /已有同名/)
+  assert.match(read(root, 'probe'), /my own/)
+})

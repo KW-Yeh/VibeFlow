@@ -96,8 +96,13 @@ export function restoreBuiltinSkill(
   if (!builtinDir || safeLibraryName(name) !== name || !skillNamesIn(builtinDir).includes(name)) {
     throw new Error(`不是內建 skill：${name}`)
   }
-  ensureLibrary(root)
   const key = entryKey('skill', name)
+  // A panel opened before the user made their own same-name skill may still
+  // offer this; the files are theirs now.
+  if (fs.existsSync(entryPath(root, 'skill', name)) && !readIndex(root).entries[key]?.builtinHash) {
+    throw new Error(`已有同名的自訂項目：${name}`)
+  }
+  ensureLibrary(root)
   const builtinHash = installBuiltin(root, builtinDir, name)
   const index = readIndex(root)
   const record = { ...index.entries[key], builtinHash, enabled: true, importedAt: Date.now() }
