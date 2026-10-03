@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileText, FolderInput, Loader2, Plus, RefreshCw, Terminal, Trash2, Wrench } from 'lucide-react'
+import {
+  FileText,
+  FolderInput,
+  Loader2,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Terminal,
+  Trash2,
+  Wrench,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/field'
@@ -9,8 +19,10 @@ import {
   deleteLibraryEntry,
   importLibraryEntry,
   listLibrary,
+  listRemovedBuiltinSkills,
   pickLibrarySource,
   readLibraryEntry,
+  restoreBuiltinSkill,
   setLibraryEntryEnabled,
   updateLibraryEntry,
 } from '@/lib/api'
@@ -67,9 +79,14 @@ export function LibraryPanel({
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [editing, setEditing] = useState<{ entry: LibraryEntry; content: string } | null>(null)
+  const [removedBuiltins, setRemovedBuiltins] = useState<string[]>([])
+  /** Restore overwrites the user's edits, so it takes a second click. */
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    setEntries(await listLibrary())
+    const [list, removed] = await Promise.all([listLibrary(), listRemovedBuiltinSkills()])
+    setEntries(list)
+    setRemovedBuiltins(removed)
     setLoading(false)
   }, [])
 
@@ -108,6 +125,15 @@ export function LibraryPanel({
       if (!entry.sourcePath) return
       await importLibraryEntry(entry.kind, entry.sourcePath)
     })
+
+  const handleRestore = (name: string) => {
+    if (confirmRestore !== name) {
+      setConfirmRestore(name)
+      return
+    }
+    setConfirmRestore(null)
+    return run(`restore:${name}`, () => restoreBuiltinSkill(name))
+  }
 
   const handleCreate = () => {
     if (!draft) return
@@ -295,7 +321,23 @@ export function LibraryPanel({
                       className="mt-1 size-4 shrink-0 rounded-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-sm">{entry.name}</p>
+                      <p className="flex items-center gap-2 font-mono text-sm">
+                        <span className="truncate">{entry.name}</span>
+                        {entry.builtin && (
+                          <span className="shrink-0 rounded-sm bg-muted px-1.5 font-sans text-xs text-muted-foreground">
+                            內建
+                          </span>
+                        )}
+                        {entry.builtin?.updateAvailable ? (
+                          <span className="shrink-0 rounded-sm bg-primary/15 px-1.5 font-sans text-xs text-primary">
+                            有新版
+                          </span>
+                        ) : entry.builtin?.modified ? (
+                          <span className="shrink-0 rounded-sm bg-muted px-1.5 font-sans text-xs text-muted-foreground">
+                            已修改
+                          </span>
+                        ) : null}
+                      </p>
                       {entry.description && (
                         <p
                           className="line-clamp-2 text-sm text-muted-foreground"
@@ -319,6 +361,23 @@ export function LibraryPanel({
                       >
                         編輯
                       </Button>
+                      {entry.builtin?.modified && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleRestore(entry.name)}
+                          onBlur={() => setConfirmRestore(null)}
+                          disabled={busy !== null}
+                          title="以 VibeFlow 出貨的版本覆蓋（會丟掉你的修改）"
+                        >
+                          {busy === `restore:${entry.name}` ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="size-3.5" />
+                          )}
+                          {confirmRestore === entry.name ? '確定覆蓋？' : '還原預設'}
+                        </Button>
+                      )}
                       {entry.sourcePath && (
                         <Button
                           variant="ghost"
@@ -355,6 +414,25 @@ export function LibraryPanel({
           </section>
         )
       })}
+
+      {removedBuiltins.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          已移除的內建 skill：
+          {removedBuiltins.map((name) => (
+            <Button
+              key={name}
+              variant="ghost"
+              size="sm"
+              onClick={() => void run(`restore:${name}`, () => restoreBuiltinSkill(name))}
+              disabled={busy !== null}
+              title="放回 VibeFlow 出貨的版本"
+            >
+              <RotateCcw className="size-3.5" />
+              {name}
+            </Button>
+          ))}
+        </p>
+      )}
     </div>
   )
 }
