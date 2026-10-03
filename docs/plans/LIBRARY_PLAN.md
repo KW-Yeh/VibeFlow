@@ -1,5 +1,9 @@
 # Library — 實作計劃
 
+> **狀態：已實作**（`091997d`，2026-09-02；「估時」表中 Phase 4「協議瘦身」原文未標記完成）。
+> 本文件保留為決策記錄與 Phase 0 實測紀錄。文中的 `main/helpers/library.ts`、`npm run dev`
+> 是 Electron 時代的路徑與指令；現行實作在 `packages/core/src/library.ts`，測試在 `test/library.test.mjs`。
+
 在 VibeFlow 內建立一份自有的 skill / prompt / script 儲藏庫，手動建立或從本機 import，啟動任務時自動投遞給 agent。目的是讓規範不再依賴本機的 `~/.claude` `~/.codex` `~/.agents` 佈局，也不再有「某個 agent 吃不到」的破洞。
 
 ## 已確認的決策

@@ -1,9 +1,9 @@
 # Tests
 
-Headless tests for `packages/core` and the CLI — no browser, no test
-framework, no extra dependencies. They run on Node's built-in test runner
-(`node:test`) with native TypeScript type-stripping, matching the
-"runtime verification" approach documented in the repo `CLAUDE.md`.
+Headless tests for `packages/core`, the CLI, the TUI and the renderer's pure
+helpers — no browser, no test framework, no extra dependencies. They run on
+Node's built-in test runner (`node:test`) with native TypeScript type-stripping,
+matching the "Runtime verification" section of the repo [AGENTS.md](../AGENTS.md).
 
 ## Run
 
@@ -24,18 +24,44 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
   files use (e.g. `from './env'` → `./env.ts`). It only kicks in when default
   resolution fails, so builtins and `node_modules` are untouched.
 - Passing the flags via `NODE_OPTIONS` is required so they also reach the child
-  process each test file runs in.
+  process each test file runs in. Setting them from a script rather than an
+  inline `NODE_OPTIONS=… node` prefix is what makes this work in Windows' cmd.
 
 ## What is covered
 
-| Suite | Target | Style |
+| Suite | Target | What it checks |
 |---|---|---|
-| `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | pure unit — slug/ticket derivation, edge & malformed input |
-| `env.test.mjs` | `packages/core/src/env.ts` | pure unit — PATH augmentation + memoisation |
-| `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote) |
+| `agent-models.test.mjs` | `packages/core/src/agent-models.ts` | model lists: Claude builtin aliases, Codex model cache and its fallbacks |
+| `agent-print.test.mjs` | `packages/core/src/agent-print.ts` | one-shot agent CLI runs: stdin prompt, exit codes, missing CLI |
+| `agents.test.mjs` | `packages/core/src/agents.ts` | agent registry, default model, default task effort |
+| `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
+| `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
+| `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |
+| `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: system prompt, artifact and decision paths |
+| `claude-chrome.test.mjs` | `packages/core/src/launch.ts` | the Chrome flag on Claude launches only |
+| `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reaching outside core, types-only renderer imports, erasable TypeScript only |
+| `decisions.test.mjs` | `packages/core/src/decisions.ts` | decision record key and path, before and after worktree cleanup |
+| `diff-state.test.mjs` | `renderer/lib/diff-state.ts` | diff polling keeps references and bodies stable |
+| `env.test.mjs` | `packages/core/src/env.ts` | PATH augmentation + memoisation |
+| `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
+| `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
+| `library.test.mjs` | `packages/core/src/library.ts` | library entries: naming, frontmatter, per-kind storage |
+| `lock.test.mjs` | `packages/core/src/lock.ts` | one host per machine: takeover of dead locks, port, file mode |
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
-| `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no relative imports outside core |
+| `pty-helper.test.mjs` | `packages/core/src/pty-helper.ts` | node-pty `spawn-helper` executable bit and its fix command |
+| `recent-projects.test.mjs` | `packages/core/src/recent-projects.ts` | recent-project ordering, replacement and lost-folder flags |
+| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals |
+| `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
+| `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
+| `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
+| `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
+| `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
+| `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, exit status, kill vs. detach |
+| `tui.test.mjs` | `packages/tui/src/index.ts` | TUI board moves and selection |
+| `tui-task-form.test.mjs` | `packages/tui/src/task-form.ts` | TUI new/edit task form defaults and validation |
+| `ui-consistency.test.mjs` | `renderer/**` (source grep) | design-system rules: radius ladder, focus rings, `DialogShell` headers, terminal inset, inert mermaid |
+| `web-server.test.mjs` | `packages/core/src/web-server.ts`, `ws-transport.ts` | loopback only, token → cookie, Host / Origin checks |
 
 `test/support/` holds the harness: the resolve hook, its registrar, and
 `repo.mjs` (creates isolated throwaway git repos with deterministic identity so

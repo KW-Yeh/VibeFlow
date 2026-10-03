@@ -4,6 +4,10 @@ Sep 30, 2026 · @KW
 
 > 原文與圖表在 Claude Docs：https://claude.ai/code/artifact/ac11e1b5-2e55-4963-9f29-d162259f6281 （此檔為 2026-10-01 的匯出快照）
 
+> **狀態：已完成。** core 已抽成 `packages/core`（`15a6c4d`），Electron 桌面版已移除（`8e78126`，2026-10-01）。
+> 本文件保留為決策記錄；現行架構、指令與慣例以 [AGENTS.md](../../AGENTS.md) 為準。
+> 文末「待決事項」中的 npm 套件名稱已定為 `@kw-yeh/vibeflow`；其餘未勾選項目維持原文。
+
 ## 背景與目標
 
 本計畫把 VibeFlow 的業務邏輯抽成與 UI 無關的 `@vibeflow/core`，再以本機 Web UI 與終端機 TUI 兩個輕量前端取代 Electron 作為主要發布形式，使用者透過 `npx vibeflow` 即可使用，不再經過 Gatekeeper。

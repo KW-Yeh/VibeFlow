@@ -1,6 +1,10 @@
 # Markdown 渲染統一計劃
 
 > **狀態：已實作完成。** 本文件保留為決策記錄。實作過程中相對本計劃的兩處偏差記在 §10。
+>
+> 之後的變動：plan HTML 路徑（`main/helpers/plan-html.ts`、`markdown.ts`）已在 `6232065`（2026-09-08）移除，
+> 文中與它相關的段落只剩歷史意義。現行渲染路徑是 `renderer/components/markdown-content.tsx` → `markdown-body.tsx`，
+> 見 [AGENTS.md](../../AGENTS.md)。文中 `renderer/…:<行號>` 的行號是當時的位置。
 
 **範圍**：C —— unified 取代手寫 parser + rehype 生態 + 統一所有渲染路徑
 
@@ -35,7 +39,7 @@
 
 另外兩個獨立問題：
 
-1. **`prose` class 是空的。** `MarkdownContent`（[renderer/components/task-workspace-panel.tsx:289](renderer/components/task-workspace-panel.tsx:289)）掛 `prose prose-invert prose-sm`，但 `@tailwindcss/typography` 沒安裝，`globals.css` 只有 `@import 'tailwindcss'` 沒有 `@plugin`。Tailwind v4 不認識 `prose`，產不出 CSS。remark-gfm 解析正確的 `<table>` / `<ul>` 全是裸標籤。
+1. **`prose` class 是空的。** `MarkdownContent`（[renderer/components/task-workspace-panel.tsx:289](../../renderer/components/task-workspace-panel.tsx:289)）掛 `prose prose-invert prose-sm`，但 `@tailwindcss/typography` 沒安裝，`globals.css` 只有 `@import 'tailwindcss'` 沒有 `@plugin`。Tailwind v4 不認識 `prose`，產不出 CSS。remark-gfm 解析正確的 `<table>` / `<ul>` 全是裸標籤。
 2. **完全沒有 rehype plugin。** 沒有 code highlight、沒有 heading anchor。
 
 ---
@@ -142,10 +146,10 @@ npm test
 
 | 路徑 | 現在 | 改成 |
 |---|---|---|
-| Task description [:239](renderer/components/task-workspace-panel.tsx:239) | `MarkdownContent` | 不變（Phase 1 已修樣式） |
-| Artifact 文字預覽 [:648](renderer/components/task-workspace-panel.tsx:648) | `<pre>` | 檔名是 `.md` / `.markdown` → `MarkdownContent`；其他副檔名保持 `<pre>` |
-| Memory checkpoint `outcome` [:447](renderer/components/task-workspace-panel.tsx:447) | `whitespace-pre-wrap` | `MarkdownContent compact` |
-| Sub-agent `result` [sub-agent-drawer.tsx:96](renderer/components/sub-agent-drawer.tsx:96) | `<pre>` | `MarkdownContent compact` |
+| Task description [:239](../../renderer/components/task-workspace-panel.tsx:239) | `MarkdownContent` | 不變（Phase 1 已修樣式） |
+| Artifact 文字預覽 [:648](../../renderer/components/task-workspace-panel.tsx:648) | `<pre>` | 檔名是 `.md` / `.markdown` → `MarkdownContent`；其他副檔名保持 `<pre>` |
+| Memory checkpoint `outcome` [:447](../../renderer/components/task-workspace-panel.tsx:447) | `whitespace-pre-wrap` | `MarkdownContent compact` |
+| Sub-agent `result` [sub-agent-drawer.tsx:96](../../renderer/components/sub-agent-drawer.tsx:96) | `<pre>` | `MarkdownContent compact` |
 | Sub-agent `prompt` 同上 | `<pre>` | **保持 `<pre>`**（見下） |
 
 **sub-agent `prompt` 不轉 markdown（已定案）。** 它是原封不動送給 sub-agent 的指令原文，空白與縮排有語義，而且旁邊那顆 `CopyButton` 要能逐字複製出來。渲染成 markdown 會讓看到的與實際送出的不一致。`result` 是 agent 寫給人看的散文，轉 markdown 合理。
@@ -156,7 +160,7 @@ npm test
 
 ## 6. Phase 5 — 安全性
 
-偵察發現：plan HTML 是用 **`<iframe srcDoc={html}>` 且沒有 `sandbox` 屬性**（[task-workspace-panel.tsx:376](renderer/components/task-workspace-panel.tsx:376)）。srcDoc iframe 預設與父頁同源，也就是說 iframe 內的 script 能碰到 `parent.window`，而這個 renderer 的 preload 掛著 `window.vibeflow`。
+偵察發現：plan HTML 是用 **`<iframe srcDoc={html}>` 且沒有 `sandbox` 屬性**（[task-workspace-panel.tsx:376](../../renderer/components/task-workspace-panel.tsx:376)）。srcDoc iframe 預設與父頁同源，也就是說 iframe 內的 script 能碰到 `parent.window`，而這個 renderer 的 preload 掛著 `window.vibeflow`。
 
 現在之所以安全，是因為 `escHtml` 把 PLAN.md 裡所有 HTML 都轉義掉了 —— **靠轉義單獨撐住**。
 

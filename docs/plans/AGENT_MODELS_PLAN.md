@@ -1,5 +1,8 @@
 # Agent model 清單：拿掉 API key 依賴
 
+> **狀態：已實作**（`7887793`，2026-10-02）。本文件保留為決策記錄；現行實作在
+> `packages/core/src/agent-models.ts`，`agent-connections.ts` 已刪除。
+
 ## 問題
 
 目前 model 下拉選單**只**顯示透過 API key 打 `/v1/models` 取回的清單

@@ -208,7 +208,32 @@ renderer/                  Next.js app (Pages Router)
 └── preload.d.ts           declares window.vibeflow (core's VibeFlowApi)
 
 e2e/web.e2e.mjs            Playwright: the Web UI's main flow against a real host
+test/                      node --test suites (test/README.md maps each suite to its target)
+
+docs/                      everything that is not code (index: docs/README.md)
+├── DESIGN.md              design-system reference the renderer tokens come from
+├── plans/                 past feature plans/specs, kept as decision records
+└── features/<slug>/       spec.md + plan.md for feature work
 ```
+
+---
+
+## Docs
+
+- **The repo root holds only entry points**: `README.md` (users), `AGENTS.md` /
+  `CLAUDE.md` (agents), `LICENSE`. Every other document goes under `docs/` —
+  do not add `*_PLAN.md` or spec files at the root.
+- **New feature work**: `docs/features/<slug>/spec.md` and `plan.md`, one
+  directory per feature. Keep updating the same directory while the feature
+  evolves.
+- **`docs/plans/` is history.** Those plans predate `docs/features/` and several
+  describe the Electron app; the status note at the top of each says what is
+  still true. The code and this file win when they disagree.
+- **`docs/DESIGN.md` is live**: `renderer/styles/globals.css` derives its tokens
+  from it and `test/ui-consistency.test.mjs` enforces its radius ladder.
+- Docs that sit next to code stay there: `packages/core/IPC_API_MAP.md` (update it
+  with the handler table) and `test/README.md` (update it when adding a suite).
+- Add every new document to `docs/README.md`.
 
 ---
 
