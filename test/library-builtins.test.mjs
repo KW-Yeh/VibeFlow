@@ -180,3 +180,9 @@ test('restore refuses to overwrite an entry the user owns (stale panel)', async 
   assert.throws(() => restoreBuiltinSkill(root, shipped, 'probe'), /已有同名/)
   assert.match(read(root, 'probe'), /my own/)
 })
+
+test('the shipped pr skill pushes unpushed commits and never edits another branch\'s PR', () => {
+  const md = fsSync.readFileSync(path.resolve('packages/core/builtin-skills/pr/SKILL.md'), 'utf8')
+  assert.match(md, /@\{upstream\}\.\.HEAD/, 'checks for commits the upstream lacks')
+  assert.match(md, /headRefName/, 'update mode compares the PR head with the current branch')
+})

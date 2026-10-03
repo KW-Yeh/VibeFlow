@@ -24,8 +24,12 @@ gh repo view --json defaultBranchRef -q .defaultBranchRef.name
 
 - On the default branch → stop and tell the user to create a feature branch first.
 - Uncommitted changes → tell the user and ask whether to commit them first; do not commit on your own.
-- Base: in update mode, `gh pr view <n> --json baseRefName -q .baseRefName`; otherwise the default branch.
-- Not pushed yet (`git rev-parse --abbrev-ref @{upstream}` fails) → `git push -u origin HEAD`.
+- Update mode: `gh pr view <n> --json headRefName,baseRefName` — if `headRefName` is not the current
+  branch, stop and tell the user; never rewrite another branch's PR with this diff.
+- Base: in update mode the PR's `baseRefName`; otherwise the default branch.
+- Push what the PR is about to describe:
+  - No upstream yet (`git rev-parse --abbrev-ref @{upstream}` fails) → `git push -u origin HEAD`.
+  - Upstream exists but lacks commits (`git rev-list --count @{upstream}..HEAD` is above 0) → `git push`.
 
 ## 3. Read the change
 
