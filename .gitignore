@@ -154,3 +154,9 @@ vite.config.ts.timestamp-*
 
 # npm package staging (scripts/build-npm.mjs)
 /dist-npm
+
+# visual-parity reports and recordings (.claude/skills/visual-parity)
+parity-*.md
+parity-*.mp4
+parity-*.webm
+__pycache__/
