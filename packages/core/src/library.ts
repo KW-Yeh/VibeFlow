@@ -212,25 +212,33 @@ function builtinStatus(
   full: string,
   name: string,
   recorded: string,
-  builtinDir: string | null | undefined
+  builtinDir: string | null
 ): NonNullable<LibraryEntry['builtin']> {
-  const modified = hashSkillDir(full) !== recorded
-  let updateAvailable = false
-  if (modified && builtinDir) {
-    const shipped = path.join(builtinDir, name)
-    if (fs.existsSync(path.join(shipped, 'SKILL.md'))) {
-      updateAvailable = hashSkillDir(shipped) !== recorded
+  try {
+    const modified = hashSkillDir(full) !== recorded
+    let updateAvailable = false
+    if (modified && builtinDir) {
+      const shipped = path.join(builtinDir, name)
+      if (fs.existsSync(path.join(shipped, 'SKILL.md'))) {
+        updateAvailable = hashSkillDir(shipped) !== recorded
+      }
     }
+    return { modified, updateAvailable }
+  } catch {
+    // An unreadable file or a dangling link the user added: it is no longer
+    // what VibeFlow installed, and must not take the listing down with it.
+    return { modified: true, updateAvailable: false }
   }
-  return { modified, updateAvailable }
 }
 
 /**
  * Every entry present on disk, annotated from the index. Disk is authoritative:
  * an index record whose files are gone is ignored, so deleting a directory by
- * hand cannot leave a phantom entry in the UI. `builtinDir` is where this
- * install's shipped skills live, used to tell whether an edited built-in has a
- * newer shipped version.
+ * hand cannot leave a phantom entry in the UI.
+ *
+ * Built-in status is computed only when `builtinDir` is passed (null = this
+ * install ships nothing): it hashes every built-in, which the launch path —
+ * plugin dir, CODEX_HOME, prompt assembly — has no use for.
  */
 export function listLibrary(root: string, builtinDir?: string | null): LibraryEntry[] {
   const index = readIndex(root)
@@ -275,7 +283,7 @@ export function listLibrary(root: string, builtinDir?: string | null): LibraryEn
         importedAt: record.importedAt,
         enabled: record.enabled !== false,
         builtin:
-          wantsDirectory && record.builtinHash
+          wantsDirectory && record.builtinHash && builtinDir !== undefined
             ? builtinStatus(full, name, record.builtinHash, builtinDir)
             : undefined,
       })

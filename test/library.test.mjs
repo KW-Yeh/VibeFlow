@@ -455,7 +455,7 @@ test('listLibrary — reports modified / updateAvailable only for built-in skill
   ;[, probe] = listLibrary(root, shippedRoot)
   assert.deepEqual(probe.builtin, { modified: true, updateAvailable: true })
 
-  ;[, probe] = listLibrary(root)
+  ;[, probe] = listLibrary(root, null)
   assert.deepEqual(probe.builtin, { modified: true, updateAvailable: false }, 'no shipped dir, no update')
 })
 
@@ -474,4 +474,21 @@ test('deleteEntry — a built-in skill leaves a tombstone, a user entry leaves n
   assert.deepEqual(index.entries['skill/probe'], { builtinDeleted: true })
   assert.equal(index.entries['skill/mine'], undefined)
   assert.equal(fsSync.existsSync(path.join(lib.skills, 'probe')), false)
+})
+
+test('listLibrary — launch callers skip built-in hashing; a broken built-in degrades, never throws', async () => {
+  const root = await tmpDir()
+  const lib = ensureLibrary(root)
+  const skill = await makeSkillDir(lib.skills, 'probe')
+  annotate(root, 'skill/probe', { builtinHash: hashSkillDir(skill), enabled: true })
+  const gone = await tmpDir('vf-gone-')
+  await fs.symlink(gone, path.join(skill, 'shared'), 'junction')
+  await fs.rm(gone, { recursive: true })
+
+  const [launch] = listLibrary(root)
+  assert.equal(launch.name, 'probe')
+  assert.equal(launch.builtin, undefined, 'no builtinDir argument = no hashing')
+
+  const [panel] = listLibrary(root, null)
+  assert.deepEqual(panel.builtin, { modified: true, updateAvailable: false })
 })
