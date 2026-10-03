@@ -13,10 +13,10 @@
   --popover: #262626;
   --popover-foreground: #ededed;
   /* Structural blue — the single interactive accent (links/active/focus),
-     brightened from DESIGN.md primary so text-primary also hits AA on dark. */
+     brightened from docs/DESIGN.md primary so text-primary also hits AA on dark. */
   --primary: #4c9bf5;
   /* Dark ink on the bright-blue CTA fill (light fill + dark text in dark
-     mode, per DESIGN.md ex-pricing-tier-featured). */
+     mode, per docs/DESIGN.md ex-pricing-tier-featured). */
   --primary-foreground: #10151b;
   /* Secondary chrome surface / secondary button fill. */
   --secondary: #262626;
@@ -66,8 +66,8 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --font-sans: var(--font-sans);
-  /* DESIGN.md radius scale: xs5 / sm8 / md11 / lg18; xl is a slightly
-     larger step reserved for dialogs/sheets (not in DESIGN.md verbatim). */
+  /* docs/DESIGN.md radius scale: xs5 / sm8 / md11 / lg18; xl is a slightly
+     larger step reserved for dialogs/sheets (not in docs/DESIGN.md verbatim). */
   --radius-xs: 0.3125rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.6875rem;

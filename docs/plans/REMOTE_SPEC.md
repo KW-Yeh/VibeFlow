@@ -2,7 +2,11 @@
 
 > **版本**：v1.0  
 > **日期**：2026-06-20  
-> **狀態**：待實作
+> **狀態**：host 端已實作（`17108bc`，2026-06-20）
+>
+> 2026-10-03 註記：原狀態欄寫「待實作」，但 host 端已依本文的訊息協議（`vf:*` / `client:*`）實作在
+> `renderer/hooks/use-remote-host.ts` 與 `renderer/components/remote-share-dialog.tsx`，由 `renderer/pages/home.tsx` 掛載，
+> 現在跑在 Web UI 裡。文中的「VibeFlow (Electron)」是 Electron 移除前的描述；行動端網頁不在本 repo。
 
 ---
 

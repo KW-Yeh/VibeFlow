@@ -1,6 +1,7 @@
 # IPC channel → `VibeFlowApi` map
 
-Phase 0 inventory for the core split (see the migration plan): every channel
+Phase 0 inventory for the core split (see the migration plan,
+[docs/plans/CORE_SPLIT_PLAN.md](../../docs/plans/CORE_SPLIT_PLAN.md)): every channel
 the Electron main process handled, and every event it pushed.
 
 **Status (Phase 2 done):** the channel names are kept as the wire protocol.

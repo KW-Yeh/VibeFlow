@@ -1,5 +1,9 @@
 # Terminal Tabs — 實作計劃
 
+> **狀態：已實作**（`f4f3cbf`，2026-08-13）。本文件保留為決策記錄；現行實作在
+> `renderer/components/terminal-tab-bar.tsx` 與 `renderer/pages/home.tsx`。文中的 electron-store、
+> `main`、`npm run dev` 是 Electron 時代的說法，現在分別對應 core 的 `JsonStore`、`packages/core` 與 `npm start`。
+
 在右側工作區上方加入 VSCode 風格的分頁列，快速切換已開啟的 task terminal。
 
 ## 已確認的決策
