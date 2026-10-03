@@ -19,6 +19,7 @@ import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
+  detectAgents,
   getGithubAuthStatus,
   listAgentModels,
   logoutGithubAuth,
@@ -80,6 +81,8 @@ export function SettingsDialog({
   const [auto, setAuto] = useState(true)
   const [modelLists, setModelLists] = useState<Partial<Record<AgentCliId, AgentModelList | null>>>({})
   const [refreshing, setRefreshing] = useState<AgentCliId | null>(null)
+  /** CLIs found on PATH; undefined while detecting, null when detection failed. */
+  const [installed, setInstalled] = useState<AgentCliId[] | null | undefined>(undefined)
   const [githubPage, setGithubPage] = useState(false)
   const [githubStatus, setGithubStatus] = useState<GitHubCliAuthStatus | null>(null)
   const [githubPhase, setGithubPhase] = useState<GithubAuthPhase>('idle')
@@ -107,6 +110,13 @@ export function SettingsDialog({
     if (!open) return
     let cancelled = false
     setModelLists({})
+    setInstalled(undefined)
+    void detectAgents()
+      .then((found) => found.map((a) => a.id))
+      .catch(() => null)
+      .then((ids) => {
+        if (!cancelled) setInstalled(ids)
+      })
     for (const agent of MODEL_AGENTS) {
       void listAgentModels(agent.id)
         .catch(() => null)
@@ -492,7 +502,10 @@ export function SettingsDialog({
             <div className="grid gap-2">
               {MODEL_AGENTS.map((agent) => {
                 const list = modelLists[agent.id]
-                const loading = list === undefined || refreshing === agent.id
+                // A failed detection (null) falls back to showing the model list as before.
+                const missing = Array.isArray(installed) && !installed.includes(agent.id)
+                const loading =
+                  installed === undefined || (!missing && (list === undefined || refreshing === agent.id))
                 return (
                   <div
                     key={agent.id}
@@ -500,6 +513,8 @@ export function SettingsDialog({
                   >
                     {loading ? (
                       <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                    ) : missing ? (
+                      <AlertTriangle className="size-4 shrink-0 text-muted-foreground" />
                     ) : list?.error || !list ? (
                       <AlertTriangle className="size-4 shrink-0 text-destructive" />
                     ) : (
@@ -508,19 +523,23 @@ export function SettingsDialog({
                     <div className="min-w-0 flex-1">
                       <p className="text-base font-medium">{agent.name}</p>
                       <p className="truncate text-sm text-muted-foreground">
-                        {list === undefined
+                        {installed === undefined
+                          ? '偵測 CLI…'
+                          : missing
+                          ? `未安裝・PATH 中找不到 ${agent.id} 指令`
+                          : list === undefined
                           ? '讀取 model 清單…'
                           : !list
                           ? '無法取得 model 清單'
                           : `${list.models.length} 個 models 可用・來源：${MODEL_SOURCE_LABELS[list.source]}`}
                       </p>
-                      {list?.error && (
+                      {!missing && list?.error && (
                         <p className="truncate text-sm text-destructive" title={list.error}>
                           {list.error}
                         </p>
                       )}
                     </div>
-                    {agent.id === 'codex' && (
+                    {agent.id === 'codex' && !missing && installed !== undefined && (
                       <Button
                         type="button"
                         size="sm"
