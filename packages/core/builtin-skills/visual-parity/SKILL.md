@@ -21,7 +21,8 @@ description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改�
 ## 前置
 
 - `<skill-dir>` 是本 SKILL.md 所在的目錄；script 在 `<skill-dir>/scripts/parity.py`。
-- 需要 `pip install playwright && playwright install chromium`；錄 `.mp4` 才需要 ffmpeg（選配）。
+- 下文指令寫 `python`；macOS / Linux 沒有 `python` 時改用 `python3`。
+- 需要 `pip install playwright && playwright install chromium`（macOS / Linux 用 `pip3` 或 `python3 -m pip`）；錄 `.mp4` 才需要 ffmpeg（選配）。
 - 受測頁面要先跑起來。server 已經在跑就直接呼叫 `parity.py`；自簽憑證已預設接受（`ignore_https_errors`）。
 - 頁面需要登入或一次性 token 時，`--ref` / `--local` 直接給帶 token 的完整 URL，或先用 `flow` 的步驟登入。
   打到登入頁或拒絕頁時比對結果毫無意義——`matched` 異常地少就先檢查這個。

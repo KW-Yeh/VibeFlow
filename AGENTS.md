@@ -338,6 +338,11 @@ the Web UI is driven in a browser against a real host.
   starts a file watcher that otherwise keeps the test process alive.
 - **Web UI behaviour**: `npm run test:e2e`, or by hand: `npm start -- --store-path <tmp dir> --no-open --port 47831`
   and open the printed URL. Use a throwaway `--store-path`, never your real store.
+  The URL must keep its `?token=…` — that is also what to pass to the built-in
+  `visual-parity` skill (`--ref` / `--local`); without it every page is the refusal page.
+- **Built-in `pr` vs this repo's `pr`**: the Library ships a generic `pr` skill, and this
+  repo commits its own `.claude/skills/pr` (Jira/eBug conventions). Claude sees both with
+  the same triggers, so disable the built-in `pr` in your Library when working on VibeFlow.
   Renderer changes need `npm run build:web` before the host serves them — there is
   no hot-reload dev server.
 - Stop a `vibeflow` host with `vibeflow shutdown` (same `--store-path` / `--profile`).
