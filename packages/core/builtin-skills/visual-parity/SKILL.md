@@ -1,6 +1,6 @@
 ---
 name: visual-parity
-description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改版驗收），跑互動 E2E 流程並蒐集 console 與 network 錯誤，以及在 375/768/1440 三種寬度檢查 RWD 與水平溢出。當使用者提到「新舊頁面長得不一樣」「跟測試環境比對」「像素比對」「樣式對不上」「visual diff」「RWD 檢查」「開 dev server 驗收」「E2E 驗收」時使用。本專案內建：server 用 VibeFlow 自己的 host（npm start），本 skill 負責可重複的比對與驗收。
+description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改版驗收），跑互動 E2E 流程並蒐集 console 與 network 錯誤，以及在 375/768/1440 三種寬度檢查 RWD 與水平溢出。當使用者提到「新舊頁面長得不一樣」「跟測試環境比對」「像素比對」「樣式對不上」「visual diff」「RWD 檢查」「開 dev server 驗收」「E2E 驗收」時使用。比對與驗收的結果寫進檔案，只回傳壓縮過的落差表。
 ---
 
 # Visual Parity
@@ -13,35 +13,24 @@ description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改�
 
 ## 鐵則
 
-1. **不要 Read `scripts/parity.py`。** 它是黑箱，用 `--help` 就夠。
+1. **不要 Read `scripts/parity.py`。** 它是黑箱，用 `--help` 就夠。下文的 `parity.py` 一律指本 SKILL.md 所在目錄下的 `scripts/parity.py`，用絕對路徑呼叫。
 2. **不要把報告全文讀進 context。** stdout 的摘要已含「最常出現的落差屬性」；需要細節時用 `grep` 撈特定屬性或 selector，不要 `Read` 整份。
 3. **不要逐項修。** 先看 stdout 的 top differing properties——落差通常是少數幾條系統性規則（一條 `margin-bottom`、一組 token）造成的，不是幾十個獨立問題。
 4. **改完重跑一次全量比對**，而不是只驗剛改的那一項。
 
 ## 前置
 
-所有指令都從 repo 根目錄（或任務 worktree 根目錄）執行，`.claude/skills/...` 是相對路徑。
-需要 `pip install playwright && playwright install chromium`；錄 `.mp4` 才需要 ffmpeg（選配）。
-
-### VibeFlow Web UI 當作受測頁面
-
-沒有 hot-reload dev server，改 renderer 後要先 build 再起 host，並用**拋棄式 store**，不要碰真的 board：
-
-```bash
-npm run build:web
-npm start -- --store-path <tmp dir> --no-open --port 47831
-```
-
-host 會印出 `Web UI：http://127.0.0.1:47831/home/?token=…`。**URL 一定要帶 `?token=`**（第一次請求靠它換 cookie），否則拿到的是拒絕頁，比對結果毫無意義。
-新舊對照時，用 `git worktree` 或另一個 checkout 起第二個 host（不同 `--port`、不同 `--store-path`）當 `--ref`。
-跑完用 `npm run vibeflow -- shutdown --store-path <tmp dir>` 關掉 host。
-
-其他網站：server 已經在跑就直接呼叫 `parity.py`。自簽憑證已預設接受（`ignore_https_errors`）。
+- `<skill-dir>` 是本 SKILL.md 所在的目錄；script 在 `<skill-dir>/scripts/parity.py`。
+- 需要 `pip install playwright && playwright install chromium`；錄 `.mp4` 才需要 ffmpeg（選配）。
+- 受測頁面要先跑起來。server 已經在跑就直接呼叫 `parity.py`；自簽憑證已預設接受（`ignore_https_errors`）。
+- 頁面需要登入或一次性 token 時，`--ref` / `--local` 直接給帶 token 的完整 URL，或先用 `flow` 的步驟登入。
+  打到登入頁或拒絕頁時比對結果毫無意義——`matched` 異常地少就先檢查這個。
+- 新舊對照要同時起兩份 server（不同 port），各自當 `--ref` 與 `--local`。
 
 ## diff — 新舊頁面樣式落差
 
 ```bash
-python .claude/skills/visual-parity/scripts/parity.py diff \
+python <skill-dir>/scripts/parity.py diff \
   --ref   https://staging.example.com/faq/content?id=28473 \
   --local https://localhost:3000/faq/content?id=28473 \
   --out   parity-diff.md
@@ -76,7 +65,7 @@ DOM 結構差太多時（舊 iframe vs 新 SSR），用 JSON 補：
 ## responsive — 三種寬度 + 水平溢出
 
 ```bash
-python .claude/skills/visual-parity/scripts/parity.py responsive \
+python <skill-dir>/scripts/parity.py responsive \
   --ref <URL> --local <URL> --out parity-responsive.md
 ```
 
@@ -99,7 +88,7 @@ python .claude/skills/visual-parity/scripts/parity.py responsive \
 ```
 
 ```bash
-python .claude/skills/visual-parity/scripts/parity.py flow --steps steps.json --out parity-flow.md
+python <skill-dir>/scripts/parity.py flow --steps steps.json --out parity-flow.md
 ```
 
 可用 action：`goto` `click` `fill` `press` `wait` `expect_text` `expect_visible` `expect_focused` `screenshot`。
@@ -112,7 +101,7 @@ python .claude/skills/visual-parity/scripts/parity.py flow --steps steps.json --
 截圖看不出 transition、loading、hover 這類會動的東西，用錄影：
 
 ```bash
-python .claude/skills/visual-parity/scripts/parity.py flow \
+python <skill-dir>/scripts/parity.py flow \
   --steps steps.json --out parity-flow.md --video parity-flow.mp4
 ```
 
@@ -126,4 +115,4 @@ python .claude/skills/visual-parity/scripts/parity.py flow \
 
 ## 維護
 
-改過 `parity.py` 後跑 `python .claude/skills/visual-parity/scripts/parity.py selftest`，會用內建 fixture 驗證配對與 diff 邏輯仍正確。
+改過 `parity.py` 後跑 `python <skill-dir>/scripts/parity.py selftest`，會用內建 fixture 驗證配對與 diff 邏輯仍正確。

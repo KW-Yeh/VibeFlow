@@ -13,6 +13,8 @@ import {
   listLibrary,
   setEntryEnabled,
   updateEntry,
+  readSkillDescription,
+  skillNamesIn,
 } from '../packages/core/src/library.ts'
 import {
   removedBuiltinSkills,
@@ -155,4 +157,16 @@ test('annotate keeps working for built-in records (smoke)', async (t) => {
   syncBuiltinSkills(root, shipped)
   annotate(root, 'skill/probe', { description: 'x' })
   assert.ok(index(root).entries['skill/probe'].builtinHash)
+})
+
+test('the shipped skills are well-formed and do not depend on a checkout path', () => {
+  const dir = path.resolve('packages/core/builtin-skills')
+  assert.deepEqual(skillNamesIn(dir), ['pr', 'visual-parity'])
+  for (const name of skillNamesIn(dir)) {
+    const md = fsSync.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8')
+    assert.match(md, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), `${name}: frontmatter name`)
+    assert.ok(readSkillDescription(path.join(dir, name, 'SKILL.md')), `${name}: description`)
+    assert.doesNotMatch(md, /~\/\.claude|\.claude\/skills|~\/\.Codex|eBug|Jira/, `${name}: no machine paths`)
+  }
+  assert.ok(fsSync.existsSync(path.join(dir, 'visual-parity', 'scripts', 'parity.py')))
 })
