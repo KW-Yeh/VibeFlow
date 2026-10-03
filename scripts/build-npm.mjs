@@ -64,6 +64,11 @@ fs.cpSync(webSrc, path.join(out, 'dist', 'web'), {
   recursive: true,
   filter: (src) => !ELECTRON_FILES.test(path.basename(src)) || path.dirname(src) !== webSrc,
 })
+console.log('==> Copying the built-in skills')
+fs.cpSync(path.join(root, 'packages', 'core', 'builtin-skills'), path.join(out, 'dist', 'builtin-skills'), {
+  recursive: true,
+  filter: (src) => path.basename(src) !== '__pycache__',
+})
 
 const pkg = {
   name: values.name,
