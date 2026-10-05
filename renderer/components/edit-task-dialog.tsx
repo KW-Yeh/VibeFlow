@@ -5,7 +5,6 @@ import {
   FolderOpen,
   GitBranch,
   Loader2,
-  Lock,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -21,7 +20,6 @@ import {
 } from '@/components/task-effort-slider'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { cn } from '@/lib/utils'
-import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
@@ -38,9 +36,10 @@ export interface EditTaskPayload {
   model: string
   effort: AgentEffort
   autoMode: boolean
-  /** Present only when the project folder may change (not-yet-launched tasks). */
   projectPath?: string
   baseBranch?: string | null
+  /** Blank keeps the card's current branch. */
+  branch?: string
 }
 
 interface EditTaskDialogProps {
@@ -78,6 +77,7 @@ export function EditTaskDialog({
   const [autoMode, setAutoMode] = useState(true)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
+  const [branch, setBranch] = useState('')
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [projectChanged, setProjectChanged] = useState(false)
@@ -106,6 +106,7 @@ export function EditTaskDialog({
     setAutoMode(task.autoMode ?? defaultAutoMode)
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
+    setBranch(task.branch)
     setGitInfo(null)
     setLoadingInfo(false)
     setProjectChanged(false)
@@ -113,7 +114,7 @@ export function EditTaskDialog({
   }, [task, defaultAutoMode])
 
   useEffect(() => {
-    if (!task || task.launchedAt) return
+    if (!task) return
     let active = true
     void loadRecentProjects().then((list) => {
       if (active) setRecentProjects(list)
@@ -122,6 +123,24 @@ export function EditTaskDialog({
       active = false
     }
   }, [task, loadRecentProjects])
+
+  // The base branch list of the card's current project; a newly picked project
+  // replaces it in selectProject.
+  useEffect(() => {
+    if (!task?.projectPath) return
+    let active = true
+    setLoadingInfo(true)
+    void loadGitInfo(task.projectPath)
+      .then((info) => {
+        if (active) setGitInfo(info)
+      })
+      .finally(() => {
+        if (active) setLoadingInfo(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [task, loadGitInfo])
 
   // Detect installed agent CLIs when the dialog opens (and on retry).
   useEffect(() => {
@@ -145,9 +164,10 @@ export function EditTaskDialog({
 
   if (!displayedTask) return null
 
-  // A worktree exists from creation; re-selecting the project rebuilds it, so it
-  // is only offered while the task has never been launched (no work to lose).
-  const canEditProject = !displayedTask.launchedAt
+  // Only Backlog cards are edited. One that already has a worktree (from an
+  // earlier run) gives it up when its git fields change; core refuses if it
+  // holds changes.
+  const hasWorktree = Boolean(displayedTask.worktreePath)
 
   const isDirty =
     title !== displayedTask.title ||
@@ -157,7 +177,8 @@ export function EditTaskDialog({
     effort !== (displayedTask.effort ?? DEFAULT_TASK_EFFORT) ||
     autoMode !== (displayedTask.autoMode ?? defaultAutoMode) ||
     projectChanged ||
-    baseBranch !== (displayedTask.baseBranch ?? '')
+    baseBranch !== (displayedTask.baseBranch ?? '') ||
+    branch.trim() !== displayedTask.branch
 
   const handleClose = () => {
     if (saving) return
@@ -201,6 +222,10 @@ export function EditTaskDialog({
 
   const isRepo = gitInfo?.isRepo ?? true
   const hasRemote = gitInfo?.hasRemote ?? false
+  const gitFieldsChanged =
+    projectChanged ||
+    baseBranch !== (displayedTask.baseBranch ?? '') ||
+    (branch.trim() !== '' && branch.trim() !== displayedTask.branch)
 
   const canSubmit =
     title.trim().length > 0 &&
@@ -218,9 +243,8 @@ export function EditTaskDialog({
       model,
       effort,
       autoMode,
-      ...(canEditProject && projectPath
-        ? { projectPath, baseBranch: baseBranch || null }
-        : {}),
+      ...(projectPath ? { projectPath, baseBranch: baseBranch || null } : {}),
+      branch: branch.trim(),
     })
   }
 
@@ -316,68 +340,81 @@ export function EditTaskDialog({
           disabled={saving}
         />
 
-        {/* Project folder — editable only before the task has launched. */}
         <div className="space-y-1.5">
           <span className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted-foreground">
             <FolderOpen className="size-3" />
             專案資料夾
           </span>
-          {canEditProject ? (
-            <>
-              <ProjectFolderPicker
-                projectPath={projectPath}
-                recentProjects={recentProjects}
-                disabled={saving || loadingInfo}
-                onSelect={(path) => void selectProject(path)}
-                onBrowse={() => void handleBrowse()}
-              />
-              {loadingInfo && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3 animate-spin" />
-                  偵測 Git 狀態中…
-                </p>
-              )}
-              {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-                  這個資料夾不是 Git repository，請改選一個 Git 專案。
-                </p>
-              )}
-              {projectChanged && !projectMissing && (
-                <p className="text-sm text-muted-foreground">
-                  更換專案會在新專案重建 worktree（此任務尚未開始，無變更會遺失）。
-                </p>
-              )}
-              {projectChanged && isRepo && hasRemote && (
-                <label className="block space-y-1.5 pt-1">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                    <GitBranch className="size-3" />
-                    基準分支 (Base Branch)
-                  </span>
-                  <select
-                    name="edit-base-branch"
-                    value={baseBranch}
-                    onChange={(e) => setBaseBranch(e.target.value)}
-                    className={F}
-                  >
-                    {(gitInfo?.branches ?? []).map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
-              <Lock className="size-4 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-base" title={displayedTask.projectPath}>
-                {displayedTask.projectName ?? (displayedTask.projectPath ? basename(displayedTask.projectPath) : '—')}
-              </span>
-              <span className="shrink-0 text-sm text-muted-foreground">任務已開始，鎖定</span>
-            </div>
+          <ProjectFolderPicker
+            projectPath={projectPath}
+            recentProjects={recentProjects}
+            disabled={saving || loadingInfo}
+            onSelect={(path) => void selectProject(path)}
+            onBrowse={() => void handleBrowse()}
+          />
+          {loadingInfo && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              偵測 Git 狀態中…
+            </p>
+          )}
+          {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+              這個資料夾不是 Git repository，請改選一個 Git 專案。
+            </p>
           )}
         </div>
+
+        {isRepo && hasRemote && (
+          <label className="block space-y-1.5">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+              <GitBranch className="size-3" />
+              基準分支 (Base Branch)
+            </span>
+            <select
+              name="edit-base-branch"
+              value={baseBranch}
+              onChange={(e) => setBaseBranch(e.target.value)}
+              disabled={saving || loadingInfo}
+              className={F}
+            >
+              {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
+                <option value={baseBranch}>{baseBranch}</option>
+              )}
+              {(gitInfo?.branches ?? []).map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className="block space-y-1.5">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+            <GitBranch className="size-3" />
+            分支名稱
+          </span>
+          <input
+            name="edit-branch"
+            autoComplete="off"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="例如 feature/login-fix"
+            disabled={saving}
+            className={F}
+          />
+          <span className="block text-sm text-muted-foreground">
+            分支會在卡片開始執行時才建立並推到 origin。
+          </span>
+        </label>
+
+        {hasWorktree && gitFieldsChanged && (
+          <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm text-warning">
+            這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；
+            worktree 有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
+          </p>
+        )}
 
         {/* Advanced — agents, workspace (mirrors the new-task dialog). */}
         <div className="rounded-lg border border-border/50">

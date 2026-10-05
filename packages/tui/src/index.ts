@@ -201,6 +201,9 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
         }
         setSel({ column: sel.column + direction, index: 0 })
         if (move.effect === 'launch') {
+          if (!move.task.worktreePath) {
+            setMessage(`正在為「${move.task.title}」從最新的 ${move.task.baseBranch ?? '基準分支'} 建立分支 ${move.task.branch} 與 worktree，需要幾秒鐘…`)
+          }
           await api.term.start({ taskId: move.task.id, launch: {} })
           setMessage(`已啟動「${move.task.title}」的 agent。Enter 可進入終端。`)
         } else if (move.effect === 'cleanup') {
@@ -261,8 +264,14 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
       return
     }
     if (!selected) return
-    if (input === 'e') return leave({ type: 'edit', task: selected })
+    if (input === 'e') {
+      if (COLUMNS[sel.column] !== 'backlog') return setMessage('執行中與已完成的卡片只能查看，無法編輯')
+      return leave({ type: 'edit', task: selected })
+    }
     if (key.return) {
+      if (!selected.worktreePath && COLUMNS[sel.column] === 'backlog') {
+        return setMessage('這張卡尚未開始執行，分支與 worktree 會在開始時建立')
+      }
       if (!selected.worktreePath && !selected.projectPath) return setMessage('這張卡沒有工作目錄')
       if (COLUMNS[sel.column] === 'done') return setMessage('已完成的卡片沒有終端')
       return leave({ type: 'attach', task: selected })

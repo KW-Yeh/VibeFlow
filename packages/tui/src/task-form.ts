@@ -39,13 +39,13 @@ export type FieldId =
 export interface FormState {
   mode: 'new' | 'edit'
   taskId?: string
-  /** Edit only: the card has run, so its project and base branch are locked. */
-  launched: boolean
   title: string
   description: string
   projectPath: string | null
   /** The card's project when the edit form opened; null for a new card. */
   originalProjectPath: string | null
+  /** Edit only: the card already has a worktree, which a git-field change gives up. */
+  worktreePath?: string
   gitInfo: GitInfo | null
   /** The folder `gitInfo` describes; a lookup runs only when the project moves away from it. */
   gitInfoPath: string | null
@@ -72,7 +72,6 @@ export function newFormState(defaultAutoMode: boolean, agents: AgentCli[] | null
   const agentCli = agents && agents.length > 0 && !agents.some((a) => a.id === 'claude') ? agents[0].id : 'claude'
   return {
     mode: 'new',
-    launched: false,
     title: '',
     description: '',
     projectPath: null,
@@ -93,11 +92,11 @@ export function editFormState(task: Task, defaultAutoMode: boolean): FormState {
   return {
     mode: 'edit',
     taskId: task.id,
-    launched: Boolean(task.launchedAt),
     title: task.title,
     description: task.description ?? '',
     projectPath: task.projectPath ?? null,
     originalProjectPath: task.projectPath ?? null,
+    worktreePath: task.worktreePath,
     gitInfo: null,
     gitInfoPath: null,
     baseBranch: task.baseBranch ?? '',
@@ -131,9 +130,10 @@ export function visibleFields(s: FormState, ctx: FormContext): FieldId[] {
     fields.push('attachments', 'description', 'effort', 'autoMode', 'agent', 'model', 'submit')
     return fields
   }
+  // Only Backlog cards reach the edit form, so the git-bound fields are open.
   const fields: FieldId[] = ['title', 'description', 'effort', 'autoMode', 'project']
-  if (projectChanged(s) && isRepo && hasRemote) fields.push('baseBranch')
-  fields.push('agent', 'model', 'submit')
+  if (isRepo && hasRemote) fields.push('baseBranch')
+  fields.push('branch', 'agent', 'model', 'submit')
   return fields
 }
 
@@ -188,7 +188,8 @@ export function updatePayload(s: FormState) {
     model: s.model || undefined,
     effort: s.effort,
     autoMode: s.autoMode,
-    ...(!s.launched && s.projectPath ? { projectPath: s.projectPath, baseBranch: s.baseBranch || null } : {}),
+    ...(s.projectPath ? { projectPath: s.projectPath, baseBranch: s.baseBranch || null } : {}),
+    branch: s.branch.trim(),
   }
 }
 
@@ -276,13 +277,13 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
 
   const fields = visibleFields(s, ctx)
   const field = fields[Math.min(focus, fields.length - 1)]
-  const projectLocked = s.mode === 'edit' && s.launched
   const missing = isProjectMissing(ctx.recent, s.projectPath)
 
-  // Git state follows the chosen project, as in the Web UI. An unchanged
-  // project in the edit form needs no lookup: its base branch is fixed.
+  // Git state follows the chosen project, as in the Web UI. The edit form looks
+  // up the card's own project too, for its base branch list, but keeps the
+  // card's base until the project changes.
   useEffect(() => {
-    if (!s.projectPath || missing || s.gitInfoPath === s.projectPath || (s.mode === 'edit' && !projectChanged(s))) return
+    if (!s.projectPath || missing || s.gitInfoPath === s.projectPath) return
     const target = s.projectPath
     const id = ++lookup.current
     setLoadingGit(true)
@@ -290,7 +291,12 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
       .getGitInfo(target)
       .then((info) => {
         if (id !== lookup.current) return
-        setS((prev) => ({ ...prev, gitInfo: info, gitInfoPath: target, baseBranch: info.defaultBase ?? '' }))
+        setS((prev) => ({
+          ...prev,
+          gitInfo: info,
+          gitInfoPath: target,
+          baseBranch: prev.mode === 'edit' && target === prev.originalProjectPath && prev.baseBranch ? prev.baseBranch : info.defaultBase ?? '',
+        }))
       })
       .catch((err) => id === lookup.current && setMessage(`偵測 Git 失敗：${(err as Error).message}`))
       .finally(() => id === lookup.current && setLoadingGit(false))
@@ -302,7 +308,6 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
   }
 
   const setProject = (projectPath: string | null) => {
-    if (projectLocked) return
     setS((prev) => ({ ...prev, projectPath, gitInfo: null, gitInfoPath: null, baseBranch: '' }))
   }
 
@@ -367,7 +372,7 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
     if (key.downArrow || key.tab) return setFocus((f) => Math.min(fields.length - 1, f + 1))
     const step = key.leftArrow ? -1 : key.rightArrow ? 1 : 0
     if (step) {
-      if (field === 'project' && !projectLocked) {
+      if (field === 'project') {
         const paths = ctx.recent.map((p) => p.path)
         if (paths.length) setProject(cycle(paths, s.projectPath ?? paths[paths.length - 1], step))
       } else if (field === 'baseBranch') {
@@ -397,7 +402,7 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         .finally(() => setBusy(null))
       return
     }
-    if (TEXT_FIELDS.includes(field) && !(field === 'project' && projectLocked)) {
+    if (TEXT_FIELDS.includes(field)) {
       setEditing(field)
       setDraft(field === 'title' ? s.title : field === 'branch' ? s.branch : field === 'project' ? (s.projectPath ?? '') : '')
     }
@@ -409,7 +414,6 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
       case 'title':
         return s.title || '（例如：實作登入頁面）'
       case 'project': {
-        if (projectLocked) return `${s.projectPath ? path.basename(s.projectPath) : '—'}（任務已開始，鎖定）`
         if (!s.projectPath) return ctx.recent.length ? '←/→ 選擇使用過的專案，或 Enter 輸入路徑' : 'Enter 輸入專案資料夾的絕對路徑'
         return `${s.projectPath}${missing ? '（路徑遺失）' : ''}`
       }
@@ -446,15 +450,22 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
 
   const note = (): string | null => {
     const info = s.gitInfo
-    if (field === 'project' && !projectLocked) {
+    if (field === 'project') {
       if (loadingGit) return '偵測 Git 狀態中…'
       if (missing) return `找不到 ${s.projectPath}，專案可能已被移動或刪除。`
       if (info && !info.isRepo) return '這個資料夾不是 Git repository。請改選一個 Git 專案，或在下方初始化。'
-      if (s.mode === 'edit' && projectChanged(s)) return '更換專案會在新專案重建 worktree（此任務尚未開始，無變更會遺失）。'
+      if (s.mode === 'edit' && projectChanged(s)) return '分支會在新專案、卡片開始執行時才建立。'
       if (info?.isRepo && !info.hasRemote) return `此 repository 沒有 remote，將以目前分支 (${info.currentBranch ?? 'HEAD'}) 為基準建立本地 worktree。`
       if (info?.isRepo && s.projectPath) return `worktree 會建在 ${ctx.workstationPath || '~/Desktop'}/${path.basename(s.projectPath)}`
     }
-    if (field === 'branch') return info?.hasRemote ? '填寫後會建立同名分支；若 remote 已有這個分支，則直接取回並接續上面的工作。' : '填寫後會建立同名分支。'
+    if (field === 'branch') {
+      const when = info?.hasRemote
+        ? '開始執行時會建立同名分支並推到 origin；若 remote 已有這個分支，則直接取回並接續上面的工作。'
+        : '開始執行時會建立同名分支。'
+      return s.mode === 'edit' && s.worktreePath
+        ? `${when} 這張卡已有 worktree：更改分支、專案或基準分支會移除它（有未完成變更時無法儲存）。`
+        : when
+    }
     if (field === 'effort') return `${EFFORTS.find((x) => x.value === s.effort)!.description} Claude Code 與 Codex 會在啟動此任務時套用；實際可用級距依 model 而定。`
     if (field === 'autoMode') return s.autoMode ? '開啟：Agent 會直接修改檔案、執行指令，不會逐次向你確認。' : '關閉：Agent 每次要動作前，都會在終端機裡等你允許。'
     if (field === 'submit') return blockReason(s, ctx, loadingGit)

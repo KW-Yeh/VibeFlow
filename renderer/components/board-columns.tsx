@@ -76,7 +76,8 @@ function CardMenu({
   /** Viewport rect of the card. The menu is fixed-positioned because the
       column it lives in scrolls, and an absolute menu would be clipped. */
   anchor: { top: number; right: number }
-  onEdit: () => void
+  /** Absent = the card is read-only (only Backlog cards are editable). */
+  onEdit?: () => void
   onDelete: () => void
   onClose: () => void
 }) {
@@ -95,18 +96,20 @@ function CardMenu({
       onClick={(event) => event.stopPropagation()}
       className="fixed z-50 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
     >
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onEdit()
-          onClose()
-        }}
-        className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
-      >
-        <Pencil className="size-3.5 shrink-0" />
-        編輯任務
-      </button>
+      {onEdit && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onEdit()
+            onClose()
+          }}
+          className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
+        >
+          <Pencil className="size-3.5 shrink-0" />
+          編輯任務
+        </button>
+      )}
 
       {confirmDelete ? (
         <div className="flex items-center gap-1 rounded-sm bg-destructive/10 p-1">
@@ -158,7 +161,7 @@ function TaskCard({
   subAgentCount: number
   selected: boolean
   onSelect: () => void
-  onEdit: () => void
+  onEdit?: () => void
   onDelete: () => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -253,7 +256,15 @@ function TaskCard({
 
       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
         <GitBranch className="size-3 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{task.branch}</span>
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={column === 'backlog' && !task.worktreePath ? '分支會在開始執行時建立' : undefined}
+        >
+          {task.branch}
+          {column === 'backlog' && !task.worktreePath && (
+            <span className="text-muted-foreground/70">（開始時建立）</span>
+          )}
+        </span>
         {running && subAgentCount > 0 && (
           <span className="flex shrink-0 items-center gap-1">
             <Users className="size-3" />
@@ -261,6 +272,12 @@ function TaskCard({
           </span>
         )}
       </div>
+
+      {column === 'backlog' && task.launchError && (
+        <p className="mt-1.5 truncate text-xs text-destructive" title={task.launchError}>
+          開始失敗：{task.launchError}
+        </p>
+      )}
 
       {menuAnchor && (
         <CardMenu
@@ -404,7 +421,7 @@ export function BoardColumns({
                     subAgentCount={(subAgents[task.id] ?? []).length}
                     selected={task.id === selectedTaskId}
                     onSelect={() => onSelectTask(task.id)}
-                    onEdit={() => onEditTask(task.id)}
+                    onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}
                     onDelete={() => onDeleteTask(task.id)}
                   />
                 ))}

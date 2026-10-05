@@ -7,7 +7,7 @@ import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { getStore } from '../packages/core/src/store.ts'
-import { makeRepo } from './support/repo.mjs'
+import { exists, git, makeRepo, writeFile } from './support/repo.mjs'
 
 /** A SessionBackend that records what core asked of it. */
 function fakeSessions() {
@@ -86,8 +86,10 @@ test('an agent launch is built by core from the task, not sent by the frontend',
     command: 'rm -rf /',
   })
   const [start] = sessions.starts
+  const launched = core.handlers['vibeflow:getState']().board.backlog.find((t2) => t2.id === task.id)
   assert.equal(start.key, task.id)
-  assert.equal(start.cwd, task.worktreePath)
+  assert.ok(launched.worktreePath, 'the launch provisioned the worktree')
+  assert.equal(start.cwd, launched.worktreePath)
   assert.match(start.command, /^export VIBEFLOW_TASK_ID=/)
   assert.match(start.command, /claude --session-id [0-9a-f-]{36} /)
   assert.ok(!start.command.includes('rm -rf'))
@@ -96,8 +98,15 @@ test('an agent launch is built by core from the task, not sent by the frontend',
 
 test('a shell start has no command', async (t) => {
   const { core, sessions, task } = await coreWithTask(t)
-  await core.handlers['pty:start']({ taskId: task.id })
-  assert.equal(sessions.starts[0].command, undefined)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  await core.handlers['pty:start']({ taskId: task.id, sessionKey: `${task.id}:2` })
+  assert.equal(sessions.starts[1].command, undefined)
+})
+
+test('a shell is refused before the card has a worktree, never run in the project checkout', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  await assert.rejects(core.handlers['pty:start']({ taskId: task.id }), /還沒有 worktree/)
+  assert.equal(sessions.starts.length, 0)
 })
 
 test('resuming a session that is still running re-attaches instead of relaunching', async (t) => {
@@ -203,4 +212,128 @@ test('library built-in handlers validate input and use the registered shipped di
 
   await core.handlers['library:delete']({ kind: 'skill', name: 'probe' })
   assert.deepEqual(await core.handlers['library:removedBuiltins'](), ['probe'])
+})
+
+// Every repo here is named `project`, so cards share one workstation folder.
+let lazyCards = 0
+
+async function coreWithRemoteTask(t, extra = {}) {
+  const branch = `feature/lazy-card-${++lazyCards}`
+  const repo = await makeRepo()
+  t.after(repo.cleanup)
+  const sessions = fakeSessions()
+  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9' })
+  t.after(() => core.shutdown())
+  const { task } = await core.handlers['vibeflow:createTask']({
+    title: 'Lazy card',
+    projectPath: repo.projectPath,
+    baseBranch: null,
+    branch,
+    ...extra,
+  })
+  return { core, sessions, task, branch, ...repo }
+}
+
+const cardIn = (core, col, id) =>
+  core.handlers['vibeflow:getState']().board[col].find((t2) => t2.id === id)
+
+test('the branch is cut from the base as it is at launch, then pushed', async (t) => {
+  const { core, task, branch, projectPath, remotePath, root } = await coreWithRemoteTask(t)
+  // origin/main moves on while the card waits in Backlog.
+  const other = path.join(root, 'other')
+  await git(root, 'clone', remotePath, other)
+  await git(other, 'config', 'user.email', 'qa@vibeflow.test')
+  await git(other, 'config', 'user.name', 'VibeFlow QA')
+  await fs.writeFile(path.join(other, 'later.txt'), 'later\n')
+  await git(other, 'add', '-A')
+  await git(other, 'commit', '-m', 'later')
+  await git(other, 'push', 'origin', 'main')
+  const latest = await git(other, 'rev-parse', 'HEAD')
+
+  assert.equal(await git(projectPath, 'branch', '--list', branch), '')
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+
+  const launched = cardIn(core, 'backlog', task.id)
+  assert.equal(launched.pushed, true)
+  assert.equal(await git(launched.worktreePath, 'rev-parse', 'HEAD'), latest)
+  assert.match(await git(remotePath, 'branch', '--list', branch), new RegExp(branch))
+})
+
+test('two launches at once provision one worktree', async (t) => {
+  const { core, sessions, task } = await coreWithRemoteTask(t)
+  await Promise.all([
+    core.handlers['pty:start']({ taskId: task.id, launch: {} }),
+    core.handlers['pty:start']({ taskId: task.id, sessionKey: `${task.id}:2` }),
+  ])
+  assert.equal(sessions.starts.length, 2)
+  assert.equal(sessions.starts[0].cwd, sessions.starts[1].cwd)
+})
+
+test('a launch that cannot provision sends the card back to Backlog unstarted', async (t) => {
+  const { core, task, branch, projectPath } = await coreWithRemoteTask(t)
+  core.handlers['vibeflow:setBoard']({
+    backlog: [],
+    in_progress: [{ ...task, launchedAt: 1 }],
+    done: [],
+  })
+  // Someone takes the name while the card waits.
+  await git(projectPath, 'branch', branch)
+
+  await assert.rejects(core.handlers['pty:start']({ taskId: task.id, launch: {} }), {
+    code: 'BRANCH_ALREADY_EXISTS',
+  })
+  const back = cardIn(core, 'backlog', task.id)
+  assert.ok(back)
+  assert.equal(back.launchedAt, undefined)
+  assert.equal(back.worktreePath, undefined)
+  assert.match(back.launchError, /本地已有同名分支/)
+})
+
+test('only a Backlog card can be edited', async (t) => {
+  const { core, task, branch } = await coreWithRemoteTask(t)
+  core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: [task], done: [] })
+  await assert.rejects(
+    core.handlers['vibeflow:updateTask']({ taskId: task.id, title: 'changed' }),
+    /只有 Backlog/
+  )
+})
+
+test('renaming an unprovisioned card only rewrites the store', async (t) => {
+  const { core, task, branch, projectPath } = await coreWithRemoteTask(t)
+  await core.handlers['vibeflow:updateTask']({ taskId: task.id, title: task.title, branch: `${branch}-renamed` })
+  const renamed = cardIn(core, 'backlog', task.id)
+  assert.equal(renamed.branch, `${branch}-renamed`)
+  assert.equal(renamed.branchExplicit, true)
+  assert.equal(await git(projectPath, 'branch', '--list', 'feature/*'), '')
+  await assert.rejects(
+    core.handlers['vibeflow:updateTask']({ taskId: task.id, title: task.title, branch: 'bad..name' }),
+    { code: 'INVALID_BRANCH_NAME' }
+  )
+})
+
+test('renaming a provisioned Backlog card gives up its clean worktree', async (t) => {
+  const { core, task, branch, projectPath } = await coreWithRemoteTask(t)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { worktreePath } = cardIn(core, 'backlog', task.id)
+
+  await core.handlers['vibeflow:updateTask']({ taskId: task.id, title: task.title, branch: `${branch}-renamed` })
+
+  const renamed = cardIn(core, 'backlog', task.id)
+  assert.equal(renamed.worktreePath, undefined)
+  assert.equal(renamed.launchedAt, undefined)
+  assert.equal(await exists(worktreePath), false)
+  assert.equal(await git(projectPath, 'branch', '--list', branch), '')
+})
+
+test('a provisioned Backlog card with changes keeps its branch', async (t) => {
+  const { core, task, branch } = await coreWithRemoteTask(t)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { worktreePath } = cardIn(core, 'backlog', task.id)
+  await writeFile(worktreePath, 'work.txt', 'work\n')
+
+  await assert.rejects(
+    core.handlers['vibeflow:updateTask']({ taskId: task.id, title: task.title, branch: `${branch}-renamed` }),
+    /已有變更/
+  )
+  assert.equal(cardIn(core, 'backlog', task.id).branch, branch)
 })

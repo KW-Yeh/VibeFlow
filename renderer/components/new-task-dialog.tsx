@@ -597,8 +597,8 @@ export function NewTaskForm({
           />
           <span className="block text-sm text-muted-foreground">
             {hasRemote
-              ? '填寫後會建立同名分支；若 remote 已有這個分支，則直接取回並接續上面的工作。'
-              : '填寫後會建立同名分支。'}
+              ? '開始執行時會建立同名分支；若 remote 已有這個分支，則直接取回並接續上面的工作。'
+              : '開始執行時會建立同名分支。'}
           </span>
         </label>
       </InlineEnterSurface>
@@ -607,11 +607,15 @@ export function NewTaskForm({
         <div className="space-y-1.5 rounded-lg border border-border/50 bg-muted/20 p-4">
           <span className="flex items-center gap-1.5 text-sm font-medium">
             <Info className="size-3.5 text-muted-foreground" />
-            建立後會立刻做這些事
+            卡片開始執行時才會做這些事
           </span>
+          <p className="text-sm text-muted-foreground">
+            建立卡片只會記下分支名稱，不會建立分支或推到 origin；放在 Backlog 期間都可以再編輯。
+          </p>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>
-              在 <code className="text-foreground">{workspaceDisplayPath}</code>{' '}
+              {hasRemote ? '從當下最新的 origin 基準分支' : '從基準分支'}，在{' '}
+              <code className="text-foreground">{workspaceDisplayPath}</code>{' '}
               底下建立這張卡專用的 worktree 與分支，你的專案資料夾本身不會被切換。
             </li>
             {hasRemote && (
@@ -964,7 +968,7 @@ export function NewTaskForm({
               )}
             >
               {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立 Worktree 中…' : '建立任務'}
+              {creating ? '建立任務中…' : '建立任務'}
             </Button>
           </div>
         </div>
@@ -1023,7 +1027,7 @@ export function NewTaskForm({
               )}
             >
               {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立 Worktree 中…' : '建立任務'}
+              {creating ? '建立任務中…' : '建立任務'}
             </Button>
           </div>
         </div>

@@ -404,6 +404,14 @@ function TaskInfo({
         </h3>
       </div>
 
+      {column === 'backlog' && task.launchError && (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm">
+          上次開始執行時無法建立分支，卡片已退回 Backlog：{task.launchError}
+          <br />
+          <span className="text-muted-foreground">可以編輯分支名稱或基準分支後再開始。</span>
+        </p>
+      )}
+
       <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
         {task.projectName && (
           <div className="flex items-center gap-2">
@@ -413,7 +421,14 @@ function TaskInfo({
         )}
         <div className="flex items-start gap-2">
           <GitBranch className="mt-0.5 size-3.5 shrink-0" />
-          <span className="min-w-0 break-all">{task.branch}</span>
+          <span className="min-w-0 break-all">
+            {task.branch}
+            {column !== 'done' && !task.worktreePath && (
+              <span className="text-muted-foreground/70">
+                {column === 'backlog' ? '（開始執行時建立）' : '（建立中…）'}
+              </span>
+            )}
+          </span>
         </div>
         {task.baseBranch && (
           <div className="flex items-start gap-2">
@@ -1359,6 +1374,10 @@ export function TaskWorkspacePanel({
   const tabPanelId = `${tabBaseId}-panel`
   const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
   const cwd = task.worktreePath ?? task.projectPath ?? null
+  const provisionNotice =
+    column === 'in_progress' && !task.worktreePath
+      ? `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
+      : null
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
@@ -1561,16 +1580,18 @@ export function TaskWorkspacePanel({
             </Button>
           </>
         )}
-        <IconButton
-          aria-label="編輯任務"
-          title="編輯任務"
-          onClick={() => {
-            onInteract?.()
-            onEdit(task.id)
-          }}
-        >
-          <Pencil className="size-4" />
-        </IconButton>
+        {column === 'backlog' && (
+          <IconButton
+            aria-label="編輯任務"
+            title="編輯任務"
+            onClick={() => {
+              onInteract?.()
+              onEdit(task.id)
+            }}
+          >
+            <Pencil className="size-4" />
+          </IconButton>
+        )}
         {confirmDelete ? (
           <div className="flex items-center gap-1">
             <button
@@ -1644,6 +1665,7 @@ export function TaskWorkspacePanel({
             cwd={cwd}
             launchCommand={launchCommand}
             launchNonce={launchNonce}
+            provisionNotice={provisionNotice}
             readOnly={false}
             onReturnToBacklog={
               column === 'in_progress' ? () => onReturnToBacklog(task) : undefined

@@ -168,6 +168,7 @@ export async function updateTask(payload: {
   autoMode?: boolean
   projectPath?: string
   baseBranch?: string | null
+  branch?: string
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

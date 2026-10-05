@@ -292,6 +292,8 @@ export default function HomePage() {
 
   const handleOpenEditTask = (taskId: string) => {
     setEditError(null)
+    // Started and finished cards are read-only.
+    if (!board.backlog.some((t) => t.id === taskId)) return
     setEditTask(findTask(board, taskId))
   }
 
@@ -310,6 +312,7 @@ export default function HomePage() {
         autoMode: payload.autoMode,
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
+        branch: payload.branch,
       })
       if (state) setBoard(state.board)
       setEditTask(null)

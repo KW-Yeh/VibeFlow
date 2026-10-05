@@ -116,6 +116,7 @@ export function createBridge(t: BridgeTransport) {
     autoMode?: boolean
     projectPath?: string
     baseBranch?: string | null
+    branch?: string
   }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:updateTask', payload),
   /** Clear prior execution state and prepare a fresh run of this task. */

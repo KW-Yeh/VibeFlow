@@ -55,7 +55,7 @@ are.
 | `vibeflow:getState` | core | `getState()` | | Board + settings in one read; the plan's `listTasks()` + `getSettings()` |
 | `vibeflow:setBoard` | core | `setBoard(board)` | | The renderer replaces the whole board to reorder and move. `moveTask(id, to)` alone cannot express a position in the column. Keep it or add `moveTask(id, to, index)` |
 | `vibeflow:createTask` | core | `createTask(input)` | projectPath | The user picks the project path. Valid input, but validate it with a schema |
-| `vibeflow:updateTask` | core | `updateTask(id, patch)` | | |
+| `vibeflow:updateTask` | core | `updateTask(id, patch)` | | Backlog cards only. `projectPath` / `baseBranch` / `branch` are stored, not provisioned; a clean worktree is given up |
 | `vibeflow:removeTask` | core | `removeTask(id)` | | |
 | `vibeflow:resetTaskRun` | core | `resetTaskRun(id)` | | "Return to Backlog" wipes the run |
 | `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |
@@ -63,13 +63,13 @@ are.
 | `vibeflow:setSettings` | core | `updateSettings(patch)` | | |
 | `projects:listRecent` | core | `listRecentProjects()` | | |
 | `board:getCliLaunchInfo` | core | `getCliLaunchInfo()` | | Now reads `PlatformServices.sourceRoot()` |
-| `attachments:write` | core | `writeAttachments(id, files)` | | |
+| `attachments:write` | core | `writeAttachments(id, files)` | | Into the worktree, or the staging dir while the card has none |
 
 ## Sessions (PTY)
 
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
-| `pty:start` | core | `term.start({ taskId, launch })` | ~~cwd, command~~ | **Done.** The renderer sends a launch intent (`{ resume, includeTaskPrompt }`, or none for a shell). Core resolves the cwd and builds the command (`launch.ts`, formerly `renderer/lib/claude.ts`) |
+| `pty:start` | core | `term.start({ taskId, launch })` | ~~cwd, command~~ | **Done.** The renderer sends a launch intent (`{ resume, includeTaskPrompt }`, or none for a shell). Core resolves the cwd and builds the command (`launch.ts`, formerly `renderer/lib/claude.ts`). A launch on a card with no worktree provisions it first (`ensureProvisioned`); a shell on one is refused |
 | `pty:input` | core | `writeInput(id, data)` | | Keyed by `sessionKey`, not task id (a task has several terminal tabs) |
 | `pty:resize` | core | `resize(id, cols, rows)` | | Same `sessionKey` note |
 | `pty:kill` | core | `stopSession(id)` | | |

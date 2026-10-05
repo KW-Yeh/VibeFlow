@@ -170,7 +170,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         title: task.title,
         description: task.description,
         branch: task.branch,
-        worktreePath: task.worktreePath,
+        worktreePath: task.worktreePath ?? null,
       },
     }
   }
@@ -216,7 +216,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       title: task.title,
       projectPath: task.projectPath,
       branch: task.branch,
-      worktreePath: task.worktreePath,
+      worktreePath: task.worktreePath ?? null,
       baseBranch: task.baseBranch,
       agentCli: task.agentCli,
       model: task.model,

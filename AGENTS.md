@@ -84,9 +84,10 @@ npm run vibeflow -- task create \
   `--agent` / `--model`, `--effort low|medium|high|xhigh`, and
   `--attach <path>` (repeat per file; the CLI reads the bytes and infers the mime).
 - `--branch` is the branch the task runs on. Left out, the name is derived from
-  the card (`branch-name.ts`) and quietly de-duplicated; given explicitly, it is
-  created verbatim or the call fails (`INVALID_BRANCH_NAME`,
-  `BRANCH_ALREADY_EXISTS` for a local collision, `WORKTREE_DIR_EXISTS`). A name
+  the card (`branch-name.ts`) and quietly de-duplicated when it is created; given
+  explicitly, it is created verbatim or the call fails (`INVALID_BRANCH_NAME`,
+  `BRANCH_ALREADY_EXISTS` for a local collision, `WORKTREE_DIR_EXISTS`) — checked
+  at creation and again when the branch is actually created. A name
   that already exists **on origin only** is not an error: the branch is fetched
   and checked out so the card continues that work instead of starting a new
   branch off the base. Same field, same rules, in the new-task dialog.
@@ -101,9 +102,12 @@ npm run vibeflow -- task create \
   `~/Library/Application Support` on macOS, `%APPDATA%` on Windows,
   `$XDG_CONFIG_HOME` (or `~/.config`) on Linux.
 - `--store-path <dir>` can override the store directory explicitly.
-- The command provisions the same git isolation as the UI: it creates a task card,
-  branch, and worktree under the target project's `.vibeflow/` directory.
-- Verify a CLI-created task with `git worktree list --porcelain` and, when needed, by
+- A `backlog` card (the default) only records its branch name: no branch,
+  worktree or push until the card first starts in the app (see "Provisioning at
+  launch" below). `--status in_progress|done` provisions at creation instead,
+  since those columns never auto-launch. The JSON output's `worktreePath` is
+  `null` for an unprovisioned card.
+- Verify a provisioned task with `git worktree list --porcelain`, and any task by
   reading the selected store JSON.
 
 ### CLI task update
@@ -271,6 +275,18 @@ docs/                      everything that is not code (index: docs/README.md)
   at import time — it binds to `PlatformServices.userDataDir()`, which the host
   registers at startup from `--profile` / `--store-path`. Eager construction binds
   the wrong path. (This was a real bug.)
+- **Provisioning at launch**: a card's branch + worktree are created by
+  `ensureProvisioned` in `service.ts` when `pty:start` carries a launch intent and
+  the card has no `worktreePath` — never at creation (except non-backlog CLI
+  cards), so the branch starts from the base as it is when work starts. A failed
+  attempt puts the card back in Backlog with `launchedAt` cleared and the reason
+  in `launchError`. A shell `pty:start` on an unprovisioned card is refused rather
+  than falling back to the project checkout. Attachments of an unprovisioned card
+  live in `<workspace>/.attachments/<taskId>/` (`taskAttachmentStagingPath`).
+- **Only Backlog cards are editable** (`vibeflow:updateTask` refuses others; the
+  CLI's `task update` is the exception). Editing a Backlog card's project, base or
+  branch only rewrites the store; one that already has a clean worktree gives it
+  (and its local branch) up, one with changes is refused.
 - **Each Task carries its own `projectPath`/`projectName`.** Anything touching a
   worktree (cleanup, delete, diff, terminal cwd) resolves it from the task, not a global.
 - **Terminal**: `task-terminal.tsx` dynamically imports xterm inside `useEffect`

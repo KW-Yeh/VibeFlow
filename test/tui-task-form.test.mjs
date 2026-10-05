@@ -35,12 +35,12 @@ test('new form fields follow the git state of the chosen folder', () => {
   assert.ok(!local.includes('baseBranch') && local.includes('branch'))
 })
 
-test('edit form shows the base branch only after the project of an unstarted card changes', () => {
+test('edit form offers the base branch and the branch of a Backlog card', () => {
   const task = { id: 't1', title: 'T', branch: 'b', projectPath: '/a', baseBranch: 'main' }
   const s = editFormState(task, true)
-  assert.ok(!visibleFields(s, ctx()).includes('baseBranch'))
-  assert.ok(visibleFields({ ...s, projectPath: '/b', gitInfo: repo() }, ctx()).includes('baseBranch'))
-  assert.equal(editFormState({ ...task, launchedAt: 1 }, true).launched, true)
+  assert.ok(!visibleFields(s, ctx()).includes('baseBranch'), 'no base list before git is known')
+  assert.ok(visibleFields(s, ctx()).includes('branch'))
+  assert.ok(visibleFields({ ...s, gitInfo: repo() }, ctx()).includes('baseBranch'))
 })
 
 test('submitting needs a title and a ready git project', () => {
@@ -72,12 +72,12 @@ test('the create payload matches the Web UI', (t) => {
   assert.equal(createPayload({ ...s, branch: '' }).branch, undefined)
 })
 
-test('the update payload sends the project only while the card is unstarted', () => {
+test('the update payload carries the git-bound fields', () => {
   const task = { id: 't1', title: 'T', branch: 'b', projectPath: '/a', baseBranch: 'main' }
-  assert.deepEqual(updatePayload(editFormState(task, true)).projectPath, '/a')
-  const launched = updatePayload(editFormState({ ...task, launchedAt: 1 }, true))
-  assert.equal('projectPath' in launched, false)
-  assert.equal('baseBranch' in launched, false)
+  const p = updatePayload({ ...editFormState(task, true), branch: ' feature/y ' })
+  assert.equal(p.projectPath, '/a')
+  assert.equal(p.baseBranch, 'main')
+  assert.equal(p.branch, 'feature/y')
 })
 
 test('model choices are the default, the agent list, and a model not on it', () => {

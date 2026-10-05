@@ -20,7 +20,7 @@ import {
   type TaskOutcome,
   type VibeFlowState,
 } from './store'
-import { projectWorkstationPath } from './workspace'
+import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
 import { AGENT_EFFORTS, detectAgents, type AgentCliId, type AgentEffort } from './agents'
 import { listAgentModels } from './agent-models'
 import {
@@ -41,13 +41,13 @@ import {
   getWorktreeDiff,
   getWorktreeDiffEntries,
   getWorktreeDiffFile,
+  assertBranchAvailable,
   initRepository,
-  provisionWorktree,
   removeWorktree,
   resetWorktreeToBase,
   syncBaseBranch,
 } from './git'
-import { createTaskFromInput } from './tasks'
+import { createTaskFromInput, provisionTaskWorktree } from './tasks'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
 import { decisionsKey, deleteDecisions } from './decisions'
@@ -56,7 +56,7 @@ import { agentArtifactsPath, deleteArtifacts, listArtifacts, readArtifact } from
 import { resetSubAgents, unwatchAllSubAgents, unwatchSubAgents, watchSubAgents } from './subagents'
 import { cancelAllChatSends, cancelChatSend, startChatSend } from './chat-session'
 import { clearConversation, clearMessages, loadConversation } from './chat-store'
-import { writeAttachments, type AttachmentInput } from './attachments'
+import { writeAttachments, writeAttachmentsTo, type AttachmentInput } from './attachments'
 import {
   createEntry as createLibraryEntry,
   deleteEntry as deleteLibraryEntry,
@@ -121,6 +121,8 @@ export interface UpdateTaskPayload {
   autoMode?: boolean
   projectPath?: string
   baseBranch?: string | null
+  /** New branch name; blank/absent keeps the current one. */
+  branch?: string
 }
 
 export interface ChatSendPayload {
@@ -283,6 +285,56 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     await deleteBranch(task.projectPath, branch)
   }
 
+  function columnOf(taskId: string): ColumnId | null {
+    const board = getState().board
+    return COLUMNS.find((col) => board[col].some((t) => t.id === taskId)) ?? null
+  }
+
+  // One provisioning per card at a time: the agent launch and a shell tab can
+  // both ask while `fetch` + `push` are still running.
+  const provisioning = new Map<string, Promise<Task>>()
+
+  /**
+   * A card's branch is cut from its base when it first runs, so the start point
+   * is the base as it is then, not when the card was written. A failed attempt
+   * sends the card back to Backlog unstarted, where it can be edited and retried.
+   */
+  function ensureProvisioned(task: Task): Promise<Task> {
+    if (task.worktreePath) return Promise.resolve(task)
+    const pending = provisioning.get(task.id)
+    if (pending) return pending
+    const run = (async () => {
+      try {
+        updateTask(task.id, { ...(await provisionTaskWorktree(task)), launchError: undefined })
+        bus.emit('state:changed', getState())
+      } catch (err) {
+        returnUnstarted(task.id, (err as Error).message)
+        throw err
+      }
+      const provisioned = findTask(task.id)
+      if (!provisioned) throw new Error('找不到要執行的任務')
+      return provisioned
+    })().finally(() => provisioning.delete(task.id))
+    provisioning.set(task.id, run)
+    return run
+  }
+
+  function returnUnstarted(taskId: string, launchError: string): void {
+    const current = findTask(taskId)
+    if (!current) return
+    const board = getState().board
+    const next: BoardState = {
+      backlog: [
+        { ...current, launchedAt: undefined, launchError },
+        ...board.backlog.filter((t) => t.id !== taskId),
+      ],
+      in_progress: board.in_progress.filter((t) => t.id !== taskId),
+      done: board.done.filter((t) => t.id !== taskId),
+    }
+    setBoard(next)
+    bus.emit('state:changed', getState())
+  }
+
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
     'app:getVersion': () => version,
@@ -366,7 +418,14 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     // were new. Launching again is the caller's decision.
     'vibeflow:resetTaskRun': async (taskId) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) throw new Error('任務沒有可用的 worktree')
+      if (!task.worktreePath) {
+        // Never provisioned: no code, artifacts or sub-agents to discard.
+        await teardownTask(task.id)
+        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID() })
+        const reset = findTask(task.id)
+        if (!reset) throw new Error('找不到要重置的任務')
+        return { state: getState(), task: reset }
+      }
       if (!task.baseBranch) throw new Error('任務沒有記錄 base branch，無法還原 worktree')
       await teardownTask(task.id)
       await resetWorktreeToBase(task.worktreePath, task.baseBranch)
@@ -381,21 +440,25 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       return { state: getState(), task: reset }
     },
 
-    // Edit an existing card's fields. Most are plain metadata read at launch time
-    // (title / description / agent / model / workspace). The project folder
-    // and base branch are git-bound: re-selecting them rebuilds the worktree, which
-    // is only allowed for not-yet-launched tasks (no work to lose).
+    // Edit an existing card's fields. Only a Backlog card is editable: once it
+    // runs, what it was asked to do and where it does it are history. The
+    // git-bound fields (project, base, branch) are just stored — the worktree is
+    // built when the card starts. A Backlog card that already has one (made
+    // before provisioning moved to launch, or returned from a run) gives it up,
+    // but only while it holds no changes.
     'vibeflow:updateTask': async (payload) => {
       const p = obj<UpdateTaskPayload>(payload, 'payload')
       const existing = requireTask(p.taskId)
+      if (columnOf(existing.id) !== 'backlog') {
+        throw new Error('只有 Backlog 的任務可以編輯')
+      }
       let gitPatch: Partial<Task> = {}
       const nextProject = p.projectPath || existing.projectPath
+      const nextBranch = p.branch === undefined ? '' : str(p.branch, 'branch').trim()
       const projectChanged = Boolean(p.projectPath && p.projectPath !== existing.projectPath)
       const baseChanged = p.baseBranch != null && p.baseBranch !== (existing.baseBranch ?? null)
-      if (nextProject && (projectChanged || baseChanged)) {
-        if (existing.launchedAt) {
-          throw new Error('任務已開始執行，無法更換專案資料夾或基準分支')
-        }
+      const branchChanged = Boolean(nextBranch && nextBranch !== existing.branch)
+      if (nextProject && (projectChanged || baseChanged || branchChanged)) {
         if (existing.worktreePath) {
           // Only the count matters here, so use the entry list — it reads no
           // blob content and skips the network fetch.
@@ -405,36 +468,35 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
             { fetch: false }
           )
           if (diff.length > 0) {
-            throw new Error('目前 worktree 已有變更，無法更換專案資料夾或基準分支')
+            throw new Error('目前 worktree 已有變更，無法更換專案資料夾、基準分支或分支名稱')
           }
         }
         const info = await getGitInfo(nextProject)
         if (!info.isRepo) throw new Error('目標資料夾不是 git repository')
-        // Tear down the old (empty) worktree before rebuilding on the target.
-        await teardownTask(existing.id)
-        await removeTaskWorktree(existing)
         const projectName = path.basename(nextProject)
         const workspacePath = projectWorkstationPath(resolveWorkstationPath(getSettings()), projectName)
-        await fs.promises.mkdir(workspacePath, { recursive: true })
-        const result = await provisionWorktree(
-          nextProject,
-          workspacePath,
-          existing.id,
-          p.baseBranch ?? existing.baseBranch ?? null,
-          existing.branch
-        )
+        // Free the old branch first, so renaming back to it is not reported as taken.
+        await teardownTask(existing.id)
+        await removeTaskWorktree(existing)
+        if (branchChanged) await assertBranchAvailable(nextProject, workspacePath, nextBranch)
         recordRecentProject(getStore(), nextProject)
         gitPatch = {
           projectPath: nextProject,
           projectName,
-          branch: result.branch,
-          worktreePath: result.worktreePath,
           workspacePath,
-          baseBranch: result.baseBranch,
-          pushed: result.pushed,
+          baseBranch:
+            (p.baseBranch ?? (projectChanged ? null : existing.baseBranch)) ||
+            info.defaultBase ||
+            info.currentBranch ||
+            undefined,
+          ...(branchChanged ? { branch: nextBranch, branchExplicit: true } : {}),
+          worktreePath: undefined,
+          pushed: undefined,
+          launchedAt: undefined,
         }
       }
       updateTask(existing.id, {
+        launchError: undefined,
         title: (p.title ?? '').trim() || `Task ${existing.id}`,
         description: p.description?.trim() || undefined,
         agentCli: p.agentCli,
@@ -451,10 +513,15 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     // string or a cwd, so a connected client cannot run anything else.
     'pty:start': async (payload) => {
       const p = obj<PtyStartPayload>(payload, 'payload')
-      const task = requireTask(p.taskId)
-      const key = sessionKeyFor(task.id, p.sessionKey)
-      const cwd = task.worktreePath ?? task.projectPath
-      if (!cwd) throw new Error('任務沒有可用的工作目錄')
+      const requested = requireTask(p.taskId)
+      const key = sessionKeyFor(requested.id, p.sessionKey)
+      // Only a launch provisions; a shell asked for meanwhile waits for it. A
+      // shell must never fall back to the project checkout — work done there
+      // would land on whatever branch the project has out.
+      const pending = provisioning.get(requested.id)
+      const task = p.launch ? await ensureProvisioned(requested) : pending ? await pending : requested
+      const cwd = task.worktreePath
+      if (!cwd) throw new Error('任務尚未開始執行，還沒有 worktree')
       let command: string | undefined
       let fresh = p.fresh === true
       if (p.launch) {
@@ -574,7 +641,8 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       const task = requireTask(taskId)
       const base = task.baseBranch ?? 'main'
       if (task.worktreePath) return readWorktreeSpecs(task.worktreePath, base)
-      if (!task.projectPath) return []
+      // Never provisioned: the branch is only a name, there is nothing to read.
+      if (!task.projectPath || !task.launchedAt) return []
       const changed = task.outcome?.files.filter((f) => f.status !== 'D').map((f) => f.path)
       return readBranchSpecs(task.projectPath, task.branch, base, changed)
     },
@@ -695,6 +763,9 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
         deleteDecisions(task.workspacePath, decisionsKey(task.worktreePath, task.branch))
       }
       await removeTaskWorktree(task)
+      if (task.workspacePath) {
+        fs.rmSync(taskAttachmentStagingPath(task.workspacePath, task.id), { recursive: true, force: true })
+      }
       clearConversation(task.id)
       removeTask(task.id)
       return getState()
@@ -703,9 +774,11 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     'attachments:write': (payload) => {
       const p = obj<{ taskId: unknown; attachments: unknown }>(payload, 'payload')
       const task = requireTask(p.taskId)
-      if (!task.worktreePath) throw new Error('找不到任務 worktree')
       if (!Array.isArray(p.attachments)) invalid('attachments must be an array')
-      return writeAttachments(task.worktreePath, p.attachments as AttachmentInput[])
+      const inputs = p.attachments as AttachmentInput[]
+      if (task.worktreePath) return writeAttachments(task.worktreePath, inputs)
+      if (!task.workspacePath) throw new Error('找不到任務 worktree')
+      return writeAttachmentsTo(taskAttachmentStagingPath(task.workspacePath, task.id), inputs)
     },
 
     'chat:load': (taskId) => loadConversation(requireTask(taskId).id),

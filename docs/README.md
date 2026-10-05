@@ -38,6 +38,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [organize-files](features/organize-files/spec.md) | Move the root-level docs into `docs/` and add this index |
 | [builtin-skills](features/builtin-skills/spec.md) | Ship built-in skills (visual-parity, generic pr) in every user's Library |
 | [spec-tab](features/spec-tab/spec.md) | The 決策 tab shows the branch's `spec.md` instead of a separate decision record |
+| [lazy-branch-provisioning](features/lazy-branch-provisioning/spec.md) | Create the branch/worktree when a card starts, not when it is created; only backlog cards are editable |
 
 ## Adding a document
 

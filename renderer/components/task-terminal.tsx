@@ -37,6 +37,11 @@ interface TaskTerminalProps {
   /** Bump whenever a new agent command needs to replace the current PTY. */
   launchNonce?: number
   /**
+   * Shown while a launch is still creating the card's branch and worktree,
+   * which takes a fetch and a push. Absent once the card has a worktree.
+   */
+  provisionNotice?: string | null
+  /**
    * When true (card is Done), the terminal is view-only: no PTY is started,
    * keystrokes are not forwarded, and the launch affordance is hidden. Existing
    * scrollback from the live session is preserved for review.
@@ -56,12 +61,22 @@ interface TaskTerminalProps {
   onInteract?: () => void
 }
 
+function writeProvisionNotice(term: XTerm, notice: string | null | undefined) {
+  if (notice) term.writeln(`⏳  ${notice}`)
+}
+
+function writeLaunchError(term: XTerm, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  term.writeln(`\r\n⚠️  無法開始執行：${message}`)
+}
+
 export function TaskTerminal({
   taskId,
   sessionKey: sessionKeyProp,
   cwd,
   launchCommand,
   launchNonce = 0,
+  provisionNotice = null,
   readOnly = false,
   onReturnToBacklog,
   onLaunchAgent,
@@ -97,6 +112,8 @@ export function TaskTerminal({
   const cwdRef = useRef<string | null>(cwd)
   cwdRef.current = cwd
   const readOnlyRef = useRef(readOnly)
+  const provisionNoticeRef = useRef(provisionNotice)
+  provisionNoticeRef.current = provisionNotice
   // Kept in a ref for the same reason: the init effect must not re-run (and
   // dispose the xterm buffer + respawn the shell) just because the host passed
   // a new callback identity.
@@ -115,10 +132,15 @@ export function TaskTerminal({
       // the already-mounted terminal and starts with a fresh buffer.
       readyRef.current = false
       runningCommandRef.current = true
+      if (term) writeProvisionNotice(term, provisionNoticeRef.current)
       void termStart({ taskId, sessionKey, launch, cols: term?.cols, rows: term?.rows })
         .then(() => {
           readyRef.current = true
           termRef.current?.focus()
+        })
+        .catch((error: unknown) => {
+          runningCommandRef.current = false
+          if (termRef.current) writeLaunchError(termRef.current, error)
         })
     },
     [taskId, sessionKey]
@@ -296,13 +318,22 @@ export function TaskTerminal({
       const armedCmd = !readOnlyRef.current ? launchCmdRef.current : null
       if (armedCmd) sentNonceRef.current = launchNonceRef.current
       runningCommandRef.current = Boolean(armedCmd)
-      const { scrollback } = await api.term.start({
-        taskId,
-        sessionKey,
-        launch: armedCmd ?? undefined,
-        cols: term.cols,
-        rows: term.rows,
-      })
+      if (armedCmd) writeProvisionNotice(term, provisionNoticeRef.current)
+      let started
+      try {
+        started = await api.term.start({
+          taskId,
+          sessionKey,
+          launch: armedCmd ?? undefined,
+          cols: term.cols,
+          rows: term.rows,
+        })
+      } catch (error) {
+        runningCommandRef.current = false
+        writeLaunchError(term, error)
+        return
+      }
+      const { scrollback } = started
       // Replay buffered output from before this terminal instance was mounted
       // (e.g. after the component unmounted while the agent was still running).
       if (scrollback) term.write(scrollback)

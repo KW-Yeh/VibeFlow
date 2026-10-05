@@ -11,3 +11,11 @@ export function projectWorkstationPath(
 ): string {
   return join(workstationRoot, projectName)
 }
+
+/**
+ * Where a not-yet-provisioned card keeps its attachments: outside any worktree,
+ * so the paths written into its description survive provisioning.
+ */
+export function taskAttachmentStagingPath(workspacePath: string, taskId: string): string {
+  return join(workspacePath, '.attachments', taskId)
+}

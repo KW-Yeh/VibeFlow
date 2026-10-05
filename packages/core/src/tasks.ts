@@ -11,14 +11,15 @@ import {
 import { generateBranchName } from './branch-name'
 import {
   assertBranchAvailable,
+  fallbackBranchName,
   getGitInfo,
   initRepository,
   provisionWorktree,
 } from './git'
-import { projectWorkstationPath } from './workspace'
+import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
 import { recordRecentProject } from './recent-projects'
 import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
-import { writeAttachments, type AttachmentInput } from './attachments'
+import { writeAttachments, writeAttachmentsTo, type AttachmentInput } from './attachments'
 
 export interface CreateTaskInput {
   projectPath: string
@@ -83,36 +84,38 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   )
   await fs.mkdir(workspacePath, { recursive: true })
 
-  // Vet the user's name before provisioning so a bad one surfaces as its own
-  // error instead of a generic "worktree 建立失敗". Generating a name is skipped
-  // entirely when one was given — it can cost a headless `claude -p` call.
+  // Vet the user's name now so a bad one surfaces as its own error at creation,
+  // not later at launch. Generating a name is skipped entirely when one was
+  // given — it can cost a headless `claude -p` call.
   if (explicitBranch) {
     await assertBranchAvailable(projectPath, workspacePath, explicitBranch)
   }
-  const preferredBranch =
+  const branch =
     explicitBranch ?? (await generateBranchName(input.title, input.description))
 
-  let provisionResult
-  try {
-    provisionResult = await provisionWorktree(
-      projectPath,
-      workspacePath,
-      taskId,
-      input.baseBranch ?? null,
-      preferredBranch,
-      { explicitBranch: Boolean(explicitBranch) }
-    )
-  } catch (err) {
-    throw Object.assign(
-      new Error(`Worktree 建立失敗：${(err as Error).message}`),
-      { code: 'WORKTREE_CREATE_FAILED' }
-    )
+  const draft: Task = {
+    id: taskId,
+    title: input.title.trim() || `Task ${taskId}`,
+    branch: branch ?? fallbackBranchName(taskId),
+    branchExplicit: explicitBranch ? true : undefined,
+    projectPath,
+    projectName,
+    workspacePath,
+    baseBranch: input.baseBranch || info.defaultBase || info.currentBranch || undefined,
   }
 
-  const attachments = writeAttachments(
-    provisionResult.worktreePath,
-    input.attachments ?? []
-  )
+  // A backlog card stays a plan: its branch is cut from the base when it starts,
+  // not when it was written down. Other columns never auto-launch, so a card
+  // created straight into them gets its worktree now or could never run.
+  const col: ColumnId = input.status ?? 'backlog'
+  const provisioned = col === 'backlog' ? null : await provisionTaskWorktree(draft)
+
+  const attachments = provisioned?.worktreePath
+    ? writeAttachments(provisioned.worktreePath, input.attachments ?? [])
+    : writeAttachmentsTo(
+        taskAttachmentStagingPath(workspacePath, taskId),
+        input.attachments ?? []
+      )
   const attachmentLines = attachments.map(
     (attachment) => `[附件: ${attachment.path}]`
   )
@@ -122,16 +125,9 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     : baseDescription || undefined
 
   const task: Task = {
-    id: taskId,
-    title: input.title.trim() || `Task ${taskId}`,
+    ...draft,
+    ...provisioned,
     description,
-    branch: provisionResult.branch,
-    projectPath,
-    projectName,
-    worktreePath: provisionResult.worktreePath,
-    workspacePath,
-    baseBranch: provisionResult.baseBranch,
-    pushed: provisionResult.pushed,
     createdAt: Date.now(),
     agentCli: input.agentCli ?? 'claude',
     model: input.model || undefined,
@@ -141,7 +137,6 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
 
   try {
     const board = store.get('board')
-    const col: ColumnId = input.status ?? 'backlog'
     board[col] = [task, ...board[col]]
     store.set('board', board)
     recordRecentProject(store, projectPath)
@@ -153,6 +148,47 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   }
 
   return { task, storePath: store.path }
+}
+
+export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBranch' | 'pushed'>
+
+/**
+ * Create the card's branch and worktree from the base as it is right now, and
+ * push the branch when a remote exists. Returns the fields to write back: the
+ * branch can differ from the card's when a generated name had to be
+ * de-duplicated.
+ */
+export async function provisionTaskWorktree(task: Task): Promise<ProvisionedFields> {
+  if (!task.projectPath || !task.workspacePath) {
+    throw Object.assign(new Error('任務沒有專案資料夾，無法建立 worktree'), {
+      code: 'WORKTREE_CREATE_FAILED',
+    })
+  }
+  await fs.mkdir(task.workspacePath, { recursive: true })
+  if (task.branchExplicit) {
+    await assertBranchAvailable(task.projectPath, task.workspacePath, task.branch)
+  }
+  try {
+    const result = await provisionWorktree(
+      task.projectPath,
+      task.workspacePath,
+      task.id,
+      task.baseBranch ?? null,
+      task.branch,
+      { explicitBranch: task.branchExplicit === true }
+    )
+    return {
+      branch: result.branch,
+      worktreePath: result.worktreePath,
+      baseBranch: result.baseBranch,
+      pushed: result.pushed,
+    }
+  } catch (err) {
+    throw Object.assign(
+      new Error(`Worktree 建立失敗：${(err as Error).message}`),
+      { code: 'WORKTREE_CREATE_FAILED' }
+    )
+  }
 }
 
 export interface UpdateTaskInput {

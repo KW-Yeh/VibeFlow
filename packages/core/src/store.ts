@@ -10,18 +10,27 @@ export interface Task {
   title: string
   /** Optional long-form description / intent for this task. */
   description?: string
+  /**
+   * Branch the card runs on. Decided at creation, but only created in git when
+   * the card first launches — until then it is a name, nothing more.
+   */
   branch: string
+  /**
+   * The user typed `branch` themselves: provisioning must create it verbatim or
+   * fail, instead of de-duplicating it like a generated name.
+   */
+  branchExplicit?: boolean
   /** Absolute path of the project this task belongs to (chosen per task). */
   projectPath?: string
   /** Display name of the project (basename of projectPath). */
   projectName?: string
-  /** Absolute path of this task's git worktree, once provisioned. */
+  /** Absolute path of this task's git worktree. Absent = not provisioned yet (or already completed). */
   worktreePath?: string
   /** Absolute path of the workspace folder housing the worktree (= dirname(worktreePath)). */
   workspacePath?: string
-  /** Base branch the worktree was created from. */
+  /** Base branch the worktree is (or will be) created from. */
   baseBranch?: string
-  /** Whether the branch was pushed upstream at creation. */
+  /** Whether the branch was pushed upstream when it was provisioned. */
   pushed?: boolean
   /** Agent CLI used for this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
@@ -42,6 +51,12 @@ export interface Task {
    * auto-run at most once when the card enters In Progress; unset = never run.
    */
   launchedAt?: number
+  /**
+   * Why the last start could not create the card's branch/worktree. The card
+   * was sent back to Backlog unstarted; cleared by the next successful start
+   * or an edit.
+   */
+  launchError?: string
   /**
    * Fresh-run discriminator. Set when the user restarts a task so Claude gets
    * a new pinned conversation while app-restart recovery can still find it.

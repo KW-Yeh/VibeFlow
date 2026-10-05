@@ -98,14 +98,26 @@ export function writeAttachments(
   inputs: AttachmentInput[]
 ): ChatAttachment[] {
   if (inputs.length === 0) return []
+  ensureAttachmentExclude(worktreePath)
+  return writeAttachmentsTo(path.join(worktreePath, ATTACHMENTS_DIR), inputs)
+}
+
+/**
+ * Write attachments straight into `attachmentDir`. For a card with no worktree
+ * yet: the paths returned here end up in its description, so they must stay
+ * valid after the worktree is provisioned elsewhere.
+ */
+export function writeAttachmentsTo(
+  attachmentDir: string,
+  inputs: AttachmentInput[]
+): ChatAttachment[] {
+  if (inputs.length === 0) return []
 
   const decodedInputs = inputs.map((input) => ({
     input,
     name: safeAttachmentName(input.name),
     bytes: decodeAttachment(input),
   }))
-  ensureAttachmentExclude(worktreePath)
-  const attachmentDir = path.join(worktreePath, ATTACHMENTS_DIR)
   fs.mkdirSync(attachmentDir, { recursive: true })
 
   return decodedInputs.map(({ input, name, bytes }) => {
