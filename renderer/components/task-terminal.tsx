@@ -516,7 +516,7 @@ export function TaskTerminal({
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void returnToBacklog()}
                 disabled={!cwd || isReturningToBacklog || isLaunchingAgent}
-                title="捨棄這次執行的程式碼變更、artifacts 與決策紀錄並退回 Backlog，之後按「開始」才會重新啟動 Agent"
+                title="捨棄這次執行的程式碼變更與 artifacts 並退回 Backlog，之後按「開始」才會重新啟動 Agent"
               >
                 <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
                 {isReturningToBacklog ? '退回中…' : '退回 Backlog'}

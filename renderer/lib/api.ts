@@ -25,7 +25,7 @@ import type {
   SubAgentRun,
   Task,
   TaskArtifact,
-  TaskDecisions,
+  TaskSpec,
   VibeFlowState,
   LaunchIntent,
   StartResult,
@@ -226,10 +226,10 @@ export async function openArtifactsDir(taskId: string): Promise<string> {
   return b ? b.openArtifactsDir(taskId) : 'bridge unavailable'
 }
 
-/** The task's decision record; null without the bridge or a workspace folder. */
-export async function getDecisions(taskId: string): Promise<TaskDecisions | null> {
+/** The task's spec.md files; empty without the bridge. */
+export async function getSpecs(taskId: string): Promise<TaskSpec[]> {
   const b = bridge()
-  return b ? b.getDecisions(taskId) : null
+  return b ? b.getSpecs(taskId) : []
 }
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {

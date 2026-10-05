@@ -181,6 +181,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── tasks.ts           create / update a card (UI and CLI share it)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
+│   ├── specs.ts           a task's spec.md files (the 決策 tab), from worktree or branch
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
 ├── core/builtin-skills/   skills VibeFlow ships (copied to dist/builtin-skills by build:npm)
 ├── cli/src/               `vibeflow` command: main.ts (dispatch), host.ts (lock+core+server),
@@ -198,7 +199,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
 │   ├── new-task-dialog.tsx per-task project picker + git detect + create
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
-│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策/artifacts/diff
+│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策 (spec.md)/artifacts/diff
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM core (single source of truth)
@@ -280,15 +281,14 @@ docs/                      everything that is not code (index: docs/README.md)
   the target project's `.gitignore`.
 - **Dark theme**: the app wraps content in `<div className="dark">`; style with the
   shadcn token classes (`bg-background`, `text-muted-foreground`, etc.), not raw colors.
-- **A task's decision record is the one account that outlives it.** The agent is
-  told at launch (`buildDecisionPrompt` in `packages/core/src/launch.ts`) to keep
-  `<workspacePath>/<worktree-dir>.DECISIONS.md` up to date as it makes decisions.
-  It sits in the workspace folder, not the worktree or the artifacts dir, so
-  completing the task does not delete it — only deleting the card does. It
-  records *decisions and their reasons*, never what changed: that is captured
-  from git into `TaskOutcome` and shown on the task view. Reading it after
-  completion means resolving the path from `task.branch` rather than
-  `worktreePath`, which cleanup clears — see `decisionsKey`.
+- **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):
+  every file named `spec.md` that the card's branch added or changed against its
+  base — the feature-spec-plan skill writes high-level decisions there. No such
+  file, no tab. While the worktree exists it is read from the working tree;
+  after completion from the kept branch, using `outcome.files` for the list
+  because a merged branch has an empty merge-base diff. The old
+  `<worktree-dir>.DECISIONS.md` is no longer written or read; `decisions.ts`
+  only deletes leftovers with their card.
 - **Markdown renders in the renderer** through
   `components/markdown-content.tsx` → `markdown-body.tsx`. Raw HTML is disabled.
   Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.

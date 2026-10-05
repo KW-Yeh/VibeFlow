@@ -269,8 +269,8 @@ export function KanbanBoard({
   }
 
   // Send a running card back to Backlog instead of relaunching it on the spot.
-  // Everything the run produced is thrown away — code, artifacts, decision
-  // record, conversation — so the later 開始 starts over from the base branch.
+  // Everything the run produced is thrown away — code, artifacts,
+  // conversation — so the later 開始 starts over from the base branch.
   // None of that is recoverable, so the user confirms first; the returned
   // promise settles false if they back out.
   const returnTaskToBacklog = (task: Task) =>
@@ -615,7 +615,7 @@ export function KanbanBoard({
                       ? `「${confirmReturn.task.baseBranch}」`
                       : '基準分支'}
                     ——這張卡在本地的 commit 與未 commit 變更都會消失，artifacts
-                    與決策紀錄也會一併刪除。遠端分支不會被改動。此操作無法復原。
+                    也會一併刪除。遠端分支不會被改動。此操作無法復原。
                   </p>
                 </div>
               </div>

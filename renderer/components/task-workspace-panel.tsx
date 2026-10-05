@@ -55,7 +55,7 @@ import {
   stabilizeDiffEntries,
 } from '@/lib/diff-state'
 import {
-  getDecisions,
+  getSpecs,
   getDiff,
   getDiffEntries,
   getDiffFile,
@@ -75,29 +75,28 @@ import type {
   SubAgentRun,
   Task,
   TaskArtifact,
-  TaskDecisions,
+  TaskSpec,
   TaskOutcome,
   LaunchIntent,
 } from '@/lib/types'
 
 /**
  * The aside's views. Which ones a task offers depends on its column: a done
- * task has no live terminal, artifacts, or worktree to diff. The decision
- * record is on both sets — the agent maintains it from the first turn, and it
- * is written outside the worktree precisely so completing the task does not
- * take it away.
+ * task has no live terminal, artifacts, or worktree to diff. The spec tab is
+ * on both sets, but only once the task's branch carries a spec.md — a task
+ * that wrote none has no decisions to show.
  */
-type TaskTab = 'task' | 'decisions' | 'artifacts' | 'diff'
+type TaskTab = 'task' | 'spec' | 'artifacts' | 'diff'
 
 const TAB_LABEL: Record<TaskTab, string> = {
   task: '任務',
-  decisions: '決策',
+  spec: '決策',
   artifacts: 'Artifacts',
   diff: 'Git diff',
 }
 
-const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions', 'artifacts', 'diff']
-const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'decisions']
+const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'spec', 'artifacts', 'diff']
+const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'spec']
 // A backlog card has not run yet: nothing has been decided, produced or changed.
 const BACKLOG_TASK_TABS: readonly TaskTab[] = ['task']
 
@@ -443,24 +442,19 @@ function TaskInfo({
 }
 
 /**
- * The task's decision record — what this task decided, and why. Written by the
- * agent as it works (see buildDecisionPrompt) to a file outside the worktree,
- * so it is the one account of the work that survives completion. What the task
- * *changed* is not repeated here: that is captured from git into TaskOutcome
- * and shown on the task view.
- *
- * `live` polls while the task is still running, so a decision the agent records
- * mid-session shows up without reopening the panel.
+ * The task's specs — the high-level decisions the feature-spec-plan skill
+ * records in spec.md. Polled at the panel rather than here, because whether
+ * this tab is offered at all depends on there being one. `live` keeps polling
+ * while the task runs, so a spec the agent is still writing stays current.
  */
-function DecisionsContent({ taskId, live }: { taskId: string; live: boolean }) {
-  const [decisions, setDecisions] = useState<TaskDecisions | null | undefined>(
-    undefined
-  )
+function useTaskSpecs(taskId: string, enabled: boolean, live: boolean): TaskSpec[] {
+  const [specs, setSpecs] = useState<TaskSpec[]>([])
 
   useEffect(() => {
+    setSpecs([])
+    if (!enabled) return
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
-    setDecisions(undefined)
 
     // Idle while a dialog covers the panel: adopting fresh data behind one
     // only resizes a scroll container nobody can see, and macOS flashes that
@@ -474,10 +468,10 @@ function DecisionsContent({ taskId, live }: { taskId: string; live: boolean }) {
       }
       loaded = true
       try {
-        const next = await getDecisions(taskId)
-        if (active) setDecisions(next)
+        const next = await getSpecs(taskId)
+        if (active) setSpecs(next)
       } catch {
-        if (active) setDecisions(null)
+        // a failed read just leaves the previous snapshot in place
       } finally {
         if (active && live) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
       }
@@ -488,43 +482,28 @@ function DecisionsContent({ taskId, live }: { taskId: string; live: boolean }) {
       active = false
       if (timer) clearTimeout(timer)
     }
-  }, [taskId, live])
+  }, [taskId, enabled, live])
 
-  if (decisions === undefined) {
-    return (
-      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
-        讀取決策書中…
-      </div>
-    )
-  }
+  return specs
+}
 
-  if (!decisions?.markdown?.trim()) {
-    return (
-      <div className="space-y-2 py-10 text-center">
-        <p className="text-sm text-muted-foreground">
-          此任務還沒有記錄任何決策。
-        </p>
-        {decisions?.path && (
-          <p className="break-all px-4 text-xs text-muted-foreground/70">
-            agent 會寫入 {decisions.path}
-          </p>
-        )}
-      </div>
-    )
-  }
-
+function SpecContent({ specs }: { specs: TaskSpec[] }) {
   return (
-    <div className="space-y-2">
-      <MarkdownContent source={decisions.markdown} className="bg-transparent p-0" />
-      {decisions.truncated && (
-        <p className="text-xs text-muted-foreground">內容過長，僅顯示前段。</p>
-      )}
-      {decisions.updatedAt != null && (
-        <p className="text-xs text-muted-foreground tabular-nums">
-          更新於 {new Date(decisions.updatedAt).toLocaleString()}
-        </p>
-      )}
+    <div className="space-y-6">
+      {specs.map((spec) => (
+        <section key={spec.path} className="space-y-2">
+          <p className="break-all font-mono text-xs text-muted-foreground">{spec.path}</p>
+          <MarkdownContent source={spec.markdown} className="bg-transparent p-0" />
+          {spec.truncated && (
+            <p className="text-xs text-muted-foreground">內容過長，僅顯示前段。</p>
+          )}
+          {spec.updatedAt != null && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              更新於 {new Date(spec.updatedAt).toLocaleString()}
+            </p>
+          )}
+        </section>
+      ))}
     </div>
   )
 }
@@ -1132,7 +1111,7 @@ function useTaskDiff(taskId: string, enabled: boolean) {
 
     let loaded = false
     const tick = async (withFetch: boolean) => {
-      // See DecisionsContent: a poll behind a dialog only churns the layout.
+      // See useTaskSpecs: a poll behind a dialog only churns the layout.
       if (loaded && isModalOpen()) {
         if (active) timer = setTimeout(() => void tick(false), POLL_INTERVAL_MS)
         return
@@ -1384,6 +1363,7 @@ export function TaskWorkspacePanel({
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
   const diff = useTaskDiff(task.id, column === 'in_progress')
+  const specs = useTaskSpecs(task.id, column !== 'backlog', column === 'in_progress')
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
@@ -1402,7 +1382,7 @@ export function TaskWorkspacePanel({
 
     let loaded = false
     const tick = async () => {
-      // See DecisionsContent: a poll behind a dialog only churns the layout.
+      // See useTaskSpecs: a poll behind a dialog only churns the layout.
       if (loaded && isModalOpen()) {
         if (active) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
         return
@@ -1454,12 +1434,13 @@ export function TaskWorkspacePanel({
 
   // Completing a task swaps the tab set under the selection, so clamp rather
   // than store — an out-of-set tab falls back to the column's first one.
-  const tabs =
+  const tabs = (
     column === 'done'
       ? DONE_TASK_TABS
       : column === 'backlog'
         ? BACKLOG_TASK_TABS
         : ACTIVE_TASK_TABS
+  ).filter((tab) => tab !== 'spec' || specs.length > 0)
   const activeTab = tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
 
   const tabStrip = (
@@ -1647,7 +1628,7 @@ export function TaskWorkspacePanel({
                   onOpenSubAgents={onOpenSubAgents}
                 />
               ) : (
-                <DecisionsContent taskId={task.id} live={false} />
+                <SpecContent specs={specs} />
               )}
             </div>
           </InfoSection>
@@ -1718,8 +1699,8 @@ export function TaskWorkspacePanel({
                   subAgents={subAgents}
                   onOpenSubAgents={onOpenSubAgents}
                 />
-              ) : activeTab === 'decisions' ? (
-                <DecisionsContent taskId={task.id} live />
+              ) : activeTab === 'spec' ? (
+                <SpecContent specs={specs} />
               ) : activeTab === 'artifacts' ? (
                 <ArtifactsContent
                   taskId={task.id}

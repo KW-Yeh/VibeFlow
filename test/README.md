@@ -37,12 +37,13 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
 | `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
 | `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |
-| `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: system prompt, artifact and decision paths |
+| `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: system prompt, artifact paths |
 | `claude-chrome.test.mjs` | `packages/core/src/launch.ts` | the Chrome flag on Claude launches only |
 | `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reaching outside core, types-only renderer imports, erasable TypeScript only |
-| `decisions.test.mjs` | `packages/core/src/decisions.ts` | decision record key and path, before and after worktree cleanup |
+| `decisions.test.mjs` | `packages/core/src/decisions.ts` | legacy decision record cleanup: key before and after worktree cleanup |
 | `diff-state.test.mjs` | `renderer/lib/diff-state.ts` | diff polling keeps references and bodies stable |
 | `env.test.mjs` | `packages/core/src/env.ts` | PATH augmentation + memoisation |
+| `specs.test.mjs` | `packages/core/src/specs.ts` | which `spec.md` files belong to a task, from the worktree and from the branch after completion |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |

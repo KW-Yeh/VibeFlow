@@ -50,7 +50,8 @@ import {
 import { createTaskFromInput } from './tasks'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
-import { decisionsKey, deleteDecisions, readDecisions } from './decisions'
+import { decisionsKey, deleteDecisions } from './decisions'
+import { readBranchSpecs, readWorktreeSpecs } from './specs'
 import { agentArtifactsPath, deleteArtifacts, listArtifacts, readArtifact } from './artifacts'
 import { resetSubAgents, unwatchAllSubAgents, unwatchSubAgents, watchSubAgents } from './subagents'
 import { cancelAllChatSends, cancelChatSend, startChatSend } from './chat-session'
@@ -361,7 +362,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
 
     // Discard everything the last run left behind — the PTY session, the
     // sub-agent timeline, the conversation id, the code it changed, its artifacts
-    // and its decision record — so the next launch starts over as if the card
+    // and its legacy decision record — so the next launch starts over as if the card
     // were new. Launching again is the caller's decision.
     'vibeflow:resetTaskRun': async (taskId) => {
       const task = requireTask(taskId)
@@ -569,10 +570,13 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       return getPlatform().openPath(dir)
     },
 
-    'task:getDecisions': (taskId) => {
+    'task:getSpecs': async (taskId) => {
       const task = requireTask(taskId)
-      if (!task.workspacePath) return null
-      return readDecisions(task.workspacePath, decisionsKey(task.worktreePath, task.branch))
+      const base = task.baseBranch ?? 'main'
+      if (task.worktreePath) return readWorktreeSpecs(task.worktreePath, base)
+      if (!task.projectPath) return []
+      const changed = task.outcome?.files.filter((f) => f.status !== 'D').map((f) => f.path)
+      return readBranchSpecs(task.projectPath, task.branch, base, changed)
     },
 
     'board:getCliLaunchInfo': () => boardCliLaunchInfo(),
@@ -687,8 +691,6 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       const task = requireTask(taskId)
       await teardownTask(task.id)
       cancelChatSend(task.id)
-      // The decision record outlives completion on purpose, but not the card it
-      // belongs to — deleting the card leaves nothing that could ever read it.
       if (task.workspacePath) {
         deleteDecisions(task.workspacePath, decisionsKey(task.worktreePath, task.branch))
       }

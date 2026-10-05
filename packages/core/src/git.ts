@@ -922,7 +922,7 @@ function clip(content: string): { value: string; truncated: boolean } {
 }
 
 /** Resolve the comparison ref for a worktree's base branch (prefer origin/<base>). */
-async function resolveBaseRef(
+export async function resolveBaseRef(
   worktreePath: string,
   baseBranch: string
 ): Promise<string> {
@@ -954,7 +954,7 @@ async function fetchBase(worktreePath: string, baseBranch: string): Promise<void
  * Committed changes first, then working-tree changes (which override, so the
  * newest state wins), then untracked files.
  */
-async function collectDiffEntries(
+export async function collectDiffEntries(
   worktreePath: string,
   baseRef: string
 ): Promise<DiffEntry[]> {

@@ -59,7 +59,7 @@ are.
 | `vibeflow:removeTask` | core | `removeTask(id)` | | |
 | `vibeflow:resetTaskRun` | core | `resetTaskRun(id)` | | "Return to Backlog" wipes the run |
 | `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |
-| `vibeflow:deleteTask` | core | `deleteTask(id)` | | Also deletes the decision record |
+| `vibeflow:deleteTask` | core | `deleteTask(id)` | | Also deletes a legacy decision record |
 | `vibeflow:setSettings` | core | `updateSettings(patch)` | | |
 | `projects:listRecent` | core | `listRecentProjects()` | | |
 | `board:getCliLaunchInfo` | core | `getCliLaunchInfo()` | | Now reads `PlatformServices.sourceRoot()` |
@@ -90,14 +90,14 @@ are.
 | `git:getGithubCompareUrl` | core | `getCompareUrl(id)` | | |
 | `git:refreshBase` | drop | | | Handler with no preload or renderer caller |
 
-## Artifacts, decisions, sub-agents
+## Artifacts, specs, sub-agents
 
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
 | `task:listArtifacts` | core | `listArtifacts(id)` | | |
 | `task:readArtifact` | core | `readArtifact(id, name)` | | |
 | `task:openArtifactsDir` | platform | `openArtifactsDir(id)` → `openPath` | | Core resolves the directory, and the host opens it. That works for the Web UI too, because core runs on the user's machine |
-| `task:getDecisions` | core | `getDecisions(id)` | | |
+| `task:getSpecs` | core | `getSpecs(id)` | | `spec.md` files the branch added or changed; read from the branch once the worktree is gone |
 | event `subagents:update` | core | `on('subagents:changed')` | | |
 
 ## Chat

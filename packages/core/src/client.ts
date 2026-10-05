@@ -19,7 +19,7 @@ import type {
 } from './git'
 import type { ArtifactContent, TaskArtifact } from './artifacts'
 import type { BoardCliLaunchInfo } from './board-cli'
-import type { TaskDecisions } from './decisions'
+import type { TaskSpec } from './specs'
 import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
 import type { ChatAttachment, Conversation } from './chat-store'
@@ -149,9 +149,9 @@ export function createBridge(t: BridgeTransport) {
    */
   openArtifactsDir: (taskId: string): Promise<string> =>
     t.invoke('task:openArtifactsDir', taskId),
-  /** The task's decision record; null when it has no workspace folder. */
-  getDecisions: (taskId: string): Promise<TaskDecisions | null> =>
-    t.invoke('task:getDecisions', taskId),
+  /** Every spec.md the task's branch added or changed; empty when there is none. */
+  getSpecs: (taskId: string): Promise<TaskSpec[]> =>
+    t.invoke('task:getSpecs', taskId),
   /** Store dir + CLI paths for launch injection, so an agent can write cards. */
   getBoardCliLaunchInfo: (): Promise<BoardCliLaunchInfo> =>
     t.invoke('board:getCliLaunchInfo'),

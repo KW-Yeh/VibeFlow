@@ -2,7 +2,7 @@
  * Agent launch-command assembly. Core runs it when a session starts; the
  * renderer imports this module for its pure display helpers. That is why it
  * imports types only and duplicates a few constants from fs-using modules
- * (artifacts.ts, decisions.ts, agents.ts, subagents.ts): a value import would
+ * (artifacts.ts, agents.ts, subagents.ts): a value import would
  * pull `fs` into the browser bundle.
  */
 import type { AgentCliId } from './agents'
@@ -75,46 +75,6 @@ export function buildArtifactPrompt(
     `3. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔）放在 ${artifactsDir}/${SCRATCH_DIR_NAME}/。`,
     `4. 若工具先輸出到 /tmp、/private/tmp、$TMPDIR 或 ~/Downloads，請把最終要呈現的檔案複製到 ${artifactsDir}/ 並確認存在。`,
     '5. Artifact 資料夾位於 worktree 之外；不要把其中內容加入 git commit，也不要把最終交付物只留在這裡。',
-  ].join('\n')
-}
-
-/**
- * Suffix of the task's decision record. Must match DECISIONS_FILE_SUFFIX in
- * decisions.ts (duplicated: see the note at the top).
- */
-const DECISIONS_FILE_SUFFIX = '.DECISIONS.md'
-
-/**
- * Absolute path of the task's decision record; null when the workspace or
- * worktree path is unknown. Unlike the artifacts directory this has no
- * cwd-relative fallback on purpose: a relative name would land inside the
- * worktree and end up committed, and the record is meant to outlive it.
- */
-export function taskDecisionsPath(
-  worktreePath: string | undefined,
-  workspacePath: string | undefined
-): string | null {
-  if (!worktreePath || !workspacePath) return null
-  return `${toShellPath(workspacePath)}/${pathBasename(worktreePath)}${DECISIONS_FILE_SUFFIX}`
-}
-
-/**
- * Session-level instructions for the decision record — the one account of the
- * work that survives the worktree, and the only thing a done card can be read
- * for. It is deliberately scoped to decisions: what the task changed is already
- * recoverable from git (see captureTaskOutcome), so a record that also narrated
- * progress would be the part nobody reads. Empty beats padded — an agent told
- * to fill a template will fill it.
- */
-export function buildDecisionPrompt(decisionsPath: string): string {
-  return [
-    '決策書（本次 session 全程適用）：',
-    `1. 本任務的決策書是 ${decisionsPath}；做出新決策、或調整既有決策時，當下就更新它（不存在請建立）。`,
-    '2. 只寫「這次新增了什麼決策、調整了什麼既有決策」與理由。需求覆述、進度回報、實作流水帳、本來就成立的慣例都不要寫。',
-    '3. 每則決策一個 `## <一句話講完的決策>` 段落，底下 2-4 行交代：為什麼這樣選、否決了什麼替代方案、誰之後會被這個決策綁住。',
-    '4. 要說明流程、狀態轉換或模組關係時，用 mermaid fence 畫圖，VibeFlow 會直接渲染。',
-    '5. 這次沒有任何決策就不要建立這個檔案；寧可留白，不要湊內容。',
-    '6. 用繁體中文書寫，程式識別字保留英文。',
   ].join('\n')
 }
 
@@ -473,11 +433,9 @@ export function buildAgentCommand(
   const artifactsDir = agentArtifactsDir(task.worktreePath, workspacePath)
     ?? ARTIFACTS_FALLBACK_DIR
   const builtInPrompt = buildArtifactPrompt(artifactsDir)
-  const decisionsPath = taskDecisionsPath(task.worktreePath, workspacePath)
-  const decisionPrompt = decisionsPath ? buildDecisionPrompt(decisionsPath) : ''
   const libraryPrompt = opts?.library?.promptText?.trim()
   const customPrompt = resolveSystemPrompt(systemPrompt)
-  const sys = [builtInPrompt, decisionPrompt, libraryPrompt, customPrompt]
+  const sys = [builtInPrompt, libraryPrompt, customPrompt]
     .filter(Boolean)
     .join('\n\n')
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
