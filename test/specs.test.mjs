@@ -81,3 +81,67 @@ test('readBranchSpecs — a deleted branch or an uncommitted spec yields nothing
   assert.deepEqual(await readBranchSpecs(projectPath, 'vf-gone', 'main'), [])
   assert.deepEqual(await readBranchSpecs(projectPath, 'vf-task', 'main', [SPEC_A]), [])
 })
+
+/**
+ * A task completed the way the app completes one: the branch is pushed,
+ * merged on the remote as a GitHub PR merge commit, and deleted both locally
+ * and on origin, leaving only the merge commit behind.
+ */
+async function mergedAndDeleted(t, { subject } = {}) {
+  const repo = await makeRepo({ withRemote: true })
+  t.after(repo.cleanup)
+  const { projectPath } = repo
+  await git(projectPath, 'checkout', '-b', 'feature/login')
+  await writeFile(projectPath, SPEC_A, '# login, as merged\n')
+  await git(projectPath, 'add', '-A')
+  await git(projectPath, 'commit', '-m', 'spec a')
+  await git(projectPath, 'push', '-u', 'origin', 'feature/login')
+  await git(projectPath, 'checkout', 'main')
+  await git(
+    projectPath,
+    'merge',
+    '--no-ff',
+    '-m',
+    subject ?? 'Merge pull request #12 from acme/feature/login',
+    'feature/login'
+  )
+  await writeFile(projectPath, SPEC_A, '# login, edited later on main\n')
+  await git(projectPath, 'commit', '-am', 'later edit')
+  await git(projectPath, 'push', 'origin', 'main')
+  await git(projectPath, 'push', 'origin', '--delete', 'feature/login')
+  await git(projectPath, 'branch', '-D', 'feature/login')
+  await git(projectPath, 'fetch', '--prune', 'origin')
+  return repo
+}
+
+test('readBranchSpecs — falls back to origin/<branch> once the local branch is deleted', async (t) => {
+  const repo = await makeRepo({ withRemote: true })
+  t.after(repo.cleanup)
+  const { projectPath } = repo
+  await git(projectPath, 'checkout', '-b', 'feature/login')
+  await writeFile(projectPath, SPEC_A, '# login\n')
+  await git(projectPath, 'add', '-A')
+  await git(projectPath, 'commit', '-m', 'spec a')
+  await git(projectPath, 'push', '-u', 'origin', 'feature/login')
+  await git(projectPath, 'checkout', 'main')
+  await git(projectPath, 'branch', '-D', 'feature/login')
+
+  const specs = await readBranchSpecs(projectPath, 'feature/login', 'main')
+  assert.deepEqual(specs.map((s) => s.path), [SPEC_A])
+})
+
+test('readBranchSpecs — recovers the spec as merged from the PR merge commit', async (t) => {
+  const { projectPath } = await mergedAndDeleted(t)
+  const specs = await readBranchSpecs(projectPath, 'feature/login', 'main')
+  assert.deepEqual(specs.map((s) => s.path), [SPEC_A])
+  assert.equal(specs[0].markdown.trim(), '# login, as merged')
+})
+
+test('readBranchSpecs — a merge from another branch or before the launch is not this task', async (t) => {
+  const { projectPath } = await mergedAndDeleted(t, {
+    subject: 'Merge pull request #12 from acme/feature/login-v2',
+  })
+  assert.deepEqual(await readBranchSpecs(projectPath, 'feature/login', 'main'), [])
+  assert.deepEqual(await readBranchSpecs(projectPath, 'feature/login-v2', 'main', undefined, Date.now() + 3600_000), [])
+  assert.equal((await readBranchSpecs(projectPath, 'feature/login-v2', 'main', undefined, Date.now() - 3600_000)).length, 1)
+})

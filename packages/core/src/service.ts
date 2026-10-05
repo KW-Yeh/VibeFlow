@@ -647,7 +647,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       // Never provisioned: the branch is only a name, there is nothing to read.
       if (!task.projectPath || !task.launchedAt) return []
       const changed = task.outcome?.files.filter((f) => f.status !== 'D').map((f) => f.path)
-      return readBranchSpecs(task.projectPath, task.branch, base, changed)
+      return readBranchSpecs(task.projectPath, task.branch, base, changed, task.launchedAt)
     },
 
     'board:getCliLaunchInfo': () => boardCliLaunchInfo(),

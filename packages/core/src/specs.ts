@@ -61,40 +61,83 @@ export async function readWorktreeSpecs(
 }
 
 /**
- * Specs of a completed task, read from its branch: completion removes the
- * worktree but keeps the branch, so only what was committed survives.
- * `changedPaths` is the file list captured at completion; it is preferred over
- * a fresh diff because once the branch is merged into its base, a merge-base
- * diff comes back empty.
+ * Specs of a completed task. Completion removes the worktree and deletes the
+ * local branch, so the spec is looked for where the branch's work still
+ * survives, most current first: the local branch (a card completed before the
+ * branch was deleted), `origin/<branch>` (pushed, PR not merged yet), then the
+ * pull-request merge commit on the base, whose second parent is the branch as
+ * it was merged. `changedPaths` is the file list captured at completion; it is
+ * preferred over a fresh diff because once the branch is merged into its base,
+ * a merge-base diff comes back empty. `launchedAt` bounds the merge search so a
+ * reused branch name cannot surface an older task's PR.
  */
 export async function readBranchSpecs(
   projectPath: string,
   branch: string,
   baseBranch: string,
-  changedPaths?: string[]
+  changedPaths?: string[],
+  launchedAt?: number
 ): Promise<TaskSpec[]> {
-  const ref = `refs/heads/${branch}`
+  for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+    if (!(await refExists(projectPath, ref))) continue
+    const paths =
+      changedPaths ??
+      (await diffNames(projectPath, `${await resolveBaseRef(projectPath, baseBranch)}...${ref}`))
+    const specs = await readSpecsAt(projectPath, ref, paths)
+    if (specs.length > 0) return specs
+  }
+  const merge = await findPullRequestMerge(projectPath, branch, baseBranch, launchedAt)
+  if (!merge) return []
+  return readSpecsAt(projectPath, `${merge}^2`, await diffNames(projectPath, `${merge}^1`, merge))
+}
+
+async function refExists(cwd: string, ref: string): Promise<boolean> {
   try {
-    await runGit(projectPath, ['rev-parse', '--verify', ref])
+    await runGit(cwd, ['rev-parse', '--verify', '--quiet', ref])
+    return true
   } catch {
-    return []
+    return false
   }
-  let paths = changedPaths
-  if (!paths) {
-    const baseRef = await resolveBaseRef(projectPath, baseBranch)
-    const names = await runGit(projectPath, [
-      'diff',
-      '--name-only',
-      '--diff-filter=d',
-      `${baseRef}...${ref}`,
-    ]).catch(() => '')
-    paths = names.split('\n').map((l) => l.trim())
+}
+
+async function diffNames(cwd: string, ...range: string[]): Promise<string[]> {
+  const names = await runGit(cwd, ['diff', '--name-only', '--diff-filter=d', ...range]).catch(() => '')
+  return names.split('\n').map((l) => l.trim())
+}
+
+/**
+ * The newest "Merge pull request #N from <owner>/<branch>" commit on the base's
+ * first-parent line — GitHub's merge-commit subject. Squash and rebase merges
+ * leave no such commit, so their specs cannot be recovered this way.
+ */
+async function findPullRequestMerge(
+  cwd: string,
+  branch: string,
+  baseBranch: string,
+  launchedAt?: number
+): Promise<string | null> {
+  const baseRef = await resolveBaseRef(cwd, baseBranch)
+  const log = await runGit(cwd, [
+    'log',
+    '--merges',
+    '--first-parent',
+    '--format=%H %s',
+    ...(launchedAt ? [`--since=${new Date(launchedAt).toISOString()}`] : []),
+    baseRef,
+  ]).catch(() => '')
+  for (const line of log.split('\n')) {
+    const match = /^(\S+) Merge pull request #\d+ from [^/\s]+\/(\S+)$/.exec(line.trim())
+    if (match && match[2] === branch) return match[1]
   }
+  return null
+}
+
+async function readSpecsAt(cwd: string, ref: string, paths: string[]): Promise<TaskSpec[]> {
   const specs: TaskSpec[] = []
   for (const p of paths.filter(isSpecPath)) {
     try {
-      const content = await runGit(projectPath, ['show', `${ref}:${p}`])
-      const ct = await runGit(projectPath, ['log', '-1', '--format=%ct', ref, '--', p])
+      const content = await runGit(cwd, ['show', `${ref}:${p}`])
+      const ct = await runGit(cwd, ['log', '-1', '--format=%ct', ref, '--', p])
       specs.push({
         path: p,
         ...clip(Buffer.from(content, 'utf8')),

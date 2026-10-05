@@ -300,9 +300,13 @@ docs/                      everything that is not code (index: docs/README.md)
 - **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):
   every file named `spec.md` that the card's branch added or changed against its
   base — the feature-spec-plan skill writes high-level decisions there. No such
-  file, no tab. While the worktree exists it is read from the working tree;
-  after completion from the kept branch, using `outcome.files` for the list
-  because a merged branch has an empty merge-base diff. The old
+  file, no tab. While the worktree exists it is read from the working tree.
+  Completion deletes the local branch, so a done card falls back, in order, to
+  the local branch (if still there), `origin/<branch>`, and finally the base's
+  GitHub "Merge pull request #N from <owner>/<branch>" commit (its second
+  parent is the branch as merged; squash/rebase merges cannot be recovered).
+  `outcome.files` is preferred for the list because a merged branch has an
+  empty merge-base diff. A done card opens on this tab when it has one. The old
   `<worktree-dir>.DECISIONS.md` is no longer written or read; `decisions.ts`
   only deletes leftovers with their card.
 - **Markdown renders in the renderer** through
