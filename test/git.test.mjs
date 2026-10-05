@@ -21,6 +21,7 @@ import {
 } from '../packages/core/src/git.ts'
 import { ARTIFACTS_FALLBACK_DIR } from '../packages/core/src/artifacts.ts'
 import { ATTACHMENTS_DIR } from '../packages/core/src/attachments.ts'
+import { PROGRESS_EVENTS_DIR } from '../packages/core/src/launch.ts'
 import {
   makeRepo,
   git,
@@ -128,6 +129,7 @@ test('ensureLocalExclude — adds runtime directories to .git/info/exclude (idem
     assert.ok(content.includes(`${ATTACHMENTS_DIR}/`))
     // With no workspace path the agent writes its artifacts dir into the worktree.
     assert.ok(content.includes(`${ARTIFACTS_FALLBACK_DIR}/`))
+    assert.ok(content.includes(`${PROGRESS_EVENTS_DIR}/`))
 
     await ensureLocalExclude(projectPath)
     content = await fs.readFile(excludePath, 'utf8')

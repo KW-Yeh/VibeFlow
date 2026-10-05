@@ -38,6 +38,7 @@ import type {
   SubAgentRun,
   LaunchIntent,
   Task,
+  TaskProgress,
 } from '@/lib/types'
 
 interface KanbanBoardProps {
@@ -52,6 +53,8 @@ interface KanbanBoardProps {
   workstationPath?: string
   /** Live sub-agent runs keyed by task id (session-only, not persisted). */
   subAgents: Record<string, SubAgentRun[]>
+  /** Live progress of running cards keyed by task id (from core's transcript reader). */
+  progress: Record<string, TaskProgress>
   /** Currently selected task id (shown in the workspace panel). */
   selectedTaskId?: string | null
   /** Select a task from the board (opens its terminal tab). */
@@ -159,6 +162,7 @@ export function KanbanBoard({
   autoMode,
   workstationPath,
   subAgents,
+  progress,
   selectedTaskId,
   onSelectTask,
   onNewTask,
@@ -403,6 +407,7 @@ export function KanbanBoard({
         <BoardColumns
           board={board}
           subAgents={subAgents}
+          progress={progress}
           selectedTaskId={selectedTaskId ?? null}
           onSelectTask={onSelectTask}
           onEditTask={onEditTask}
@@ -487,6 +492,7 @@ export function KanbanBoard({
                       task={entry.task}
                       column={entry.column}
                       subAgents={subAgents[entry.task.id] ?? []}
+                      progress={progress[entry.task.id] ?? null}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
                       onReturnToBacklog={returnTaskToBacklog}

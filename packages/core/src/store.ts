@@ -2,6 +2,7 @@ import { JsonStore } from './json-store'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
+import type { TokenUsage } from './progress'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -74,6 +75,12 @@ export interface Task {
    * its base — the UI treats both the same way, by showing nothing.
    */
   outcome?: TaskOutcome
+  /**
+   * Tokens spent by the card's finished runs: folded in when a run is
+   * restarted and when the card completes. The live total is this plus the
+   * current run (see progress-tracker.ts).
+   */
+  usage?: TokenUsage
 }
 
 /**
@@ -155,6 +162,40 @@ export interface AppSettings {
    * `<workstationPath>/<projectName>/`. Absent = default to `~/Desktop`.
    */
   workstationPath?: string
+  /** Stage notifications. Absent = DEFAULT_NOTIFICATION_SETTINGS. */
+  notifications?: NotificationSettings
+}
+
+/** Which progress milestones are announced, and how (task-progress spec). */
+export interface NotificationSettings {
+  /** Master switch: off = nothing is announced, progress still updates. */
+  enabled: boolean
+  /** One todo item finished. Off by default — it gets noisy. */
+  stepCompleted: boolean
+  /** Every todo item finished. */
+  allCompleted: boolean
+  /** The agent stopped: end of its turn, or asking for a permission. */
+  waitingInput: boolean
+  /** Also raise a system notification from the browser (Web UI only). */
+  desktop: boolean
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  stepCompleted: false,
+  allCompleted: true,
+  waitingInput: true,
+  desktop: false,
+}
+
+/** The effective notification settings: stored booleans over the defaults. */
+export function resolveNotificationSettings(settings?: Pick<AppSettings, 'notifications'>): NotificationSettings {
+  const stored = (settings?.notifications ?? {}) as Partial<Record<keyof NotificationSettings, unknown>>
+  const out = { ...DEFAULT_NOTIFICATION_SETTINGS }
+  for (const key of Object.keys(out) as (keyof NotificationSettings)[]) {
+    if (typeof stored[key] === 'boolean') out[key] = stored[key] as boolean
+  }
+  return out
 }
 
 /**
@@ -263,6 +304,12 @@ export function getSettings(): AppSettings {
 /** Shallow-merge a patch into settings and persist; returns the merged value. */
 export function setSettings(patch: Partial<AppSettings>): AppSettings {
   const next = { ...getSettings(), ...patch }
+  // Partial notification patches merge into what is stored; junk is dropped.
+  if (patch.notifications !== undefined) {
+    next.notifications = resolveNotificationSettings({
+      notifications: { ...resolveNotificationSettings(getSettings()), ...(patch.notifications ?? {}) },
+    })
+  }
   // A blank custom system prompt means "no custom prompt" — drop the key
   // instead of persisting an empty string.
   if (typeof next.systemPrompt === 'string' && next.systemPrompt.trim() === '') {

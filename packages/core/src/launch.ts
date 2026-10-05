@@ -178,6 +178,15 @@ function claudeResumeOrFresh(
 const SUBAGENTS_DIR = '.vibeflow-subagents'
 
 /**
+ * Directory the progress hooks drop one JSON file per event into, relative to
+ * the worktree. Must match PROGRESS_EVENTS_DIR in progress-tracker.ts.
+ */
+export const PROGRESS_EVENTS_DIR = '.vibeflow-events'
+
+/** Claude tools whose call changes the todo list the card's progress is read from. */
+const TODO_TOOLS = 'TodoWrite|TaskCreate|TaskUpdate'
+
+/**
  * Build the `--settings` inline-JSON value passed to every `claude` launch.
  * Always pins the light theme so the CLI matches the app's light UI. When a
  * worktree path is given, also wires Claude's Task-tool hooks to record each
@@ -192,6 +201,12 @@ const SUBAGENTS_DIR = '.vibeflow-subagents'
  * in a git worktree). `$(date +%s)`, `$$`, `$RANDOM` stay single-quoted here so
  * the outer shell passes them through verbatim — they are expanded later by the
  * shell that actually runs the hook.
+ *
+ * Progress hooks (todo-tool calls, Stop, Notification, UserPromptSubmit) write
+ * the same way into PROGRESS_EVENTS_DIR. They only wake the progress tracker
+ * and report what the transcript cannot (a permission prompt); progress itself
+ * is always read from the transcript. They end in `exit 0` so a failed write
+ * can never block a Stop.
  */
 function buildClaudeSettings(worktreePath?: string): string {
   const settings: Record<string, unknown> = { theme: 'dark' }
@@ -202,7 +217,17 @@ function buildClaudeSettings(worktreePath?: string): string {
       matcher: 'Task',
       hooks: [{ type: 'command', command }],
     }
-    settings.hooks = { PreToolUse: [taskHook], PostToolUse: [taskHook] }
+    const eventsDir = `${toShellPath(worktreePath)}/${PROGRESS_EVENTS_DIR}`
+    const progress = {
+      hooks: [{ type: 'command', command: `mkdir -p "${eventsDir}" && cat > "${eventsDir}/$(date +%s)-$$-$RANDOM.json"; exit 0` }],
+    }
+    settings.hooks = {
+      PreToolUse: [taskHook],
+      PostToolUse: [taskHook, { matcher: TODO_TOOLS, ...progress }],
+      Stop: [progress],
+      Notification: [progress],
+      UserPromptSubmit: [progress],
+    }
   }
   return JSON.stringify(settings)
 }

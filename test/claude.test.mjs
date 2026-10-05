@@ -4,6 +4,7 @@ import {
   buildAgentCommand,
   buildArtifactPrompt,
   executorSessionId,
+  PROGRESS_EVENTS_DIR,
   resolveSystemPrompt,
 } from '../packages/core/src/launch.ts'
 
@@ -254,4 +255,40 @@ test('buildAgentCommand — Auto Mode drives Codex authorization the same way', 
 
   assert.ok(permissive.includes('--dangerously-bypass-approvals-and-sandbox'))
   assert.ok(!guarded.includes('--dangerously-bypass-approvals-and-sandbox'))
+})
+
+/** The inline `--settings` JSON of a claude launch command. */
+function claudeSettings(cmd) {
+  const m = cmd.match(/--settings '((?:[^']|'\\'')*)'/)
+  assert.ok(m, 'command carries --settings')
+  return JSON.parse(m[1].replace(/'\\''/g, "'"))
+}
+
+test('buildAgentCommand — Claude --settings adds passive progress hooks next to the sub-agent ones', () => {
+  const settings = claudeSettings(buildAgentCommand(TASK))
+  assert.equal(settings.theme, 'dark')
+  const hooks = settings.hooks
+  // Sub-agent recording is untouched.
+  assert.equal(hooks.PreToolUse.length, 1)
+  assert.equal(hooks.PreToolUse[0].matcher, 'Task')
+  assert.equal(hooks.PostToolUse[0].matcher, 'Task')
+  assert.match(hooks.PostToolUse[0].hooks[0].command, /\.vibeflow-subagents/)
+  // Progress: todo tools, end of turn, prompts, and the user's replies.
+  assert.equal(hooks.PostToolUse[1].matcher, 'TodoWrite|TaskCreate|TaskUpdate')
+  for (const event of ['Stop', 'Notification', 'UserPromptSubmit']) {
+    assert.equal(hooks[event].length, 1, event)
+    assert.equal(hooks[event][0].matcher, undefined, `${event} has no matcher`)
+  }
+  const command = hooks.Stop[0].hooks[0].command
+  assert.ok(command.includes(`/tmp/vibeflow/vf-abc123/${PROGRESS_EVENTS_DIR}/`), command)
+  assert.match(command, /; exit 0$/, 'a failed write never blocks a Stop')
+  assert.equal(hooks.PostToolUse[1].hooks[0].command, command)
+})
+
+test('buildAgentCommand — no worktree, no hooks; Codex gets none either', () => {
+  assert.equal(claudeSettings(buildAgentCommand({ ...TASK, worktreePath: undefined })).hooks, undefined)
+  const codex = buildAgentCommand(CODEX_TASK)
+  assert.ok(!codex.includes(PROGRESS_EVENTS_DIR))
+  // Overriding notify would replace the user's own Codex notify program.
+  assert.ok(!codex.includes('notify'))
 })

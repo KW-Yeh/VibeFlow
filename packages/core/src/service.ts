@@ -9,6 +9,7 @@ import {
   getStore,
   getStorePath,
   removeTask,
+  resolveNotificationSettings,
   resolveWorkstationPath,
   setBoard,
   setSettings,
@@ -62,6 +63,7 @@ import {
   deleteEntry as deleteLibraryEntry,
   importEntry as importLibraryEntry,
   libraryLaunchInfo,
+  libraryPaths,
   libraryRoot,
   listLibrary,
   readEntryContent as readLibraryEntry,
@@ -71,7 +73,9 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executorSessionId } from './launch'
+import { buildAgentCommand, executorSessionId, taskAgent } from './launch'
+import { createProgressTracker, type ProgressTarget } from './progress-tracker'
+import type { ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
 import { getPlatform } from './platform'
@@ -206,6 +210,8 @@ export interface CoreOptions {
   bus: EventBus
   /** The running version, for `app:getVersion`. */
   version: string
+  /** Where agent transcripts live (`~/.claude`, `~/.codex`). Defaults to os.homedir(); tests override it. */
+  homeDir?: string
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -226,8 +232,76 @@ export interface Core {
  * Build the core: one handler per channel in IPC_API_MAP.md, all taking task
  * ids rather than paths or commands, and all events on one bus.
  */
-export function createCore({ sessions, bus, version }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Core {
   const sink = bus.sink()
+
+  // Codex writes rollouts under whichever CODEX_HOME the launch used: the
+  // user's, or the one the library assembles. Resolved once, in the background.
+  let libraryCodexHome: string | null = null
+  void libraryRoot()
+    .then((root) => { libraryCodexHome = libraryPaths(root).codexHome })
+    .catch(() => {})
+
+  const home = homeDir ?? os.homedir()
+  const progress = createProgressTracker({
+    homeDir: home,
+    codexHomes: () => [path.join(home, '.codex'), ...(libraryCodexHome ? [libraryCodexHome] : [])],
+    onUpdate: (taskId, value) => bus.emit('progress:update', { taskId, progress: value }),
+    onNotify: (taskId, list) => {
+      const prefs = resolveNotificationSettings(getSettings())
+      if (!prefs.enabled) return
+      const wanted: Record<ProgressNotification['kind'], boolean> = {
+        step_completed: prefs.stepCompleted,
+        all_completed: prefs.allCompleted,
+        waiting_input: prefs.waitingInput,
+      }
+      const notifications = list.filter((n) => wanted[n.kind])
+      const task = findTask(taskId)
+      if (!task || !notifications.length) return
+      bus.emit('progress:notify', { taskId, title: task.title, notifications })
+    },
+  })
+
+  /** What the tracker follows for a card; null when it has no worktree to run in. */
+  function progressTarget(task: Task): ProgressTarget | null {
+    if (!task.worktreePath) return null
+    const agent = taskAgent(task)
+    return {
+      taskId: task.id,
+      agent,
+      worktreePath: task.worktreePath,
+      sessionId: agent === 'claude' ? executorSessionId(task.id, task.runId) : undefined,
+      since: task.launchedAt,
+      priorUsage: task.usage,
+    }
+  }
+
+  function trackProgress(task: Task): void {
+    const target = progressTarget(task)
+    if (target) progress.track(target)
+  }
+
+  /**
+   * The card's usage including the run that is ending, for folding into
+   * Task.usage before the run's transcripts stop counting (restart, completion).
+   */
+  function usageThroughCurrentRun(task: Task): TokenUsage | undefined {
+    const target = progressTarget(task)
+    if (!target) return task.usage
+    const wasTracking = progress.isTracking(task.id)
+    progress.track(target)
+    const snapshot = progress.snapshot(task.id)
+    if (!wasTracking) progress.untrack(task.id)
+    return snapshot?.totalUsage ?? task.usage
+  }
+
+  // Cards already running when the host starts (tmux kept them alive, or an
+  // agent finished while nothing watched) are followed without a frontend.
+  try {
+    for (const task of getState().board.in_progress) trackProgress(task)
+  } catch {
+    // No store yet (first run): nothing is running.
+  }
 
   async function teardownSession(key: string): Promise<void> {
     await sessions.kill(key)
@@ -340,6 +414,18 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
 
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
+
+    // A card's progress right now (todo list, usage, activity), for a frontend
+    // that just connected; 'progress:update' carries every later change. Null
+    // when the card has no transcript yet or is not running.
+    'progress:get': (taskId): TaskProgress | null => {
+      const task = requireTask(taskId)
+      if (!progress.isTracking(task.id)) {
+        if (columnOf(task.id) !== 'in_progress') return null
+        trackProgress(task)
+      }
+      return progress.snapshot(task.id)
+    },
     'app:getVersion': () => version,
 
     'vibeflow:setBoard': (board) => {
@@ -411,7 +497,9 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     },
 
     'vibeflow:removeTask': (taskId) => {
-      removeTask(requireTask(taskId).id)
+      const id = requireTask(taskId).id
+      progress.untrack(id)
+      removeTask(id)
       return getState()
     },
 
@@ -424,6 +512,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       if (!task.worktreePath) {
         // Never provisioned: no code, artifacts or sub-agents to discard.
         await teardownTask(task.id)
+        progress.untrack(task.id)
         updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID() })
         const reset = findTask(task.id)
         if (!reset) throw new Error('找不到要重置的任務')
@@ -436,7 +525,10 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       deleteArtifacts(workspacePath, task.worktreePath)
       deleteDecisions(workspacePath, decisionsKey(task.worktreePath, task.branch))
       resetSubAgents(task.worktreePath)
-      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID() })
+      // The tokens are spent even though the work is thrown away.
+      const usage = usageThroughCurrentRun(task)
+      progress.untrack(task.id)
+      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), ...(usage ? { usage } : {}) })
       const reset = findTask(task.id)
       if (!reset) throw new Error('找不到要重置的任務')
       bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
@@ -550,6 +642,12 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       watchSubAgents(key, cwd, (subAgents) => {
         bus.emit('subagents:update', { taskId: task.id, subAgents })
       })
+      // Only the card's own launch decides what run is being followed; a
+      // shell tab must not retarget it.
+      if (p.launch) {
+        const current = findTask(task.id)
+        if (current) trackProgress(current)
+      }
       return result
     },
 
@@ -768,6 +866,9 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       if (task.worktreePath) {
         outcome = (await captureTaskOutcome(task.worktreePath, task.baseBranch ?? 'main')) ?? undefined
       }
+      // Last read of the run's transcripts while the worktree they are keyed by still exists.
+      const usage = usageThroughCurrentRun(task)
+      progress.untrack(task.id)
       if (task.projectPath && task.worktreePath) {
         await removeTaskWorktree(task)
         await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
@@ -775,7 +876,11 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       // Only write the outcome when this call actually captured one. Completing
       // an already-completed card (done -> in_progress -> done) has no worktree
       // left to read, and must not blank the snapshot taken the first time.
-      updateTask(task.id, outcome ? { worktreePath: undefined, outcome } : { worktreePath: undefined })
+      updateTask(task.id, {
+        worktreePath: undefined,
+        ...(outcome ? { outcome } : {}),
+        ...(usage ? { usage } : {}),
+      })
       return getState()
     },
 
@@ -783,6 +888,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     'vibeflow:deleteTask': async (taskId) => {
       const task = requireTask(taskId)
       await teardownTask(task.id)
+      progress.untrack(task.id)
       cancelChatSend(task.id)
       if (task.workspacePath) {
         deleteDecisions(task.workspacePath, decisionsKey(task.worktreePath, task.branch))
@@ -865,6 +971,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       sessions.shutdown()
       cancelAllChatSends()
       unwatchAllSubAgents()
+      progress.untrackAll()
       storeWatcher?.close()
     },
   }

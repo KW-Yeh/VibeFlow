@@ -42,6 +42,7 @@ import {
 
 import { MarkdownContent } from '@/components/markdown-content'
 import { TaskTerminal } from '@/components/task-terminal'
+import { TaskProgressDetail } from '@/components/task-progress'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
@@ -78,6 +79,7 @@ import type {
   TaskSpec,
   TaskOutcome,
   LaunchIntent,
+  TaskProgress,
 } from '@/lib/types'
 
 /**
@@ -206,6 +208,8 @@ interface TaskWorkspacePanelProps {
   task: Task
   column: ColumnId
   subAgents: SubAgentRun[]
+  /** Live progress (running cards only); done cards show their stored usage. */
+  progress?: TaskProgress | null
   launch?: LaunchEntry
   onStart: (task: Task) => void
   onReturnToBacklog: (task: Task) => Promise<boolean>
@@ -386,10 +390,11 @@ function TaskInfo({
   task,
   column,
   subAgents,
+  progress,
   onOpenSubAgents,
 }: Pick<
   TaskWorkspacePanelProps,
-  'task' | 'column' | 'subAgents' | 'onOpenSubAgents'
+  'task' | 'column' | 'subAgents' | 'progress' | 'onOpenSubAgents'
 >) {
   return (
     <div className="space-y-4 text-base">
@@ -439,6 +444,10 @@ function TaskInfo({
       </div>
 
       {task.description && <MarkdownContent source={task.description} />}
+
+      {column !== 'backlog' && (
+        <TaskProgressDetail progress={column === 'in_progress' ? progress : null} usage={task.usage} />
+      )}
 
       {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}
 
@@ -1357,6 +1366,7 @@ export function TaskWorkspacePanel({
   task,
   column,
   subAgents,
+  progress,
   launch,
   onStart,
   onReturnToBacklog,
@@ -1632,6 +1642,7 @@ export function TaskWorkspacePanel({
               task={task}
               column={column}
               subAgents={subAgents}
+              progress={progress}
               onOpenSubAgents={onOpenSubAgents}
             />
           </InfoSection>
@@ -1650,6 +1661,7 @@ export function TaskWorkspacePanel({
                   task={task}
                   column={column}
                   subAgents={subAgents}
+                  progress={progress}
                   onOpenSubAgents={onOpenSubAgents}
                 />
               ) : (
@@ -1723,6 +1735,7 @@ export function TaskWorkspacePanel({
                   task={task}
                   column={column}
                   subAgents={subAgents}
+                  progress={progress}
                   onOpenSubAgents={onOpenSubAgents}
                 />
               ) : activeTab === 'spec' ? (

@@ -9,6 +9,7 @@ export type {
   TaskOutcome,
   BoardState,
   AppSettings,
+  NotificationSettings,
   VibeFlowState,
 } from '../../packages/core/src/store'
 export type {
@@ -44,6 +45,16 @@ export type {
   SubAgentRun,
   SubAgentStatus,
 } from '../../packages/core/src/subagents'
+export type {
+  Activity,
+  ProgressNotification,
+  ProgressNotificationKind,
+  TaskProgress,
+  TodoItem,
+  TodoStatus,
+  TokenUsage,
+} from '../../packages/core/src/progress'
+export type { ProgressNotifyPayload, ProgressUpdatePayload } from '../../packages/core/src/client'
 export type {
   ChatMessage,
   ChatAttachment,

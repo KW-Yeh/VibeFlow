@@ -22,6 +22,7 @@ import type { BoardCliLaunchInfo } from './board-cli'
 import type { TaskSpec } from './specs'
 import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
+import type { ProgressNotification, TaskProgress } from './progress'
 import type { ChatAttachment, Conversation } from './chat-store'
 import type { AttachmentInput } from './attachments'
 import type { PickFolderOptions, PickFolderResult } from './folder-dialog'
@@ -36,6 +37,18 @@ import type {
 } from './github-auth'
 import type { LaunchIntent } from './service'
 import type { StartResult } from './session-backend'
+
+export interface ProgressUpdatePayload {
+  taskId: string
+  progress: TaskProgress
+}
+
+export interface ProgressNotifyPayload {
+  taskId: string
+  /** The card's title when it was announced. */
+  title: string
+  notifications: ProgressNotification[]
+}
 
 /** How a frontend reaches core. `invoke` answers; `send` is fire-and-forget. */
 export interface BridgeTransport {
@@ -223,6 +236,22 @@ export function createBridge(t: BridgeTransport) {
   },
   deleteTask: (taskId: string): Promise<VibeFlowState> =>
     t.invoke('vibeflow:deleteTask', taskId),
+
+  /** A running card's progress now (todos, usage, activity); null = nothing to show yet. */
+  getProgress: (taskId: string): Promise<TaskProgress | null> =>
+    t.invoke('progress:get', taskId),
+  /** Every change to a card's progress, read from its agent's transcript. */
+  onProgressUpdate: (
+    callback: (payload: ProgressUpdatePayload) => void
+  ): (() => void) => {
+    return t.on('progress:update', (payload) => callback(payload as never))
+  },
+  /** Stage notifications, already filtered by the user's notification settings. */
+  onProgressNotify: (
+    callback: (payload: ProgressNotifyPayload) => void
+  ): (() => void) => {
+    return t.on('progress:notify', (payload) => callback(payload as never))
+  },
 
   attachments: {
     write: (payload: {

@@ -37,7 +37,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
 | `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
 | `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |
-| `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: system prompt, artifact paths |
+| `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: system prompt, artifact paths, the `--settings` hooks |
 | `claude-chrome.test.mjs` | `packages/core/src/launch.ts` | the Chrome flag on Claude launches only |
 | `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reaching outside core, types-only renderer imports, erasable TypeScript only |
 | `decisions.test.mjs` | `packages/core/src/decisions.ts` | legacy decision record cleanup: key before and after worktree cleanup |
@@ -50,10 +50,12 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
 | `library.test.mjs` | `packages/core/src/library.ts` | library entries: naming, frontmatter, per-kind storage |
 | `lock.test.mjs` | `packages/core/src/lock.ts` | one host per machine: takeover of dead locks, port, file mode |
+| `progress.test.mjs` | `packages/core/src/progress.ts` | transcript reducers against recorded fixtures (`fixtures/progress/`): todo lists, usage de-duplication, activity, hook events, notification diffs |
+| `progress-tracker.test.mjs` | `packages/core/src/progress-tracker.ts` | finding a card's transcripts under a temp home: incremental reads, run filtering, Codex cwd matching, hook event files, no back-filled notifications |
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
 | `pty-helper.test.mjs` | `packages/core/src/pty-helper.ts` | node-pty `spawn-helper` executable bit and its fix command |
 | `recent-projects.test.mjs` | `packages/core/src/recent-projects.ts` | recent-project ordering, replacement and lost-folder flags |
-| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals |
+| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card |
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
