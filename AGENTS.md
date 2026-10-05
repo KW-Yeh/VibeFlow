@@ -278,7 +278,9 @@ docs/                      everything that is not code (index: docs/README.md)
 - **Provisioning at launch**: a card's branch + worktree are created by
   `ensureProvisioned` in `service.ts` when `pty:start` carries a launch intent and
   the card has no `worktreePath` — never at creation (except non-backlog CLI
-  cards), so the branch starts from the base as it is when work starts. A failed
+  cards), so the branch starts from the base as it is when work starts. Both
+  paths stamp `provisionedAt`; use it, not `launchedAt` (= the agent ran, which
+  drives auto-resume), to ask whether a card ever had a branch. A failed
   attempt puts the card back in Backlog with `launchedAt` cleared and the reason
   in `launchError`. A shell `pty:start` on an unprovisioned card is refused rather
   than falling back to the project checkout. Attachments of an unprovisioned card

@@ -19,11 +19,11 @@ vibeflow
 
 ## 它能幫你做什麼
 
-- **一卡一分支一 worktree**：建卡時自動建立分支與 worktree、複製 `.env` 等被忽略的檔案，相依套件也在背景複製好，worktree 建好就能直接跑。
+- **一卡一分支一 worktree**：卡片開始執行時，從當下最新的基準分支自動建立分支與 worktree、複製 `.env` 等被忽略的檔案，相依套件也在背景複製好，worktree 建好就能直接跑。
 - **看板式管理多個 agent**：Backlog → In Progress → Done。把卡片拖進 In Progress，agent 就在它的 worktree 裡開始工作。
 - **即時終端機**：每張卡都有自己的互動式終端機，agent 要你確認時直接在畫面上回答。
 - **關掉也不會中斷**：裝了 tmux 時，agent 跑在背景 session 裡；關掉瀏覽器甚至 VibeFlow 本身，任務都會繼續，重新開啟就接回來。
-- **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及一份會保留下來的決策紀錄（agent 做了哪些決定、為什麼）。
+- **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及「決策」分頁：顯示這張卡的分支新增或修改的 `spec.md`（agent 做了哪些決定、為什麼）。卡片完成後打開時預設顯示決策；本地分支刪掉後，會改從 `origin/<branch>` 或 GitHub PR 的 merge commit 讀回合併當時的內容（squash／rebase merge 的卡片讀不回來）。
 - **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。
 - **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
 - **內建 skill，可自行調整**：每個人的 Library（設定 → Library）都附帶 `visual-parity`、`pr` 兩個 skill，兩個 agent 都會載入。可以直接編輯、停用或刪除，隨時能還原成 VibeFlow 出貨的版本；沒改過的會跟著 VibeFlow 升級更新。`visual-parity` 需要 Python 與 `pip install playwright && playwright install chromium`。
@@ -59,7 +59,7 @@ VibeFlow 會在本機啟動，並自動用瀏覽器開啟看板。第一次啟�
 3. 寫下標題與你要 agent 做的事，選 agent，按建立。
 4. 把卡片拖到 **In Progress**，agent 就開始工作；點開卡片就能看到它的即時終端機。
 5. 做完之後在卡片上檢查 diff；要留下的變更請讓 agent commit、push 或開 PR。
-6. 把卡片移到 **Done**：VibeFlow 會刪掉這張卡的 worktree 與本地分支。**尚未 commit 的變更會一起消失**，移動前會再跟你確認一次。
+6. 把卡片移到 **Done**：VibeFlow 會刪掉這張卡的 worktree 與本地分支。**尚未 commit 的變更會一起消失**，移動前會再跟你確認一次。已 push 的 `spec.md` 之後仍會顯示在卡片的「決策」分頁。
 
 有問題時先跑：
 

@@ -150,7 +150,8 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   return { task, storePath: store.path }
 }
 
-export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBranch' | 'pushed'>
+export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBranch' | 'pushed' | 'provisionedAt'
+>
 
 /**
  * Create the card's branch and worktree from the base as it is right now, and
@@ -182,6 +183,7 @@ export async function provisionTaskWorktree(task: Task): Promise<ProvisionedFiel
       worktreePath: result.worktreePath,
       baseBranch: result.baseBranch,
       pushed: result.pushed,
+      provisionedAt: Date.now(),
     }
   } catch (err) {
     throw Object.assign(

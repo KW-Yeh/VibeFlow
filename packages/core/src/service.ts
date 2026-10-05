@@ -495,6 +495,7 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
           ...(branchChanged ? { branch: nextBranch, branchExplicit: true } : {}),
           worktreePath: undefined,
           pushed: undefined,
+          provisionedAt: undefined,
           launchedAt: undefined,
         }
       }
@@ -645,9 +646,16 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       const base = task.baseBranch ?? 'main'
       if (task.worktreePath) return readWorktreeSpecs(task.worktreePath, base)
       // Never provisioned: the branch is only a name, there is nothing to read.
-      if (!task.projectPath || !task.launchedAt) return []
+      // Cards from before provisionedAt existed: an app card was provisioned
+      // when it launched; a CLI card in a later column at creation, which is
+      // what a recorded `pushed` (set only by provisioning) says happened.
+      const since =
+        task.provisionedAt ??
+        task.launchedAt ??
+        (task.pushed !== undefined ? task.createdAt : undefined)
+      if (!task.projectPath || !since) return []
       const changed = task.outcome?.files.filter((f) => f.status !== 'D').map((f) => f.path)
-      return readBranchSpecs(task.projectPath, task.branch, base, changed, task.launchedAt)
+      return readBranchSpecs(task.projectPath, task.branch, base, changed, since)
     },
 
     'board:getCliLaunchInfo': () => boardCliLaunchInfo(),

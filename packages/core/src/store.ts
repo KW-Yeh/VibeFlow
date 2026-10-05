@@ -52,6 +52,12 @@ export interface Task {
    */
   launchedAt?: number
   /**
+   * Epoch ms when the card's branch and worktree were created — at first start,
+   * or at creation for a CLI card written straight into a later column. Unset =
+   * the branch is still only a name.
+   */
+  provisionedAt?: number
+  /**
    * Why the last start could not create the card's branch/worktree. The card
    * was sent back to Backlog unstarted; cleared by the next successful start
    * or an edit.
