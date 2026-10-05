@@ -179,7 +179,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── session-backend.ts SessionBackend interface; sessions.ts picks tmux or pty
 │   ├── pty.ts / tmux-backend.ts  PtyBackend (node-pty, dies with core) / TmuxBackend (-L vibeflow, outlives it)
 │   ├── events.ts          EventSink + EventBus (every event fans out to every frontend)
-│   ├── platform.ts        PlatformServices: userData dir, source root, CLI entry, open
+│   ├── platform.ts        PlatformServices: userData dir, source root, CLI entry, open, folder dialog (folder-dialog.ts)
 │   ├── json-store.ts      JsonStore: electron-store-compatible JSON file, atomic writes
 │   ├── store.ts           VibeFlowState, Task, board mutators (LAZY init)
 │   ├── tasks.ts           create / update a card (UI and CLI share it)

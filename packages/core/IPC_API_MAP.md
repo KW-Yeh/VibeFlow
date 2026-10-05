@@ -140,6 +140,7 @@ are.
 |---|---|---|---|
 | `dialog:pickFolder` | removed | | The Web UI uses the path input plus the recent-projects list |
 | `dialog:pickLibrarySource` | removed | | The Web UI asks for a typed path |
+| `dialog:pickFolder` | platform | `PlatformServices.pickFolder` (`folder-dialog.ts`) | Native folder dialog on the host (osascript / PowerShell / zenity, kdialog). Returns `{ path }`, `{ canceled }` or `{ unsupported }`; the renderer falls back to a typed path on unsupported or error |
 | `shell:openExternal` | platform | `PlatformServices.openExternal` | The browser frontend can simply `window.open` |
 | `app:getVersion` | core | `getVersion()` | Read from `package.json` instead of `app.getVersion()` |
 | `app:relaunch` | electron (removed) | | Hot update of the `.app` |

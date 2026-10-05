@@ -337,3 +337,35 @@ test('a provisioned Backlog card with changes keeps its branch', async (t) => {
   )
   assert.equal(cardIn(core, 'backlog', task.id).branch, branch)
 })
+
+test('dialog:pickFolder asks the host platform, and a second request joins the open dialog', async (t) => {
+  t.after(() => setPlatform(createNodePlatform({ userDataDir: storeDir })))
+  const calls = []
+  let answer
+  setPlatform({
+    ...createNodePlatform({ userDataDir: storeDir }),
+    pickFolder: (opts) => {
+      calls.push(opts)
+      return new Promise((resolve) => (answer = resolve))
+    },
+  })
+  const core = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
+  t.after(() => core.shutdown())
+
+  const first = core.handlers['dialog:pickFolder']({ title: '選擇專案資料夾' })
+  const second = core.handlers['dialog:pickFolder']()
+  answer({ path: '/picked' })
+  assert.deepEqual(await first, { path: '/picked' })
+  assert.deepEqual(await second, { path: '/picked' })
+  assert.deepEqual(calls, [{ title: '選擇專案資料夾', defaultPath: undefined }])
+  assert.throws(() => core.handlers['dialog:pickFolder']({ title: 42 }), { code: 'INVALID_REQUEST' })
+})
+
+test('dialog:pickFolder reports unsupported when the host has no dialog', async (t) => {
+  t.after(() => setPlatform(createNodePlatform({ userDataDir: storeDir })))
+  const { pickFolder: _none, ...headless } = createNodePlatform({ userDataDir: storeDir })
+  setPlatform(headless)
+  const core = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
+  t.after(() => core.shutdown())
+  assert.deepEqual(await core.handlers['dialog:pickFolder'](), { unsupported: true })
+})

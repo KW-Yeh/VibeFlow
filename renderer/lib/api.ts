@@ -104,9 +104,21 @@ function promptForPath(message: string): string | null {
   return typed ? typed : null
 }
 
-export async function pickFolder(): Promise<string | null> {
-  if (!bridge()) return null
-  return promptForPath('輸入專案資料夾的絕對路徑')
+/**
+ * The OS folder dialog on the machine core runs on. Where it has none, or it
+ * fails to open, the path is typed instead. Null = cancelled.
+ */
+export async function pickFolder(title = '選擇資料夾'): Promise<string | null> {
+  const b = bridge()
+  if (!b) return null
+  try {
+    const result = await b.pickFolder({ title })
+    if ('path' in result) return result.path
+    if ('canceled' in result) return null
+  } catch {
+    // fall through to typing the path
+  }
+  return promptForPath('輸入資料夾的絕對路徑')
 }
 
 export async function getGitInfo(projectPath: string): Promise<GitInfo | null> {

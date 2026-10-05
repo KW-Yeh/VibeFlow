@@ -43,6 +43,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `decisions.test.mjs` | `packages/core/src/decisions.ts` | legacy decision record cleanup: key before and after worktree cleanup |
 | `diff-state.test.mjs` | `renderer/lib/diff-state.ts` | diff polling keeps references and bodies stable |
 | `env.test.mjs` | `packages/core/src/env.ts` | PATH augmentation + memoisation |
+| `folder-dialog.test.mjs` | `packages/core/src/folder-dialog.ts` | per-OS folder-dialog commands (user text never in a script), cancel detection, output parsing |
 | `specs.test.mjs` | `packages/core/src/specs.ts` | which `spec.md` files belong to a task, from the worktree and from the branch after completion |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |

@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import { pickFolderWithOs, type PickFolderOptions, type PickFolderResult } from './folder-dialog'
 import { homedir } from 'os'
 import path from 'path'
 
@@ -32,6 +33,12 @@ export interface PlatformServices {
   openExternal(url: string): Promise<void>
   /** Open a local path with the OS; resolves to an error string, empty on success. */
   openPath(target: string): Promise<string>
+  /**
+   * Show a folder dialog on the machine core runs on — which is where a
+   * picked path has to exist. Absent = no dialog; the frontend asks for a
+   * typed path instead.
+   */
+  pickFolder?(options: PickFolderOptions): Promise<PickFolderResult>
 }
 
 let _platform: PlatformServices | null = null
@@ -112,5 +119,6 @@ export function createNodePlatform(options: NodePlatformOptions = {}): PlatformS
       if (err) throw new Error(err)
     },
     openPath: (target) => openWithOs(target),
+    pickFolder: (opts) => pickFolderWithOs(opts),
   }
 }

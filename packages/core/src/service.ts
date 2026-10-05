@@ -75,6 +75,7 @@ import { buildAgentCommand, executorSessionId } from './launch'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
 import { getPlatform } from './platform'
+import type { PickFolderResult } from './folder-dialog'
 
 /** What a terminal start asks for. Core turns it into a command. */
 export interface LaunchIntent {
@@ -334,6 +335,8 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
     setBoard(next)
     bus.emit('state:changed', getState())
   }
+
+  let folderDialog: Promise<PickFolderResult> | null = null
 
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
@@ -721,6 +724,20 @@ export function createCore({ sessions, bus, version }: CoreOptions): Core {
       const task = requireTask(taskId)
       if (!task.worktreePath) return null
       return getGithubCompareUrl(task.worktreePath, task.baseBranch ?? 'main')
+    },
+
+    // One dialog at a time: a second click while it is open joins it instead
+    // of stacking another window on the host.
+    'dialog:pickFolder': (options) => {
+      const o = options === undefined || options === null ? {} : obj<{ title?: unknown; defaultPath?: unknown }>(options, 'options')
+      const title = o.title === undefined ? undefined : str(o.title, 'title')
+      const defaultPath = o.defaultPath === undefined ? undefined : str(o.defaultPath, 'defaultPath')
+      const pick = getPlatform().pickFolder
+      if (!pick) return { unsupported: true } satisfies PickFolderResult
+      folderDialog ??= pick({ title, defaultPath: defaultPath || undefined }).finally(() => {
+        folderDialog = null
+      })
+      return folderDialog
     },
 
     'shell:openExternal': (url) => {

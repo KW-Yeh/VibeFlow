@@ -158,6 +158,8 @@ export default function HomePage() {
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
 
+  const pickProjectFolder = () => pickFolder('選擇專案資料夾')
+
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
     void persistBoard(next)
@@ -436,7 +438,7 @@ export default function HomePage() {
                   newTaskNonce={newTaskNonce}
                   creating={creating}
                   createError={createError}
-                  pickFolder={pickFolder}
+                  pickFolder={pickProjectFolder}
                   loadRecentProjects={listRecentProjects}
                   loadGitInfo={getGitInfo}
                   initRepository={initRepository}
@@ -450,7 +452,7 @@ export default function HomePage() {
               task={editTask}
               defaultAutoMode={autoMode}
               detectAgents={detectAgents}
-              pickFolder={pickFolder}
+              pickFolder={pickProjectFolder}
               loadRecentProjects={listRecentProjects}
               loadGitInfo={getGitInfo}
               saving={savingEdit}
@@ -466,7 +468,7 @@ export default function HomePage() {
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}
-              onPickFolder={pickFolder}
+              onPickFolder={() => pickFolder('選擇工作區資料夾')}
               onClose={() => setSettingsOpen(false)}
             />
             <AnimatePresence>

@@ -24,6 +24,7 @@ import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
 import type { ChatAttachment, Conversation } from './chat-store'
 import type { AttachmentInput } from './attachments'
+import type { PickFolderOptions, PickFolderResult } from './folder-dialog'
 import type {
   LibraryEntry,
   LibraryKind,
@@ -209,6 +210,9 @@ export function createBridge(t: BridgeTransport) {
   /** Open a URL in the system default browser. */
   openExternal: (url: string): Promise<void> =>
     t.invoke('shell:openExternal', url),
+  /** The OS folder dialog, shown on the machine core runs on. */
+  pickFolder: (options?: PickFolderOptions): Promise<PickFolderResult> =>
+    t.invoke('dialog:pickFolder', options),
   cleanupTask: (taskId: string): Promise<VibeFlowState> =>
     t.invoke('vibeflow:cleanupTask', taskId),
   /** Live sub-agent updates pushed from main while a session runs. */
