@@ -3,11 +3,14 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
+import { executorSessionId } from '../packages/core/src/launch.ts'
+import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
 import { exists, git, makeRepo, writeFile } from './support/repo.mjs'
 
 /** A SessionBackend that records what core asked of it. */
@@ -405,4 +408,92 @@ test('a CLI card that never launched still shows its spec after its PR is merged
 
   const specs = await core.handlers['task:getSpecs'](task.id)
   assert.deepEqual(specs.map((s) => s.markdown.trim()), ['# cli decisions'])
+})
+
+// --- progress ---
+
+const PROGRESS_FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'progress', 'claude-todowrite.jsonl')
+
+/** A core whose agent transcripts live under a throwaway home, plus one launched card. */
+async function coreWithProgress(t) {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-service-home-'))
+  t.after(() => fs.rm(home, { recursive: true, force: true }))
+  const bus = new EventBus()
+  const events = []
+  bus.on((channel, payload) => events.push({ channel, payload }))
+  const core = createCore({ sessions: fakeSessions(), bus, version: '9.9.9', homeDir: home })
+  t.after(() => core.shutdown())
+  const { task: created } = await createTaskFromInput({ projectPath, title: 'Progress card', status: 'in_progress' })
+  // The renderer stamps launchedAt when it starts a card; the fixture was recorded 2026-10-05.
+  const launchedAt = Date.parse('2026-10-05T14:00:00Z')
+  const state = getStore().get('board')
+  getStore().set('board', {
+    ...state,
+    in_progress: state.in_progress.map((t) => (t.id === created.id ? { ...t, launchedAt } : t)),
+  })
+  const task = { ...created, launchedAt }
+  const dir = claudeProjectDir(home, task.worktreePath)
+  await fs.mkdir(dir, { recursive: true })
+  const transcript = path.join(dir, `${executorSessionId(task.id, task.runId)}.jsonl`)
+  const lines = (await fs.readFile(PROGRESS_FIXTURE, 'utf8')).split('\n').filter(Boolean)
+  return { core, task, events, transcript, lines }
+}
+
+const writeLines = (file, lines) => fs.appendFile(file, lines.map((l) => l + '\n').join(''))
+
+test('progress:get — validates the task id; null before there is a transcript', async (t) => {
+  const { core, task } = await coreWithProgress(t)
+  await assert.rejects(Promise.resolve().then(() => core.handlers['progress:get']('nope')))
+  assert.equal(await core.handlers['progress:get'](task.id), null)
+})
+
+test('progress — a launch follows the card and pushes progress:update', async (t) => {
+  const { core, task, events, transcript, lines } = await coreWithProgress(t)
+  await writeLines(transcript, lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const update = events.find((e) => e.channel === 'progress:update')
+  assert.ok(update, 'progress:update emitted')
+  assert.equal(update.payload.taskId, task.id)
+  assert.equal(update.payload.progress.todos.length, 3)
+  const now = await core.handlers['progress:get'](task.id)
+  assert.equal(now.totalUsage.output, 2364)
+})
+
+test('progress — notifications follow settings.notifications', async (t) => {
+  const { core, task, events, transcript, lines } = await coreWithProgress(t)
+  const writes = lines.map((l, i) => (l.includes('"TodoWrite"') ? i : -1)).filter((i) => i >= 0)
+  await writeLines(transcript, lines.slice(0, writes[1] + 1))
+  await core.handlers['progress:get'](task.id)
+  core.handlers['vibeflow:setSettings']({ notifications: { stepCompleted: true } })
+  await writeLines(transcript, lines.slice(writes[1] + 1, writes[2] + 1))
+  await core.handlers['progress:get'](task.id)
+  const notes = events.filter((e) => e.channel === 'progress:notify')
+  assert.equal(notes.length, 1)
+  assert.equal(notes[0].payload.title, 'Progress card')
+  assert.deepEqual(notes[0].payload.notifications.map((n) => n.kind), ['step_completed'])
+
+  core.handlers['vibeflow:setSettings']({ notifications: { enabled: false } })
+  await writeLines(transcript, lines.slice(writes[2] + 1))
+  await core.handlers['progress:get'](task.id)
+  assert.equal(events.filter((e) => e.channel === 'progress:notify').length, 1, 'master switch off')
+  const stored = getStore().get('settings').notifications
+  assert.deepEqual(stored, { enabled: false, stepCompleted: true, allCompleted: true, waitingInput: true, desktop: false })
+  core.handlers['vibeflow:setSettings']({ notifications: undefined })
+})
+
+test('progress — restart and completion fold the run into Task.usage', async (t) => {
+  const { core, task, transcript, lines } = await coreWithProgress(t)
+  await writeLines(transcript, lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { task: reset } = await core.handlers['vibeflow:resetTaskRun'](task.id)
+  assert.equal(reset.usage.output, 2364, 'first run kept after restart')
+  assert.notEqual(reset.runId, task.runId)
+  // The second run writes nothing yet; completing keeps the first run's tokens.
+  await core.handlers['vibeflow:cleanupTask'](task.id)
+  const done = getStore().get('board').in_progress.find((t) => t.id === task.id)
+  assert.equal(done.usage.output, 2364)
+  assert.equal(done.worktreePath, undefined)
+  assert.equal(await core.handlers['progress:get'](task.id), null)
 })

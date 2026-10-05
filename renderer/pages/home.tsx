@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { AnimatePresence } from 'motion/react'
 
@@ -12,6 +12,8 @@ import {
   type TerminalTabEntry,
 } from '@/components/terminal-tab-bar'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
+import { NotificationToaster, type Toast } from '@/components/notification-toaster'
+import { withNotificationDefaults } from '@/components/notification-settings'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
@@ -21,9 +23,12 @@ import {
   deleteTask,
   detectAgents,
   getGitInfo,
+  getProgress,
   initRepository,
   listRecentProjects,
   loadState,
+  onProgressNotify,
+  onProgressUpdate,
   onStateChanged,
   onSubAgentsUpdate,
   persistBoard,
@@ -37,8 +42,11 @@ import type {
   AgentEffort,
   AttachmentInput,
   BoardState,
+  NotificationSettings,
+  ProgressNotification,
   SubAgentRun,
   Task,
+  TaskProgress,
 } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when core is
@@ -50,6 +58,18 @@ const FALLBACK_BOARD: BoardState = {
 }
 
 const TAB_COLUMN_ORDER = ['in_progress', 'backlog', 'done'] as const
+
+/** One notification as the line under the card title. */
+function notificationText(n: ProgressNotification): string {
+  switch (n.kind) {
+    case 'step_completed':
+      return `完成 ${n.done}/${n.total} — ${n.item ?? ''}`
+    case 'all_completed':
+      return '所有步驟已完成'
+    case 'waiting_input':
+      return n.waitingFor === 'permission' ? '等待你允許權限' : '等待你的輸入'
+  }
+}
 
 function findTask(board: BoardState, taskId: string): Task | null {
   for (const column of Object.values(board)) {
@@ -65,6 +85,13 @@ export default function HomePage() {
   // live in their own state keyed by task id — kept out of `board` so a
   // persistBoard write can't leak them to disk.
   const [subAgents, setSubAgents] = useState<Record<string, SubAgentRun[]>>({})
+  // Live progress of running cards, read by core from each agent's transcript.
+  // Session-only like sub-agents; a done card shows its stored Task.usage.
+  const [progress, setProgress] = useState<Record<string, TaskProgress>>({})
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(
+    withNotificationDefaults()
+  )
+  const [toasts, setToasts] = useState<Toast[]>([])
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = only the built-in Artifact instructions).
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -115,6 +142,7 @@ export default function HomePage() {
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
+        setNotificationSettings(withNotificationDefaults(state.settings.notifications))
       }
       setLoaded(true)
     })
@@ -142,8 +170,29 @@ export default function HomePage() {
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
+      setNotificationSettings(withNotificationDefaults(state.settings.notifications))
     })
   }, [])
+
+  useEffect(() => {
+    return onProgressUpdate(({ taskId, progress: value }) => {
+      setProgress((prev) => ({ ...prev, [taskId]: value }))
+    })
+  }, [])
+
+  // A frontend that connects mid-run asks once per running card; updates follow on the bus.
+  const runningIds = board.in_progress.map((t) => t.id).join(',')
+  useEffect(() => {
+    let active = true
+    for (const id of runningIds ? runningIds.split(',') : []) {
+      void getProgress(id).then((value) => {
+        if (active && value) setProgress((prev) => (prev[id] ? prev : { ...prev, [id]: value }))
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [runningIds])
 
   // Drop tabs whose task no longer exists. Deletions made in this window are
   // handled by closeTabs (which also picks the next tab); this covers tasks
@@ -186,6 +235,45 @@ export default function HomePage() {
     })
     setSelectedTaskId(taskId)
   }
+
+  // Stage notifications. Core already applied the per-kind switches; whether
+  // the user is looking at the card is a UI fact, so that check lives here.
+  const openTabRef = useRef(openTab)
+  openTabRef.current = openTab
+  const selectedRef = useRef(selectedTaskId)
+  selectedRef.current = selectedTaskId
+  const notificationsRef = useRef(notificationSettings)
+  notificationsRef.current = notificationSettings
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
+  useEffect(() => {
+    let seq = 0
+    return onProgressNotify(({ taskId, title, notifications }) => {
+      const prefs = notificationsRef.current
+      if (!prefs.enabled) return
+      const watching = document.visibilityState === 'visible' && document.hasFocus() && selectedRef.current === taskId
+      if (watching) return
+      const fresh: Toast[] = notifications.map((n) => ({
+        id: `${Date.now()}-${seq++}`,
+        taskId,
+        title,
+        body: notificationText(n),
+      }))
+      setToasts((prev) => [...prev, ...fresh].slice(-5))
+      const canDesktop = prefs.desktop && typeof Notification !== 'undefined' && Notification.permission === 'granted'
+      if (canDesktop && !document.hasFocus()) {
+        for (const toast of fresh) {
+          const n = new Notification(toast.title, { body: toast.body, tag: `${taskId}:${toast.body}` })
+          n.onclick = () => {
+            window.focus()
+            openTabRef.current(taskId)
+            n.close()
+          }
+        }
+      }
+    })
+  }, [])
 
   const pinTab = (taskId: string) => {
     setTabs((prev) =>
@@ -231,7 +319,8 @@ export default function HomePage() {
   const handleSaveSettings = async (
     nextPrompt: string,
     nextWorkstation: string,
-    nextAutoMode: boolean
+    nextAutoMode: boolean,
+    nextNotifications: NotificationSettings
   ) => {
     setSavingSettings(true)
     setSettingsError(null)
@@ -240,10 +329,12 @@ export default function HomePage() {
         systemPrompt: nextPrompt,
         workstationPath: nextWorkstation || undefined,
         autoMode: nextAutoMode,
+        notifications: nextNotifications,
       })
       setSystemPrompt(nextPrompt)
       setWorkstationPath(nextWorkstation)
       setAutoMode(nextAutoMode)
+      setNotificationSettings(nextNotifications)
       setSettingsOpen(false)
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err))
@@ -431,6 +522,7 @@ export default function HomePage() {
                   autoMode={autoMode}
                   workstationPath={workstationPath}
                   subAgents={subAgents}
+                  progress={progress}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}
                   openTabIds={tabs.map((t) => t.taskId)}
@@ -465,6 +557,7 @@ export default function HomePage() {
               systemPrompt={systemPrompt}
               workstationPath={workstationPath}
               autoMode={autoMode}
+              notifications={notificationSettings}
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}
@@ -562,6 +655,11 @@ export default function HomePage() {
                 />
               )}
             </AnimatePresence>
+            <NotificationToaster
+              toasts={toasts}
+              onOpen={(taskId) => openTabRef.current(taskId)}
+              onDismiss={dismissToast}
+            />
           </>
         ) : (
           <div className="flex min-h-screen items-center justify-center bg-background text-base text-muted-foreground">

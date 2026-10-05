@@ -22,9 +22,12 @@ import type {
   LibraryKind,
   PrStatus,
   RecentProjectEntry,
+  ProgressNotifyPayload,
+  ProgressUpdatePayload,
   SubAgentRun,
   Task,
   TaskArtifact,
+  TaskProgress,
   TaskSpec,
   VibeFlowState,
   LaunchIntent,
@@ -379,6 +382,29 @@ export function onSubAgentsUpdate(
 ): () => void {
   const b = bridge()
   return b ? b.onSubAgentsUpdate(callback) : () => {}
+}
+
+/** A running card's progress now; null when there is nothing to show or no bridge. */
+export async function getProgress(taskId: string): Promise<TaskProgress | null> {
+  const b = bridge()
+  if (!b) return null
+  try {
+    return await b.getProgress(taskId)
+  } catch {
+    return null
+  }
+}
+
+/** Every change to a card's progress (todos, usage, activity). */
+export function onProgressUpdate(callback: (payload: ProgressUpdatePayload) => void): () => void {
+  const b = bridge()
+  return b ? b.onProgressUpdate(callback) : () => {}
+}
+
+/** Stage notifications, already filtered by the notification settings. */
+export function onProgressNotify(callback: (payload: ProgressNotifyPayload) => void): () => void {
+  const b = bridge()
+  return b ? b.onProgressNotify(callback) : () => {}
 }
 
 export async function cleanupTask(

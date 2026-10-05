@@ -186,6 +186,8 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   ├── specs.ts           a task's spec.md files (the 決策 tab), from worktree or branch
+│   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
+│   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
 ├── core/builtin-skills/   skills VibeFlow ships (copied to dist/builtin-skills by build:npm)
 ├── cli/src/               `vibeflow` command: main.ts (dispatch), host.ts (lock+core+server),
@@ -299,6 +301,16 @@ docs/                      everything that is not code (index: docs/README.md)
   the target project's `.gitignore`.
 - **Dark theme**: the app wraps content in `<div className="dark">`; style with the
   shadcn token classes (`bg-background`, `text-muted-foreground`, etc.), not raw colors.
+- **Progress and usage come from the agent's own transcript**, never from the model
+  (`progress.ts`, `progress-tracker.ts`; spec: `docs/features/task-progress/`). Claude:
+  `~/.claude/projects/<cwd→dashes>/*.jsonl` (+ `<session>/subagents/`); Codex: rollouts
+  under `~/.codex/sessions` and the library's `codex-home/sessions`, matched by `cwd`.
+  Neither format is a public API — reducers read few fields, skip the rest, and
+  `test/fixtures/progress/` pins the shapes. Claude launches add passive hooks that drop
+  events into `<worktree>/.vibeflow-events/` (excluded from git and diffs like
+  `.vibeflow-subagents/`); they only wake the tracker and report permission prompts.
+  Codex gets **no** hook: `-c notify=…` would replace the user's own `notify`. A run's
+  usage is folded into `Task.usage` on restart and completion.
 - **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):
   every file named `spec.md` that the card's branch added or changed against its
   base — the feature-spec-plan skill writes high-level decisions there. No such

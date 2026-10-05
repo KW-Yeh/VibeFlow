@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
 import type { BoardState, ColumnId, Task } from '../../core/src/store'
+import { describeNotification, progressSummary, type TaskProgress } from '../../core/src/progress'
 import { TMUX_SOCKET } from '../../core/src/tmux-backend'
 import { editFormState, editInEditor, loadFormContext, newFormState, showForm } from './task-form'
 
@@ -148,11 +149,20 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
   const [message, setMessage] = useState(initialMessage ?? '')
   const [confirm, setConfirm] = useState<{ prompt: string; run: () => void } | null>(null)
   const [help, setHelp] = useState(false)
+  const [progress, setProgress] = useState<Record<string, TaskProgress>>({})
 
   useEffect(() => {
     let alive = true
     void api.getState().then((s) => alive && setBoard(s.board))
     const off = api.onStateChanged((s) => setBoard(s.board))
+    const offProgress = api.onProgressUpdate(({ taskId, progress: p }) => {
+      setProgress((prev) => ({ ...prev, [taskId]: p }))
+    })
+    // Core already applied the notification settings; the status line is the TUI's toast.
+    const offNotify = api.onProgressNotify(({ title, notifications }) => {
+      const last = notifications[notifications.length - 1]
+      if (last) setMessage(`「${title}」${describeNotification(last)}`)
+    })
     const poll = async () => {
       try {
         const info = await api.term.list()
@@ -168,6 +178,8 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
     return () => {
       alive = false
       off()
+      offProgress()
+      offNotify()
       clearInterval(timer)
     }
   }, [api])
@@ -175,6 +187,20 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
   useEffect(() => {
     if (board) setSel((s) => clampSelection(board, s))
   }, [board])
+
+  // Running cards' progress for a TUI that attaches mid-run; updates follow on the bus.
+  const runningIds = board ? board.in_progress.map((t) => t.id).join(',') : ''
+  useEffect(() => {
+    let alive = true
+    for (const id of runningIds ? runningIds.split(',') : []) {
+      void api.getProgress(id).then((p) => {
+        if (alive && p) setProgress((prev) => (prev[id] ? prev : { ...prev, [id]: p }))
+      }).catch(() => {})
+    }
+    return () => {
+      alive = false
+    }
+  }, [api, runningIds])
 
   const selected = board ? board[COLUMNS[sel.column]][sel.index] : undefined
 
@@ -331,10 +357,12 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
         : tasks.map((t, ti) => {
             const isSel = active && ti === sel.index
             const mark = running.has(t.id) ? '● ' : '  '
+            const summary = col === 'backlog' ? '' : progressSummary(col === 'in_progress' ? progress[t.id] : null, t.usage)
             return h(
               Box,
               { key: t.id, flexDirection: 'column' },
               h(Text, { inverse: isSel, color: running.has(t.id) ? 'green' : undefined }, truncate(`${mark}${t.title}`, colWidth - 4)),
+              summary ? h(Text, { dimColor: !isSel, color: isSel ? 'cyan' : undefined }, truncate(`  ${summary}`, colWidth - 4)) : null,
               isSel ? h(Text, { dimColor: true }, truncate(`  ${t.projectName ?? ''} · ${t.branch}`, colWidth - 4)) : null
             )
           }))

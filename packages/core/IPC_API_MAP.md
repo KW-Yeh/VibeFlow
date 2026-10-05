@@ -27,6 +27,9 @@ Channels added since the inventory:
 | `pty:scrolled` / `pty:scroll-bottom` | Whether a session's own history view (tmux copy-mode) is off the live output, and return it there |
 | `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
+| `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
+| event `progress:update` | `{ taskId, progress }` on every change to a tracked card's progress |
+| event `progress:notify` | `{ taskId, title, notifications }` stage notifications, already filtered by `settings.notifications` |
 
 List the current table with:
 

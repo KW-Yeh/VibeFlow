@@ -15,7 +15,8 @@ import { useEffect, useRef, useState } from 'react'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId, SubAgentRun, Task } from '@/lib/types'
+import type { BoardState, ColumnId, SubAgentRun, Task, TaskProgress } from '@/lib/types'
+import { TaskProgressBadge } from '@/components/task-progress'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -151,6 +152,7 @@ function TaskCard({
   task,
   column,
   subAgentCount,
+  progress,
   selected,
   onSelect,
   onEdit,
@@ -159,6 +161,7 @@ function TaskCard({
   task: Task
   column: ColumnId
   subAgentCount: number
+  progress: TaskProgress | null
   selected: boolean
   onSelect: () => void
   onEdit?: () => void
@@ -273,6 +276,8 @@ function TaskCard({
         )}
       </div>
 
+      {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
+
       {column === 'backlog' && task.launchError && (
         <p className="mt-1.5 truncate text-xs text-destructive" title={task.launchError}>
           開始失敗：{task.launchError}
@@ -347,6 +352,7 @@ function ProjectFilter({
 export interface BoardColumnsProps {
   board: BoardState
   subAgents: Record<string, SubAgentRun[]>
+  progress: Record<string, TaskProgress>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
   onEditTask: (taskId: string) => void
@@ -357,6 +363,7 @@ export interface BoardColumnsProps {
 export function BoardColumns({
   board,
   subAgents,
+  progress,
   selectedTaskId,
   onSelectTask,
   onEditTask,
@@ -419,6 +426,7 @@ export function BoardColumns({
                     task={task}
                     column={column}
                     subAgentCount={(subAgents[task.id] ?? []).length}
+                    progress={column === 'in_progress' ? progress[task.id] ?? null : null}
                     selected={task.id === selectedTaskId}
                     onSelect={() => onSelectTask(task.id)}
                     onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}

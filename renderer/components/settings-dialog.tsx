@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { LibraryPanel } from '@/components/library-panel'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
+import { NotificationSettingsSection, desktopPermission } from '@/components/notification-settings'
 import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
+  NotificationSettings,
   AgentCliId,
   AgentModelList,
   AgentModelSource,
@@ -56,10 +58,17 @@ interface SettingsDialogProps {
   workstationPath: string
   /** Board-wide Auto Mode: the value new cards start with. */
   autoMode: boolean
+  /** Stage notification preferences (defaults already applied). */
+  notifications: NotificationSettings
   saving: boolean
   error: string | null
-  /** Called with the new custom prompt ('' = default), workstation path ('' = default) and Auto Mode. */
-  onSave: (systemPrompt: string, workstationPath: string, autoMode: boolean) => void
+  /** Called with the new custom prompt ('' = default), workstation path ('' = default), Auto Mode and notifications. */
+  onSave: (
+    systemPrompt: string,
+    workstationPath: string,
+    autoMode: boolean,
+    notifications: NotificationSettings
+  ) => void
   /** Native folder picker — returns the chosen absolute path, or null. */
   onPickFolder: () => Promise<string | null>
   onClose: () => void
@@ -70,6 +79,7 @@ export function SettingsDialog({
   systemPrompt,
   workstationPath,
   autoMode,
+  notifications,
   saving,
   error,
   onSave,
@@ -79,6 +89,8 @@ export function SettingsDialog({
   const [text, setText] = useState('')
   const [workstation, setWorkstation] = useState('')
   const [auto, setAuto] = useState(true)
+  const [notif, setNotif] = useState<NotificationSettings>(notifications)
+  const [desktopBlocked, setDesktopBlocked] = useState(false)
   const [modelLists, setModelLists] = useState<Partial<Record<AgentCliId, AgentModelList | null>>>({})
   const [refreshing, setRefreshing] = useState<AgentCliId | null>(null)
   /** CLIs found on PATH; undefined while detecting, null when detection failed. */
@@ -97,6 +109,8 @@ export function SettingsDialog({
       setText(systemPrompt)
       setWorkstation(workstationPath)
       setAuto(autoMode)
+      setNotif(notifications)
+      setDesktopBlocked(desktopPermission() === 'denied' || desktopPermission() === 'unsupported')
       setGithubPage(false)
       setGithubPhase('idle')
       setGithubCode('')
@@ -104,7 +118,7 @@ export function SettingsDialog({
       setCopiedCode(false)
       void getGithubAuthStatus().then(setGithubStatus)
     }
-  }, [open, systemPrompt, workstationPath, autoMode])
+  }, [open, systemPrompt, workstationPath, autoMode, notifications])
 
   useEffect(() => {
     if (!open) return
@@ -180,7 +194,7 @@ export function SettingsDialog({
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSave(trimmed, workstation.trim(), auto)
+    onSave(trimmed, workstation.trim(), auto, notif)
   }
 
   const handlePickWorkstation = async () => {
@@ -406,6 +420,23 @@ export function SettingsDialog({
             <p className="text-sm text-muted-foreground">
               新卡片的預設值；每張卡片可在建立或編輯時各自調整。
             </p>
+          </section>
+
+          <section className="space-y-2">
+            <NotificationSettingsSection
+              value={notif}
+              onChange={setNotif}
+              desktopBlocked={desktopBlocked}
+              onRequestDesktop={async () => {
+                if (desktopPermission() === 'unsupported') {
+                  setDesktopBlocked(true)
+                  return false
+                }
+                const granted = (await Notification.requestPermission()) === 'granted'
+                setDesktopBlocked(!granted)
+                return granted
+              }}
+            />
           </section>
 
           <section className="space-y-2">

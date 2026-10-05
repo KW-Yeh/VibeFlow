@@ -3,6 +3,7 @@ import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
 import { SUBAGENTS_DIR } from './subagents'
+import { PROGRESS_EVENTS_DIR } from './launch'
 import { execEnv } from './env'
 import { runAgentPrint } from './agent-print'
 import { ATTACHMENTS_DIR } from './attachments'
@@ -196,6 +197,13 @@ export async function ensureLocalExclude(projectPath: string): Promise<void> {
     '# VibeFlow sub-agent event log (runtime-only)',
     { mkdir: true }
   )
+  // Progress hook events, consumed by the progress tracker as they arrive.
+  await appendLineIfMissing(
+    path.join(infoDir, 'exclude'),
+    `${PROGRESS_EVENTS_DIR}/`,
+    '# VibeFlow progress hook events (runtime-only)',
+    { mkdir: true }
+  )
   // Screenshots, recordings and scratch files the agent parks here are evidence
   // for the user, never part of the change.
   await appendLineIfMissing(
@@ -365,7 +373,7 @@ async function resolveBranchName(
  * live in `.git/info/exclude` (see `ensureLocalExclude`), so `git ls-files
  * --ignored` would otherwise happily include them.
  */
-const RUNTIME_ARTIFACT_DENYLIST = new Set([SUBAGENTS_DIR])
+const RUNTIME_ARTIFACT_DENYLIST = new Set([SUBAGENTS_DIR, PROGRESS_EVENTS_DIR])
 const MAX_IGNORED_COPY_BYTES = 10 * 1024 * 1024
 const MAX_IGNORED_COPY_FILES = 200
 
@@ -1029,8 +1037,9 @@ export async function collectDiffEntries(
   // The sub-agent event log is VibeFlow metadata, not a change to review.
   const entries = Array.from(entryMap.values()).filter(
     (e) =>
-      e.path !== SUBAGENTS_DIR &&
-      !e.path.startsWith(`${SUBAGENTS_DIR}/`)
+      ![SUBAGENTS_DIR, PROGRESS_EVENTS_DIR].some(
+        (dir) => e.path === dir || e.path.startsWith(`${dir}/`)
+      )
   )
 
   await Promise.all(
