@@ -1367,7 +1367,7 @@ export function TaskWorkspacePanel({
   onOpenSubAgents,
   onInteract,
 }: TaskWorkspacePanelProps) {
-  const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('task')
+  const [activeTaskTab, setActiveTaskTab] = useState<TaskTab | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
   const tabBaseId = useId()
@@ -1452,7 +1452,9 @@ export function TaskWorkspacePanel({
   }
 
   // Completing a task swaps the tab set under the selection, so clamp rather
-  // than store — an out-of-set tab falls back to the column's first one.
+  // than store — an out-of-set tab falls back to the column's default. A done
+  // task opens on its decisions: once the work is finished they say more than
+  // the prompt that started it.
   const tabs = (
     column === 'done'
       ? DONE_TASK_TABS
@@ -1460,7 +1462,9 @@ export function TaskWorkspacePanel({
         ? BACKLOG_TASK_TABS
         : ACTIVE_TASK_TABS
   ).filter((tab) => tab !== 'spec' || specs.length > 0)
-  const activeTab = tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
+  const defaultTab = column === 'done' && tabs.includes('spec') ? 'spec' : tabs[0]
+  const activeTab =
+    activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : defaultTab
 
   const tabStrip = (
     <div
