@@ -42,6 +42,20 @@ export type {
   GitHubCliAuthStatus,
 } from '../../packages/core/src/github-auth'
 export type {
+  GithubInbox,
+  GithubInboxStatus,
+  GithubIssue,
+  GithubItem,
+  GithubLabel,
+  GithubLink,
+  GithubPr,
+  GithubPrState,
+  GithubRef,
+  GithubRepoInbox,
+  GithubTaskLinks,
+  GithubUser,
+} from '../../packages/core/src/github'
+export type {
   SubAgentRun,
   SubAgentStatus,
 } from '../../packages/core/src/subagents'

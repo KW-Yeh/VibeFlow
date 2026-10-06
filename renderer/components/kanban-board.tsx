@@ -17,7 +17,8 @@ import {
 import { BoardColumns } from '@/components/board-columns'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
-import { NewTaskForm } from '@/components/new-task-dialog'
+import { NewTaskForm, type NewTaskDraft } from '@/components/new-task-dialog'
+import type { BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import {
@@ -34,6 +35,8 @@ import type {
   BoardState,
   ColumnId,
   GitInfo,
+  GithubRef,
+  GithubTaskLinks,
   RecentProjectEntry,
   SubAgentRun,
   LaunchIntent,
@@ -69,7 +72,16 @@ interface KanbanBoardProps {
   openTabIds: string[]
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
+  /** Pre-fill the inline new-task form from a GitHub Issue/PR. */
+  newTaskDraft?: NewTaskDraft | null
   newTaskNonce: number
+  /** Which view the top pane shows; the workspace below is the same for both. */
+  view: BoardView
+  onViewChange: (next: BoardView) => void
+  /** Rendered in the top pane instead of the board while `view` is 'github'. */
+  githubView: ReactNode
+  /** Each card's Issue/PR, keyed by task id. */
+  taskLinks: Record<string, GithubTaskLinks>
   /** Props forwarded to the inline NewTaskForm when no task is selected. */
   creating: boolean
   createError: string | null
@@ -88,7 +100,8 @@ interface KanbanBoardProps {
     model: string,
     effort: AgentEffort,
     autoMode: boolean,
-    attachments: AttachmentInput[]
+    attachments: AttachmentInput[],
+    github?: GithubRef
   ) => void
 }
 
@@ -170,7 +183,12 @@ export function KanbanBoard({
   onTaskInteract,
   openTabIds,
   initialProjectPath,
+  newTaskDraft,
   newTaskNonce,
+  view,
+  onViewChange,
+  githubView,
+  taskLinks,
   creating,
   createError,
   pickFolder,
@@ -404,16 +422,23 @@ export function KanbanBoard({
           boardHeight === null ? 'flex-1' : 'shrink-0'
         )}
       >
-        <BoardColumns
-          board={board}
-          subAgents={subAgents}
-          progress={progress}
-          selectedTaskId={selectedTaskId ?? null}
-          onSelectTask={onSelectTask}
-          onEditTask={onEditTask}
-          onDeleteTask={onDeleteTask}
-          onNewTask={onNewTask}
-        />
+        {view === 'github' ? (
+          githubView
+        ) : (
+          <BoardColumns
+            board={board}
+            subAgents={subAgents}
+            progress={progress}
+            selectedTaskId={selectedTaskId ?? null}
+            onSelectTask={onSelectTask}
+            onEditTask={onEditTask}
+            onDeleteTask={onDeleteTask}
+            onNewTask={onNewTask}
+            view={view}
+            onViewChange={onViewChange}
+            taskLinks={taskLinks}
+          />
+        )}
       </div>
 
       <div
@@ -521,6 +546,7 @@ export function KanbanBoard({
                       key={`${initialProjectPath ?? 'new'}:${newTaskNonce}`}
                       inline
                       initialProjectPath={initialProjectPath}
+                      initialDraft={newTaskDraft}
                       creating={creating}
                       error={createError}
                       pickFolder={pickFolder}

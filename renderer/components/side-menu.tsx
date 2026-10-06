@@ -1,380 +1,59 @@
-import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import type { ReactNode } from 'react'
 import {
-  ChevronDown,
-  ChevronRight,
-  ChevronsDownUp,
-  ChevronsUpDown,
   FolderOpen,
+  Inbox,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Search,
   Settings,
   Smartphone,
-  Trash2,
-  X,
+  SquareKanban,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { compareTasksByNewestFirst } from '@/lib/task-order'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
-import {
-  createEnterVariants,
-  createPresenceVariants,
-  MOTION_DURATION,
-  MOTION_EASING,
-} from '@/lib/motion'
-import type {
-  BoardState,
-  ColumnId,
-  Task,
-} from '@/lib/types'
+import type { BoardView } from '@/components/ui/view-tabs'
+import { createEnterVariants, MOTION_DURATION, MOTION_EASING } from '@/lib/motion'
+
+export interface SideMenuProject {
+  name: string
+  /** Open Issues / PRs that involve me; null = not on GitHub or not loaded yet. */
+  issues: number | null
+  prs: number | null
+}
 
 interface SideMenuProps {
   collapsed: boolean
   onToggleCollapse: () => void
-  board: BoardState
-  selectedTaskId: string | null
-  onSelectTask: (id: string) => void
+  view: BoardView
+  onSelectView: (view: BoardView) => void
+  taskCount: number
+  /** Open Issues + PRs across every project; null until the first load. */
+  githubCount: number | null
+  projects: SideMenuProject[]
+  /** Project the Issues & PRs view is narrowed to. */
+  activeProject: string | null
+  onSelectProject: (name: string | null) => void
   onNewTask: () => void
-  /** Open the new-task form pre-filled for a specific project folder. */
-  onNewTaskForProject: (projectPath: string | null) => void
-  /** Delete an entire project: every listed task (worktree + branch + conversation). */
-  onDeleteProject: (name: string, taskIds: string[]) => void
   onRemoteShare?: () => void
   remoteActive?: boolean
   onOpenSettings: () => void
 }
 
-type TaskEntry = {
-  task: Task
-  column: ColumnId
+const ROW =
+  'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors motion-reduce:transition-none'
+
+function rowTone(active: boolean): string {
+  return active
+    ? 'bg-primary/15 font-medium text-primary'
+    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
 }
 
-type ProjectGroup = {
-  key: string
-  name: string
-  path: string | null
-  tasks: TaskEntry[]
-  total: number
-  hasSelected: boolean
-}
-
-function basename(path?: string | null): string {
-  if (!path) return ''
-  const parts = path.split(/[/\\]/).filter(Boolean)
-  return parts[parts.length - 1] ?? path
-}
-
-function projectName(task: Task): string {
-  return task.projectName || basename(task.projectPath) || 'Unassigned'
-}
-
-function projectKey(task: Task): string {
-  return task.projectPath || `name:${projectName(task)}`
-}
-
-function taskEntries(board: BoardState): TaskEntry[] {
-  return [
-    ...board.in_progress.map((task) => ({ task, column: 'in_progress' as const })),
-    ...board.backlog.map((task) => ({ task, column: 'backlog' as const })),
-    ...board.done.map((task) => ({ task, column: 'done' as const })),
-  ]
-}
-
-// In-progress first, then backlog, then done; newest-first within each group so
-// the task the user is most likely acting on floats to the top of the project.
-const COLUMN_RANK: Record<ColumnId, number> = { in_progress: 0, backlog: 1, done: 2 }
-
-function sortTasksWithinProject(entries: TaskEntry[]): TaskEntry[] {
-  return [...entries].sort((a, b) => {
-    const rank = COLUMN_RANK[a.column] - COLUMN_RANK[b.column]
-    return rank !== 0 ? rank : compareTasksByNewestFirst(a.task, b.task)
-  })
-}
-
-if (process.env.NODE_ENV !== 'production') {
-  const t = (id: string, column: ColumnId, createdAt: number): TaskEntry => ({
-    column,
-    task: { id, createdAt } as Task,
-  })
-  const ordered = sortTasksWithinProject([
-    t('old-done', 'done', 1),
-    t('new-backlog', 'backlog', 3),
-    t('old-inprog', 'in_progress', 2),
-    t('new-inprog', 'in_progress', 4),
-  ]).map((e) => e.task.id)
-  console.assert(
-    JSON.stringify(ordered) ===
-      JSON.stringify(['new-inprog', 'old-inprog', 'new-backlog', 'old-done']),
-    'sortTasksWithinProject: expected in_progress→backlog→done, newest-first within group, got',
-    ordered
-  )
-}
-
-function groupTasksByProject(
-  board: BoardState,
-  selectedTaskId: string | null
-): ProjectGroup[] {
-  const groups = new Map<string, ProjectGroup>()
-
-  for (const entry of taskEntries(board)) {
-    const key = projectKey(entry.task)
-    const group =
-      groups.get(key) ??
-      {
-        key,
-        name: projectName(entry.task),
-        path: entry.task.projectPath ?? null,
-        tasks: [],
-        total: 0,
-        hasSelected: false,
-      }
-
-    group.tasks.push(entry)
-    group.total += 1
-    group.hasSelected ||= entry.task.id === selectedTaskId
-    groups.set(key, group)
-  }
-
-  for (const group of groups.values()) {
-    group.tasks = sortTasksWithinProject(group.tasks)
-  }
-
-  return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
-}
-
-// Default expansion the first time a project shows up: open it when there is
-// something left to do (or the selected task lives there). Seeded once and then
-// frozen, so a project does not collapse under the user as its tasks finish.
-function defaultProjectExpanded(project: ProjectGroup): boolean {
-  return project.hasSelected || project.tasks.some((entry) => entry.column !== 'done')
-}
-
-const COLUMN_LABEL = {
-  backlog: 'Backlog',
-  in_progress: 'In Progress',
-  done: 'Done',
-} satisfies Record<ColumnId, string>
-
-function columnLabel(column: ColumnId): string {
-  return COLUMN_LABEL[column]
-}
-
-function columnVisual(column: Exclude<ColumnId, 'done'>): {
-  className: string
-  pillClassName: string
-  icon: ReactNode
-} {
-  if (column === 'in_progress') {
-    return {
-      className: 'text-warning',
-      pillClassName: 'bg-warning/10 text-warning',
-      icon: (
-        <span className="flex size-3 shrink-0 items-center justify-center">
-          <span className="size-1.5 rounded-full bg-warning animate-pulse" />
-        </span>
-      ),
-    }
-  }
-
-  return {
-    className: 'text-muted-foreground',
-    pillClassName: 'bg-muted-foreground/10 text-muted-foreground',
-    icon: <span className="size-1.5 rounded-full bg-muted-foreground/60" />,
-  }
-}
-
-function TaskRow({
-  entry,
-  selected,
-  onSelectTask,
-}: {
-  entry: TaskEntry
-  selected: boolean
-  onSelectTask: (id: string) => void
-}) {
-  const reducedMotion = useReducedMotion() ?? false
-  const visual = entry.column === 'done' ? null : columnVisual(entry.column)
-
-  return (
-    <motion.button
-      data-selected-task={selected || undefined}
-      type="button"
-      onClick={() => onSelectTask(entry.task.id)}
-      whileTap={reducedMotion ? undefined : { scale: 0.99, opacity: 0.9 }}
-      transition={{
-        duration: reducedMotion ? 0 : MOTION_DURATION.micro,
-        ease: MOTION_EASING.enter,
-      }}
-      className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm transition-colors motion-reduce:transition-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        selected
-          ? 'bg-primary/15 font-medium text-primary'
-          : entry.column === 'done'
-            ? 'text-muted-foreground/60 hover:bg-accent/50 hover:text-muted-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-      )}
-      title={entry.task.title}
-    >
-      {/* Fixed leading slot keeps every row's title aligned; done rows render an
-          empty placeholder instead of dropping the column (A1 left-edge alignment). */}
-      <span
-        className={cn(
-          'flex size-3 shrink-0 items-center justify-center',
-          visual?.className
-        )}
-      >
-        {visual?.icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{entry.task.title}</span>
-      {visual ? (
-        <span
-          className={cn(
-            'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium',
-            visual.pillClassName
-          )}
-        >
-          {columnLabel(entry.column)}
-        </span>
-      ) : null}
-    </motion.button>
-  )
-}
-
-function ProjectTaskList({
-  id,
-  project,
-  selectedTaskId,
-  onSelectTask,
-}: {
-  id: string
-  project: ProjectGroup
-  selectedTaskId: string | null
-  onSelectTask: (id: string) => void
-}) {
-  const isPresent = useIsPresent()
-  const reducedMotion = useReducedMotion() ?? false
-
-  return (
-    <motion.div
-      id={id}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      variants={createPresenceVariants({
-        timing: 'standard',
-        exitTiming: 'micro',
-        transform: { y: -4 },
-        reducedMotion,
-      })}
-      inert={!isPresent}
-      aria-hidden={!isPresent || undefined}
-      className={cn('ml-3 space-y-0.5', !isPresent && 'pointer-events-none')}
-    >
-      {project.tasks.length === 0 ? (
-        <p className="px-2 py-0.5 text-sm text-muted-foreground/60">尚無任務</p>
-      ) : (
-        project.tasks.map((entry) => (
-          <TaskRow
-            key={entry.task.id}
-            entry={entry}
-            selected={entry.task.id === selectedTaskId}
-            onSelectTask={onSelectTask}
-          />
-        ))
-      )}
-    </motion.div>
-  )
-}
-
-function ProjectDisclosure({
-  project,
-  expanded,
-  selectedTaskId,
-  onToggle,
-  onSelectTask,
-  onNewTaskForProject,
-  onDeleteProject,
-}: {
-  project: ProjectGroup
-  expanded: boolean
-  selectedTaskId: string | null
-  onToggle: () => void
-  onSelectTask: (id: string) => void
-  onNewTaskForProject: (projectPath: string | null) => void
-  onDeleteProject: (name: string, taskIds: string[]) => void
-}) {
-  const contentId = useId()
-
-  return (
-    <div>
-      <div
-        className={cn(
-          'group flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground',
-          project.hasSelected && 'text-foreground'
-        )}
-      >
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          title={project.path ?? project.name}
-        >
-          {expanded ? (
-            <ChevronDown className="size-3 shrink-0" />
-          ) : (
-            <ChevronRight className="size-3 shrink-0" />
-          )}
-          <FolderOpen className="size-3 shrink-0" />
-          <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-        </button>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground group-hover:hidden">
-          {project.tasks.length}
-        </span>
-        <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-          <IconButton
-            aria-label={`在 ${project.name} 新增任務`}
-            title="在此專案新增任務"
-            onClick={() => onNewTaskForProject(project.path)}
-            className="p-0.5"
-          >
-            <Plus className="size-3" />
-          </IconButton>
-          <IconButton
-            aria-label={`刪除專案 ${project.name}`}
-            title="刪除整個專案（含所有任務）"
-            tone="danger"
-            onClick={() =>
-              onDeleteProject(
-                project.name,
-                project.tasks.map((entry) => entry.task.id)
-              )
-            }
-            className="p-0.5"
-          >
-            <Trash2 className="size-3" />
-          </IconButton>
-        </div>
-      </div>
-
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <ProjectTaskList
-            key={project.key}
-            id={contentId}
-            project={project}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={onSelectTask}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  )
+function projectCounts(project: SideMenuProject): string {
+  if (project.issues === null || project.prs === null) return '—'
+  return `${project.issues} · ${project.prs}`
 }
 
 function SidebarModeContent({
@@ -479,121 +158,26 @@ function SettingsDock({
   )
 }
 
-function SidebarSearch({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (next: string) => void
-}) {
-  return (
-    <div className="relative">
-      <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      <input
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && value) {
-            event.preventDefault()
-            onChange('')
-          }
-        }}
-        placeholder="搜尋任務"
-        aria-label="搜尋任務"
-        className="h-8 w-full rounded-md border border-border bg-background pl-7 pr-7 text-sm text-foreground outline-none transition-colors motion-reduce:transition-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      />
-      {value ? (
-        <button
-          type="button"
-          aria-label="清除搜尋"
-          title="清除搜尋"
-          onClick={() => onChange('')}
-          className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <X className="size-3.5" />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
 export function SideMenu({
   collapsed,
   onToggleCollapse,
-  board,
-  selectedTaskId,
-  onSelectTask,
+  view,
+  onSelectView,
+  taskCount,
+  githubCount,
+  projects,
+  activeProject,
+  onSelectProject,
   onNewTask,
-  onNewTaskForProject,
-  onDeleteProject,
   onRemoteShare,
   remoteActive,
   onOpenSettings,
 }: SideMenuProps) {
-  const [projectsExpanded, setProjectsExpanded] = useState<Record<string, boolean>>({})
-  const [query, setQuery] = useState('')
   const reducedMotion = useReducedMotion() ?? false
   const contentVariants = createEnterVariants({
     timing: 'micro',
     reducedMotion,
   })
-
-  const q = query.trim().toLowerCase()
-  const searching = !collapsed && q.length > 0
-  // Seeding reads the unfiltered list so a transient search filter can never
-  // freeze a project's default at "no matching tasks".
-  const allProjects = groupTasksByProject(board, selectedTaskId)
-  const projects = searching
-    ? allProjects
-        .map((project) => ({
-          ...project,
-          tasks: project.tasks.filter((entry) =>
-            entry.task.title.toLowerCase().includes(q)
-          ),
-        }))
-        .filter((project) => project.tasks.length > 0)
-    : allProjects
-
-  const projectKeys = allProjects.map((project) => project.key).join(' ')
-  useEffect(() => {
-    setProjectsExpanded((prev) => {
-      let changed = false
-      const next = { ...prev }
-      for (const project of allProjects) {
-        if (project.key in next) continue
-        next[project.key] = defaultProjectExpanded(project)
-        changed = true
-      }
-      return changed ? next : prev
-    })
-    // `allProjects` is a fresh array every render; the key signature is what
-    // actually decides whether the project set changed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectKeys])
-
-  // When searching, every matching project is force-expanded so hits are always
-  // visible; clearing the query restores the user's manual expansion state.
-  // The fallback covers the first frame before the seeding effect commits.
-  const isExpanded = (project: ProjectGroup) =>
-    searching || (projectsExpanded[project.key] ?? defaultProjectExpanded(project))
-  const allExpanded =
-    projects.length > 0 && projects.every((project) => isExpanded(project))
-  const toggleAll = () => {
-    const next = !allExpanded
-    setProjectsExpanded((prev) => {
-      const updated = { ...prev }
-      for (const project of projects) updated[project.key] = next
-      return updated
-    })
-  }
-
-  // Keep the selected task in view when selection changes programmatically
-  // (e.g. remote control) even if it sits below the fold.
-  useEffect(() => {
-    const row = document.querySelector<HTMLElement>('aside [data-selected-task]')
-    row?.scrollIntoView({ block: 'nearest' })
-  }, [selectedTaskId])
 
   return (
     <motion.aside
@@ -670,76 +254,95 @@ export function SideMenu({
         )}
       </SidebarModeContent>
 
-      {/* Search / filter (expanded only) */}
-      {!collapsed && (
-        <SidebarModeContent mode="expanded" className="shrink-0 px-2 pt-2">
-          <SidebarSearch value={query} onChange={setQuery} />
-        </SidebarModeContent>
-      )}
-
-      {/* Scrollable content */}
-      <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'overflow-hidden' : 'overflow-y-auto')}>
-        {/* Projects section */}
-        <div className="px-2">
-          {collapsed ? null : (
-            <motion.div
-              key="expanded-projects"
-              initial="hidden"
-              animate="visible"
-              variants={contentVariants}
+      <div className={cn('flex flex-1 flex-col py-3', collapsed ? 'items-center gap-1 overflow-hidden px-2' : 'overflow-y-auto')}>
+        {collapsed ? (
+          <SidebarModeContent mode="collapsed" className="flex flex-col items-center gap-1">
+            <IconButton
+              aria-label="看板"
+              title="看板"
+              onClick={() => onSelectView('board')}
+              className={cn('size-8', view === 'board' && 'text-primary hover:text-primary')}
             >
-              <div className="mb-1 flex items-center gap-1 px-2">
-                <span className={SECTION_LABEL}>
-                  Projects
+              <SquareKanban className="size-4" />
+            </IconButton>
+            <IconButton
+              aria-label="Issues & PRs"
+              title="Issues & PRs"
+              onClick={() => onSelectView('github')}
+              className={cn('size-8', view === 'github' && 'text-primary hover:text-primary')}
+            >
+              <Inbox className="size-4" />
+            </IconButton>
+          </SidebarModeContent>
+        ) : (
+          <motion.div
+            key="expanded-nav"
+            initial="hidden"
+            animate="visible"
+            variants={contentVariants}
+            className="space-y-4 px-2"
+          >
+            <nav aria-label="檢視" className="space-y-0.5">
+              <div className={cn(SECTION_LABEL, 'mb-1 px-2')}>檢視</div>
+              <button
+                type="button"
+                aria-current={view === 'board' ? 'page' : undefined}
+                onClick={() => onSelectView('board')}
+                className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(view === 'board'))}
+              >
+                <SquareKanban className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">看板</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{taskCount}</span>
+              </button>
+              <button
+                type="button"
+                aria-current={view === 'github' ? 'page' : undefined}
+                onClick={() => onSelectView('github')}
+                className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(view === 'github'))}
+              >
+                <Inbox className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Issues &amp; PRs</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {githubCount ?? '—'}
                 </span>
-                {!searching && projects.length > 0 && (
-                  <IconButton
-                    aria-label={allExpanded ? '全部收合' : '全部展開'}
-                    title={allExpanded ? '全部收合' : '全部展開'}
-                    onClick={toggleAll}
-                    className="ml-auto p-0.5"
-                  >
-                    {allExpanded ? (
-                      <ChevronsDownUp className="size-3.5" />
-                    ) : (
-                      <ChevronsUpDown className="size-3.5" />
-                    )}
-                  </IconButton>
-                )}
-              </div>
+              </button>
+            </nav>
 
-              <div className="space-y-1">
-                {projects.length === 0 ? (
-                  <p className="px-2 py-1 text-sm text-muted-foreground">
-                    {searching ? '找不到符合的任務' : '尚無任務'}
-                  </p>
-                ) : (
-                  projects.map((project) => {
-                    const expanded = isExpanded(project)
-
-                    return (
-                      <ProjectDisclosure
-                        key={project.key}
-                        project={project}
-                        expanded={expanded}
-                        selectedTaskId={selectedTaskId}
-                        onToggle={() =>
-                          setProjectsExpanded((prev) => ({
-                            ...prev,
-                            [project.key]: !expanded,
-                          }))
-                        }
-                        onSelectTask={onSelectTask}
-                        onNewTaskForProject={onNewTaskForProject}
-                        onDeleteProject={onDeleteProject}
-                      />
-                    )
-                  })
-                )}
+            <div className="space-y-0.5">
+              <div className={cn(SECTION_LABEL, 'mb-1 flex items-center px-2')}>
+                <span className="flex-1">專案</span>
+                <span className="normal-case tracking-normal text-muted-foreground/70">Issue · PR</span>
               </div>
-            </motion.div>
-          )}
-        </div>
+              {projects.length === 0 ? (
+                <p className="px-2 py-1 text-sm text-muted-foreground">尚無專案</p>
+              ) : (
+                projects.map((project) => {
+                  const active = view === 'github' && activeProject === project.name
+                  return (
+                    <button
+                      key={project.name}
+                      type="button"
+                      aria-pressed={active}
+                      title={
+                        project.issues === null
+                          ? `${project.name}（沒有 GitHub origin 或尚未載入）`
+                          : `只看 ${project.name} 的 Issue 與 PR`
+                      }
+                      onClick={() => onSelectProject(active ? null : project.name)}
+                      className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(active))}
+                    >
+                      <FolderOpen className="size-3.5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {projectCounts(project)}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
       </div>
 
       <SettingsDock

@@ -36,12 +36,22 @@ import type {
   AgentModel,
   AttachmentInput,
   GitInfo,
+  GithubRef,
   RecentProjectEntry,
 } from '@/lib/types'
 
 interface AttachmentItem {
   id: number
   input: AttachmentInput
+}
+
+/** Form values taken from a GitHub Issue/PR the card is being converted from. */
+export interface NewTaskDraft {
+  title: string
+  description: string
+  branch?: string
+  baseBranch?: string
+  github: GithubRef
 }
 
 export interface NewTaskFormProps {
@@ -62,7 +72,8 @@ export interface NewTaskFormProps {
     model: string,
     effort: AgentEffort,
     autoMode: boolean,
-    attachments: AttachmentInput[]
+    attachments: AttachmentInput[],
+    github?: GithubRef
   ) => void
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
@@ -72,6 +83,8 @@ export interface NewTaskFormProps {
    * same git detection + workspace auto-match as manually picking the folder.
    */
   initialProjectPath?: string | null
+  /** Pre-fill the card from a GitHub Issue/PR (inline mode, with initialProjectPath). */
+  initialDraft?: NewTaskDraft | null
   /** Board-wide Auto Mode, used as the new card's starting value. */
   defaultAutoMode?: boolean
   /** Workstation root, so the form can name where the worktree will land. */
@@ -334,19 +347,20 @@ export function NewTaskForm({
   onClose,
   inline = false,
   initialProjectPath,
+  initialDraft,
   defaultAutoMode = true,
   workstationPath,
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initialDraft?.title ?? '')
+  const [description, setDescription] = useState(initialDraft?.description ?? '')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
-  const [branch, setBranch] = useState('')
+  const [branch, setBranch] = useState(initialDraft?.branch ?? '')
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
@@ -414,7 +428,10 @@ export function NewTaskForm({
     try {
       const info = await loadGitInfo(path)
       setGitInfo(info)
-      setBaseBranch(info?.defaultBase ?? '')
+      // A PR's base belongs to the project it came from, not to one picked later.
+      const draftBase =
+        path === initialProjectPath && initialDraft?.baseBranch ? initialDraft.baseBranch : null
+      setBaseBranch(draftBase ?? info?.defaultBase ?? '')
     } finally {
       setLoadingInfo(false)
     }
@@ -485,7 +502,8 @@ export function NewTaskForm({
       model,
       effort,
       autoMode,
-      attachments.map(({ input }) => input)
+      attachments.map(({ input }) => input),
+      initialDraft?.github
     )
   }
 
@@ -817,6 +835,12 @@ export function NewTaskForm({
       {/* Inline mode: title at top, then 2-col grid */}
       {inline && (
         <>
+          {initialDraft && (
+            <p className="mb-3 text-sm text-muted-foreground">
+              由 {initialDraft.github.kind === 'issue' ? 'Issue' : 'PR'} #
+              {initialDraft.github.number}（{initialDraft.github.repo}）轉成 Backlog 卡片，確認內容後按建立。
+            </p>
+          )}
           <label className="mb-5 block space-y-1.5">
             <span className="text-base font-medium">任務標題</span>
             <input

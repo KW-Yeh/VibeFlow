@@ -18,6 +18,9 @@ import type {
   GitInfo,
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
+  GithubInbox,
+  GithubRef,
+  GithubTaskLinks,
   LibraryEntry,
   LibraryKind,
   PrStatus,
@@ -72,6 +75,18 @@ export async function setSettings(
 export async function getGithubAuthStatus(): Promise<GitHubCliAuthStatus | null> {
   const b = bridge()
   return b ? b.getGithubAuthStatus() : null
+}
+
+export async function getGithubInbox(opts?: { force?: boolean }): Promise<GithubInbox | null> {
+  const b = bridge()
+  return b ? b.getGithubInbox(opts) : null
+}
+
+export async function getGithubTaskLinks(
+  opts?: { force?: boolean }
+): Promise<Record<string, GithubTaskLinks>> {
+  const b = bridge()
+  return b ? b.getGithubTaskLinks(opts) : {}
 }
 
 export async function startGithubAuthLogin(): Promise<void> {
@@ -168,6 +183,7 @@ export async function createTask(payload: {
   effort?: AgentEffort
   autoMode?: boolean
   attachments?: AttachmentInput[]
+  github?: GithubRef
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null
