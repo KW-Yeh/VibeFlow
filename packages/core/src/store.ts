@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
 import type { TokenUsage } from './progress'
+import type { GithubRef } from './github'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -81,6 +82,8 @@ export interface Task {
    * current run (see progress-tracker.ts).
    */
   usage?: TokenUsage
+  /** The GitHub Issue or PR this card was converted from. Absent = created by hand. */
+  github?: GithubRef
 }
 
 /**

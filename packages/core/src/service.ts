@@ -29,7 +29,9 @@ import {
   getGitHubCliAuthStatus,
   logoutGitHubCli,
   startGitHubCliLogin,
+  type GitHubCliAuthStatus,
 } from './github-auth'
+import { createGithubService, isGithubRef, parseGithubRepo, type GhRunner, type GithubRef } from './github'
 import {
   captureTaskOutcome,
   commitAndPush,
@@ -114,6 +116,7 @@ export interface CreateTaskPayload {
   effort?: AgentEffort
   autoMode?: boolean
   attachments?: AttachmentInput[]
+  github?: GithubRef
 }
 
 export interface UpdateTaskPayload {
@@ -212,6 +215,9 @@ export interface CoreOptions {
   version: string
   /** Where agent transcripts live (`~/.claude`, `~/.codex`). Defaults to os.homedir(); tests override it. */
   homeDir?: string
+  /** Stand-in for the `gh` CLI; tests override it. */
+  ghRunner?: GhRunner
+  githubAuthStatus?: () => Promise<GitHubCliAuthStatus>
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -232,7 +238,7 @@ export interface Core {
  * Build the core: one handler per channel in IPC_API_MAP.md, all taking task
  * ids rather than paths or commands, and all events on one bus.
  */
-export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus }: CoreOptions): Core {
   const sink = bus.sink()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
@@ -412,6 +418,12 @@ export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Co
 
   let folderDialog: Promise<PickFolderResult> | null = null
 
+  const github = createGithubService({
+    run: ghRunner,
+    authStatus: githubAuthStatus ?? getGitHubCliAuthStatus,
+    repoOf: async (projectPath) => parseGithubRepo((await getGitInfo(projectPath)).remoteUrl),
+  })
+
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
 
@@ -447,6 +459,17 @@ export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Co
     },
     'settings:logoutGithubAuth': () => logoutGitHubCli(),
 
+    // Open Issues/PRs of the board's GitHub repos that involve the signed-in
+    // `gh` user; cached per repo, `force` refetches.
+    'github:inbox': async (payload) => {
+      const p = payload === undefined ? {} : obj<{ force?: unknown }>(payload, 'payload')
+      return github.inbox(getState().board, { force: p.force === true })
+    },
+    'github:taskLinks': async (payload) => {
+      const p = payload === undefined ? {} : obj<{ force?: unknown }>(payload, 'payload')
+      return github.taskLinks(getState().board, { force: p.force === true })
+    },
+
     'env:detectAgents': () => detectAgents(),
 
     'agents:listModels': (payload) => {
@@ -480,6 +503,7 @@ export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Co
       str(p.title ?? '', 'title')
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       if (p.agentCli !== undefined && !AGENT_IDS.includes(p.agentCli)) invalid('unknown agent')
+      if (p.github !== undefined && !isGithubRef(p.github)) invalid('github must be an issue or pr ref on github.com')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
         title: p.title,
@@ -492,6 +516,7 @@ export function createCore({ sessions, bus, version, homeDir }: CoreOptions): Co
         effort: p.effort,
         autoMode: p.autoMode,
         attachments: p.attachments,
+        github: p.github,
       })
       return { state: getState(), task }
     },

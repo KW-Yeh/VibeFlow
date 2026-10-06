@@ -37,7 +37,7 @@ List the current table with:
 grep -oE "^    '[a-z-]+:[A-Za-z]+'" packages/core/src/service.ts
 ```
 
-61 handlers, 10 pushed events. **Where** says which side of the boundary
+63 handlers, 10 pushed events. **Where** says which side of the boundary
 the channel lands on:
 
 - **core**: becomes a `VibeFlowApi` method, the same for every frontend.
@@ -136,6 +136,8 @@ are.
 | `settings:cancelGithubAuthLogin` | core | `github.cancelLogin()` | | |
 | `settings:logoutGithubAuth` | core | `github.logout()` | | |
 | event `github-auth:event` | core | `on('github:auth')` | | |
+| `github:inbox` | core | `getGithubInbox({ force? })` | | Open Issues/PRs of the board projects' GitHub repos that involve the `gh` user; repos come from each card's project `origin`, cached 5 min per repo |
+| `github:taskLinks` | core | `getGithubTaskLinks({ force? })` | | Task id → linked Issue/PR (card's `github` source, PR by branch, `outcome.pr`, closing issues) |
 
 ## Host-specific
 

@@ -20,6 +20,7 @@ import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
 import { recordRecentProject } from './recent-projects'
 import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
 import { writeAttachments, writeAttachmentsTo, type AttachmentInput } from './attachments'
+import type { GithubRef } from './github'
 
 export interface CreateTaskInput {
   projectPath: string
@@ -40,6 +41,8 @@ export interface CreateTaskInput {
   /** Absent = inherit the board-wide default (settings.autoMode). */
   autoMode?: boolean
   attachments?: AttachmentInput[]
+  /** The GitHub Issue or PR this card is converted from. */
+  github?: GithubRef
   /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
@@ -133,6 +136,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     model: input.model || undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
+    ...(input.github ? { github: input.github } : {}),
   }
 
   try {

@@ -5,6 +5,7 @@ import fs from 'fs/promises'
 import { SUBAGENTS_DIR } from './subagents'
 import { PROGRESS_EVENTS_DIR } from './launch'
 import { execEnv } from './env'
+import { parseGithubRepo } from './github'
 import { runAgentPrint } from './agent-print'
 import { ATTACHMENTS_DIR } from './attachments'
 import { ARTIFACTS_FALLBACK_DIR } from './artifacts'
@@ -1327,19 +1328,9 @@ export async function getGithubCompareUrl(
     const remoteUrl = await git(worktreePath, ['remote', 'get-url', 'origin'])
     const branch = await git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])
 
-    // Normalize SSH and HTTPS remote URLs to https://github.com/<owner>/<repo>
-    let webUrl: string
-    const sshMatch = remoteUrl.match(/git@github\.com:(.+?)(?:\.git)?$/)
-    const httpsMatch = remoteUrl.match(/https?:\/\/github\.com\/(.+?)(?:\.git)?$/)
-    if (sshMatch) {
-      webUrl = `https://github.com/${sshMatch[1]}`
-    } else if (httpsMatch) {
-      webUrl = `https://github.com/${httpsMatch[1]}`
-    } else {
-      return null
-    }
-
-    return `${webUrl}/compare/${baseBranch}...${branch}?expand=1`
+    const repo = parseGithubRepo(remoteUrl)
+    if (!repo) return null
+    return `https://github.com/${repo}/compare/${baseBranch}...${branch}?expand=1`
   } catch {
     return null
   }
