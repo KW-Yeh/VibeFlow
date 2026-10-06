@@ -4,7 +4,9 @@
 //   npm run build:web && npm run test:e2e
 //
 // The GitHub CLI is replaced too (e2e/fake-gh.mjs), so the Issues & PRs view
-// runs on fixed Issues/PRs without the network.
+// runs on fixed Issues/PRs without the network — on macOS and Linux only: core
+// spawns `gh` without a shell, which on Windows resolves only .exe/.com, so a
+// script on PATH cannot stand in for the runner's own gh.exe.
 //
 // Uses a browser that is already installed (Edge on Windows, Chrome
 // elsewhere) through playwright-core, so no browser download is needed.
@@ -65,6 +67,7 @@ async function waitForTerminal(page, needle, timeout = 30_000) {
   )
 }
 
+const canFakeGh = process.platform !== 'win32'
 const hasWeb = fs.existsSync(path.join(webDir, 'home', 'index.html'))
 
 test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'run npm run build:web first', timeout: 180_000 }, async (t) => {
@@ -84,11 +87,13 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   const home = path.join(tmp, 'home')
   for (const d of [storeDir, workstation, fakeBin, home]) fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(path.join(fakeBin, 'claude'), FAKE_AGENT, { mode: 0o755 })
-  fs.writeFileSync(
-    path.join(fakeBin, 'gh'),
-    `#!/bin/sh\nexec "${process.execPath}" "${path.join(root, 'e2e', 'fake-gh.mjs')}" "$@"\n`,
-    { mode: 0o755 }
-  )
+  if (canFakeGh) {
+    fs.writeFileSync(
+      path.join(fakeBin, 'gh'),
+      `#!/bin/sh\nexec "${process.execPath}" "${path.join(root, 'e2e', 'fake-gh.mjs')}" "$@"\n`,
+      { mode: 0o755 }
+    )
+  }
   fs.writeFileSync(
     path.join(storeDir, 'vibeflow-state.json'),
     JSON.stringify({
@@ -176,38 +181,40 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.ok(finished.outcome?.files.some((f) => f.path === 'fake-agent-output.txt'))
   assert.equal(fs.existsSync(task.worktreePath), false)
 
-  // Issues & PRs: a project whose origin is on GitHub lists its Issues; one
-  // converts into a Backlog card through the prefilled new-task form.
-  const gh = await makeRepo({ withRemote: false })
-  t.after(gh.cleanup)
-  await git(gh.projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
-  await page.evaluate(
-    (projectPath) => window.vibeflow.createTask({ title: 'Seed card', projectPath, baseBranch: null }),
-    gh.projectPath
-  )
-  await page.getByText('Seed card').first().waitFor()
-  await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
-  await page.getByRole('button', { name: /#112/ }).click()
-  await page.getByRole('button', { name: '轉為 Backlog 卡片' }).click()
-  const titleInput = page.getByPlaceholder('例如：實作登入頁面')
-  await page.waitForFunction(
-    () => document.querySelector('input[name="task-title"]')?.value === '側邊欄搜尋在中文輸入法組字時會閃爍'
-  )
-  assert.equal(await titleInput.inputValue(), '側邊欄搜尋在中文輸入法組字時會閃爍')
-  await page.getByRole('button', { name: '建立任務' }).click()
-  await page.getByRole('button', { name: '前往卡片' }).waitFor()
-  const converted = (await page.evaluate(() => window.vibeflow.getState())).board.backlog.find(
-    (c) => c.github?.number === 112
-  )
-  assert.deepEqual(converted?.github, {
-    kind: 'issue',
-    repo: 'e2e/VibeFlow',
-    number: 112,
-    url: 'https://github.com/e2e/VibeFlow/issues/112',
-  })
-  assert.equal(converted.projectPath, gh.projectPath)
-  await page.getByRole('tab', { name: '看板' }).first().click()
-  await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
+  if (canFakeGh) {
+    // Issues & PRs: a project whose origin is on GitHub lists its Issues; one
+    // converts into a Backlog card through the prefilled new-task form.
+    const gh = await makeRepo({ withRemote: false })
+    t.after(gh.cleanup)
+    await git(gh.projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
+    await page.evaluate(
+      (projectPath) => window.vibeflow.createTask({ title: 'Seed card', projectPath, baseBranch: null }),
+      gh.projectPath
+    )
+    await page.getByText('Seed card').first().waitFor()
+    await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('button', { name: /#112/ }).click()
+    await page.getByRole('button', { name: '轉為 Backlog 卡片' }).click()
+    const titleInput = page.getByPlaceholder('例如：實作登入頁面')
+    await page.waitForFunction(
+      () => document.querySelector('input[name="task-title"]')?.value === '側邊欄搜尋在中文輸入法組字時會閃爍'
+    )
+    assert.equal(await titleInput.inputValue(), '側邊欄搜尋在中文輸入法組字時會閃爍')
+    await page.getByRole('button', { name: '建立任務' }).click()
+    await page.getByRole('button', { name: '前往卡片' }).waitFor()
+    const converted = (await page.evaluate(() => window.vibeflow.getState())).board.backlog.find(
+      (c) => c.github?.number === 112
+    )
+    assert.deepEqual(converted?.github, {
+      kind: 'issue',
+      repo: 'e2e/VibeFlow',
+      number: 112,
+      url: 'https://github.com/e2e/VibeFlow/issues/112',
+    })
+    assert.equal(converted.projectPath, gh.projectPath)
+    await page.getByRole('tab', { name: '看板' }).first().click()
+    await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
+  }
 
   // Another origin cannot open the socket, even from the same browser.
   const other = await browser.newPage()
