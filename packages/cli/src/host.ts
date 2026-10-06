@@ -9,6 +9,12 @@ import { createCore, type Core, type CoreHandlers } from '../../core/src/service
 import { createSessionBackend } from '../../core/src/sessions'
 import { startWebServer, type WebServer } from '../../core/src/web-server'
 
+/**
+ * The browser keys site permissions (desktop notifications) by origin, port
+ * included, so the Web UI keeps one address across host restarts.
+ */
+export const DEFAULT_HOST_PORT = 47820
+
 export interface HostOptions {
   userDataDir: string
   version: string
@@ -98,7 +104,8 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
       bus,
       token: lock.token,
       staticDir: options.staticDir,
-      port: options.port,
+      port: options.port ?? DEFAULT_HOST_PORT,
+      fallbackToFreePort: options.port === undefined,
     })
     lock.port = server.port
     updateLock(options.userDataDir, lock)

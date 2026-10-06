@@ -34,7 +34,7 @@ Options:
   --profile dev|prod       Store profile (dev = the "(development)" store npm run dev uses)
   --store-path <dir>       Explicit store directory
   --backend auto|tmux|pty  Session backend for a new host (default: auto = tmux when installed)
-  --port <n>               Port for a new host (default: random)
+  --port <n>               Port for a new host (default: 47820, or a free one when taken)
   --no-open                Do not open a browser
   --json                   Machine-readable output (status)
   -v, --version            Print the version

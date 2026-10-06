@@ -12,7 +12,7 @@ import type { CoreHandlers } from './service'
  *
  * This socket can start agents, type into terminals and push branches, so it
  * is guarded as a remote-execution endpoint:
- *  1. It binds loopback only (127.0.0.1, plus ::1 when available), on a random port.
+ *  1. It binds loopback only (127.0.0.1, plus ::1 when available).
  *  2. A per-run token is required. The browser brings it once as `?token=` and
  *     swaps it for an HttpOnly, SameSite=Strict cookie; the token then leaves
  *     the address bar.
@@ -30,6 +30,8 @@ export interface WebServerOptions {
   staticDir: string | null
   /** 0 = pick a free port. */
   port?: number
+  /** When `port` is taken, pick a free one instead of failing. */
+  fallbackToFreePort?: boolean
 }
 
 export interface WebServer {
@@ -264,7 +266,13 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
     })
   }
 
-  const v4 = await listen('127.0.0.1', port)
+  let v4: http.Server
+  try {
+    v4 = await listen('127.0.0.1', port)
+  } catch (err) {
+    if (!options.fallbackToFreePort || port === 0 || (err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err
+    v4 = await listen('127.0.0.1', 0)
+  }
   servers.push(v4)
   port = (v4.address() as { port: number }).port
   try {
