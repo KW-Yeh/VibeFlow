@@ -137,7 +137,7 @@ vibeflow task create …       # 不開 UI 直接建卡，選項見 vibeflow tas
 
 VibeFlow 的本機伺服器能啟動 agent、寫入終端機，因此：
 
-- 只綁定 `127.0.0.1`／`::1`，使用隨機 port。
+- 只綁定 `127.0.0.1`／`::1`，預設固定用 port 47820（被占用時改用隨機 port），瀏覽器的通知權限才不會在 host 重啟後失效。
 - 每次啟動產生一組 token，網址帶上它才能進入；載入後換成 HttpOnly、SameSite=Strict 的 cookie，並從網址列移除。
 - WebSocket 連線同時檢查 cookie 與 `Origin`，`Host` 必須是 loopback，其他網頁無法從你的瀏覽器連進來。
 - API 只接受 VibeFlow 認得的卡片 id，不接受任意路徑或指令。

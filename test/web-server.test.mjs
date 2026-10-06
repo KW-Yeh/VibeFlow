@@ -149,3 +149,19 @@ test('static paths cannot escape the web root', async (t) => {
   assert.equal(resolveStatic(webDir, '/home'), path.join(webDir, 'home', 'index.html'))
   assert.equal((await request(port, '/..%2fvf-outside-secret.txt', { Cookie: cookie })).status, 404)
 })
+
+test('a taken port falls back to a free one only when asked', async (t) => {
+  const blocker = http.createServer()
+  await new Promise((r) => blocker.listen(0, '127.0.0.1', r))
+  t.after(() => new Promise((r) => blocker.close(r)))
+  const taken = blocker.address().port
+  const base = { handlers: {}, bus: new EventBus(), token: TOKEN, staticDir: null, port: taken }
+
+  await assert.rejects(startWebServer(base), { code: 'EADDRINUSE' })
+
+  const server = await startWebServer({ ...base, fallbackToFreePort: true })
+  t.after(() => server.close())
+  assert.notEqual(server.port, taken)
+  const res = await request(server.port, '/')
+  assert.equal(typeof res.status, 'number')
+})
