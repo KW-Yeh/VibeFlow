@@ -89,12 +89,27 @@ export function claudeProjectDir(home: string, cwd: string): string {
   return path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
 }
 
+/**
+ * Agents record the cwd with symlinks resolved (/tmp → /private/tmp on macOS),
+ * while a card keeps the path it was given; both spellings name the worktree.
+ */
+function pathAliases(p: string): string[] {
+  const resolved = path.resolve(p)
+  try {
+    const real = fs.realpathSync(resolved)
+    return real === resolved ? [resolved] : [resolved, real]
+  } catch {
+    return [resolved]
+  }
+}
+
 function samePath(a: string, b: string): boolean {
   const norm = (p: string) => {
-    const r = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '')
+    const r = p.replace(/\\/g, '/').replace(/\/+$/, '')
     return process.platform === 'win32' ? r.toLowerCase() : r
   }
-  return norm(a) === norm(b)
+  const bs = pathAliases(b).map(norm)
+  return pathAliases(a).some((x) => bs.includes(norm(x)))
 }
 
 function listFiles(dir: string, test: (name: string) => boolean): string[] {
@@ -196,8 +211,8 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
 
   function discoverClaude(entry: Entry): void {
     const { target } = entry
-    const dir = claudeProjectDir(home, target.worktreePath)
-    for (const file of listFiles(dir, (n) => n.endsWith('.jsonl'))) {
+    const dirs = pathAliases(target.worktreePath).map((p) => claudeProjectDir(home, p))
+    for (const file of dirs.flatMap((dir) => listFiles(dir, (n) => n.endsWith('.jsonl')))) {
       if (entry.claude.has(file) || entry.rejected.has(file)) continue
       const session = path.basename(file, '.jsonl')
       if (session !== target.sessionId) {

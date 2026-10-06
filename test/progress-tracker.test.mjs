@@ -187,6 +187,49 @@ test('Codex — rollout matched by cwd and run start across CODEX_HOMEs', (t) =>
   assert.equal(tracker.isTracking('card'), false)
 })
 
+// The card keeps the path it was given; the agent records the cwd with symlinks resolved.
+function symlinkedWorktree(root, worktree) {
+  const link = path.join(root, 'linked-project')
+  fs.symlinkSync(path.join(root, 'project'), link, 'junction')
+  return { linked: path.join(link, '.vibeflow', 'vf-abc'), real: fs.realpathSync(worktree) }
+}
+
+test('Claude — a card tracked through a symlink finds the transcript under the resolved cwd', (t) => {
+  const { root, home, worktree, tracker } = setup(t)
+  const { linked, real } = symlinkedWorktree(root, worktree)
+  const dir = claudeProjectDir(home, real)
+  fs.mkdirSync(dir, { recursive: true })
+  append(path.join(dir, `${SESSION}.jsonl`), fixture('claude-tasks.jsonl'))
+
+  tracker.track({ taskId: 'card', agent: 'claude', worktreePath: linked, sessionId: SESSION, since: RUN_START })
+  const p = tracker.snapshot('card')
+  assert.ok(p, 'has progress')
+  assert.deepEqual(p.todos.map((t) => t.status), ['completed', 'completed', 'completed'])
+})
+
+test('Codex — a card tracked through a symlink matches a rollout whose cwd is resolved', (t) => {
+  const { root, worktree } = setup(t)
+  const { linked, real } = symlinkedWorktree(root, worktree)
+  const codexHome = path.join(root, 'codex-user')
+  const d = new Date(RUN_START)
+  const pad = (n) => String(n).padStart(2, '0')
+  const day = path.join(codexHome, 'sessions', String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()))
+  fs.mkdirSync(day, { recursive: true })
+  append(path.join(day, 'rollout-a.jsonl'), fixture('codex-plan.jsonl').map((l) => l.replace('"cwd":"/repo"', `"cwd":${JSON.stringify(real)}`)))
+  const tracker = createProgressTracker({
+    homeDir: path.join(root, 'home'),
+    codexHomes: () => [codexHome],
+    pollMs: 60_000,
+    onUpdate: () => {},
+    onNotify: () => {},
+  })
+  t.after(() => tracker.untrackAll())
+  tracker.track({ taskId: 'card', agent: 'codex', worktreePath: linked, since: RUN_START })
+  const p = tracker.snapshot('card')
+  assert.ok(p, 'has progress')
+  assert.deepEqual(p.todos.map((t) => t.status), ['completed', 'completed'])
+})
+
 test('track — retargeting (restart) resets the baseline; untrack stops', (t) => {
   const { worktree, tracker, projectDir, notes } = setup(t)
   append(path.join(projectDir, `${SESSION}.jsonl`), fixture('claude-todowrite.jsonl'))
