@@ -2,7 +2,10 @@ import {
   Check,
   ChevronDown,
   CircleCheckBig,
+  CircleDot,
   GitBranch,
+  GitPullRequest,
+  GitPullRequestDraft,
   Layers,
   MoreHorizontal,
   Pencil,
@@ -14,8 +17,19 @@ import { useEffect, useRef, useState } from 'react'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
+import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
+import { openExternal } from '@/lib/api'
+import { GITHUB_STATE_CLASS, GITHUB_STATE_LABEL } from '@/lib/github-display'
 import { cn } from '@/lib/utils'
-import type { BoardState, ColumnId, SubAgentRun, Task, TaskProgress } from '@/lib/types'
+import type {
+  BoardState,
+  ColumnId,
+  GithubLink,
+  GithubTaskLinks,
+  SubAgentRun,
+  Task,
+  TaskProgress,
+} from '@/lib/types'
 import { TaskProgressBadge } from '@/components/task-progress'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
@@ -148,11 +162,35 @@ function CardMenu({
   )
 }
 
+function GithubLinkButton({ link }: { link: GithubLink }) {
+  const Icon =
+    link.kind === 'issue' ? CircleDot : link.state === 'draft' ? GitPullRequestDraft : GitPullRequest
+  const kind = link.kind === 'issue' ? 'Issue' : 'PR'
+  return (
+    <button
+      type="button"
+      title={`${kind} #${link.number} · ${GITHUB_STATE_LABEL[link.state]}（在 GitHub 開啟）`}
+      aria-label={`在 GitHub 開啟 ${kind} #${link.number}`}
+      onClick={(event) => {
+        event.stopPropagation()
+        void openExternal(link.url)
+      }}
+      className={cn(
+        'flex shrink-0 items-center gap-0.5 rounded-xs outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        GITHUB_STATE_CLASS[link.state]
+      )}
+    >
+      <Icon className="size-3" />#{link.number}
+    </button>
+  )
+}
+
 function TaskCard({
   task,
   column,
   subAgentCount,
   progress,
+  links,
   selected,
   onSelect,
   onEdit,
@@ -162,6 +200,7 @@ function TaskCard({
   column: ColumnId
   subAgentCount: number
   progress: TaskProgress | null
+  links?: GithubTaskLinks
   selected: boolean
   onSelect: () => void
   onEdit?: () => void
@@ -274,6 +313,8 @@ function TaskCard({
             {subAgentCount}
           </span>
         )}
+        {links?.issue && <GithubLinkButton link={links.issue} />}
+        {links?.pr && <GithubLinkButton link={links.pr} />}
       </div>
 
       {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
@@ -297,7 +338,7 @@ function TaskCard({
   )
 }
 
-function ProjectFilter({
+export function ProjectFilter({
   projects,
   value,
   onChange,
@@ -358,12 +399,18 @@ export interface BoardColumnsProps {
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onNewTask: () => void
+  view: BoardView
+  onViewChange: (next: BoardView) => void
+  taskLinks: Record<string, GithubTaskLinks>
 }
 
 export function BoardColumns({
   board,
   subAgents,
   progress,
+  view,
+  onViewChange,
+  taskLinks,
   selectedTaskId,
   onSelectTask,
   onEditTask,
@@ -390,6 +437,8 @@ export function BoardColumns({
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
+        <ViewTabs value={view} onChange={onViewChange} />
+        <span className="h-4 w-px bg-border" />
         <ProjectFilter
           projects={projects}
           value={activeFilter}
@@ -427,6 +476,7 @@ export function BoardColumns({
                     column={column}
                     subAgentCount={(subAgents[task.id] ?? []).length}
                     progress={column === 'in_progress' ? progress[task.id] ?? null : null}
+                    links={taskLinks[task.id]}
                     selected={task.id === selectedTaskId}
                     onSelect={() => onSelectTask(task.id)}
                     onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}

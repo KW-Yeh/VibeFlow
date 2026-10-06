@@ -40,6 +40,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [spec-tab](features/spec-tab/spec.md) | The 決策 tab shows the branch's `spec.md` instead of a separate decision record |
 | [lazy-branch-provisioning](features/lazy-branch-provisioning/spec.md) | Create the branch/worktree when a card starts, not when it is created; only backlog cards are editable |
 | [task-progress](features/task-progress/spec.md) | Derive each card's progress (todo list) and token usage from the agent's own JSONL transcript instead of model-written progress files; hook-driven stage notifications with toggles |
+| [github-issues-prs](features/github-issues-prs/spec.md) | Replace the sidebar task tree with an Issues & PRs view (GitHub via `gh`), convert an Issue/PR into a Backlog card, and show each card's linked Issue/PR |
 
 ## Adding a document
 

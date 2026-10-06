@@ -5,7 +5,10 @@ import { AnimatePresence } from 'motion/react'
 import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { SideMenu } from '@/components/side-menu'
+import { SideMenu, type SideMenuProject } from '@/components/side-menu'
+import { GithubView } from '@/components/github-view'
+import type { NewTaskDraft } from '@/components/new-task-dialog'
+import type { BoardView } from '@/components/ui/view-tabs'
 import {
   TerminalTabBar,
   type TerminalTab,
@@ -15,7 +18,7 @@ import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { NotificationToaster, type Toast } from '@/components/notification-toaster'
 import { withNotificationDefaults } from '@/components/notification-settings'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
@@ -36,12 +39,15 @@ import {
   setSettings,
   updateTask,
 } from '@/lib/api'
-import { Button } from '@/components/ui/button'
+import { boardGithubCards, draftFromItem } from '@/lib/github-display'
+import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import type {
   AgentCliId,
   AgentEffort,
   AttachmentInput,
   BoardState,
+  GithubItem,
+  GithubRef,
   NotificationSettings,
   ProgressNotification,
   SubAgentRun,
@@ -126,12 +132,10 @@ export default function HomePage() {
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
 
-  // Delete-project confirmation modal state.
-  const [deleteProjectTarget, setDeleteProjectTarget] = useState<{
-    name: string
-    taskIds: string[]
-  } | null>(null)
-  const [deletingProject, setDeletingProject] = useState(false)
+  const [newTaskDraft, setNewTaskDraft] = useState<NewTaskDraft | null>(null)
+  // Which view the top pane shows, and the project the Issues & PRs view is narrowed to.
+  const [view, setView] = useState<BoardView>('board')
+  const [githubProject, setGithubProject] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -303,15 +307,17 @@ export default function HomePage() {
   const handleOpenNewTask = () => {
     setCreateError(null)
     setNewTaskInitialProject(null)
+    setNewTaskDraft(null)
     setNewTaskNonce((nonce) => nonce + 1)
     setSelectedTaskId(null)
   }
 
-  // Sidebar per-project「新增任務」: open the inline form prefilled with that
-  // project's folder (null path falls back to a blank form).
-  const handleNewTaskForProject = (projectPath: string | null) => {
+  // An Issue/PR becomes a card through the same form a hand-made card uses,
+  // so the user reviews and adjusts it before anything is created.
+  const handleConvertGithubItem = (item: GithubItem, projectPath: string) => {
     setCreateError(null)
     setNewTaskInitialProject(projectPath)
+    setNewTaskDraft(draftFromItem(item))
     setNewTaskNonce((nonce) => nonce + 1)
     setSelectedTaskId(null)
   }
@@ -353,7 +359,8 @@ export default function HomePage() {
     model: string,
     effort: AgentEffort,
     taskAutoMode: boolean,
-    attachments: AttachmentInput[]
+    attachments: AttachmentInput[],
+    github?: GithubRef
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -369,9 +376,11 @@ export default function HomePage() {
         effort,
         autoMode: taskAutoMode,
         attachments,
+        github,
       })
       if (result) {
         setBoard(result.state.board)
+        setNewTaskDraft(null)
         // A task the user just created is never throwaway — open it pinned so
         // the next single-click elsewhere can't discard it.
         openTab(result.task.id, { pin: true })
@@ -429,31 +438,6 @@ export default function HomePage() {
     }
   }
 
-  const handleDeleteProject = (name: string, taskIds: string[]) => {
-    if (taskIds.length === 0) return
-    setDeleteProjectTarget({ name, taskIds })
-  }
-
-  // Delete every task under the project (each deleteTask clears its PTY +
-  // worktree + branch + conversation and drops the card). Runs sequentially so
-  // git worktree operations on the shared repo don't race one another.
-  const confirmDeleteProject = async () => {
-    if (!deleteProjectTarget) return
-    setDeletingProject(true)
-    try {
-      let latest: BoardState | null = null
-      for (const id of deleteProjectTarget.taskIds) {
-        const state = await deleteTask(id)
-        if (state) latest = state.board
-      }
-      if (latest) setBoard(latest)
-      closeTabs(deleteProjectTarget.taskIds)
-      setDeleteProjectTarget(null)
-    } finally {
-      setDeletingProject(false)
-    }
-  }
-
   // Titles/status are read from the board each render, so editing a task or
   // moving its card updates the tab without any tab-state bookkeeping.
   const tabEntries: TerminalTabEntry[] = tabs.flatMap((tab) => {
@@ -467,6 +451,34 @@ export default function HomePage() {
   // Remote control has no entry point for now: nothing calls startSharing, so
   // the host never registers with the public PeerJS broker. The dialog and the
   // host stay wired up so the feature can be handed back with one prop.
+  const github = useGithubInbox(board, loaded)
+  const taskLinks = useGithubTaskLinks(board, loaded)
+  const allTasks = [...board.in_progress, ...board.backlog, ...board.done]
+  const githubCards = boardGithubCards(allTasks)
+  const githubRepos = github.inbox?.status === 'ok' ? github.inbox.repos : null
+  const githubCount = githubRepos
+    ? githubRepos.reduce((sum, r) => sum + r.issues.length + r.prs.length, 0)
+    : null
+  const sideMenuProjects: SideMenuProject[] = Array.from(
+    new Set(allTasks.map((t) => t.projectName).filter((name): name is string => Boolean(name)))
+  )
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => {
+      const repos = githubRepos?.filter((r) => r.projectName === name) ?? []
+      return repos.length
+        ? {
+            name,
+            issues: repos.reduce((sum, r) => sum + r.issues.length, 0),
+            prs: repos.reduce((sum, r) => sum + r.prs.length, 0),
+          }
+        : { name, issues: null, prs: null }
+    })
+
+  const selectGithubProject = (name: string | null) => {
+    setGithubProject(name)
+    setView('github')
+  }
+
   const remoteHost = useRemoteHost({
     board,
     autoMode,
@@ -488,12 +500,14 @@ export default function HomePage() {
               <SideMenu
                 collapsed={sideMenuCollapsed}
                 onToggleCollapse={() => setSideMenuCollapsed((v) => !v)}
-                board={board}
-                selectedTaskId={selectedTaskId}
-                onSelectTask={openTab}
+                view={view}
+                onSelectView={setView}
+                taskCount={allTasks.length}
+                githubCount={githubCount}
+                projects={sideMenuProjects}
+                activeProject={githubProject}
+                onSelectProject={selectGithubProject}
                 onNewTask={handleOpenNewTask}
-                onNewTaskForProject={handleNewTaskForProject}
-                onDeleteProject={handleDeleteProject}
                 remoteActive={!!remoteHost.roomCode}
                 onOpenSettings={() => {
                   setSettingsError(null)
@@ -527,7 +541,33 @@ export default function HomePage() {
                   onTaskInteract={pinTab}
                   openTabIds={tabs.map((t) => t.taskId)}
                   initialProjectPath={newTaskInitialProject}
+                  newTaskDraft={newTaskDraft}
                   newTaskNonce={newTaskNonce}
+                  view={view}
+                  onViewChange={setView}
+                  taskLinks={taskLinks.links}
+                  githubView={
+                    <GithubView
+                      view={view}
+                      onViewChange={setView}
+                      inbox={github.inbox}
+                      loading={github.loading}
+                      error={github.error}
+                      onRefresh={() => {
+                        void github.refresh()
+                        void taskLinks.refresh()
+                      }}
+                      projectFilter={githubProject}
+                      onProjectFilterChange={setGithubProject}
+                      boardCards={githubCards}
+                      onConvert={handleConvertGithubItem}
+                      onOpenTask={openTab}
+                      onOpenSettings={() => {
+                        setSettingsError(null)
+                        setSettingsOpen(true)
+                      }}
+                    />
+                  }
                   creating={creating}
                   createError={createError}
                   pickFolder={pickProjectFolder}
@@ -586,56 +626,6 @@ export default function HomePage() {
                         正在建立 git worktree、分支與任務資料。完成前請先不要切換或操作其他任務。
                       </p>
                     </div>
-                  </div>
-                </div>
-                </DialogShell>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {deleteProjectTarget && (
-                <DialogShell
-                  key="delete-project-dialog"
-                title="刪除專案"
-                saving={deletingProject}
-                onClose={() => {
-                  if (!deletingProject) setDeleteProjectTarget(null)
-                }}
-                contentClassName="max-w-md rounded-lg p-5"
-              >
-                <div className="space-y-5">
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
-                      <AlertTriangle className="size-5" />
-                    </span>
-                    <div className="min-w-0 space-y-1">
-                      <h2 className="text-lg font-semibold tracking-tight">
-                        刪除專案「{deleteProjectTarget.name}」？
-                      </h2>
-                      <p className="text-base leading-6 text-muted-foreground">
-                        這會刪除此專案底下的 {deleteProjectTarget.taskIds.length}{' '}
-                        個任務，包含它們的 worktree、branch 與對話紀錄。此操作無法復原。
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="rounded-full"
-                      disabled={deletingProject}
-                      onClick={() => setDeleteProjectTarget(null)}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="rounded-full active:scale-95 motion-reduce:transform-none"
-                      disabled={deletingProject}
-                      onClick={confirmDeleteProject}
-                    >
-                      {deletingProject ? '刪除中…' : '刪除專案'}
-                    </Button>
                   </div>
                 </div>
                 </DialogShell>

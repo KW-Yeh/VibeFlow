@@ -35,6 +35,7 @@ import type {
   GitHubCliAuthEvent,
   GitHubCliAuthStatus,
 } from './github-auth'
+import type { GithubInbox, GithubRef, GithubTaskLinks } from './github'
 import type { LaunchIntent } from './service'
 import type { StartResult } from './session-backend'
 
@@ -87,6 +88,12 @@ export function createBridge(t: BridgeTransport) {
       t.invoke('settings:cancelGithubAuthLogin'),
     logoutGithubAuth: (): Promise<GitHubCliAuthStatus> =>
       t.invoke('settings:logoutGithubAuth'),
+    /** Open Issues/PRs of the board's GitHub repos that involve me; cached unless `force`. */
+    getGithubInbox: (opts?: { force?: boolean }): Promise<GithubInbox> =>
+      t.invoke('github:inbox', opts ?? {}),
+    /** The Issue/PR each card belongs to, keyed by task id. */
+    getGithubTaskLinks: (opts?: { force?: boolean }): Promise<Record<string, GithubTaskLinks>> =>
+      t.invoke('github:taskLinks', opts ?? {}),
     onGithubAuthEvent: (
       callback: (payload: GitHubCliAuthEvent) => void
     ): (() => void) => {
@@ -118,6 +125,7 @@ export function createBridge(t: BridgeTransport) {
     effort?: AgentEffort
     autoMode?: boolean
     attachments?: AttachmentInput[]
+    github?: GithubRef
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     t.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {

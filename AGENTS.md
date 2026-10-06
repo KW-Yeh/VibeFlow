@@ -186,6 +186,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   ├── specs.ts           a task's spec.md files (the 決策 tab), from worktree or branch
+│   ├── github.ts          Issues & PRs view: board projects' GitHub repos via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
@@ -203,7 +204,8 @@ renderer/                  Next.js app (Pages Router)
 ├── components/
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
-│   ├── new-task-dialog.tsx per-task project picker + git detect + create
+│   ├── new-task-dialog.tsx per-task project picker + git detect + create (prefilled from an Issue/PR)
+│   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
 │   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策 (spec.md)/artifacts/diff
 │   └── ui/button.tsx      shadcn button
@@ -311,6 +313,13 @@ docs/                      everything that is not code (index: docs/README.md)
   `.vibeflow-subagents/`); they only wake the tracker and report permission prompts.
   Codex gets **no** hook: `-c notify=…` would replace the user's own `notify`. A run's
   usage is folded into `Task.usage` on restart and completion.
+- **Issues & PRs come from the user's own `gh`** (`packages/core/src/github.ts`,
+  spec: `docs/features/github-issues-prs/`). Repos are the board projects' `origin`s
+  on github.com; the list is the open Issues/PRs assigned to, opened by (and for PRs,
+  awaiting review from) the signed-in `gh` account. Fetches are cached per repo for
+  5 minutes; the view's refresh button forces one. A card converted from an
+  Issue/PR stores it in `Task.github`; other cards find their PR by branch
+  (`github:taskLinks`). No token is stored — `gh`'s login is the only credential.
 - **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):
   every file named `spec.md` that the card's branch added or changed against its
   base — the feature-spec-plan skill writes high-level decisions there. No such

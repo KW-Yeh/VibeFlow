@@ -497,3 +497,58 @@ test('progress — restart and completion fold the run into Task.usage', async (
   assert.equal(done.worktreePath, undefined)
   assert.equal(await core.handlers['progress:get'](task.id), null)
 })
+
+test('a card converted from GitHub keeps its source ref; a ref outside github.com is refused', async (t) => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  const core = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
+  t.after(() => core.shutdown())
+  const github = { kind: 'issue', repo: 'acme/demo', number: 42, url: 'https://github.com/acme/demo/issues/42' }
+
+  const { task } = await core.handlers['vibeflow:createTask']({
+    title: 'From issue', projectPath, baseBranch: null, github,
+  })
+  assert.deepEqual(task.github, github)
+  // What is on disk is what a restarted app reads back.
+  const stored = getStore().get('board').backlog.find((c) => c.id === task.id)
+  assert.deepEqual(stored.github, github)
+
+  await assert.rejects(
+    core.handlers['vibeflow:createTask']({
+      title: 'Bad', projectPath, baseBranch: null,
+      github: { ...github, url: 'https://evil.example/acme/demo/issues/42' },
+    }),
+    { code: 'INVALID_REQUEST' }
+  )
+})
+
+test('github:inbox reads the board projects\' GitHub origins through the injected gh', async (t) => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  await git(projectPath, 'remote', 'add', 'origin', 'https://github.com/acme/demo.git')
+  const calls = []
+  const core = createCore({
+    sessions: fakeSessions(),
+    bus: new EventBus(),
+    version: '9.9.9',
+    githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
+    ghRunner: async (args) => {
+      calls.push(args)
+      if (args[0] === 'issue' && args.includes('--assignee')) {
+        return JSON.stringify([{ number: 7, title: 'Fix it', url: 'https://github.com/acme/demo/issues/7', createdAt: '2026-10-01T00:00:00Z' }])
+      }
+      return '[]'
+    },
+  })
+  t.after(() => core.shutdown())
+  await core.handlers['vibeflow:createTask']({ title: 'Card', projectPath, baseBranch: null })
+
+  const inbox = await core.handlers['github:inbox']()
+  assert.equal(inbox.status, 'ok')
+  const repo = inbox.repos.find((r) => r.repo === 'acme/demo')
+  assert.equal(repo.projectPath, projectPath)
+  assert.deepEqual(repo.issues.map((i) => i.number), [7])
+  assert.ok(calls.every((args) => args.includes('acme/demo')))
+
+  await assert.rejects(core.handlers['github:inbox']('force'), { code: 'INVALID_REQUEST' })
+})
