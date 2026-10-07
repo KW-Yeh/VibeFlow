@@ -53,7 +53,7 @@ function projectLabel(task: Task): string {
 }
 
 /** Popover that closes on outside click or Esc. Shared by the card and filter menus. */
-function useDismissible(open: boolean, close: () => void) {
+export function useDismissible(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -73,7 +73,7 @@ function useDismissible(open: boolean, close: () => void) {
   return ref
 }
 
-const MENU_ITEM =
+export const MENU_ITEM =
   'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors motion-reduce:transition-none'
 
 /** w-52 plus the room the menu needs; used to keep it inside the viewport. */

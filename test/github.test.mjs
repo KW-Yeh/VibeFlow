@@ -91,19 +91,21 @@ test('mergeItems keeps one entry per number, newest first', () => {
   assert.deepEqual(merged.map((i) => i.number), [2, 3, 1])
 })
 
-test('fetchRepoItems asks for assigned + authored issues and assigned + authored + review PRs, and normalises them', async () => {
+test('fetchRepoItems asks for assigned + authored issues and assigned + authored + review-requested + reviewed PRs, and normalises them', async () => {
   const { run, calls } = fakeGh([
     [has('issue', '--assignee'), [issue(1), issue(2)]],
     [has('issue', '--author'), [issue(2), issue(3)]],
     [has('pr', '--assignee'), [pr(10)]],
     [has('pr', '--author'), [pr(11, { isDraft: true })]],
     [has('pr', 'review-requested:@me'), [pr(10), pr(12, { reviewDecision: 'REVIEW_REQUIRED' })]],
+    // Approved by me: the review request is gone, but the PR is still open.
+    [has('pr', 'reviewed-by:@me'), [pr(12), pr(13, { reviewDecision: 'APPROVED' })]],
   ])
   const { issues, prs } = await fetchRepoItems(run, 'acme/demo')
-  assert.equal(calls.length, 5)
+  assert.equal(calls.length, 6)
   assert.ok(calls.every((c) => c.includes('-R') && c.includes('acme/demo') && c.includes('open')))
   assert.deepEqual(issues.map((i) => i.number).sort(), [1, 2, 3])
-  assert.deepEqual(prs.map((p) => p.number).sort(), [10, 11, 12])
+  assert.deepEqual(prs.map((p) => p.number).sort(), [10, 11, 12, 13])
 
   const one = issues.find((i) => i.number === 1)
   assert.deepEqual(one, {
@@ -123,6 +125,7 @@ test('fetchRepoItems asks for assigned + authored issues and assigned + authored
   assert.equal(prs.find((p) => p.number === 11).state, 'draft')
   assert.equal(prs.find((p) => p.number === 12).reviewDecision, 'REVIEW_REQUIRED')
   assert.equal(prs.find((p) => p.number === 10).reviewDecision, null)
+  assert.equal(prs.find((p) => p.number === 13).reviewDecision, 'APPROVED')
 })
 
 test('an older gh without issueType still lists issues, just without the type', async () => {
@@ -256,18 +259,18 @@ test('inbox and taskLinks are cached per repo until the TTL or a forced refresh'
   const first = await svc.inbox(b)
   assert.equal(first.fetchedAt, 1000)
   await svc.inbox(b)
-  assert.equal(calls.length, 5)
+  assert.equal(calls.length, 6)
 
   clock += 1000
   const forced = await svc.inbox(b, { force: true })
-  assert.equal(calls.length, 10)
+  assert.equal(calls.length, 12)
   assert.equal(forced.fetchedAt, 2000)
 
   clock += GITHUB_CACHE_TTL_MS
   await svc.inbox(b)
-  assert.equal(calls.length, 15)
+  assert.equal(calls.length, 18)
 
   await svc.taskLinks(b)
   await svc.taskLinks(b)
-  assert.equal(calls.length, 16)
+  assert.equal(calls.length, 19)
 })

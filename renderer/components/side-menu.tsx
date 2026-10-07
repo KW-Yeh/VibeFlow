@@ -34,8 +34,9 @@ interface SideMenuProps {
   githubCount: number | null
   projects: SideMenuProject[]
   /** Project the Issues & PRs view is narrowed to. */
-  activeProject: string | null
-  onSelectProject: (name: string | null) => void
+  /** Projects ticked in the Issues & PRs project filter. */
+  activeProjects: string[]
+  onSelectProject: (name: string) => void
   onNewTask: () => void
   onRemoteShare?: () => void
   remoteActive?: boolean
@@ -166,7 +167,7 @@ export function SideMenu({
   taskCount,
   githubCount,
   projects,
-  activeProject,
+  activeProjects,
   onSelectProject,
   onNewTask,
   onRemoteShare,
@@ -317,7 +318,7 @@ export function SideMenu({
                 <p className="px-2 py-1 text-sm text-muted-foreground">尚無專案</p>
               ) : (
                 projects.map((project) => {
-                  const active = view === 'github' && activeProject === project.name
+                  const active = view === 'github' && activeProjects.includes(project.name)
                   return (
                     <button
                       key={project.name}
@@ -328,7 +329,7 @@ export function SideMenu({
                           ? `${project.name}（沒有 GitHub origin 或尚未載入）`
                           : `只看 ${project.name} 的 Issue 與 PR`
                       }
-                      onClick={() => onSelectProject(active ? null : project.name)}
+                      onClick={() => onSelectProject(project.name)}
                       className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(active))}
                     >
                       <FolderOpen className="size-3.5 shrink-0" />

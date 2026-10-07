@@ -331,8 +331,8 @@ docs/                      everything that is not code (index: docs/README.md)
 - **Issues & PRs come from the user's own `gh`** (`packages/core/src/github.ts`,
   spec: `docs/features/github-issues-prs/`). Repos are the board projects' `origin`s
   on github.com; the list is the open Issues/PRs assigned to, opened by (and for PRs,
-  awaiting review from) the signed-in `gh` account. Fetches are cached per repo for
-  5 minutes; the view's refresh button forces one. A card converted from an
+  awaiting review from or already reviewed by) the signed-in `gh` account. Fetches
+  are cached per repo for 5 minutes; the view's refresh button forces one. A card converted from an
   Issue/PR stores it in `Task.github`; other cards find their PR by branch
   (`github:taskLinks`). No token is stored — `gh`'s login is the only credential.
 - **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):

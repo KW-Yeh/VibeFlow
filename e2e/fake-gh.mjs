@@ -5,7 +5,7 @@
 //
 //   gh auth status …                → signed in as kw-yeh
 //   gh issue list -R <repo> …        → open issues (assignee / author filters)
-//   gh pr list -R <repo> --state open → open PRs
+//   gh pr list -R <repo> --state open → open PRs (assignee / author / review-requested / reviewed-by)
 //   gh pr list -R <repo> --state all  → the PR index cards are linked through
 const args = process.argv.slice(2)
 const DAY = 24 * 60 * 60 * 1000
@@ -91,6 +91,23 @@ const PRS = {
       headRefName: 'docs/lazy-provisioning',
       baseRefName: 'main',
     },
+    {
+      // Approved by me: no longer awaiting my review, not mine, nobody assigned.
+      number: 107,
+      title: 'feat(github): list PRs I have reviewed',
+      body: '',
+      author: ben,
+      assignees: [],
+      labels: [],
+      milestone: null,
+      createdAt: ago(4),
+      state: 'OPEN',
+      isDraft: false,
+      reviewDecision: 'APPROVED',
+      headRefName: 'feat/reviewed-prs',
+      baseRefName: 'main',
+      reviewedByMe: true,
+    },
   ],
 }
 
@@ -150,9 +167,11 @@ if (args[0] === 'auth' && args[1] === 'status') {
         ? p.assignees.some((a) => a.login === me.login)
         : author
           ? p.author.login === me.login
-          : search
+          : search === 'review-requested:@me'
             ? p.reviewDecision === 'REVIEW_REQUIRED'
-            : true
+            : search === 'reviewed-by:@me'
+              ? p.reviewedByMe === true
+              : true
     )
   )
 } else {

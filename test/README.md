@@ -46,6 +46,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `env.test.mjs` | `packages/core/src/env.ts` | PATH augmentation + memoisation |
 | `folder-dialog.test.mjs` | `packages/core/src/folder-dialog.ts` | per-OS folder-dialog commands (user text never in a script), cancel detection, output parsing |
 | `specs.test.mjs` | `packages/core/src/specs.ts` | which `spec.md` files belong to a task, from the worktree and from the branch after completion |
+| `github-filter.test.mjs` | `renderer/lib/github-filter.ts` | Issues & PRs filters: OR within a filter, AND across, unassigned, options (ticked values kept), project-then-number order |
 | `github.test.mjs` | `packages/core/src/github.ts` | remote → `owner/repo`, `gh` issue/PR listing and merging (fake runner, no network), `issueType` fallback, per-repo cache and errors, card ↔ Issue/PR link resolution |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |

@@ -240,6 +240,29 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     assert.equal(converted.projectPath, gh.projectPath)
     await page.getByRole('tab', { name: '看板' }).first().click()
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
+
+    // Filters: the PR I approved (no longer awaiting my review) is listed; each
+    // column runs highest number first; filters OR within, AND across, and clear.
+    await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('button', { name: /#107/ }).waitFor()
+    const listed = () =>
+      page.$$eval('button[aria-pressed]', (cards) =>
+        cards.flatMap((c) => c.querySelector('.truncate')?.textContent.match(/#(\d+)$/)?.slice(1).map(Number) ?? [])
+      )
+    const tick = async (filter, option) => {
+      await page.getByRole('button', { name: new RegExp(`^${filter}篩選`) }).click()
+      await page.getByRole('menuitemcheckbox', { name: option, exact: true }).click()
+      await page.keyboard.press('Escape')
+    }
+    assert.deepEqual(await listed(), [112, 108, 107, 105, 103])
+    await tick('發起人', 'dev-amy')
+    assert.deepEqual(await listed(), [108, 103])
+    await tick('發起人', 'dev-ben')
+    assert.deepEqual(await listed(), [108, 107, 103])
+    await tick('Assignee', '未指派')
+    assert.deepEqual(await listed(), [107])
+    await page.getByRole('button', { name: '清除篩選' }).click()
+    assert.deepEqual(await listed(), [112, 108, 107, 105, 103])
   }
 
   // Another origin cannot open the socket, even from the same browser.
