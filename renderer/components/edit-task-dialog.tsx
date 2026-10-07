@@ -9,7 +9,12 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { AgentModelFields, F } from '@/components/new-task-dialog'
+import {
+  AgentModelFields,
+  F,
+  useAgentModels,
+  useModelEfforts,
+} from '@/components/new-task-dialog'
 import {
   ProjectFolderPicker,
   isProjectMissing,
@@ -74,6 +79,8 @@ export function EditTaskDialog({
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
+  const models = useAgentModels(agentCli)
+  const effortLevels = useModelEfforts(models, agentCli, model, effort, setEffort)
   const [autoMode, setAutoMode] = useState(true)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [baseBranch, setBaseBranch] = useState('')
@@ -331,6 +338,7 @@ export function EditTaskDialog({
         <TaskEffortSlider
           value={effort}
           onChange={setEffort}
+          levels={effortLevels}
           disabled={saving}
         />
 
@@ -442,6 +450,7 @@ export function EditTaskDialog({
                 onAgentChange={handleAgentChange}
                 model={model}
                 onModelChange={setModel}
+                models={models}
               />
             </div>
           )}

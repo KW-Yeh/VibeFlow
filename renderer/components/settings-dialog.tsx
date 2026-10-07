@@ -44,8 +44,9 @@ const MODEL_AGENTS: { id: AgentCliId; name: string }[] = [
 
 const MODEL_SOURCE_LABELS: Record<AgentModelSource, string> = {
   builtin: '內建清單',
+  'claude-cli': 'Claude Code CLI',
+  'codex-app-server': 'Codex CLI',
   'codex-cache': 'Codex 本機快取',
-  'codex-cli': 'Codex CLI',
 }
 
 type GithubAuthPhase = 'idle' | 'starting' | 'waiting' | 'success' | 'error'
@@ -536,7 +537,8 @@ export function SettingsDialog({
                 // A failed detection (null) falls back to showing the model list as before.
                 const missing = Array.isArray(installed) && !installed.includes(agent.id)
                 const loading =
-                  installed === undefined || (!missing && (list === undefined || refreshing === agent.id))
+                  installed === undefined ||
+                  (!missing && (list === undefined || list?.pending === true || refreshing === agent.id))
                 return (
                   <div
                     key={agent.id}
@@ -562,23 +564,29 @@ export function SettingsDialog({
                           ? '讀取 model 清單…'
                           : !list
                           ? '無法取得 model 清單'
+                          : list.pending
+                          ? `正在向 ${agent.name} 取得 model 清單…`
                           : `${list.models.length} 個 models 可用・來源：${MODEL_SOURCE_LABELS[list.source]}`}
                       </p>
-                      {!missing && list?.error && (
+                      {!missing && list?.loginRequired ? (
+                        <p className="text-sm text-destructive">
+                          尚未登入，請在終端機執行 <code>{agent.id} login</code> 後重新整理。
+                        </p>
+                      ) : !missing && list?.error && (
                         <p className="truncate text-sm text-destructive" title={list.error}>
                           {list.error}
                         </p>
                       )}
                     </div>
-                    {agent.id === 'codex' && !missing && installed !== undefined && (
+                    {!missing && installed !== undefined && (
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0"
                         disabled={refreshing === agent.id}
-                        aria-label="向 Codex CLI 重新取得 model 清單"
-                        title="向 Codex CLI 重新取得 model 清單"
+                        aria-label={`向 ${agent.name} 重新取得 model 清單`}
+                        title={`向 ${agent.name} 重新取得 model 清單`}
                         onClick={() => void refreshModels(agent.id)}
                       >
                         <RefreshCw className={cn('size-4', refreshing === agent.id && 'animate-spin')} />

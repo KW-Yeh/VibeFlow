@@ -129,7 +129,7 @@ are.
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
 | `env:detectAgents` | core | `detectAgents()` | | |
-| `agents:listModels` | core | `listAgentModels(agent, refresh?)` | | From the agent CLI's own catalog (no API key); `refresh` spawns `codex debug models` |
+| `agents:listModels` | core | `listAgentModels(agent, refresh?)` | | From the agent CLI's own catalog (no API key), cached in host memory since host start; never starts a CLI unless `refresh` (Claude `initialize` handshake / `codex app-server` `model/list`). Each model carries its effort levels; `pending` / `loginRequired` flag a fallback list |
 | `settings:connectAgent` / `settings:refreshAgentModels` | — | — | | **Removed.** Model lists no longer need a provider API key |
 | `settings:githubAuthStatus` | core | `github.status()` | | |
 | `settings:startGithubAuthLogin` | core | `github.startLogin()` | | Streams `github-auth:event` to the requesting frontend |

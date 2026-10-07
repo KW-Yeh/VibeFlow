@@ -73,7 +73,7 @@ test('packages/core does not reach outside its own sources', () => {
  * Modules the renderer bundles at runtime. A value import here would drag
  * `fs` / `child_process` into the browser build, so they import types only.
  */
-const RENDERER_SAFE = ['launch.ts', 'client.ts', 'ws-transport.ts']
+const RENDERER_SAFE = ['launch.ts', 'client.ts', 'ws-transport.ts', 'effort.ts']
 
 test('renderer-bundled core modules import types only', () => {
   const violations = RENDERER_SAFE.flatMap((name) => {

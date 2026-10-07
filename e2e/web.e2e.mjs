@@ -25,8 +25,12 @@ import { makeRepo, git } from '../test/support/repo.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webDir = path.join(root, 'app')
 
-/** The fake agent: announce, change a file, then echo what the user types. */
+/**
+ * The fake agent: announce, change a file, then echo what the user types.
+ * `-p` is the host asking for the model catalog at startup instead.
+ */
 const FAKE_AGENT = `#!/bin/sh
+if [ "$1" = "-p" ]; then NODE_OPTIONS= exec "${process.execPath}" "${path.join(root, 'e2e', 'fake-claude-models.mjs')}"; fi
 echo "fake-claude ready"
 echo "written by the fake agent" > fake-agent-output.txt
 while read -r line; do echo "got:$line"; done
@@ -88,6 +92,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   for (const d of [storeDir, workstation, fakeBin, home]) fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(path.join(fakeBin, 'claude'), FAKE_AGENT, { mode: 0o755 })
   if (canFakeGh) {
+    // No codex in this run, whatever the machine has installed.
+    fs.writeFileSync(path.join(fakeBin, 'codex'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
     fs.writeFileSync(
       path.join(fakeBin, 'gh'),
       `#!/bin/sh\nexec "${process.execPath}" "${path.join(root, 'e2e', 'fake-gh.mjs')}" "$@"\n`,
@@ -144,6 +150,26 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   const page = await browser.newPage()
   await page.goto(`${base}/home/?token=${encodeURIComponent(lock.token)}`)
   assert.equal(new URL(page.url()).search, '', 'the token leaves the address bar')
+
+  if (canFakeGh) {
+    // Models: the host asked the (fake) claude CLI at startup; the picker
+    // offers what it answered, and codex falls back without a CLI.
+    await page.waitForFunction(async () => {
+      const [claude, codex] = await Promise.all([
+        window.vibeflow.listAgentModels('claude'),
+        window.vibeflow.listAgentModels('codex'),
+      ])
+      return claude.source === 'claude-cli' && !codex.pending
+    }, null, { timeout: 20_000, polling: 250 })
+    const codex = await page.evaluate(() => window.vibeflow.listAgentModels('codex'))
+    assert.notEqual(codex.source, 'codex-app-server')
+    assert.ok(codex.error, 'codex says why it fell back')
+    await page.getByRole('button', { name: 'Advanced' }).click()
+    const modelSelect = page.locator('select[name="agent-model"]')
+    await modelSelect.locator('option', { hasText: 'Fable 5.1' }).waitFor({ state: 'attached' })
+    assert.equal(await modelSelect.locator('option[value="default"]').count(), 0)
+    await page.getByRole('button', { name: 'Advanced' }).click()
+  }
 
   // Create: typed project path (the browser has no folder dialog), title.
   await page.getByLabel('輸入專案資料夾路徑').fill(projectPath)

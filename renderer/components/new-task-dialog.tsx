@@ -25,6 +25,8 @@ import {
   isProjectMissing,
 } from '@/components/project-folder-picker'
 import { listAgentModels } from '@/lib/api'
+import { taskModel } from '@/lib/claude'
+import { clampEffort, selectableEfforts } from '@/lib/effort'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -199,6 +201,50 @@ function AttachmentRow({
 }
 
 // ── Agent CLI selector ─────────────────────────────────────────────────────
+
+/** The agent's models from core's catalog; `null` while the list loads. */
+export function useAgentModels(agentCli: AgentCliId): AgentModel[] | null {
+  // Tagged with the agent it belongs to: right after a switch, the previous
+  // agent's list must read as "still loading", not as this agent's models.
+  const [loaded, setLoaded] = useState<{ agentCli: AgentCliId; models: AgentModel[] } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void listAgentModels(agentCli)
+      .then((list) => {
+        if (!cancelled) setLoaded({ agentCli, models: list?.models ?? [] })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ agentCli, models: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [agentCli])
+  return loaded?.agentCli === agentCli ? loaded.models : null
+}
+
+/**
+ * Effort levels the model that will actually run accepts (the agent's default
+ * when none is picked). A choice it does not accept is lowered as soon as the
+ * model changes, so the slider always shows what the launch will send.
+ */
+export function useModelEfforts(
+  models: AgentModel[] | null,
+  agentCli: AgentCliId,
+  model: string,
+  effort: AgentEffort,
+  setEffort: (effort: AgentEffort) => void
+): readonly AgentEffort[] {
+  const info = models?.find((m) => m.id === taskModel({ agentCli, model }))
+  const levels = selectableEfforts(info)
+  useEffect(() => {
+    if (models === null) return
+    const fitted = clampEffort(effort, levels)
+    if (fitted && fitted !== effort) setEffort(fitted)
+  }, [models, levels, effort, setEffort])
+  return levels
+}
+
 export interface AgentModelFieldsProps {
   title: string
   agents: AgentCli[] | null
@@ -208,6 +254,8 @@ export interface AgentModelFieldsProps {
   onAgentChange: (agentCli: AgentCliId) => void
   model: string
   onModelChange: (model: string) => void
+  /** From useAgentModels; `null` while the list loads. */
+  models: AgentModel[] | null
 }
 
 const CUSTOM_MODEL = '__custom__'
@@ -221,25 +269,14 @@ export function AgentModelFields({
   onAgentChange,
   model,
   onModelChange,
+  models,
 }: AgentModelFieldsProps) {
-  const [models, setModels] = useState<AgentModel[] | null>(null)
   const [customOpen, setCustomOpen] = useState(false)
   useEffect(() => {
-    let cancelled = false
-    setModels(null)
     setCustomOpen(false)
-    void listAgentModels(agentCli)
-      .then((list) => {
-        if (!cancelled) setModels(list?.models ?? [])
-      })
-      .catch(() => {
-        if (!cancelled) setModels([])
-      })
-    return () => {
-      cancelled = true
-    }
   }, [agentCli])
   const listed = models ?? []
+  const description = customOpen ? undefined : listed.find((m) => m.id === model)?.description
   const modelOptions = model && !customOpen && !listed.some((m) => m.id === model)
     ? [{ id: model, label: model }, ...listed]
     : listed
@@ -319,6 +356,7 @@ export function AgentModelFields({
             讀取 model list…
           </p>
         )}
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
         {customOpen && (
           <input
             name={`${title.toLowerCase().replace(/\s+/g, '-')}-custom-model`}
@@ -368,6 +406,8 @@ export function NewTaskForm({
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
+  const models = useAgentModels(agentCli)
+  const effortLevels = useModelEfforts(models, agentCli, model, effort, setEffort)
   const [autoMode, setAutoMode] = useState(defaultAutoMode)
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -689,6 +729,7 @@ export function NewTaskForm({
             }}
             model={model}
             onModelChange={setModel}
+            models={models}
           />
       </InlineEnterSurface>
     </div>
@@ -879,6 +920,7 @@ export function NewTaskForm({
               <TaskEffortSlider
                 value={effort}
                 onChange={setEffort}
+                levels={effortLevels}
                 disabled={creating}
               />
 
@@ -939,6 +981,7 @@ export function NewTaskForm({
               <TaskEffortSlider
                 value={effort}
                 onChange={setEffort}
+                levels={effortLevels}
                 disabled={creating}
               />
 

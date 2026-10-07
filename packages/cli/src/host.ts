@@ -110,6 +110,7 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
     lock.port = server.port
     updateLock(options.userDataDir, lock)
     const stopWatch = core.watchStore()
+    core.warmModelCatalog()
 
     const stop = () =>
       (stopping ??= (async () => {
