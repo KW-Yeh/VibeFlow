@@ -236,21 +236,25 @@ async function listPrs(run: GhRunner, repo: string, filter: string[]): Promise<G
   return rows.map((r) => toPr(r, repo))
 }
 
-/** Open Issues assigned to or opened by me; open PRs assigned to, opened by or awaiting review from me. */
+/**
+ * Open Issues assigned to or opened by me; open PRs assigned to, opened by, awaiting review from,
+ * or already reviewed by me — approving drops the review request, and the PR still needs watching.
+ */
 export async function fetchRepoItems(
   run: GhRunner,
   repo: string
 ): Promise<{ issues: GithubIssue[]; prs: GithubPr[] }> {
-  const [assignedIssues, authoredIssues, assignedPrs, authoredPrs, reviewPrs] = await Promise.all([
+  const [assignedIssues, authoredIssues, assignedPrs, authoredPrs, reviewPrs, reviewedPrs] = await Promise.all([
     listIssues(run, repo, ['--assignee', '@me']),
     listIssues(run, repo, ['--author', '@me']),
     listPrs(run, repo, ['--assignee', '@me']),
     listPrs(run, repo, ['--author', '@me']),
     listPrs(run, repo, ['--search', 'review-requested:@me']),
+    listPrs(run, repo, ['--search', 'reviewed-by:@me']),
   ])
   return {
     issues: mergeItems([assignedIssues, authoredIssues]),
-    prs: mergeItems([assignedPrs, authoredPrs, reviewPrs]),
+    prs: mergeItems([assignedPrs, authoredPrs, reviewPrs, reviewedPrs]),
   }
 }
 
