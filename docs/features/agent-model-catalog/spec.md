@@ -118,7 +118,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 | Codex 選 `ultra` 後改成 Claude 模型 | effort 自動變成 `max` |
 | 切到不支援 effort 的模型（Haiku） | slider 停用並說明原因；卡片保留原本的值，但啟動時不帶 effort |
 | 再切回支援 effort 的模型 | slider 恢復，沿用卡片保留的值（必要時再降級） |
-| 「使用預設 model」 | effort 依 VibeFlow 啟動時實際補上的模型（`launch.ts` `DEFAULT_MODELS`：Claude 是 `sonnet`、Codex 是 `gpt-5.5`）在清單中的支援等級；不在清單中則視為模型資訊不可用 |
+| 「使用預設 model」 | 啟動時不帶 `--model`，交給 CLI 自己的預設（會尊重使用者的 CLI 設定與帳號）。effort 依清單中標記為預設的模型（Claude：`default` 那筆對應的模型；Codex：`isDefault`）；選項顯示該模型名稱，例如「使用預設 model（Opus 5.5）」 |
 | 自訂模型 ID，或模型資訊不可用（`models_cache.json` / 內建清單） | effort 提供 `low`～`xhigh`（等同現行行為）；`max`、`ultra` 只在模型資訊明確宣告時開放 |
 | 選 `ultra` | slider 顯示固定的中文說明（會自動委派子任務，耗時與用量可能明顯增加），讓使用者知道成本可能較高 |
 | Codex 未登入 | 退回快取檔或內建清單；設定頁顯示「請執行 `codex login`」 |
@@ -173,3 +173,6 @@ claude -p --input-format stream-json --output-format stream-json --verbose
   改成依實際補上的模型，effort 限制才會和真正執行的模型一致。
 - 2026-10-07：`max` / `ultra` 的說明改用固定中文，與既有 4 級一致（Claude 不回報各等級說明）。
 - 2026-10-07：使用者確認以上兩項變更（「都同意，plan 確認，開始實作」）。
+- 2026-10-07（v4.8.0 之後）：使用者要求處理「Codex 預設帶 `gpt-5.5`，但它不在 `model/list` 裡」的問題，並決定 Claude 一併比照。
+  卡片沒選模型時，兩個 agent 都不再帶 `--model`（移除 `DEFAULT_MODELS` 與 `defaultModelFor`）；舊卡片存的 `gpt-5` / `gpt-5-codex` 也改成不帶。
+  影響：沒選模型的 Claude 卡片會從 Sonnet 改為跑 Claude Code 的預設（目前是 Opus 5.5），用量可能增加。

@@ -26,7 +26,7 @@ import {
 } from '@/components/project-folder-picker'
 import { listAgentModels } from '@/lib/api'
 import { taskModel } from '@/lib/claude'
-import { clampEffort, selectableEfforts } from '@/lib/effort'
+import { clampEffort, modelFor, selectableEfforts } from '@/lib/effort'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -235,7 +235,7 @@ export function useModelEfforts(
   effort: AgentEffort,
   setEffort: (effort: AgentEffort) => void
 ): readonly AgentEffort[] {
-  const info = models?.find((m) => m.id === taskModel({ agentCli, model }))
+  const info = modelFor(models, taskModel({ agentCli, model }))
   const levels = selectableEfforts(info)
   useEffect(() => {
     if (models === null) return
@@ -276,7 +276,8 @@ export function AgentModelFields({
     setCustomOpen(false)
   }, [agentCli])
   const listed = models ?? []
-  const description = customOpen ? undefined : listed.find((m) => m.id === model)?.description
+  const description = customOpen ? undefined : modelFor(listed, model || undefined)?.description
+  const defaultLabel = listed.find((m) => m.isDefault)?.label
   const modelOptions = model && !customOpen && !listed.some((m) => m.id === model)
     ? [{ id: model, label: model }, ...listed]
     : listed
@@ -342,7 +343,7 @@ export function AgentModelFields({
           }}
           className={F}
         >
-          <option value="">使用預設 model</option>
+          <option value="">{defaultLabel ? `使用預設 model（${defaultLabel}）` : '使用預設 model'}</option>
           {modelOptions.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}

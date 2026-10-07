@@ -17,6 +17,14 @@ export const AGENT_EFFORTS: readonly AgentEffort[] = ['low', 'medium', 'high', '
  */
 export const UNKNOWN_MODEL_EFFORTS: readonly AgentEffort[] = ['low', 'medium', 'high', 'xhigh']
 
+/**
+ * The catalog entry for the model a card will run: the picked one, or the
+ * CLI's default when the card leaves the choice to the CLI.
+ */
+export function modelFor(models: readonly AgentModel[] | null | undefined, modelId: string | undefined): AgentModel | undefined {
+  return modelId ? models?.find((m) => m.id === modelId) : models?.find((m) => m.isDefault)
+}
+
 export function isAgentEffort(value: unknown): value is AgentEffort {
   return typeof value === 'string' && (AGENT_EFFORTS as readonly string[]).includes(value)
 }

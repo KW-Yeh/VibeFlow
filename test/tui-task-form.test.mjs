@@ -97,14 +97,15 @@ const catalog = ctx({
       m('sonnet', ['low', 'medium', 'high', 'xhigh', 'max']),
       m('claude-opus-4-6', ['low', 'medium', 'high', 'max']),
       m('haiku', []),
+      { ...m('opus', ['low', 'medium', 'high', 'xhigh']), isDefault: true },
     ],
     codex: [m('gpt-6-astra', ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])],
   },
 })
 
-test('effort choices follow the model that will run, the agent default when none is picked', () => {
+test('effort choices follow the model that will run, the CLI default when none is picked', () => {
   assert.deepEqual(effortOptions(catalog, 'claude', 'claude-opus-4-6'), ['low', 'medium', 'high', 'max'])
-  assert.deepEqual(effortOptions(catalog, 'claude', ''), ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.deepEqual(effortOptions(catalog, 'claude', ''), ['low', 'medium', 'high', 'xhigh'])
   assert.deepEqual(effortOptions(catalog, 'claude', 'haiku'), [])
   assert.deepEqual(effortOptions(catalog, 'claude', 'claude-custom'), ['low', 'medium', 'high', 'xhigh'])
 })
