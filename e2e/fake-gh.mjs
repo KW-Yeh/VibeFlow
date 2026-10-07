@@ -91,12 +91,10 @@ const PRS = {
       headRefName: 'docs/lazy-provisioning',
       baseRefName: 'main',
     },
-  ],
-  'clcom-frontend': [
     {
       // Approved by me: no longer awaiting my review, not mine, nobody assigned.
-      number: 440,
-      title: 'feat(blog): paginate the article list',
+      number: 107,
+      title: 'feat(github): list PRs I have reviewed',
       body: '',
       author: ben,
       assignees: [],
@@ -106,7 +104,7 @@ const PRS = {
       state: 'OPEN',
       isDraft: false,
       reviewDecision: 'APPROVED',
-      headRefName: 'feat/blog-pagination',
+      headRefName: 'feat/reviewed-prs',
       baseRefName: 'main',
       reviewedByMe: true,
     },
