@@ -176,6 +176,8 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── web-server.ts      HTTP static + WebSocket; loopback, token→cookie, Origin/Host checks
 │   ├── lock.ts            <userData>/core.lock (pid, port, token; 0600): one host per machine
 │   ├── launch.ts          agent launch-command assembly (was renderer/lib/claude.ts) — types-only
+│   ├── effort.ts          effort levels + per-model allowed/clamp rules — no imports (renderer-safe)
+│   ├── agent-models.ts    model catalog: claude-models.ts / codex-models.ts handshakes, cached in memory
 │   ├── session-backend.ts SessionBackend interface; sessions.ts picks tmux or pty
 │   ├── pty.ts / tmux-backend.ts  PtyBackend (node-pty, dies with core) / TmuxBackend (-L vibeflow, outlives it)
 │   ├── events.ts          EventSink + EventBus (every event fans out to every frontend)
@@ -270,7 +272,7 @@ docs/                      everything that is not code (index: docs/README.md)
 - **Single source of truth for types**: domain types live in `packages/core/src/*.ts`;
   `renderer/lib/types.ts` re-exports them with `export type` (erased at build).
   The renderer imports core at runtime only from the types-only modules
-  (`launch.ts`, `client.ts`, `ws-transport.ts`); `test/core-boundary` enforces it.
+  (`launch.ts`, `client.ts`, `ws-transport.ts`, `effort.ts`); `test/core-boundary` enforces it.
   Don't duplicate type definitions.
 - **Erasable TypeScript only in `packages/`**: Node runs it with
   `--experimental-strip-types`, so no enums, namespaces or constructor parameter
@@ -313,6 +315,19 @@ docs/                      everything that is not code (index: docs/README.md)
   `.vibeflow-subagents/`); they only wake the tracker and report permission prompts.
   Codex gets **no** hook: `-c notify=…` would replace the user's own `notify`. A run's
   usage is folded into `Task.usage` on restart and completion.
+- **Model lists come from the signed-in agent CLIs, never an API key**
+  (`packages/core/src/agent-models.ts`, spec: `docs/features/agent-model-catalog/`).
+  At host start (`startHost` → `core.warmModelCatalog()`), in the background: Claude
+  Code answers the stream-json `initialize` control request (`claude-models.ts`; no
+  prompt, no transcript, not a published interface), Codex answers `model/list` on
+  `codex app-server` (`codex-models.ts`). Answers stay in host memory; the pickers
+  only read them (`agents:listModels`), and the settings refresh asks again.
+  `createCore` never asks by itself, so tests do not start real CLIs. Fallbacks:
+  Claude → builtin aliases; Codex → `models_cache.json` → builtin. Only `models` is
+  read from either answer — account fields are dropped. Each model carries the
+  effort levels it accepts; the pickers and `launchCommand` both lower a card's
+  effort through `effort.ts` (`clampEffort`), and the launch omits it for a model
+  that takes none. `test/fixtures/agent-models/` pins both answer shapes.
 - **Issues & PRs come from the user's own `gh`** (`packages/core/src/github.ts`,
   spec: `docs/features/github-issues-prs/`). Repos are the board projects' `origin`s
   on github.com; the list is the open Issues/PRs assigned to, opened by (and for PRs,

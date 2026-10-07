@@ -1,0 +1,4 @@
+{
+ "signedIn": { "account": { "type": "chatgpt", "email": "someone@example.com", "planType": "plus" }, "requiresOpenaiAuth": true },
+ "signedOut": { "account": null, "requiresOpenaiAuth": true }
+}

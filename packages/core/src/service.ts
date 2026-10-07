@@ -23,7 +23,8 @@ import {
 } from './store'
 import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
 import { AGENT_EFFORTS, detectAgents, type AgentCliId, type AgentEffort } from './agents'
-import { listAgentModels } from './agent-models'
+import { createModelCatalog, type ModelCatalog } from './agent-models'
+import { clampEffort } from './effort'
 import {
   cancelGitHubCliLogin,
   getGitHubCliAuthStatus,
@@ -75,7 +76,7 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executorSessionId, taskAgent } from './launch'
+import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
 import type { ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
@@ -218,6 +219,8 @@ export interface CoreOptions {
   /** Stand-in for the `gh` CLI; tests override it. */
   ghRunner?: GhRunner
   githubAuthStatus?: () => Promise<GitHubCliAuthStatus>
+  /** Where the agent model lists come from; tests pass one that never starts a CLI. */
+  modelCatalog?: ModelCatalog
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -230,6 +233,8 @@ export interface Core {
   sessions: SessionBackend
   /** Push fresh state whenever the store file changes on disk (this core's writes, the CLI's). */
   watchStore(): () => void
+  /** Ask the agent CLIs for their model lists in the background. */
+  warmModelCatalog(): void
   /** Stop every watcher and child this core started. Sessions follow the backend's shutdown rule. */
   shutdown(): void
 }
@@ -238,8 +243,9 @@ export interface Core {
  * Build the core: one handler per channel in IPC_API_MAP.md, all taking task
  * ids rather than paths or commands, and all events on one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, modelCatalog }: CoreOptions): Core {
   const sink = bus.sink()
+  const models = modelCatalog ?? createModelCatalog({ version })
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
   // user's, or the one the library assembles. Resolved once, in the background.
@@ -334,12 +340,21 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return key
   }
 
+  /**
+   * The card keeps the effort the user picked; what reaches the CLI is what
+   * the model actually running accepts. Unknown models get the card's value.
+   */
+  function launchEffort(task: Task): Task['effort'] {
+    const model = models.findModel(taskAgent(task), taskModel(task))
+    return model?.efforts ? clampEffort(task.effort, model.efforts) : task.effort
+  }
+
   async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
     return buildAgentCommand(
-      task,
+      { ...task, effort: launchEffort(task) },
       settings.systemPrompt ?? '',
       {
         resume: intent.resume === true,
@@ -474,7 +489,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
     'agents:listModels': (payload) => {
       const { agentId: rawId, refresh } = obj<{ agentId: unknown; refresh?: unknown }>(payload, 'payload')
-      return listAgentModels(agentId(rawId), { refresh: refresh === true })
+      const id = agentId(rawId)
+      return refresh === true ? models.refresh(id) : models.get(id)
     },
 
     // A task does not exist yet when a project is picked, so these two are the
@@ -572,6 +588,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (columnOf(existing.id) !== 'backlog') {
         throw new Error('只有 Backlog 的任務可以編輯')
       }
+      if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       let gitPatch: Partial<Task> = {}
       const nextProject = p.projectPath || existing.projectPath
       const nextBranch = p.branch === undefined ? '' : str(p.branch, 'branch').trim()
@@ -991,6 +1008,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         }, 200)
       })
       return () => storeWatcher?.close()
+    },
+    warmModelCatalog() {
+      models.warm()
     },
     shutdown() {
       sessions.shutdown()

@@ -121,6 +121,15 @@ test('buildAgentCommand — passes effort to both CLIs', () => {
   )
 })
 
+test('buildAgentCommand — passes the deepest levels through unchanged', () => {
+  assert.ok(buildAgentCommand({ ...TASK, effort: 'max' }).includes('--effort max'))
+  assert.ok(
+    buildAgentCommand({ ...CODEX_TASK, effort: 'ultra' }).startsWith(
+      `codex -c 'model_reasoning_effort="ultra"' --model gpt-5.5 `
+    )
+  )
+})
+
 test('buildAgentCommand — unknown agent falls back to Claude', () => {
   const cmd = buildAgentCommand({ ...TASK, agentCli: /** @type {'claude'} */ ('gemini') })
   assert.ok(cmd.startsWith('claude '))

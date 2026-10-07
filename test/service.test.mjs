@@ -62,12 +62,12 @@ test.after(() =>
   ])
 )
 
-async function coreWithTask(t) {
+async function coreWithTask(t, { coreOptions = {}, task: taskInput = {} } = {}) {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)
   const sessions = fakeSessions()
   const bus = new EventBus()
-  const core = createCore({ sessions, bus, version: '9.9.9' })
+  const core = createCore({ sessions, bus, version: '9.9.9', ...coreOptions })
   // pty:start watches the worktree for sub-agent files; stop it with the test.
   t.after(() => core.shutdown())
   const { task } = await core.handlers['vibeflow:createTask']({
@@ -76,6 +76,7 @@ async function coreWithTask(t) {
     projectPath,
     baseBranch: null,
     agentCli: 'claude',
+    ...taskInput,
   })
   return { core, sessions, bus, task }
 }
@@ -155,6 +156,81 @@ test('agents:listModels validates the agent and serves the builtin claude aliase
   assert.ok(list.models.some((m) => m.id === 'sonnet'))
   assert.throws(() => core.handlers['agents:listModels']({ agentId: 'gemini' }), { code: 'INVALID_REQUEST' })
   assert.throws(() => core.handlers['agents:listModels']('claude'), { code: 'INVALID_REQUEST' })
+})
+
+/** A model catalog that answers from memory and records what it was asked. */
+function fakeCatalog(models) {
+  const calls = []
+  const list = (source) => ({ models, source })
+  return {
+    calls,
+    async get(id) { calls.push(['get', id]); return list('builtin') },
+    async refresh(id) { calls.push(['refresh', id]); return list('claude-cli') },
+    warm() { calls.push(['warm']) },
+    findModel(id, modelId) { return id === 'claude' ? models.find((m) => m.id === modelId) : undefined },
+  }
+}
+
+const catalogModels = [
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', efforts: ['low', 'medium', 'high', 'max'] },
+  { id: 'haiku', label: 'Haiku 4.5', efforts: [] },
+  { id: 'sonnet', label: 'Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+]
+
+test('agents:listModels reads the catalog, and only a refresh asks the CLI', async (t) => {
+  const catalog = fakeCatalog(catalogModels)
+  const { core } = await coreWithTask(t, { coreOptions: { modelCatalog: catalog } })
+  assert.equal((await core.handlers['agents:listModels']({ agentId: 'claude' })).source, 'builtin')
+  assert.equal((await core.handlers['agents:listModels']({ agentId: 'claude', refresh: true })).source, 'claude-cli')
+  assert.deepEqual(catalog.calls, [['get', 'claude'], ['refresh', 'claude']])
+})
+
+test('createCore does not ask any agent CLI by itself', async (t) => {
+  const catalog = fakeCatalog(catalogModels)
+  const { core } = await coreWithTask(t, { coreOptions: { modelCatalog: catalog } })
+  assert.deepEqual(catalog.calls, [])
+  core.warmModelCatalog()
+  assert.deepEqual(catalog.calls, [['warm']])
+})
+
+async function launchedCommand(t, taskInput) {
+  const { core, sessions, task } = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels) },
+    task: taskInput,
+  })
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const stored = core.handlers['vibeflow:getState']().board.backlog.find((t2) => t2.id === task.id)
+  return { command: sessions.starts[0].command, stored }
+}
+
+test('a launch lowers an effort the model does not accept, leaving the card as picked', async (t) => {
+  const { command, stored } = await launchedCommand(t, { model: 'claude-opus-4-6', effort: 'xhigh' })
+  assert.match(command, /--model claude-opus-4-6 --effort high /)
+  assert.equal(stored.effort, 'xhigh')
+})
+
+test('a launch sends no effort to a model that takes none', async (t) => {
+  const { command } = await launchedCommand(t, { model: 'haiku', effort: 'high' })
+  assert.match(command, /--model haiku /)
+  assert.ok(!command.includes('--effort'))
+})
+
+test('a launch without a picked model checks the effort against the default model', async (t) => {
+  const { command } = await launchedCommand(t, { effort: 'ultra' })
+  assert.match(command, /--model sonnet --effort max /)
+})
+
+test('a launch passes the effort through when the model is unknown', async (t) => {
+  const { command } = await launchedCommand(t, { model: 'claude-custom-1', effort: 'max' })
+  assert.match(command, /--model claude-custom-1 --effort max /)
+})
+
+test('updateTask rejects an unknown effort', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  await assert.rejects(
+    core.handlers['vibeflow:updateTask']({ taskId: task.id, title: 'x', effort: 'turbo' }),
+    { code: 'INVALID_REQUEST' }
+  )
 })
 
 test('the API-key connection channels are gone', async (t) => {

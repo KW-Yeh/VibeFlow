@@ -1,21 +1,14 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import type { AgentEffort } from './effort'
 import { execEnv } from './env'
+
+export { AGENT_EFFORTS, type AgentEffort } from './effort'
 
 const pexec = promisify(execFile)
 
 /** Agent CLIs VibeFlow knows how to launch inside a task's PTY. */
 export type AgentCliId = 'claude' | 'codex'
-
-/**
- * Provider-neutral reasoning depth stored on a task. Claude Code and Codex
- * share these four levels; the launch builder translates them to each CLI's
- * session-scoped flag.
- */
-export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh'
-
-/** Every valid effort level, ordered shallow → deep. Backs input validation. */
-export const AGENT_EFFORTS: readonly AgentEffort[] = ['low', 'medium', 'high', 'xhigh']
 
 /**
  * Effort a task gets when the caller does not pick one. Applied at task
@@ -30,6 +23,13 @@ export interface AgentModel {
   id: string
   /** Human-readable label shown in the UI. */
   label: string
+  /** One-line summary from the agent CLI's catalog. */
+  description?: string
+  /**
+   * Effort levels the CLI says this model accepts. Absent = unknown (the
+   * list came from a source without effort data); `[]` = takes no effort.
+   */
+  efforts?: AgentEffort[]
 }
 
 export interface AgentCli {

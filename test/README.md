@@ -31,9 +31,10 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 
 | Suite | Target | What it checks |
 |---|---|---|
-| `agent-models.test.mjs` | `packages/core/src/agent-models.ts` | model lists: Claude builtin aliases, Codex model cache and its fallbacks |
+| `agent-models.test.mjs` | `packages/core/src/agent-models.ts`, `claude-models.ts`, `codex-models.ts`, `json-lines-process.ts` | model catalog: Claude `initialize` and codex app-server handshakes against `fixtures/agent-models/`, account fields dropped, fallbacks, child-process timeout/exit, in-memory cache |
 | `agent-print.test.mjs` | `packages/core/src/agent-print.ts` | one-shot agent CLI runs: stdin prompt, exit codes, missing CLI |
 | `agents.test.mjs` | `packages/core/src/agents.ts` | agent registry, default model, default task effort |
+| `effort.test.mjs` | `packages/core/src/effort.ts` | effort levels, per-model allowed levels, lowering an unsupported effort |
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
 | `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
 | `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |

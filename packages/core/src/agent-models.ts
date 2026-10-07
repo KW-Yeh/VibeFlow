@@ -1,32 +1,22 @@
-import { execFile } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { promisify } from 'util'
 import { AGENT_CLIS, type AgentCliId, type AgentModel } from './agents'
-import { execEnv } from './env'
+import { fetchClaudeModels } from './claude-models'
+import { CodexLoginRequiredError, fetchCodexModels } from './codex-models'
 
-const pexec = promisify(execFile)
-
-export type AgentModelSource = 'builtin' | 'codex-cache' | 'codex-cli'
+export type AgentModelSource = 'builtin' | 'claude-cli' | 'codex-app-server' | 'codex-cache'
 
 export interface AgentModelList {
   models: AgentModel[]
   source: AgentModelSource
-  /** Why a dynamic source was unusable, when the list fell back to builtin. */
+  /** Why the agent CLI's own catalog was unusable, when the list fell back. */
   error?: string
+  /** The CLI is still being asked; this is the fallback list until it answers. */
+  pending?: true
+  /** The agent CLI is not signed in (Codex: run `codex login`). */
+  loginRequired?: true
 }
-
-export interface ListAgentModelsOptions {
-  /** Ask the agent CLI itself (slow, spawns a process) instead of its cache. */
-  refresh?: boolean
-  /** Directory holding Codex's models_cache.json; defaults to the user's CODEX_HOME. */
-  codexHome?: string
-  /** Runs `codex debug models` and resolves its stdout. Injectable for tests. */
-  runCodexModels?: () => Promise<string>
-}
-
-const CODEX_MODELS_TIMEOUT_MS = 20_000
 
 function builtinModels(id: AgentCliId): AgentModel[] {
   return (AGENT_CLIS.find((a) => a.id === id) ?? AGENT_CLIS[0]).models
@@ -35,16 +25,6 @@ function builtinModels(id: AgentCliId): AgentModel[] {
 function defaultCodexHome(): string {
   const configured = process.env.CODEX_HOME?.trim()
   return configured ? configured : path.join(os.homedir(), '.codex')
-}
-
-async function defaultRunCodexModels(): Promise<string> {
-  const { stdout } = await pexec('codex', ['debug', 'models'], {
-    env: execEnv(),
-    timeout: CODEX_MODELS_TIMEOUT_MS,
-    maxBuffer: 16 * 1024 * 1024,
-    windowsHide: true,
-  })
-  return stdout
 }
 
 /**
@@ -77,36 +57,99 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/**
- * Models offered for an agent, sourced from the CLI the user is already signed
- * in to — no provider API key involved. Claude's aliases always resolve to the
- * newest model of their tier, so its builtin list never goes stale.
- */
-export async function listAgentModels(
-  id: AgentCliId,
-  opts: ListAgentModelsOptions = {}
-): Promise<AgentModelList> {
-  if (id !== 'codex') return { models: builtinModels(id), source: 'builtin' }
-
-  if (opts.refresh) {
-    try {
-      const stdout = await (opts.runCodexModels ?? defaultRunCodexModels)()
-      return { models: parseCodexCatalog(stdout), source: 'codex-cli' }
-    } catch (err) {
-      return { models: builtinModels(id), source: 'builtin', error: errorMessage(err) }
-    }
-  }
-
-  const cachePath = path.join(opts.codexHome ?? defaultCodexHome(), 'models_cache.json')
+async function readCodexCache(codexHome: string): Promise<AgentModelList> {
+  const cachePath = path.join(codexHome, 'models_cache.json')
   try {
     const raw = await fs.promises.readFile(cachePath, 'utf8')
     return { models: parseCodexCatalog(raw), source: 'codex-cache' }
   } catch (err) {
     const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
     return {
-      models: builtinModels(id),
+      models: builtinModels('codex'),
       source: 'builtin',
       ...(missing ? {} : { error: errorMessage(err) }),
     }
+  }
+}
+
+export interface ModelCatalogOptions {
+  /** VibeFlow's version, reported to codex app-server as the client version. */
+  version: string
+  /** Directory holding Codex's models_cache.json; defaults to the user's CODEX_HOME. */
+  codexHome?: string
+  /** Asks the Claude Code CLI. Injectable for tests. */
+  fetchClaude?: () => Promise<AgentModel[]>
+  /** Asks codex app-server. Injectable for tests. */
+  fetchCodex?: () => Promise<AgentModel[]>
+}
+
+export interface ModelCatalog {
+  /** The latest answer, or the fallback list while there is none — never starts a CLI. */
+  get(id: AgentCliId): Promise<AgentModelList>
+  /** Asks the agent CLI again and keeps the answer. */
+  refresh(id: AgentCliId): Promise<AgentModelList>
+  /** Asks both CLIs in the background. */
+  warm(): void
+  /** A model from the latest settled answer, for checks that cannot wait. */
+  findModel(id: AgentCliId, modelId: string): AgentModel | undefined
+}
+
+/**
+ * Models offered for each agent, sourced from the CLI the user is already
+ * signed in to — no provider API key involved. Answers live in memory only:
+ * they are asked for once at host start and again on an explicit refresh.
+ */
+export function createModelCatalog(opts: ModelCatalogOptions): ModelCatalog {
+  const fetchClaude = opts.fetchClaude ?? (() => fetchClaudeModels())
+  const fetchCodex = opts.fetchCodex ?? (() => fetchCodexModels(opts.version))
+  const inFlight = new Map<AgentCliId, Promise<AgentModelList>>()
+  const settled = new Map<AgentCliId, AgentModelList>()
+
+  const fallback = (id: AgentCliId): Promise<AgentModelList> =>
+    id === 'codex'
+      ? readCodexCache(opts.codexHome ?? defaultCodexHome())
+      : Promise.resolve({ models: builtinModels(id), source: 'builtin' })
+
+  const ask = async (id: AgentCliId): Promise<AgentModelList> => {
+    try {
+      const models = await (id === 'codex' ? fetchCodex() : fetchClaude())
+      return { models, source: id === 'codex' ? 'codex-app-server' : 'claude-cli' }
+    } catch (err) {
+      const list = await fallback(id)
+      return {
+        ...list,
+        error: errorMessage(err),
+        ...(err instanceof CodexLoginRequiredError ? { loginRequired: true as const } : {}),
+      }
+    }
+  }
+
+  const refresh = (id: AgentCliId): Promise<AgentModelList> => {
+    const running = inFlight.get(id)
+    if (running) return running
+    const pending = ask(id)
+      .then((list) => {
+        settled.set(id, list)
+        return list
+      })
+      .finally(() => inFlight.delete(id))
+    inFlight.set(id, pending)
+    return pending
+  }
+
+  return {
+    async get(id) {
+      const answer = settled.get(id)
+      if (answer) return answer
+      const list = await fallback(id)
+      return inFlight.has(id) ? { ...list, pending: true } : list
+    },
+    refresh,
+    warm() {
+      for (const agent of AGENT_CLIS) void refresh(agent.id)
+    },
+    findModel(id, modelId) {
+      return settled.get(id)?.models.find((model) => model.id === modelId)
+    },
   }
 }

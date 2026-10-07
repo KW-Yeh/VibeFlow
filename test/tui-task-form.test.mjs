@@ -8,6 +8,8 @@ import {
   createPayload,
   editFormState,
   editorCommand,
+  effortOptions,
+  fitEffort,
   modelOptions,
   newFormState,
   updatePayload,
@@ -80,11 +82,43 @@ test('the update payload carries the git-bound fields', () => {
   assert.equal(p.branch, 'feature/y')
 })
 
+const m = (id, efforts) => ({ id, label: id.toUpperCase(), ...(efforts ? { efforts } : {}) })
+
 test('model choices are the default, the agent list, and a model not on it', () => {
-  const c = ctx({ models: { claude: ['opus', 'sonnet'] } })
+  const c = ctx({ models: { claude: [m('opus'), m('sonnet')] } })
   assert.deepEqual(modelOptions(c, 'claude', ''), ['', 'opus', 'sonnet'])
   assert.deepEqual(modelOptions(c, 'claude', 'haiku'), ['', 'opus', 'sonnet', 'haiku'])
   assert.deepEqual(modelOptions(c, 'codex', ''), [''])
+})
+
+const catalog = ctx({
+  models: {
+    claude: [
+      m('sonnet', ['low', 'medium', 'high', 'xhigh', 'max']),
+      m('claude-opus-4-6', ['low', 'medium', 'high', 'max']),
+      m('haiku', []),
+    ],
+    codex: [m('gpt-6-astra', ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])],
+  },
+})
+
+test('effort choices follow the model that will run, the agent default when none is picked', () => {
+  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-opus-4-6'), ['low', 'medium', 'high', 'max'])
+  assert.deepEqual(effortOptions(catalog, 'claude', ''), ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.deepEqual(effortOptions(catalog, 'claude', 'haiku'), [])
+  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-custom'), ['low', 'medium', 'high', 'xhigh'])
+})
+
+test('picking another model lowers an effort it does not accept', () => {
+  const s = { agentCli: 'claude', model: 'claude-opus-4-6', effort: 'xhigh' }
+  assert.equal(fitEffort(catalog, s).effort, 'high')
+  assert.equal(fitEffort(catalog, { agentCli: 'claude', model: 'sonnet', effort: 'ultra' }).effort, 'max')
+  assert.equal(fitEffort(catalog, { agentCli: 'codex', model: 'gpt-6-astra', effort: 'ultra' }).effort, 'ultra')
+})
+
+test('a model that takes no effort leaves the card\'s choice alone', () => {
+  const s = { agentCli: 'claude', model: 'haiku', effort: 'high' }
+  assert.equal(fitEffort(catalog, s), s)
 })
 
 test('the editor is $VISUAL, then $EDITOR, then the platform default', () => {

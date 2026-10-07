@@ -5,7 +5,9 @@ import path from 'path'
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
-import type { AgentCli, AgentCliId, AgentEffort } from '../../core/src/agents'
+import type { AgentCli, AgentCliId, AgentEffort, AgentModel } from '../../core/src/agents'
+import { clampEffort, selectableEfforts } from '../../core/src/effort'
+import { taskModel } from '../../core/src/launch'
 import type { GitInfo } from '../../core/src/git'
 import type { RecentProjectEntry } from '../../core/src/recent-projects'
 import type { Task, VibeFlowState } from '../../core/src/store'
@@ -19,6 +21,8 @@ export const EFFORTS: { value: AgentEffort; label: string; description: string }
   { value: 'medium', label: '標準', description: '兼顧速度與推理深度，適合一般開發任務。' },
   { value: 'high', label: '深入', description: '適合跨檔案、除錯或需要較多判斷的任務。' },
   { value: 'xhigh', label: '極致', description: '適合高複雜度、長鏈推理或高風險變更。' },
+  { value: 'max', label: '最大', description: '最深的推理，適合最困難的問題。' },
+  { value: 'ultra', label: '委派', description: '最深推理並自動委派子任務，耗時與用量可能明顯增加。' },
 ]
 const DEFAULT_EFFORT: AgentEffort = 'medium'
 
@@ -63,8 +67,8 @@ export interface FormContext {
   recent: RecentProjectEntry[]
   /** null while detection timed out. */
   agents: AgentCli[] | null
-  /** Model ids each detected agent's CLI offers. */
-  models: Partial<Record<AgentCliId, string[]>>
+  /** Models each detected agent's CLI offers. */
+  models: Partial<Record<AgentCliId, AgentModel[]>>
   workstationPath: string
 }
 
@@ -139,10 +143,25 @@ export function visibleFields(s: FormState, ctx: FormContext): FieldId[] {
 
 /** Model choices: '' (agent default), the agent's list, and the current model if it is not listed. */
 export function modelOptions(ctx: FormContext, agentCli: AgentCliId, current: string): string[] {
-  const listed = ctx.models[agentCli] ?? []
+  const listed = (ctx.models[agentCli] ?? []).map((m) => m.id)
   const options = ['', ...listed]
   if (current && !listed.includes(current)) options.push(current)
   return options
+}
+
+/** Effort levels the model that will actually run accepts (the agent's default when none is picked). */
+export function effortOptions(ctx: FormContext, agentCli: AgentCliId, model: string): readonly AgentEffort[] {
+  const id = taskModel({ agentCli, model })
+  return selectableEfforts(ctx.models[agentCli]?.find((m) => m.id === id))
+}
+
+/**
+ * Lowers the effort to what a newly picked agent/model accepts. A model that
+ * takes no effort leaves the card's choice alone; the launch just omits it.
+ */
+export function fitEffort<T extends Pick<FormState, 'agentCli' | 'model' | 'effort'>>(ctx: FormContext, s: T): T {
+  const effort = clampEffort(s.effort, effortOptions(ctx, s.agentCli, s.model)) ?? s.effort
+  return effort === s.effort ? s : { ...s, effort }
 }
 
 /** Why the form cannot be submitted yet, or null when it can. */
@@ -378,13 +397,16 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
       } else if (field === 'baseBranch') {
         setS((prev) => ({ ...prev, baseBranch: cycle(prev.gitInfo?.branches ?? [], prev.baseBranch, step) }))
       } else if (field === 'effort') {
-        setS((prev) => ({ ...prev, effort: cycle(EFFORTS.map((e) => e.value), prev.effort, step) }))
+        setS((prev) => {
+          const levels = effortOptions(ctx, prev.agentCli, prev.model)
+          return levels.length ? { ...prev, effort: cycle([...levels], prev.effort, step) } : prev
+        })
       } else if (field === 'autoMode') {
         setS((prev) => ({ ...prev, autoMode: !prev.autoMode }))
       } else if (field === 'agent' && ctx.agents?.length) {
-        setS((prev) => ({ ...prev, agentCli: cycle(ctx.agents!.map((a) => a.id), prev.agentCli, step), model: '' }))
+        setS((prev) => fitEffort(ctx, { ...prev, agentCli: cycle(ctx.agents!.map((a) => a.id), prev.agentCli, step), model: '' }))
       } else if (field === 'model') {
-        setS((prev) => ({ ...prev, model: cycle(modelOptions(ctx, prev.agentCli, prev.model), prev.model, step) }))
+        setS((prev) => fitEffort(ctx, { ...prev, model: cycle(modelOptions(ctx, prev.agentCli, prev.model), prev.model, step) }))
       }
       return
     }
@@ -431,7 +453,8 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         return lines.length > 1 ? `${lines[0]} …（共 ${lines.length} 行）` : lines[0]
       }
       case 'effort': {
-        const e = EFFORTS.find((x) => x.value === s.effort)!
+        if (effortOptions(ctx, s.agentCli, s.model).length === 0) return '不適用'
+        const e = EFFORTS.find((x) => x.value === s.effort) ?? EFFORTS[0]
         return `‹ ${e.label} · ${e.value} ›`
       }
       case 'autoMode':
@@ -441,8 +464,11 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         if (ctx.agents.length === 0) return '未偵測到 Agent CLI（claude / codex）'
         return `‹ ${ctx.agents.find((a) => a.id === s.agentCli)?.name ?? s.agentCli} ›`
       }
-      case 'model':
-        return modelOptions(ctx, s.agentCli, s.model).length > 1 ? `‹ ${s.model || '使用預設 model'} ›` : '無法取得 model list，將使用預設 model'
+      case 'model': {
+        if (modelOptions(ctx, s.agentCli, s.model).length <= 1) return '無法取得 model list，將使用預設 model'
+        const listed = ctx.models[s.agentCli]?.find((m) => m.id === s.model)
+        return `‹ ${s.model ? listed?.label ?? s.model : '使用預設 model'} ›`
+      }
       case 'submit':
         return busy ?? (s.mode === 'new' ? '［ 建立任務 ］' : '［ 儲存變更 ］')
     }
@@ -466,7 +492,11 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         ? `${when} 這張卡已有 worktree：更改分支、專案或基準分支會移除它（有未完成變更時無法儲存）。`
         : when
     }
-    if (field === 'effort') return `${EFFORTS.find((x) => x.value === s.effort)!.description} Claude Code 與 Codex 會在啟動此任務時套用；實際可用級距依 model 而定。`
+    if (field === 'effort') {
+      if (effortOptions(ctx, s.agentCli, s.model).length === 0) return '這個 model 不支援調整推理強度，啟動時不會指定任務複雜度。'
+      const e = EFFORTS.find((x) => x.value === s.effort) ?? EFFORTS[0]
+      return `${e.description} Claude Code 與 Codex 會在啟動此任務時套用；可選的級距依 model 而定。`
+    }
     if (field === 'autoMode') return s.autoMode ? '開啟：Agent 會直接修改檔案、執行指令，不會逐次向你確認。' : '關閉：Agent 每次要動作前，都會在終端機裡等你允許。'
     if (field === 'submit') return blockReason(s, ctx, loadingGit)
     return null
@@ -543,7 +573,7 @@ export async function loadFormContext(api: VibeFlowApi): Promise<{ ctx: FormCont
   const lists = await Promise.all(
     (agents ?? []).map(async (a) => {
       const list = await api.listAgentModels(a.id).catch(() => null)
-      return [a.id, list ? list.models.map((m) => m.id) : []] as const
+      return [a.id, list ? list.models : []] as const
     })
   )
   return {
