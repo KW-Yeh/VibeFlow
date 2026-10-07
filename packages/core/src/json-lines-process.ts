@@ -106,7 +106,15 @@ export function spawnJsonLines(
   proc.stdin.on('error', () => {})
 
   const kill = () => {
-    if (!exited) proc.kill()
+    if (exited) return
+    // On Windows the CLI runs under cmd.exe: ending only cmd.exe would orphan
+    // the CLI, which keeps our pipes — and so this process — alive.
+    if (process.platform === 'win32' && proc.pid !== undefined) {
+      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+        .on('error', () => proc.kill())
+      return
+    }
+    proc.kill()
   }
   const timer = setTimeout(() => {
     fail(new Error(`${bin} did not answer within ${opts.timeoutMs}ms`))
