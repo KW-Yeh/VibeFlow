@@ -87,4 +87,23 @@
 
 ## 實作與驗證紀錄
 
-（實作後填寫）
+2026-10-07 依計畫完成，分支已 rebase 到最新 `main`（含 #105）。
+
+| 檢查 | 結果 |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | 通過 |
+| `npx tsc --noEmit -p renderer/tsconfig.json`（先刪 `renderer/.next`） | 通過 |
+| `npm test` | 411／411 通過（新增 `github-filter.test.mjs` 8 項；`github.test.mjs` 加入 `reviewed-by:@me`，快取測試的 `gh` 呼叫次數依每次抓取 6 次更新） |
+| `npm run build:web` | 通過 |
+| `npm run test:e2e` | 1／1 通過；新增：#107（我 approve 過、未指派）有列出、排序 `[112, 108, 107, 105, 103]`、發起人 OR、跨篩選 AND、未指派、清除篩選 |
+| 實際操作（Playwright，1440×900，fake gh） | 各步驟清單符合預期；重新整理後回到全部；store 不含篩選資料、`localStorage` 沒有 key；console 無錯誤；1024 寬無水平溢出。驗收影片 `issues-prs-filters-acceptance.mp4` |
+| 像素比對 1：前後版本（同一份舊 fake gh 資料） | 全畫面差異 1.93%。頂列 x<370（分頁與「專案」按鈕）完全一致，差異只在新增的兩個篩選與右側說明文字；卡片區差異來自排序改變；下半部差異是「最近使用的專案」下拉 placeholder 的載入時機，看板檢視（未修改）也有同樣差異。證據：`pixel-view-before-after.png`、`pixel-diff.json` |
+| 像素比對 2：新下拉 vs 看板 `ProjectFilter` | 差異 0.229%，只在裁切邊界的背景；新下拉 vs 舊 Issues & PRs 專案下拉 0.082%。證據：`pixel-menu-board-vs-github.png`、`pixel-menu-before-after.png` |
+
+證據放在任務 artifacts 資料夾（不進 git）。
+
+實作中的發現：
+
+- rebase 前，e2e 在模型選單（`Fable 5.1` 選項）逾時，與本功能無關；`main` 的 #105（`fix/agent-default-model`）修正後通過。
+- `useDismissible`／`MENU_ITEM` 改為 export，讓新下拉沿用看板下拉的行為與樣式；看板的 `ProjectFilter` 本身未改。
+- 新下拉把 `useDismissible` 的 ref 掛在包含觸發按鈕的外層容器，讓「選單開啟時再點按鈕」能正常收起。看板 `ProjectFilter` 的 ref 只掛在選單上，依程式推論可能有「點按鈕先關又開」的問題，**未實際驗證**，也未修改（不在範圍內）。
