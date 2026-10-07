@@ -325,7 +325,7 @@ function assembleCommand(
   agent: AgentCliId,
   systemPrompt: string,
   prompt: string,
-  model: string,
+  model: string | undefined,
   effort?: Task['effort'],
   opts?: LaunchOptions,
   worktreePath?: string,
@@ -373,8 +373,13 @@ function assembleCommand(
       : ''
     // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
     // interactive mode (waits for the user to approve each step).
-    const promptArg = combined ? ` ${shellQuote(combined)}` : ''
-    cmd = `${codexHome}codex ${codexAutoFlag(opts?.autoMode)}${codexEffortFlag}--model ${model}${promptArg}\r`
+    const args = [
+      codexAutoFlag(opts?.autoMode).trim(),
+      codexEffortFlag.trim(),
+      model ? `--model ${model}` : '',
+      combined ? shellQuote(combined) : '',
+    ].filter(Boolean)
+    cmd = `${codexHome}${['codex', ...args].join(' ')}\r`
   }
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
@@ -387,25 +392,9 @@ export const AGENT_NAMES: Record<AgentCliId, string> = {
   codex: 'Codex CLI',
 }
 
-/**
- * Lightweight default model per agent, mirrored from agents.ts (duplicated:
- * see the note at the top). Used as a fallback
- * for tasks created before the model field existed.
- */
-const DEFAULT_MODELS: Record<AgentCliId, string> = {
-  claude: 'sonnet',
-  codex: 'gpt-5.5',
-}
-
-const LEGACY_MODEL_FALLBACKS: Partial<Record<AgentCliId, Record<string, string>>> = {
-  codex: {
-    'gpt-5-codex': 'gpt-5.5',
-    'gpt-5': 'gpt-5.5',
-  },
-}
-
-function normalizeModel(agent: AgentCliId, model: string): string {
-  return LEGACY_MODEL_FALLBACKS[agent]?.[model] ?? model
+/** Models older builds stored that the CLIs no longer serve; such cards run on the CLI's default. */
+const RETIRED_MODELS: Partial<Record<AgentCliId, readonly string[]>> = {
+  codex: ['gpt-5-codex', 'gpt-5'],
 }
 
 /**
@@ -419,10 +408,14 @@ export function taskAgent(task: Pick<Task, 'agentCli'>): AgentCliId {
   return agent && agent in AGENT_NAMES ? agent : 'claude'
 }
 
-/** Resolve the model passed to the agent CLI (task.model, else agent default). */
-export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string {
-  const agent = taskAgent(task)
-  return normalizeModel(agent, task.model || DEFAULT_MODELS[agent])
+/**
+ * The model passed to the agent CLI, or undefined to leave the choice to the
+ * CLI — its own default honours the user's CLI config and account.
+ */
+export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string | undefined {
+  const model = task.model?.trim()
+  if (!model || RETIRED_MODELS[taskAgent(task)]?.includes(model)) return undefined
+  return model
 }
 
 /**

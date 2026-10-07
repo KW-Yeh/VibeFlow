@@ -67,7 +67,13 @@ export function parseCodexModelPage(result: Record<string, unknown>): { models: 
           .map((e) => (isRecord(e) ? e.reasoningEffort : undefined))
           .filter(isAgentEffort)
       : undefined
-    models.push({ id, label, ...(description ? { description } : {}), ...(efforts ? { efforts } : {}) })
+    models.push({
+      id,
+      label,
+      ...(description ? { description } : {}),
+      ...(efforts ? { efforts } : {}),
+      ...(entry.isDefault === true ? { isDefault: true } : {}),
+    })
   }
   const nextCursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null
   return { models, nextCursor }

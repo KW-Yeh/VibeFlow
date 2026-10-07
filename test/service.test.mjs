@@ -167,7 +167,10 @@ function fakeCatalog(models) {
     async get(id) { calls.push(['get', id]); return list('builtin') },
     async refresh(id) { calls.push(['refresh', id]); return list('claude-cli') },
     warm() { calls.push(['warm']) },
-    findModel(id, modelId) { return id === 'claude' ? models.find((m) => m.id === modelId) : undefined },
+    findModel(id, modelId) {
+      if (id !== 'claude') return undefined
+      return modelId ? models.find((m) => m.id === modelId) : models.find((m) => m.isDefault)
+    },
   }
 }
 
@@ -175,6 +178,7 @@ const catalogModels = [
   { id: 'claude-opus-4-6', label: 'Opus 4.6', efforts: ['low', 'medium', 'high', 'max'] },
   { id: 'haiku', label: 'Haiku 4.5', efforts: [] },
   { id: 'sonnet', label: 'Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'opus', label: 'Opus 5.5', efforts: ['low', 'medium', 'high', 'xhigh'], isDefault: true },
 ]
 
 test('agents:listModels reads the catalog, and only a refresh asks the CLI', async (t) => {
@@ -215,9 +219,10 @@ test('a launch sends no effort to a model that takes none', async (t) => {
   assert.ok(!command.includes('--effort'))
 })
 
-test('a launch without a picked model checks the effort against the default model', async (t) => {
+test('a launch without a picked model leaves the model to the CLI and fits the effort to its default', async (t) => {
   const { command } = await launchedCommand(t, { effort: 'ultra' })
-  assert.match(command, /--model sonnet --effort max /)
+  assert.ok(!command.includes('--model'), command)
+  assert.match(command, /--effort xhigh /)
 })
 
 test('a launch passes the effort through when the model is unknown', async (t) => {

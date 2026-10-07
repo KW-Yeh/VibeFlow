@@ -30,6 +30,8 @@ export interface AgentModel {
    * list came from a source without effort data); `[]` = takes no effort.
    */
   efforts?: AgentEffort[]
+  /** The model the CLI runs when the card picks none. */
+  isDefault?: boolean
 }
 
 export interface AgentCli {
@@ -38,7 +40,7 @@ export interface AgentCli {
   bin: string
   /** Human-readable name shown in the UI. */
   name: string
-  /** Selectable models; the first entry is the lightweight default. */
+  /** Offered when the CLI's own catalog is unavailable. */
   models: AgentModel[]
 }
 
@@ -53,7 +55,7 @@ export const AGENT_CLIS: AgentCli[] = [
     bin: 'claude',
     name: 'Claude Code',
     models: [
-      { id: 'sonnet', label: 'Sonnet（平衡・預設）' },
+      { id: 'sonnet', label: 'Sonnet（平衡）' },
       { id: 'haiku', label: 'Haiku（輕量）' },
       { id: 'opus', label: 'Opus（最強）' },
     ],
@@ -63,18 +65,12 @@ export const AGENT_CLIS: AgentCli[] = [
     bin: 'codex',
     name: 'Codex CLI',
     models: [
-      { id: 'gpt-5.5', label: 'GPT-5.5（預設）' },
+      { id: 'gpt-5.5', label: 'GPT-5.5' },
       { id: 'gpt-5.4', label: 'GPT-5.4' },
       { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
     ],
   },
 ]
-
-/** Lightweight default model id for an agent (first entry in its model list). */
-export function defaultModelFor(id: AgentCliId): string {
-  const agent = AGENT_CLIS.find((a) => a.id === id) ?? AGENT_CLIS[0]
-  return agent.models[0].id
-}
 
 async function commandExists(bin: string): Promise<boolean> {
   try {

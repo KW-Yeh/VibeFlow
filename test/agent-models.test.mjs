@@ -122,8 +122,18 @@ test('claude: account details in the handshake never reach the result', () => {
   assert.ok(!output.includes('someone@example.com'))
   assert.ok(!output.includes('Example Org'))
   for (const model of parseClaudeInitialize(claudeInitialize)) {
-    assert.deepEqual(Object.keys(model).filter((k) => !['id', 'label', 'description', 'efforts'].includes(k)), [])
+    assert.deepEqual(Object.keys(model).filter((k) => !['id', 'label', 'description', 'efforts', 'isDefault'].includes(k)), [])
   }
+})
+
+test('claude: the model the default entry resolves to is marked as the default', () => {
+  const models = parseClaudeInitialize(claudeInitialize)
+  assert.deepEqual(models.filter((m) => m.isDefault).map((m) => m.id), ['opus'])
+})
+
+test('claude: no default entry, no default marked', () => {
+  const models = parseClaudeInitialize({ response: { response: { models: [{ value: 'opus', resolvedModel: 'claude-opus-5-5' }] } } })
+  assert.equal(models[0].isDefault, undefined)
 })
 
 test('claude: an unexpected handshake shape is rejected', () => {
@@ -174,6 +184,23 @@ test('codex: reasoning efforts map onto the shared levels, ultra included', asyn
   assert.deepEqual(models[0].efforts, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
   assert.deepEqual(models.find((m) => m.id === 'gpt-5.6-luna').efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
   assert.equal(models[0].label, 'GPT-6-Astra')
+})
+
+test('codex: the catalog\'s default model is marked', async () => {
+  const models = await fetchCodexModels('1.0.0', fakeChannel(codexResponder()).open)
+  assert.deepEqual(models.filter((m) => m.isDefault).map((m) => m.id), ['gpt-6-astra'])
+})
+
+test('catalog: findModel without a model id is the CLI\'s default', async (t) => {
+  const catalog = createModelCatalog({
+    version: '1.0.0',
+    codexHome: codexHome(t),
+    fetchClaude: neverCalled('claude'),
+    fetchCodex: () => fetchCodexModels('1.0.0', fakeChannel(codexResponder()).open),
+  })
+  await catalog.refresh('codex')
+  assert.equal(catalog.findModel('codex', undefined).id, 'gpt-6-astra')
+  assert.equal(catalog.findModel('codex', 'gpt-5.6-luna').id, 'gpt-5.6-luna')
 })
 
 test('codex: a signed-out CLI is reported as such and its catalog is not used', async () => {

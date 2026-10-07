@@ -39,14 +39,21 @@ function isOurResponse(message: unknown): boolean {
 
 /**
  * Only `models` is read from the response; the account details that ride
- * along never leave this function. `default` is dropped because the picker
- * already has its own "use the default model" entry.
+ * along never leave this function. The `default` entry is not offered (the
+ * picker has its own "use the default model" entry); the listed model it
+ * resolves to is marked as the default instead.
  */
 export function parseClaudeInitialize(message: unknown): AgentModel[] {
   const outer = isRecord(message) && isRecord(message.response) ? message.response : null
   if (outer?.subtype === 'error') throw new Error(`claude refused the handshake: ${String(outer.error ?? 'unknown error')}`)
   const body = outer && isRecord(outer.response) ? outer.response : null
   if (!body || !Array.isArray(body.models)) throw new Error('claude handshake has no models array')
+
+  const defaultEntry = body.models.find((e) => isRecord(e) && e.value === 'default')
+  const defaultResolved = isRecord(defaultEntry) && typeof defaultEntry.resolvedModel === 'string'
+    ? defaultEntry.resolvedModel
+    : undefined
+  let defaultMarked = false
 
   const seen = new Set<string>()
   const models: AgentModel[] = []
@@ -60,7 +67,9 @@ export function parseClaudeInitialize(message: unknown): AgentModel[] {
     const levels = entry.supportsEffort === true && Array.isArray(entry.supportedEffortLevels)
       ? entry.supportedEffortLevels.filter(isAgentEffort)
       : []
-    models.push({ id, label, ...(description ? { description } : {}), efforts: levels })
+    const isDefault = !defaultMarked && defaultResolved !== undefined && entry.resolvedModel === defaultResolved
+    if (isDefault) defaultMarked = true
+    models.push({ id, label, ...(description ? { description } : {}), efforts: levels, ...(isDefault ? { isDefault } : {}) })
   }
   if (models.length === 0) throw new Error('claude handshake lists no selectable models')
   return models

@@ -121,6 +121,24 @@ test('buildAgentCommand — passes effort to both CLIs', () => {
   )
 })
 
+test('buildAgentCommand — a card without a model leaves the choice to the CLI', () => {
+  assert.ok(!buildAgentCommand({ ...TASK, model: undefined }).includes('--model'))
+  const codex = buildAgentCommand({ ...CODEX_TASK, model: undefined, effort: 'high' })
+  assert.ok(!codex.includes('--model'), codex)
+  assert.ok(codex.startsWith(`codex -c 'model_reasoning_effort="high"' '`), codex)
+})
+
+test('buildAgentCommand — a retired codex model runs on the CLI default', () => {
+  for (const model of ['gpt-5', 'gpt-5-codex']) {
+    assert.ok(!buildAgentCommand({ ...CODEX_TASK, model }).includes('--model'), model)
+  }
+})
+
+test('buildAgentCommand — a picked model is passed as is', () => {
+  assert.ok(buildAgentCommand({ ...TASK, model: 'fable' }).includes('--model fable'))
+  assert.ok(buildAgentCommand({ ...CODEX_TASK, model: 'gpt-6-astra' }).includes('--model gpt-6-astra'))
+})
+
 test('buildAgentCommand — passes the deepest levels through unchanged', () => {
   assert.ok(buildAgentCommand({ ...TASK, effort: 'max' }).includes('--effort max'))
   assert.ok(

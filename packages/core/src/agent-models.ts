@@ -4,6 +4,7 @@ import path from 'path'
 import { AGENT_CLIS, type AgentCliId, type AgentModel } from './agents'
 import { fetchClaudeModels } from './claude-models'
 import { CodexLoginRequiredError, fetchCodexModels } from './codex-models'
+import { modelFor } from './effort'
 
 export type AgentModelSource = 'builtin' | 'claude-cli' | 'codex-app-server' | 'codex-cache'
 
@@ -90,8 +91,8 @@ export interface ModelCatalog {
   refresh(id: AgentCliId): Promise<AgentModelList>
   /** Asks both CLIs in the background. */
   warm(): void
-  /** A model from the latest settled answer, for checks that cannot wait. */
-  findModel(id: AgentCliId, modelId: string): AgentModel | undefined
+  /** A model from the latest settled answer (the CLI's default when `modelId` is unset), for checks that cannot wait. */
+  findModel(id: AgentCliId, modelId: string | undefined): AgentModel | undefined
 }
 
 /**
@@ -149,7 +150,7 @@ export function createModelCatalog(opts: ModelCatalogOptions): ModelCatalog {
       for (const agent of AGENT_CLIS) void refresh(agent.id)
     },
     findModel(id, modelId) {
-      return settled.get(id)?.models.find((model) => model.id === modelId)
+      return modelFor(settled.get(id)?.models, modelId)
     },
   }
 }

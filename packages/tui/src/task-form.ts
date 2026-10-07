@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
 import type { AgentCli, AgentCliId, AgentEffort, AgentModel } from '../../core/src/agents'
-import { clampEffort, selectableEfforts } from '../../core/src/effort'
+import { clampEffort, modelFor, selectableEfforts } from '../../core/src/effort'
 import { taskModel } from '../../core/src/launch'
 import type { GitInfo } from '../../core/src/git'
 import type { RecentProjectEntry } from '../../core/src/recent-projects'
@@ -151,8 +151,7 @@ export function modelOptions(ctx: FormContext, agentCli: AgentCliId, current: st
 
 /** Effort levels the model that will actually run accepts (the agent's default when none is picked). */
 export function effortOptions(ctx: FormContext, agentCli: AgentCliId, model: string): readonly AgentEffort[] {
-  const id = taskModel({ agentCli, model })
-  return selectableEfforts(ctx.models[agentCli]?.find((m) => m.id === id))
+  return selectableEfforts(modelFor(ctx.models[agentCli], taskModel({ agentCli, model })))
 }
 
 /**
@@ -467,7 +466,8 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
       case 'model': {
         if (modelOptions(ctx, s.agentCli, s.model).length <= 1) return '無法取得 model list，將使用預設 model'
         const listed = ctx.models[s.agentCli]?.find((m) => m.id === s.model)
-        return `‹ ${s.model ? listed?.label ?? s.model : '使用預設 model'} ›`
+        const fallback = ctx.models[s.agentCli]?.find((m) => m.isDefault)?.label
+        return `‹ ${s.model ? listed?.label ?? s.model : fallback ? `使用預設 model（${fallback}）` : '使用預設 model'} ›`
       }
       case 'submit':
         return busy ?? (s.mode === 'new' ? '［ 建立任務 ］' : '［ 儲存變更 ］')
