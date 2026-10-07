@@ -21,6 +21,11 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium } from 'playwright-core'
 import { makeRepo, git } from '../test/support/repo.mjs'
+import { createCore } from '../packages/core/src/service.ts'
+import { EventBus } from '../packages/core/src/events.ts'
+import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
+import { getStore } from '../packages/core/src/store.ts'
+import { startWebServer } from '../packages/core/src/web-server.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webDir = path.join(root, 'app')
@@ -279,4 +284,71 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   )
   assert.equal(refused, true)
   assert.ok(!/Error/.test(hostLog), hostLog)
+})
+
+test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+  const browser = await launchBrowser()
+  if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
+  t.after(() => browser.close())
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-jira-e2e-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  await git(projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
+  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
+  setPlatform(createNodePlatform({ userDataDir: tmp }))
+  getStore().set('settings', { autoMode: true, workstationPath: path.join(tmp, 'ws') })
+  const bus = new EventBus()
+  const sessions = {
+    kind: 'pty', start: async () => ({ pid: 1, scrollback: null }), write() {}, resize() {},
+    kill: async () => {}, isAlive: async () => false, scrollback: () => null,
+    list: async () => [], shutdown() {},
+  }
+  const rows = [
+    { key: 'WR-5729', fields: { summary: 'Fix login', status: { name: 'Architecture Review', statusCategory: { key: 'indeterminate' } },
+      issuetype: { name: 'Story' }, duedate: '2026-10-29', customfield_10033: 8,
+      description: { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Context' }] }] } } },
+    { key: 'WR-5730', fields: { summary: 'Review docs', status: { name: 'To Do', statusCategory: { key: 'new' } }, issuetype: { name: 'Task' } } },
+  ]
+  const core = createCore({ sessions, bus, version: '9.9.9',
+    jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
+    acliRunner: async () => JSON.stringify({ issues: rows }),
+    githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
+    ghRunner: async (args) => args[0] === 'issue' && args.includes('--assignee')
+      ? JSON.stringify([{ number: 112, title: 'Fix sidebar', url: 'https://github.com/e2e/VibeFlow/issues/112',
+        body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
+  })
+  const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'jira-e2e-token' })
+  t.after(async () => { core.shutdown(); await server.close() })
+  await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  await page.goto(server.loginUrl())
+  await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+  await page.getByRole('tab', { name: /Jira/ }).waitFor()
+  assert.equal(await page.getByRole('tab', { name: /Jira/ }).getAttribute('aria-selected'), 'true')
+  assert.equal(await page.getByRole('separator', { name: '調整看板與工作區的高度' }).isVisible(), false)
+  await page.getByText('Fix login').waitFor()
+  assert.equal(await page.locator('button[aria-pressed]').count(), 2)
+  await page.getByRole('button', { name: /^Status篩選/ }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Architecture Review' }).click()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.locator('button[aria-pressed]').count(), 1)
+  await page.locator('button[aria-pressed]').click()
+  await page.getByRole('dialog').waitFor()
+  assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
+  await page.getByLabel('建立到專案').selectOption(projectPath)
+  await page.getByRole('button', { name: '建立卡片' }).click()
+  await page.getByText('已建立到 Backlog').waitFor()
+  const state = await page.evaluate(() => window.vibeflow.getState())
+  assert.equal(state.board.backlog[0].jira.key, 'WR-5729')
+  await page.setViewportSize({ width: 375, height: 780 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true)
+  await page.getByRole('button', { name: '前往卡片' }).click()
+  assert.equal(await page.getByRole('tab', { name: '看板' }).first().getAttribute('aria-selected'), 'true')
+  await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+  await page.getByRole('tab', { name: /Issues/ }).last().click()
+  await page.getByRole('button', { name: /#112/ }).click()
+  await page.getByRole('dialog').waitFor()
+  await page.getByRole('button', { name: '建立卡片' }).click()
+  await page.getByText('已建立到 Backlog').waitFor()
+  const afterGithub = await page.evaluate(() => window.vibeflow.getState())
+  assert.equal(afterGithub.board.backlog[0].github.number, 112)
 })

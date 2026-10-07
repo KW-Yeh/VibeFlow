@@ -48,6 +48,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `specs.test.mjs` | `packages/core/src/specs.ts` | which `spec.md` files belong to a task, from the worktree and from the branch after completion |
 | `github-filter.test.mjs` | `renderer/lib/github-filter.ts` | Issues & PRs filters: OR within a filter, AND across, unassigned, options (ticked values kept), project-then-number order |
 | `github.test.mjs` | `packages/core/src/github.ts` | remote → `owner/repo`, `gh` issue/PR listing and merging (fake runner, no network), `issueType` fallback, per-repo cache and errors, card ↔ Issue/PR link resolution |
+| `jira.test.mjs`, `jira-adf.test.mjs`, `jira-filter.test.mjs` | Jira core and renderer helpers | acli JQL/JSON conversion, ADF Markdown, auth status, cache, status and due-date sorting |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |

@@ -159,4 +159,7 @@
 
 ## 實作與驗證紀錄
 
-（實作後填寫，不要預先填寫通過。）
+- 2026-10-07：完成 Jira 資料層、ADF 轉 Markdown、`jira:inbox`/授權 handler、三個來源分頁、Status 篩選、Jira 詳情 modal 與直接建卡。GitHub Issue/PR 也改為 modal 內直接建卡；Issues & PRs 檢視隱藏下方工作區但保持 mounted。
+- 在 Windows x64 依 [Atlassian 官方安裝指南](https://developer.atlassian.com/cloud/acli/guides/install-windows/) 將官方 `acli.exe` 安裝至使用者 PATH；`acli --version` 為 `1.3.39-stable`。本機 `workitem search --help` 確認支援 `--jql`、`--fields`、`--json`、`--paginate`、`--limit`。尚未登入時，`auth status` 以 exit 1 回報 `unauthorized`。
+- PTY 執行 `acli jira auth login --web` 顯示 `Authenticating...` 後回報 `authentication failed`；使用者在瀏覽器完成授權後，`auth status` 仍是 `unauthorized`。依官方 OAuth 流程，網頁 Accept 後還須在 CLI 終端選擇相同 site，因此設定頁已加入互動式 CLI 終端。真實 search JSON、custom field 與 site/email status 格式仍待登入成功後驗證；測試以假 runner 覆蓋陣列和 `{ issues }` 格式，未把真實 ticket 內容存入 fixture。
+- 驗證：core/renderer TypeScript、`npm run build:web`、Jira 單元測試、service 測試，以及含 Jira 建卡流程的 `npm run test:e2e` 通過。完整 `npm test` 在此 Windows 環境有 5 個既有環境失敗：3 個 Node 路徑含空白的 CLI 子程序測試、2 個缺少 symlink 權限的 artifact 測試；Jira 測試全部通過。

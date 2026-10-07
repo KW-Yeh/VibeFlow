@@ -72,7 +72,7 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | 開啟設定 | 「GitHub」列下方新增「Atlassian（Jira）」列，顯示目前狀態摘要（未安裝／未登入／`<email> · <site>`），點擊進入子頁 |
 | 子頁：acli 未安裝 | 顯示「找不到 Atlassian CLI（acli）。」以及安裝說明連結（`https://developer.atlassian.com/cloud/acli/guides/install-acli/`，以外部瀏覽器開啟）和「重新檢查」按鈕 |
 | 子頁：未登入 | 顯示「尚未登入 Atlassian。」與主要按鈕「使用瀏覽器登入」 |
-| 按「使用瀏覽器登入」 | core 執行 `acli jira auth login --web`，acli 會自行開啟瀏覽器。畫面進入等待狀態：「請在瀏覽器完成 Atlassian 登入…」，旁邊有轉圈圖示和「取消」按鈕；若 acli 輸出了授權網址，額外顯示「瀏覽器沒有開啟？手動開啟登入頁」連結 |
+| 按「使用瀏覽器登入」 | core 執行 `acli jira auth login --web`，acli 會自行開啟瀏覽器。畫面顯示互動式 CLI 終端，供使用者完成網頁授權後選擇相同的 Jira site；另有等待狀態與「取消」按鈕。若 acli 輸出了授權網址，額外顯示手動開啟登入頁的連結 |
 | 瀏覽器授權完成 | 子頁顯示「已登入」、site、email 和「登出」按鈕；Issues & PRs 的 Jira 分頁自動重新抓取 |
 | 按「取消」或關閉設定 | 結束 acli 登入程序，回到未登入狀態，不顯示錯誤 |
 | acli 登入失敗 | 顯示 acli 的錯誤輸出（去除 ANSI），可再按一次「使用瀏覽器登入」 |

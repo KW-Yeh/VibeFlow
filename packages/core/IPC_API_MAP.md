@@ -26,6 +26,8 @@ Channels added since the inventory:
 | `pty:peek` | Join a running session without restarting it (TUI terminal view) |
 | `pty:scrolled` / `pty:scroll-bottom` | Whether a session's own history view (tmux copy-mode) is off the live output, and return it there |
 | `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
+| `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force }` |
+| `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
 | `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
 | event `progress:update` | `{ taskId, progress }` on every change to a tracked card's progress |

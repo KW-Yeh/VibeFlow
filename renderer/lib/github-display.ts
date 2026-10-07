@@ -62,7 +62,7 @@ export function initials(login: string): string {
   return login.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
 }
 
-/** The card a converted Issue/PR becomes; the user still reviews it in the new-task form. */
+/** The card a converted Issue/PR becomes. */
 export function draftFromItem(item: GithubItem) {
   const description = [item.url, item.body.trim()].filter(Boolean).join('\n\n')
   return {

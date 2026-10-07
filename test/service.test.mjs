@@ -633,3 +633,28 @@ test('github:inbox reads the board projects\' GitHub origins through the injecte
 
   await assert.rejects(core.handlers['github:inbox']('force'), { code: 'INVALID_REQUEST' })
 })
+
+test('jira:inbox uses injected acli and a Jira-sourced card persists its ref', async (t) => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  const calls = []
+  const core = createCore({
+    sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9',
+    jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
+    acliRunner: async (args) => { calls.push(args); return JSON.stringify([{ key: 'WR-5729', fields: { summary: 'Fix login', status: { name: 'To Do' } } }]) },
+  })
+  t.after(() => core.shutdown())
+  const inbox = await core.handlers['jira:inbox']({ force: true })
+  assert.equal(inbox.status, 'ok')
+  assert.equal(inbox.tickets[0].key, 'WR-5729')
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].join(' '), /openSprints\(\)/)
+
+  const jira = { key: 'WR-5729', site: 'example.atlassian.net', url: 'https://example.atlassian.net/browse/WR-5729' }
+  const { task } = await core.handlers['vibeflow:createTask']({ title: 'WR-5729 Fix login', projectPath, baseBranch: null, jira })
+  assert.deepEqual(task.jira, jira)
+  assert.deepEqual(getStore().get('board').backlog.find((row) => row.id === task.id).jira, jira)
+  await assert.rejects(core.handlers['vibeflow:createTask']({ title: 'Bad', projectPath, baseBranch: null, jira: { ...jira, url: 'https://evil.example' } }), { code: 'INVALID_REQUEST' })
+  assert.throws(() => core.handlers['jira:inbox']('force'), { code: 'INVALID_REQUEST' })
+  assert.throws(() => core.handlers['vibeflow:setSettings']({ jira: { storyPointsFields: ['bad'] } }), { code: 'INVALID_REQUEST' })
+})

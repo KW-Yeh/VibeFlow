@@ -21,6 +21,7 @@ import { recordRecentProject } from './recent-projects'
 import { DEFAULT_TASK_EFFORT, type AgentCliId, type AgentEffort } from './agents'
 import { writeAttachments, writeAttachmentsTo, type AttachmentInput } from './attachments'
 import type { GithubRef } from './github'
+import type { JiraRef } from './jira'
 
 export interface CreateTaskInput {
   projectPath: string
@@ -43,6 +44,7 @@ export interface CreateTaskInput {
   attachments?: AttachmentInput[]
   /** The GitHub Issue or PR this card is converted from. */
   github?: GithubRef
+  jira?: JiraRef
   /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
@@ -137,6 +139,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
     ...(input.github ? { github: input.github } : {}),
+    ...(input.jira ? { jira: input.jira } : {}),
   }
 
   try {

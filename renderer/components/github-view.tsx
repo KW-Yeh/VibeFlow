@@ -3,6 +3,7 @@ import {
   ExternalLink,
   GitPullRequest,
   GitPullRequestDraft,
+  Loader2,
   Layers,
   Plus,
   RefreshCw,
@@ -16,6 +17,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { GithubFilterMenu } from '@/components/github-filter-menu'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
+import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
@@ -52,9 +54,11 @@ export interface GithubViewProps {
   onFiltersChange: (next: GithubFilters) => void
   /** Board card already made from an Issue/PR, keyed by `repo#number`. */
   boardCards: Map<string, string>
-  onConvert: (item: GithubItem, projectPath: string) => void
+  onConvert: (item: GithubItem, projectPath: string) => Promise<string>
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
+  sourceKind?: 'issues' | 'prs'
+  embedded?: boolean
 }
 
 function useNow(intervalMs: number): number {
@@ -216,18 +220,41 @@ function DetailDrawer({
   entry: GithubEntry
   taskId: string | undefined
   onClose: () => void
-  onConvert: () => void
+  onConvert: () => Promise<string>
   onOpenTask: (taskId: string) => void
 }) {
   const { item } = entry
   const users = (list: GithubUser[]) => (list.length ? list.map((u) => u.login).join('、') : '—')
+  const [createdId, setCreatedId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const create = async () => {
+    if (creating) return
+    setCreating(true)
+    setCreateError(null)
+    try { setCreatedId(await onConvert()) }
+    catch (err) { setCreateError(err instanceof Error ? err.message : String(err)) }
+    finally { setCreating(false) }
+  }
+  const linkedId = createdId ?? taskId
 
   return (
-    <aside
-      aria-label={`${item.kind === 'issue' ? 'Issue' : 'PR'} #${item.number} 詳細內容`}
-      className="flex w-[400px] shrink-0 flex-col border-l border-border bg-card"
-    >
-      <div className="border-b border-border px-5 py-4">
+    <DialogShell title={item.title} description={`${item.repo} · ${item.kind === 'issue' ? 'Issue' : 'PR'} #${item.number}`}
+      showHeader saving={creating} onClose={onClose} contentClassName="max-w-3xl"
+      footer={<div className="flex w-full flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => void openExternal(item.url)}><ExternalLink />在 GitHub 開啟</Button>
+        {createdId && <span className="text-sm text-success">已建立到 Backlog</span>}
+        {linkedId ? <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => void create()} disabled={creating} title="已經有對應卡片，仍可再建一張">再建一張</Button>
+          <Button size="sm" onClick={() => onOpenTask(linkedId)}><SquareArrowOutUpRight />前往卡片</Button>
+        </div> : <div className="ml-auto flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">建立到：{entry.projectName}</span>
+          <Button size="sm" onClick={() => void create()} disabled={creating}>
+            {creating ? <Loader2 className="animate-spin" /> : <Plus />}{creating ? '建立中…' : '建立卡片'}
+          </Button>
+        </div>}
+      </div>}>
+      <div className="space-y-4">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {item.kind === 'issue' ? (
             <Chip className="bg-success/15 font-medium text-success">Open</Chip>
@@ -239,11 +266,7 @@ function DetailDrawer({
           <span className="min-w-0 truncate">
             {item.repo} · {item.kind === 'issue' ? 'Issue' : 'PR'} #{item.number}
           </span>
-          <IconButton aria-label="關閉詳細內容" title="關閉（Esc）" onClick={onClose} className="ml-auto">
-            <X className="size-4" />
-          </IconButton>
         </div>
-        <p className="mt-2 text-[17px] font-semibold leading-[1.4] text-foreground">{item.title}</p>
         <dl className="mt-3 grid grid-cols-[64px_minmax(0,1fr)] gap-y-1.5 text-xs">
           <MetaRow label="專案">{entry.projectName}</MetaRow>
           <MetaRow label="發起人">{item.author?.login ?? '—'}</MetaRow>
@@ -279,9 +302,8 @@ function DetailDrawer({
           )}
           {item.milestone && <MetaRow label="Milestone">{item.milestone}</MetaRow>}
         </dl>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="border-t border-border pt-4">
         {item.body.trim() ? (
           <MarkdownContent source={item.body} compact />
         ) : (
@@ -289,35 +311,9 @@ function DetailDrawer({
         )}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-border px-5 py-4">
-        <Button variant="outline" size="sm" className="text-[13px]" onClick={() => void openExternal(item.url)}>
-          <ExternalLink />
-          在 GitHub 開啟
-        </Button>
-        {taskId ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto text-[13px]"
-              onClick={onConvert}
-              title="已經有對應卡片，仍可再建一張"
-            >
-              再建一張
-            </Button>
-            <Button size="sm" className="text-[13px]" onClick={() => onOpenTask(taskId)}>
-              <SquareArrowOutUpRight />
-              前往卡片
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" className="ml-auto text-[13px]" onClick={onConvert}>
-            <Plus />
-            轉為 Backlog 卡片
-          </Button>
-        )}
+      {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
       </div>
-    </aside>
+    </DialogShell>
   )
 }
 
@@ -353,7 +349,7 @@ function Column<T extends GithubItem>({
         <h2 className={SECTION_LABEL}>{label}</h2>
         <span className="text-xs tabular-nums text-muted-foreground/80">{entries.length}</span>
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
+      <div className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] content-start gap-3 overflow-y-auto rounded-md p-1">
         {entries.length === 0 ? (
           <p className="px-2 py-1 text-sm text-muted-foreground/60">{empty}</p>
         ) : (
@@ -391,12 +387,14 @@ export function GithubView({
   onConvert,
   onOpenTask,
   onOpenSettings,
+  sourceKind,
+  embedded = false,
 }: GithubViewProps) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const now = useNow(30_000)
 
   const repos = inbox?.status === 'ok' ? inbox.repos : []
-  const options = githubFilterOptions(repos, filters)
+  const options = githubFilterOptions(repos, filters, sourceKind)
   const filtered = hasGithubFilters(filters)
   const issues = githubEntries(repos, 'issues', filters)
   const prs = githubEntries(repos, 'prs', filters)
@@ -404,7 +402,8 @@ export function GithubView({
     (r) => r.error && (filters.projects.length === 0 || filters.projects.includes(r.projectName))
   )
   const selected =
-    [...issues, ...prs].find((entry) => githubItemKey(entry.item) === selectedKey) ?? null
+    [...(sourceKind === 'prs' ? [] : issues), ...(sourceKind === 'issues' ? [] : prs)]
+      .find((entry) => githubItemKey(entry.item) === selectedKey) ?? null
   // Once the selected item is filtered out, clearing the filter must not reopen its drawer.
   const selectionHidden = inbox?.status === 'ok' && selectedKey !== null && selected === null
   useEffect(() => {
@@ -450,8 +449,8 @@ export function GithubView({
             ))}
           </div>
         )}
-        <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
-          <Column
+        <div className="min-h-0 flex-1">
+          {sourceKind !== 'prs' && <Column
             label="Issues"
             entries={issues}
             empty={filtered ? '沒有符合篩選條件的 Issue' : '沒有指派給你或你建立的 open Issue'}
@@ -459,8 +458,8 @@ export function GithubView({
             boardCards={boardCards}
             now={now}
             onSelect={setSelectedKey}
-          />
-          <Column
+          />}
+          {sourceKind !== 'issues' && <Column
             label="Pull Requests"
             entries={prs}
             empty={
@@ -470,7 +469,7 @@ export function GithubView({
             boardCards={boardCards}
             now={now}
             onSelect={setSelectedKey}
-          />
+          />}
         </div>
       </div>
     )
@@ -478,7 +477,7 @@ export function GithubView({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-background"
+      className={cn('flex min-h-0 flex-col bg-background', embedded ? 'flex-1' : 'h-full')}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && selectedKey) {
           event.stopPropagation()
@@ -486,18 +485,17 @@ export function GithubView({
         }
       }}
     >
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
-        <ViewTabs value={view} onChange={onViewChange} />
-        <span className="h-4 w-px bg-border" />
-        <GithubFilterMenu
+      <div className={cn('flex shrink-0 items-center gap-3 border-b border-border px-5', embedded ? 'h-11' : 'h-12')}>
+        {!embedded && <><ViewTabs value={view} onChange={onViewChange} /><span className="h-4 w-px bg-border" /></>}
+        {sourceKind !== 'issues' && <GithubFilterMenu
           name="專案"
           allLabel="所有專案"
           icon={Layers}
           options={options.projects}
           value={filters.projects}
           onChange={setFilter('projects')}
-        />
-        <GithubFilterMenu
+        />}
+        {sourceKind !== 'issues' && <GithubFilterMenu
           name="Assignee"
           allLabel="所有 Assignee"
           icon={UserCheck}
@@ -505,7 +503,7 @@ export function GithubView({
           value={filters.assignees}
           onChange={setFilter('assignees')}
           optionLabel={assigneeLabel}
-        />
+        />}
         <GithubFilterMenu
           name="發起人"
           allLabel="所有發起人"
@@ -525,7 +523,7 @@ export function GithubView({
           </button>
         )}
         <span className="ml-auto min-w-0 truncate text-sm text-muted-foreground">
-          {inbox?.login ? `${inbox.login} · 指派給我、我建立、我 review 的` : '指派給我、我建立、我 review 的'}
+          {inbox?.login ? `${inbox.login} · ` : ''}{sourceKind === 'issues' ? `${issues.length} 筆` : sourceKind === 'prs' ? `${prs.length} 筆` : '指派給我、我建立、我 review 的'}
           {updated ? ` · ${updated}` : ''}
         </span>
         <IconButton
