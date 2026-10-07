@@ -3,14 +3,17 @@ import {
   ExternalLink,
   GitPullRequest,
   GitPullRequestDraft,
+  Layers,
   Plus,
   RefreshCw,
   SquareArrowOutUpRight,
+  UserCheck,
+  UserPen,
   X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
-import { ProjectFilter } from '@/components/board-columns'
+import { GithubFilterMenu } from '@/components/github-filter-menu'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
@@ -26,8 +29,17 @@ import {
   relativeTime,
   REVIEW_LABEL,
 } from '@/lib/github-display'
+import {
+  EMPTY_GITHUB_FILTERS,
+  githubEntries,
+  githubFilterOptions,
+  hasGithubFilters,
+  UNASSIGNED,
+  type GithubEntry,
+  type GithubFilters,
+} from '@/lib/github-filter'
 import { cn } from '@/lib/utils'
-import type { GithubInbox, GithubIssue, GithubItem, GithubPr, GithubUser } from '@/lib/types'
+import type { GithubInbox, GithubItem, GithubUser } from '@/lib/types'
 
 export interface GithubViewProps {
   view: BoardView
@@ -36,20 +48,13 @@ export interface GithubViewProps {
   loading: boolean
   error: string | null
   onRefresh: () => void
-  /** Project name to show, null = every project. */
-  projectFilter: string | null
-  onProjectFilterChange: (next: string | null) => void
+  filters: GithubFilters
+  onFiltersChange: (next: GithubFilters) => void
   /** Board card already made from an Issue/PR, keyed by `repo#number`. */
   boardCards: Map<string, string>
   onConvert: (item: GithubItem, projectPath: string) => void
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
-}
-
-interface Entry<T extends GithubItem> {
-  item: T
-  projectName: string
-  projectPath: string
 }
 
 function useNow(intervalMs: number): number {
@@ -127,7 +132,7 @@ function GithubCard({
   now,
   onSelect,
 }: {
-  entry: Entry<GithubItem>
+  entry: GithubEntry
   selected: boolean
   onBoard: boolean
   now: number
@@ -208,7 +213,7 @@ function DetailDrawer({
   onConvert,
   onOpenTask,
 }: {
-  entry: Entry<GithubItem>
+  entry: GithubEntry
   taskId: string | undefined
   onClose: () => void
   onConvert: () => void
@@ -335,7 +340,7 @@ function Column<T extends GithubItem>({
   onSelect,
 }: {
   label: string
-  entries: Entry<T>[]
+  entries: GithubEntry<T>[]
   empty: string
   selectedKey: string | null
   boardCards: Map<string, string>
@@ -371,9 +376,7 @@ function Column<T extends GithubItem>({
   )
 }
 
-function byNewest(a: Entry<GithubItem>, b: Entry<GithubItem>): number {
-  return b.item.createdAt.localeCompare(a.item.createdAt)
-}
+const assigneeLabel = (login: string) => (login === UNASSIGNED ? '未指派' : login)
 
 export function GithubView({
   view,
@@ -382,8 +385,8 @@ export function GithubView({
   loading,
   error,
   onRefresh,
-  projectFilter,
-  onProjectFilterChange,
+  filters,
+  onFiltersChange,
   boardCards,
   onConvert,
   onOpenTask,
@@ -393,19 +396,21 @@ export function GithubView({
   const now = useNow(30_000)
 
   const repos = inbox?.status === 'ok' ? inbox.repos : []
-  const projects = Array.from(new Set(repos.map((r) => r.projectName))).sort((a, b) =>
-    a.localeCompare(b)
+  const options = githubFilterOptions(repos, filters)
+  const filtered = hasGithubFilters(filters)
+  const issues = githubEntries(repos, 'issues', filters)
+  const prs = githubEntries(repos, 'prs', filters)
+  const failed = repos.filter(
+    (r) => r.error && (filters.projects.length === 0 || filters.projects.includes(r.projectName))
   )
-  const shown = projectFilter ? repos.filter((r) => r.projectName === projectFilter) : repos
-  const issues: Entry<GithubIssue>[] = shown
-    .flatMap((r) => r.issues.map((item) => ({ item, projectName: r.projectName, projectPath: r.projectPath })))
-    .sort(byNewest)
-  const prs: Entry<GithubPr>[] = shown
-    .flatMap((r) => r.prs.map((item) => ({ item, projectName: r.projectName, projectPath: r.projectPath })))
-    .sort(byNewest)
-  const failed = shown.filter((r) => r.error)
   const selected =
     [...issues, ...prs].find((entry) => githubItemKey(entry.item) === selectedKey) ?? null
+  // Once the selected item is filtered out, clearing the filter must not reopen its drawer.
+  const selectionHidden = inbox?.status === 'ok' && selectedKey !== null && selected === null
+  useEffect(() => {
+    if (selectionHidden) setSelectedKey(null)
+  }, [selectionHidden])
+  const setFilter = (key: keyof GithubFilters) => (next: string[]) => onFiltersChange({ ...filters, [key]: next })
 
   const fetchedAt = inbox?.fetchedAt ?? 0
   const updated = fetchedAt ? `${relativeTime(new Date(fetchedAt).toISOString(), now)}更新` : null
@@ -449,7 +454,7 @@ export function GithubView({
           <Column
             label="Issues"
             entries={issues}
-            empty="沒有指派給你或你建立的 open Issue"
+            empty={filtered ? '沒有符合篩選條件的 Issue' : '沒有指派給你或你建立的 open Issue'}
             selectedKey={selectedKey}
             boardCards={boardCards}
             now={now}
@@ -458,7 +463,9 @@ export function GithubView({
           <Column
             label="Pull Requests"
             entries={prs}
-            empty="沒有指派給你、你建立或請你 review 的 open PR"
+            empty={
+              filtered ? '沒有符合篩選條件的 PR' : '沒有指派給你、你建立、請你 review 或你 review 過的 open PR'
+            }
             selectedKey={selectedKey}
             boardCards={boardCards}
             now={now}
@@ -482,9 +489,43 @@ export function GithubView({
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
         <ViewTabs value={view} onChange={onViewChange} />
         <span className="h-4 w-px bg-border" />
-        <ProjectFilter projects={projects} value={projectFilter} onChange={onProjectFilterChange} />
+        <GithubFilterMenu
+          name="專案"
+          allLabel="所有專案"
+          icon={Layers}
+          options={options.projects}
+          value={filters.projects}
+          onChange={setFilter('projects')}
+        />
+        <GithubFilterMenu
+          name="Assignee"
+          allLabel="所有 Assignee"
+          icon={UserCheck}
+          options={options.assignees}
+          value={filters.assignees}
+          onChange={setFilter('assignees')}
+          optionLabel={assigneeLabel}
+        />
+        <GithubFilterMenu
+          name="發起人"
+          allLabel="所有發起人"
+          icon={UserPen}
+          options={options.authors}
+          value={filters.authors}
+          onChange={setFilter('authors')}
+        />
+        {filtered && (
+          <button
+            type="button"
+            onClick={() => onFiltersChange(EMPTY_GITHUB_FILTERS)}
+            className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <X className="size-3.5 shrink-0" />
+            清除篩選
+          </button>
+        )}
         <span className="ml-auto min-w-0 truncate text-sm text-muted-foreground">
-          {inbox?.login ? `${inbox.login} · 指派給我、我建立的` : '指派給我、我建立的'}
+          {inbox?.login ? `${inbox.login} · 指派給我、我建立、我 review 的` : '指派給我、我建立、我 review 的'}
           {updated ? ` · ${updated}` : ''}
         </span>
         <IconButton

@@ -40,6 +40,7 @@ import {
   updateTask,
 } from '@/lib/api'
 import { boardGithubCards, draftFromItem } from '@/lib/github-display'
+import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
 import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import type {
   AgentCliId,
@@ -133,9 +134,9 @@ export default function HomePage() {
   const [newTaskNonce, setNewTaskNonce] = useState(0)
 
   const [newTaskDraft, setNewTaskDraft] = useState<NewTaskDraft | null>(null)
-  // Which view the top pane shows, and the project the Issues & PRs view is narrowed to.
+  // Which view the top pane shows, and what the Issues & PRs view is narrowed to (session only).
   const [view, setView] = useState<BoardView>('board')
-  const [githubProject, setGithubProject] = useState<string | null>(null)
+  const [githubFilters, setGithubFilters] = useState<GithubFilters>(EMPTY_GITHUB_FILTERS)
 
   useEffect(() => {
     let active = true
@@ -474,8 +475,10 @@ export default function HomePage() {
         : { name, issues: null, prs: null }
     })
 
-  const selectGithubProject = (name: string | null) => {
-    setGithubProject(name)
+  // A sidebar project narrows the view to just that project; clicking it again widens it back.
+  const selectGithubProject = (name: string) => {
+    const only = view === 'github' && githubFilters.projects.length === 1 && githubFilters.projects[0] === name
+    setGithubFilters({ ...githubFilters, projects: only ? [] : [name] })
     setView('github')
   }
 
@@ -505,7 +508,7 @@ export default function HomePage() {
                 taskCount={allTasks.length}
                 githubCount={githubCount}
                 projects={sideMenuProjects}
-                activeProject={githubProject}
+                activeProjects={githubFilters.projects}
                 onSelectProject={selectGithubProject}
                 onNewTask={handleOpenNewTask}
                 remoteActive={!!remoteHost.roomCode}
@@ -557,8 +560,8 @@ export default function HomePage() {
                         void github.refresh()
                         void taskLinks.refresh()
                       }}
-                      projectFilter={githubProject}
-                      onProjectFilterChange={setGithubProject}
+                      filters={githubFilters}
+                      onFiltersChange={setGithubFilters}
                       boardCards={githubCards}
                       onConvert={handleConvertGithubItem}
                       onOpenTask={openTab}
