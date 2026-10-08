@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 import { inputJiraAuthLogin } from '@/lib/api'
+import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/terminal-links'
 
 export function JiraAuthTerminal({ output, active }: { output: string; active: boolean }) {
   const container = useRef<HTMLDivElement>(null)
@@ -15,11 +16,26 @@ export function JiraAuthTerminal({ output, active }: { output: string; active: b
     let disposed = false
     let resize: ResizeObserver | null = null
     let current: XTerm | null = null
-    void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]).then(([{ Terminal }, { FitAddon }]) => {
+    void Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/addon-web-links')]).then(([{ Terminal }, { FitAddon }, { WebLinksAddon }]) => {
       if (disposed || !container.current) return
-      const term = new Terminal({ convertEol: true, cursorBlink: true, fontSize: 12, rows: 12, theme: { background: '#111827' } })
+      const term = new Terminal({
+        convertEol: true,
+        cursorBlink: true,
+        fontSize: 12,
+        rows: 12,
+        theme: { background: '#111827' },
+        linkHandler: {
+          activate: (_event, uri) => openTerminalLink(uri),
+          hover: (_event, uri) => showTerminalLink(term, uri),
+          leave: () => hideTerminalLink(term),
+        },
+      })
       const fit = new FitAddon()
       term.loadAddon(fit)
+      term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri), {
+        hover: (_event, uri) => showTerminalLink(term, uri),
+        leave: () => hideTerminalLink(term),
+      }))
       term.open(container.current)
       fit.fit()
       resize = new ResizeObserver(() => fit.fit())

@@ -37,6 +37,8 @@ const webDir = path.join(root, 'app')
 const FAKE_AGENT = `#!/bin/sh
 if [ "$1" = "-p" ]; then NODE_OPTIONS= exec "${process.execPath}" "${path.join(root, 'e2e', 'fake-claude-models.mjs')}"; fi
 echo "fake-claude ready"
+echo "https://example.com/plain-link"
+printf '\\033]8;;https://example.com/osc-link\\033\\\\OSC link\\033]8;;\\033\\\\\\n'
 echo "written by the fake agent" > fake-agent-output.txt
 while read -r line; do echo "got:$line"; done
 `
@@ -195,6 +197,27 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // Start: core builds the launch; the fake agent runs in the worktree.
   await page.getByRole('button', { name: '開始' }).click()
   await waitForTerminal(page, 'fake-claude ready')
+
+  // Both printed URLs and OSC 8 hyperlinks open safely in a new tab.
+  await waitForTerminal(page, 'https://example.com/plain-link')
+  for (const [text, url] of [
+    ['https://example.com/plain-link', 'https://example.com/plain-link'],
+    ['OSC link', 'https://example.com/osc-link'],
+  ]) {
+    const link = page.locator('.xterm-rows').getByText(text, { exact: false }).first()
+    const box = await link.boundingBox()
+    assert.ok(box, `${text} is visible in the terminal`)
+    const x = box.x + Math.min(box.width / 2, 24)
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.waitForFunction((expected) => document.querySelector('.xterm')?.title === expected, url)
+    const popupPromise = page.waitForEvent('popup')
+    await page.mouse.click(x, y)
+    const popup = await popupPromise
+    assert.equal(popup.url(), url)
+    assert.equal(await popup.evaluate(() => window.opener), null)
+    await popup.close()
+  }
 
   // Type: keystrokes go over the WebSocket into the pty.
   await page.locator('.xterm-helper-textarea').first().focus()

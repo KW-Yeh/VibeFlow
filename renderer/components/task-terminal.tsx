@@ -13,6 +13,7 @@ import {
 } from '@/lib/api'
 import type { LaunchIntent } from '@/lib/types'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
+import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
 import { ArrowDown, Bot, Undo2 } from 'lucide-react'
 
@@ -233,8 +234,11 @@ export function TaskTerminal({
     let offWheel: (() => void) | undefined
 
     void (async () => {
-      const { Terminal } = await import('@xterm/xterm')
-      const { FitAddon } = await import('@xterm/addon-fit')
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
+        import('@xterm/xterm'),
+        import('@xterm/addon-fit'),
+        import('@xterm/addon-web-links'),
+      ])
       if (disposed || !containerRef.current) return
 
       const term = new Terminal({
@@ -242,6 +246,11 @@ export function TaskTerminal({
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
         disableStdin: readOnlyRef.current,
+        linkHandler: {
+          activate: (_event, uri) => openTerminalLink(uri),
+          hover: (_event, uri) => showTerminalLink(term, uri),
+          leave: () => hideTerminalLink(term),
+        },
         // Notion-after-dark terminal palette. xterm only accepts concrete
         // colour strings (no CSS vars), so these are whitelisted hardcodes
         // aligned to the app's dark tokens (--background #191919, --primary
@@ -273,6 +282,10 @@ export function TaskTerminal({
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
+      term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri), {
+        hover: (_event, uri) => showTerminalLink(term, uri),
+        leave: () => hideTerminalLink(term),
+      }))
       term.open(containerRef.current)
       const fitToVisibleViewport = () => {
         fit.fit()
