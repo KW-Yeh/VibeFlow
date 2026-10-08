@@ -14,6 +14,7 @@ import { runTaskCommand, resolveStorePath, TASK_USAGE } from './task-command'
 import { isWebDir, loginUrl, startHost, type HostOptions, type RunningHost } from './host'
 import { connectToHost } from './remote'
 import { formatChecks, runDoctor } from './doctor'
+import { runUpdate } from './update-command'
 
 const USAGE = `
 VibeFlow — intent-driven kanban for coding agents
@@ -28,6 +29,7 @@ Usage:
   vibeflow open <path>     Add a project folder to the recent list, then open the Web UI
   vibeflow doctor          Check Node, git, tmux, node-pty and the agent CLIs
                            (--skip agents,web,… leaves checks out, e.g. on CI)
+  vibeflow update          Install the latest global npm release (restart the host afterward)
   vibeflow task …          Create / update cards (vibeflow task --help)
 
 Options:
@@ -353,6 +355,9 @@ export async function main(argv: string[]): Promise<number> {
         return await cmdStop(values, rest, userDataDir)
       case 'shutdown':
         return await cmdShutdown(userDataDir)
+      case 'update':
+        if (rest.length) throw new Error('vibeflow update 不接受其他參數')
+        return runUpdate(layout)
       case 'open':
         return await cmdOpen(values, rest[0], layout, userDataDir)
       case 'doctor': {

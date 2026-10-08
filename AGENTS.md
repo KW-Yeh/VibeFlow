@@ -38,11 +38,12 @@ the project folder is chosen **per task** at creation time (there is no global
 |---|---|---|
 | One-click start | `./start.command` / `start.cmd` | macOS/Linux / Windows; a double-click works for both. Same steps: `npm ci` only when `package-lock.json` is newer than the last install, then `npm run build:web` and `npm start` (extra args pass through). |
 | Web UI from source | `npm start` | Builds `app/` once if missing, then runs the `vibeflow` CLI from source (`npm start -- tui`, `npm start -- --profile dev --no-open`). |
-| Any CLI command | `npm run vibeflow -- <command>` | `status`, `stop`, `shutdown`, `open <path>`, `doctor`, `tui`, `task …` — see `vibeflow --help` |
+| Any CLI command | `npm run vibeflow -- <command>` | `status`, `stop`, `shutdown`, `open <path>`, `doctor`, `update`, `tui`, `task …` — see `vibeflow --help` |
 | Build Web UI | `npm run build:web` | Static export of the renderer into `app/` (what `vibeflow` serves). `-- --webpack` on restricted runners. |
 | Build npm package | `npm run build:npm` | esbuild bundle of core+cli+tui + the Web UI into `dist-npm/`; then `npm pack ./dist-npm`. Never `npm publish` locally — CI publishes with provenance. |
 | E2E | `npm run test:e2e` | Playwright (playwright-core, the installed Edge/Chrome) drives the Web UI against a real host with a fake agent. Needs `npm run build:web` first. |
 | Doctor | `npm run doctor` | Environment checks; `-- --skip agents` where no agent CLI is installed |
+| Update npm install | `vibeflow update` | Only from the globally installed npm package; installs its `@latest` release and asks the user to restart a running host. Source, npx, and local installs are refused. |
 | Create task via CLI | `npm run vibeflow -- task create --project <path> --title <text> --prompt <text> --profile dev` | Creates a board card plus git branch/worktree; use `--profile dev` for the dev store and omit it for the default store. `--help` lists every option |
 | Typecheck (core) | `npx tsc --noEmit -p tsconfig.json` | Checks `packages/*/src/**/*.ts` |
 | Typecheck (renderer) | `npx tsc --noEmit -p renderer/tsconfig.json` | Delete stale `renderer/.next` first if you see duplicate-type errors |

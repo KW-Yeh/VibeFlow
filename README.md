@@ -83,11 +83,13 @@ vibeflow doctor
 
 三種方式讀寫的是同一份看板，可以隨時換。
 
-之後要更新到最新版，再執行一次同一行安裝指令即可：
+全域 npm 安裝後，要更新到最新版可執行：
 
 ```bash
-npm i -g @kw-yeh/vibeflow@latest
+vibeflow update
 ```
+
+更新完成後，若 VibeFlow 正在執行，請自行關閉並重新啟動 host，才會載入新版。此指令只適用於全域 npm 安裝；從原始碼、`npx` 或專案本地安裝執行時不會更動套件。
 
 ### 安裝時出現 `EACCES: permission denied`
 
@@ -115,6 +117,7 @@ vibeflow stop <id> | --all   # 停止某張卡（或全部）的 agent
 vibeflow shutdown            # 關閉 VibeFlow（tmux 裡的 agent 會繼續執行）
 vibeflow open <path>         # 把專案資料夾加進最近使用清單並開啟 Web UI
 vibeflow doctor              # 檢查前置需求
+vibeflow update              # 更新全域 npm 安裝的 VibeFlow
 vibeflow task create …       # 不開 UI 直接建卡，選項見 vibeflow task --help
 ```
 

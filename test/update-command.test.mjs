@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { runUpdate } from '../packages/cli/src/update-command.ts'
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function fixture(t, name = '@kw-yeh/vibeflow') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-update-'))
@@ -75,4 +79,21 @@ test('npm lookup or installation failure returns nonzero and never reports succe
   assert.equal(install.code, 13)
   assert.match(install.errors[0], /npm 結束碼 13/)
   assert.doesNotMatch(install.logs.join(' '), /更新完成/)
+})
+
+test('top-level CLI dispatch refuses a source update and keeps task update separate', () => {
+  const cli = (...args) => spawnSync(process.execPath, [path.join(repoRoot, 'scripts', 'vibeflow.mjs'), ...args], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: process.env,
+  })
+  const update = cli('update')
+  assert.equal(update.status, 1)
+  assert.match(update.stderr, /只適用於全域 npm 安裝/)
+  const help = cli('--help')
+  assert.equal(help.status, 0)
+  assert.match(help.stdout, /vibeflow update/)
+  const taskHelp = cli('task', '--help')
+  assert.equal(taskHelp.status, 0)
+  assert.match(taskHelp.stdout, /vibeflow task update/)
 })
