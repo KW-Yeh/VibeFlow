@@ -645,13 +645,13 @@ test('jira:inbox uses injected acli and a Jira-sourced card persists its ref', a
   const core = createCore({
     sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9',
     jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
-    acliRunner: async (args) => { calls.push(args); return JSON.stringify([{ key: 'WR-5729', fields: { summary: 'Fix login', status: { name: 'To Do' } } }]) },
+    acliRunner: async (args) => { calls.push(args); return JSON.stringify(args[2] === 'search' ? [{ key: 'WR-5729', fields: { summary: 'Fix login', status: { name: 'To Do' } } }] : { key: 'WR-5729', fields: {} }) },
   })
   t.after(() => core.shutdown())
   const inbox = await core.handlers['jira:inbox']({ force: true })
   assert.equal(inbox.status, 'ok')
   assert.equal(inbox.tickets[0].key, 'WR-5729')
-  assert.equal(calls.length, 1)
+  assert.equal(calls.length, 2)
   assert.match(calls[0].join(' '), /openSprints\(\)/)
 
   const jira = { key: 'WR-5729', site: 'example.atlassian.net', url: 'https://example.atlassian.net/browse/WR-5729' }

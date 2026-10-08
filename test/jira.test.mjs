@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSearchArgs, createJiraService, isJiraRef, JIRA_INBOX_JQL, toTicket } from '../packages/core/src/jira.ts'
+import { buildSearchArgs, buildViewArgs, createJiraService, isJiraRef, JIRA_INBOX_JQL, toTicket } from '../packages/core/src/jira.ts'
 import { parseAuthStatus } from '../packages/core/src/jira-auth.ts'
 
 const site = 'example.atlassian.net'
@@ -16,11 +16,14 @@ const raw = {
   },
 }
 
-test('Jira search uses the assigned active-sprint JQL and requested fields', () => {
-  const args = buildSearchArgs(['customfield_12345'])
+test('Jira search requests CLI-supported fields and view requests detail fields', () => {
+  const args = buildSearchArgs()
   assert.ok(args.includes(JIRA_INBOX_JQL))
-  assert.match(args[args.indexOf('--fields') + 1], /customfield_12345/)
+  assert.equal(args[args.indexOf('--fields') + 1], 'key,summary,status,issuetype,priority,description')
   assert.deepEqual(args.slice(-4), ['--json', '--paginate', '--limit', '200'])
+  const view = buildViewArgs('WR-5729', ['customfield_12345'])
+  assert.deepEqual(view.slice(0, 4), ['jira', 'workitem', 'view', 'WR-5729'])
+  assert.match(view[view.indexOf('--fields') + 1], /customfield_12345/)
 })
 
 test('Jira ticket conversion reads points, sprint, category and ADF', () => {
@@ -53,16 +56,46 @@ test('Jira inbox caches search for five minutes and force refreshes', async () =
   const service = createJiraService({
     now: () => time,
     authStatus: async () => ({ installed: true, authenticated: true, site }),
-    run: async () => { calls++; return JSON.stringify({ issues: [raw] }) },
+    run: async (args) => { calls++; return JSON.stringify(args[2] === 'search' ? { issues: [raw] } : raw) },
   })
   assert.equal((await service.inbox()).tickets[0].key, 'WR-5729')
   await service.inbox()
-  assert.equal(calls, 1)
-  await service.inbox({ force: true })
   assert.equal(calls, 2)
+  await service.inbox({ force: true })
+  assert.equal(calls, 4)
   time += 300_001
   await service.inbox()
-  assert.equal(calls, 3)
+  assert.equal(calls, 6)
+})
+
+test('Jira inbox merges individual work item details into search results', async () => {
+  const calls = []
+  const service = createJiraService({
+    authStatus: async () => ({ installed: true, authenticated: true, site }),
+    run: async (args) => {
+      calls.push(args)
+      return JSON.stringify(args[2] === 'search'
+        ? [{ key: raw.key, fields: { summary: raw.fields.summary, status: raw.fields.status } }]
+        : { key: raw.key, fields: raw.fields })
+    },
+  })
+  const inbox = await service.inbox()
+  assert.equal(inbox.tickets[0].storyPoints, 8)
+  assert.equal(inbox.tickets[0].dueDate, '2026-10-29')
+  assert.equal(calls[1][2], 'view')
+})
+
+test('Jira inbox keeps search results and reports failed detail requests', async () => {
+  const service = createJiraService({
+    authStatus: async () => ({ installed: true, authenticated: true, site }),
+    run: async (args) => {
+      if (args[2] === 'view') throw new Error('detail unavailable')
+      return JSON.stringify([raw])
+    },
+  })
+  const inbox = await service.inbox()
+  assert.equal(inbox.tickets[0].key, raw.key)
+  assert.match(inbox.error, /1 張 Jira ticket/)
 })
 
 test('Jira inbox handles missing CLI and unauthenticated account', async () => {

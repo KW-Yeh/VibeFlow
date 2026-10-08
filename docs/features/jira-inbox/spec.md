@@ -100,6 +100,7 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | 情境或觸發條件 | 預期行為 |
 | --- | --- |
 | 抓取範圍 | JQL：`assignee = currentUser() AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC`，抓全部（分頁抓取，最多 200 筆） |
+| 欄位讀取 | `acli jira workitem search` 取基本欄位，再以並行 `view` 取期限、Sprint、Story Points 等詳細欄位；單張詳情失敗時保留基本資料並顯示提示 |
 | 排序 | 先依期限由近到遠，沒有期限的排最後；期限相同時依 key 的數字由大到小 |
 | Status 篩選選項 | 抓到的所有 status 名稱。順序依 status category（To Do 類 → 進行中類 → Done 類），同類內依名稱排序。已勾選但重新整理後消失的值仍保留，方便取消 |
 | Status 篩選 | 複選。沒勾任何選項時顯示全部；勾了就只顯示這些 status 的 ticket。按鈕文字規則與現有篩選相同：沒勾 =「所有 Status」，勾一個 = 該值，勾多個 =「Status · N」 |

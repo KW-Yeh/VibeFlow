@@ -35,10 +35,15 @@ export const JIRA_INBOX_JQL = 'assignee = currentUser() AND (statusCategory != D
 export const DEFAULT_POINT_FIELDS = ['customfield_10033', 'customfield_10016']
 export const JIRA_CACHE_TTL_MS = 5 * 60 * 1000
 
-export function buildSearchArgs(pointFields = DEFAULT_POINT_FIELDS): string[] {
+export function buildSearchArgs(): string[] {
   return ['jira', 'workitem', 'search', '--jql', JIRA_INBOX_JQL, '--fields',
-    [...new Set(['key', 'summary', 'status', 'issuetype', 'priority', 'duedate', 'parent', 'description', 'created', 'updated', 'project', 'customfield_10020', ...pointFields])].join(','),
+    'key,summary,status,issuetype,priority,description',
     '--json', '--paginate', '--limit', '200']
+}
+
+export function buildViewArgs(key: string, pointFields = DEFAULT_POINT_FIELDS): string[] {
+  return ['jira', 'workitem', 'view', key, '--fields',
+    [...new Set(['duedate', 'parent', 'created', 'updated', 'project', 'customfield_10020', ...pointFields])].join(','), '--json']
 }
 
 export function isJiraRef(value: unknown): value is JiraRef {
@@ -84,6 +89,28 @@ function searchRows(output: string): unknown[] {
   throw new Error('無法辨識 acli Jira search 的 JSON 格式')
 }
 
+async function enrichRows(rows: unknown[], run: AcliRunner, pointFields: string[]): Promise<{ rows: unknown[]; failed: number }> {
+  const enriched = Array.from(rows)
+  let next = 0
+  let failed = 0
+  async function worker() {
+    while (next < rows.length) {
+      const index = next++
+      const row = asRaw(rows[index])
+      if (typeof row.key !== 'string') continue
+      try {
+        const detail = asRaw(JSON.parse(await run(buildViewArgs(row.key, pointFields))))
+        enriched[index] = { ...row, fields: { ...asRaw(row.fields), ...asRaw(detail.fields) } }
+      } catch {
+        // Keep the search result when an individual detail request fails.
+        failed++
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, rows.length) }, () => worker()))
+  return { rows: enriched, failed }
+}
+
 export function createJiraService(options: {
   run?: AcliRunner
   authStatus?: () => Promise<JiraAuthStatus>
@@ -102,10 +129,15 @@ export function createJiraService(options: {
       if (!auth.authenticated || !auth.site) return { status: 'unauthenticated', fetchedAt: 0, tickets: [] }
       if (cache && cache.site === auth.site && !opts.force && now() - cache.at < JIRA_CACHE_TTL_MS) return cache.value
       const at = now()
-      const value: Promise<JiraInbox> = run(buildSearchArgs(options.pointFields?.())).then((output) => ({
-        status: 'ok' as const, site: auth.site, email: auth.email, fetchedAt: at,
-        tickets: searchRows(output).map((row) => toTicket(row, auth.site!, options.pointFields?.())).filter((ticket): ticket is JiraTicket => ticket !== null),
-      })).catch((err) => ({
+      const pointFields = options.pointFields?.() ?? DEFAULT_POINT_FIELDS
+      const value: Promise<JiraInbox> = run(buildSearchArgs()).then(async (output) => {
+        const detail = await enrichRows(searchRows(output), run, pointFields)
+        return {
+          status: 'ok' as const, site: auth.site, email: auth.email, fetchedAt: at,
+          tickets: detail.rows.map((row) => toTicket(row, auth.site!, pointFields)).filter((ticket): ticket is JiraTicket => ticket !== null),
+          ...(detail.failed ? { error: `${detail.failed} 張 Jira ticket 的詳細欄位讀取失敗；清單仍可查看。` } : {}),
+        }
+      }).catch((err) => ({
         status: 'ok' as const, site: auth.site, email: auth.email, fetchedAt: at, tickets: [],
         error: String((err as { stderr?: string; message?: string }).stderr || (err as Error).message || err),
       }))

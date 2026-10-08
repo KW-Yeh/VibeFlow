@@ -317,7 +317,7 @@ test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !ha
   ]
   const core = createCore({ sessions, bus, version: '9.9.9',
     jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
-    acliRunner: async () => JSON.stringify({ issues: rows }),
+    acliRunner: async (args) => JSON.stringify(args[2] === 'search' ? { issues: rows } : rows.find((row) => row.key === args[3])),
     githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
     ghRunner: async (args) => args[0] === 'search' && args[1] === 'issues' && args.includes('--assignee')
       ? JSON.stringify([{ repository: { nameWithOwner: 'e2e/VibeFlow' } }])
