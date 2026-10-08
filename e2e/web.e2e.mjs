@@ -3,7 +3,7 @@
 //
 //   npm run build:web && npm run test:e2e
 //
-// The GitHub CLI is replaced too (e2e/fake-gh.mjs), so the Issues & PRs view
+// The GitHub CLI is replaced too (e2e/fake-gh.mjs), so the work-item view
 // runs on fixed Issues/PRs without the network — on macOS and Linux only: core
 // spawns `gh` without a shell, which on Windows resolves only .exe/.com, so a
 // script on PATH cannot stand in for the runner's own gh.exe.
@@ -168,8 +168,18 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     }, null, { timeout: 20_000, polling: 250 })
     const codex = await page.evaluate(() => window.vibeflow.listAgentModels('codex'))
     assert.notEqual(codex.source, 'codex-app-server')
+    // The page may have mounted before the host finished warming the catalog.
+    // Reload after the bridge reports the ready list so the picker reads it.
+    await page.reload()
     await page.getByRole('button', { name: 'Advanced' }).click()
     const modelSelect = page.locator('select[name="agent-model"]')
+    if (await modelSelect.locator('option', { hasText: 'Fable 5.1' }).count() === 0) {
+      // If the picker first read fallback models, changing agents asks core
+      // again after the catalog has finished warming.
+      const agentSelect = page.locator('select[name="agent-agent-cli"]')
+      await agentSelect.selectOption('codex')
+      await agentSelect.selectOption('claude')
+    }
     await modelSelect.locator('option', { hasText: 'Fable 5.1' }).waitFor({ state: 'attached' })
     assert.equal(await modelSelect.locator('option[value="default"]').count(), 0)
     await page.getByRole('button', { name: 'Advanced' }).click()
@@ -212,7 +222,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(fs.existsSync(task.worktreePath), false)
 
   if (canFakeGh) {
-    // Issues & PRs: a project whose origin is on GitHub lists its Issues; one
+    // Work items: a project whose origin is on GitHub lists its Issues; one
     // creates a Backlog card directly from the detail modal.
     const gh = await makeRepo({ withRemote: false })
     t.after(gh.cleanup)
@@ -222,7 +232,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
       gh.projectPath
     )
     await page.getByText('Seed card').first().waitFor()
-    await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('tab', { name: '工作項目' }).first().click()
     await page.getByRole('tab', { name: /^Issues/ }).last().click()
     await page.getByRole('button', { name: /^專案篩選/ }).waitFor()
     assert.equal(await page.getByRole('button', { name: /^Assignee篩選/ }).count(), 0)
@@ -253,7 +263,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
 
     // PR filters remain independent of Issues and include reviewed PRs.
-    await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('tab', { name: '工作項目' }).first().click()
     await page.getByRole('tab', { name: /^Pull Requests/ }).click()
     await page.getByRole('button', { name: /^Assignee篩選/ }).waitFor()
     await page.getByRole('button', { name: /#107/ }).waitFor()
@@ -293,15 +303,21 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.ok(!/Error/.test(hostLog), hostLog)
 })
 
-test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+test('Web UI: Jira status columns, attachment links and folder-picked Backlog creation', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
   const browser = await launchBrowser()
   if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
   t.after(() => browser.close())
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-jira-e2e-'))
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  const { projectPath: newProjectPath, cleanup: cleanupNewProject } = await makeRepo({ withRemote: false })
   await git(projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
-  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
-  setPlatform(createNodePlatform({ userDataDir: tmp }))
+  t.after(async () => { await cleanup(); await cleanupNewProject(); fs.rmSync(tmp, { recursive: true, force: true }) })
+  let folderPicks = 0
+  const openedUrls = []
+  setPlatform({ ...createNodePlatform({ userDataDir: tmp }),
+    pickFolder: async () => ++folderPicks === 2 ? { path: newProjectPath } : { canceled: true },
+    openExternal: async (url) => { openedUrls.push(url) },
+  })
   getStore().set('settings', { autoMode: true, workstationPath: path.join(tmp, 'ws') })
   const bus = new EventBus()
   const sessions = {
@@ -311,7 +327,8 @@ test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !ha
   }
   const rows = [
     { key: 'WR-5729', fields: { summary: 'Fix login', status: { name: 'Architecture Review', statusCategory: { key: 'indeterminate' } },
-      issuetype: { name: 'Story' }, duedate: '2026-10-29', customfield_10033: 8,
+      issuetype: { name: 'Story' }, duedate: '2026-10-29', customfield_10033: 8, parent: { key: 'WR-100' },
+      attachment: [{ id: '12345', filename: 'design-notes.pdf', size: 123456 }],
       description: { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Context' }] }] } } },
     { key: 'WR-5730', fields: { summary: 'Review docs', status: { name: 'To Do', statusCategory: { key: 'new' } }, issuetype: { name: 'Task' } } },
   ]
@@ -330,29 +347,50 @@ test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !ha
   await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
-  await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+  await page.getByRole('tab', { name: '工作項目' }).first().click()
   await page.getByRole('tab', { name: /Jira/ }).waitFor()
   assert.equal(await page.getByRole('tab', { name: /Jira/ }).getAttribute('aria-selected'), 'true')
   assert.equal(await page.getByRole('separator', { name: '調整看板與工作區的高度' }).isVisible(), false)
   await page.getByText('Fix login').waitFor()
   assert.equal(await page.locator('button[aria-pressed]').count(), 2)
-  await page.getByRole('button', { name: /^Status篩選/ }).click()
-  await page.getByRole('menuitemcheckbox', { name: 'Architecture Review' }).click()
-  await page.keyboard.press('Escape')
-  assert.equal(await page.locator('button[aria-pressed]').count(), 1)
-  await page.locator('button[aria-pressed]').click()
+  assert.equal(await page.getByRole('button', { name: /^Status篩選/ }).count(), 0)
+  assert.equal(await page.getByRole('region', { name: 'To Do，1 筆' }).count(), 1)
+  assert.equal(await page.getByRole('region', { name: 'Architecture Review，1 筆' }).count(), 1)
+  await page.getByRole('button', { name: /WR-5729/ }).click()
   await page.getByRole('dialog').waitFor()
+  assert.equal(await page.getByRole('link', { name: 'WR-5729' }).getAttribute('href'), 'https://example.atlassian.net/browse/WR-5729')
+  assert.equal(await page.getByRole('link', { name: 'WR-100' }).getAttribute('href'), 'https://example.atlassian.net/browse/WR-100')
+  assert.equal(await page.getByRole('link', { name: 'design-notes.pdf' }).getAttribute('href'), 'https://example.atlassian.net/rest/api/3/attachment/content/12345')
+  await page.getByRole('link', { name: 'WR-5729' }).click()
+  await page.getByRole('link', { name: 'WR-100' }).click()
+  await page.getByRole('link', { name: 'design-notes.pdf' }).click()
+  for (let attempt = 0; openedUrls.length < 3 && attempt < 20; attempt++) await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.deepEqual(openedUrls, [
+    'https://example.atlassian.net/browse/WR-5729',
+    'https://example.atlassian.net/browse/WR-100',
+    'https://example.atlassian.net/rest/api/3/attachment/content/12345',
+  ])
+  assert.equal(await page.getByRole('button', { name: '在 Jira 開啟' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
-  await page.getByLabel('建立到專案').selectOption(projectPath)
+  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
+  await page.waitForTimeout(100)
+  assert.equal(await page.getByLabel('建立到專案').inputValue(), '')
+  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
+  await page.waitForFunction((path) => document.querySelector('select[aria-label="建立到專案"]')?.value === path, newProjectPath)
+  assert.equal(await page.getByLabel('建立到專案').inputValue(), newProjectPath)
+  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
+  await page.waitForTimeout(100)
+  assert.equal(await page.getByLabel('建立到專案').inputValue(), newProjectPath)
   await page.getByRole('button', { name: '建立卡片' }).click()
   await page.getByText('已建立到 Backlog').waitFor()
   const state = await page.evaluate(() => window.vibeflow.getState())
   assert.equal(state.board.backlog[0].jira.key, 'WR-5729')
+  assert.equal(state.board.backlog[0].projectPath, newProjectPath)
   await page.setViewportSize({ width: 375, height: 780 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true)
   await page.getByRole('button', { name: '前往卡片' }).click()
   assert.equal(await page.getByRole('tab', { name: '看板' }).first().getAttribute('aria-selected'), 'true')
-  await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+  await page.getByRole('tab', { name: '工作項目' }).first().click()
   await page.getByRole('tab', { name: /Issues/ }).last().click()
   await page.getByRole('button', { name: /#112/ }).click()
   await page.getByRole('dialog').waitFor()
