@@ -535,6 +535,18 @@ export async function termStart(payload: {
   return b ? b.term.start(payload) : null
 }
 
+/** Start a shell in a selected folder or a card's project root. */
+export async function standaloneTermStart(payload: {
+  sessionKey: string
+  taskId?: string
+  projectPath?: string
+  cols?: number
+  rows?: number
+}): Promise<StartResult | null> {
+  const b = bridge()
+  return b ? b.term.startStandalone(payload) : null
+}
+
 /** Send keystrokes to the session identified by `sessionKey`. */
 export function termInput(sessionKey: string, data: string): void {
   bridge()?.term.input(sessionKey, data)

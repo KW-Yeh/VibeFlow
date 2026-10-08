@@ -106,6 +106,15 @@ export interface PtyStartPayload {
   rows?: number
 }
 
+export interface StandaloneTerminalPayload {
+  sessionKey: string
+  /** A card resolves its own project root; otherwise the user selected a folder. */
+  taskId?: string
+  projectPath?: string
+  cols?: number
+  rows?: number
+}
+
 export interface CreateTaskPayload {
   title: string
   description?: string
@@ -245,12 +254,14 @@ export interface Core {
 }
 
 /**
- * Build the core: one handler per channel in IPC_API_MAP.md, all taking task
- * ids rather than paths or commands, and all events on one bus.
+ * Build the core: one handler per channel in IPC_API_MAP.md. Task operations
+ * take ids; a standalone shell may take a selected folder when no task exists.
+ * No channel accepts a client-supplied shell command. Events use one bus.
  */
 export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
+  const standaloneTerminals = new Map<string, string>()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
   // user's, or the one the library assembles. Resolved once, in the background.
@@ -321,7 +332,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   async function teardownSession(key: string): Promise<void> {
+    const standalone = standaloneTerminals.has(key)
     await sessions.kill(key)
+    if (standalone) sessions.discardScrollback?.(key)
+    standaloneTerminals.delete(key)
     unwatchSubAgents(key)
   }
 
@@ -338,9 +352,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return key
   }
 
-  /** Session keys belong to known tasks. */
+  /** Session keys belong to known tasks or a standalone terminal opened here. */
   function requireSessionKey(sessionKey: unknown): string {
     const key = str(sessionKey, 'sessionKey')
+    if (standaloneTerminals.has(key)) return key
     requireTask(key.split(':')[0])
     return key
   }
@@ -727,6 +742,27 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         const current = findTask(task.id)
         if (current) trackProgress(current)
       }
+      return result
+    },
+
+    'terminal:start': async (payload) => {
+      const p = obj<StandaloneTerminalPayload>(payload, 'payload')
+      const key = str(p.sessionKey, 'sessionKey')
+      if (!/^terminal_[0-9a-f-]{36}$/.test(key)) invalid('invalid standalone terminal key')
+      if (Boolean(p.taskId) === Boolean(p.projectPath)) invalid('provide taskId or projectPath')
+      const cwd = str(p.taskId ? requireTask(p.taskId).projectPath : p.projectPath, 'projectPath')
+      if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
+        invalid('projectPath must be an existing absolute directory')
+      }
+      const previous = standaloneTerminals.get(key)
+      if (previous && previous !== cwd) invalid('terminal key already belongs to another directory')
+      const result = await sessions.start(key, {
+        cwd,
+        cols: typeof p.cols === 'number' ? p.cols : undefined,
+        rows: typeof p.rows === 'number' ? p.rows : undefined,
+      })
+      standaloneTerminals.set(key, cwd)
+      if (!p.taskId) recordRecentProject(getStore(), cwd)
       return result
     },
 

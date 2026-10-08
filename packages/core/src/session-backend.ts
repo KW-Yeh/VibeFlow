@@ -43,6 +43,8 @@ export interface SessionBackend {
    * restarting it. Null when the backend redraws on attach instead (tmux).
    */
   scrollback(key: string): string | null
+  /** Drop retained output when a standalone terminal is permanently closed. */
+  discardScrollback?(key: string): void
   /**
    * Whether the session's own history view is scrolled away from the live
    * output. Always false where the frontend's terminal holds the history (pty).
@@ -59,7 +61,7 @@ export interface SessionBackend {
   shutdown(): void
 }
 
-/** Session keys are task ids, optionally `<taskId>:<tab>`. Safe for tmux names and file names. */
+/** Session keys are task ids, `<taskId>:<tab>`, or `terminal_<uuid>`. Safe for tmux names and file names. */
 export function safeSessionName(key: string): string {
   return key.replace(/[^A-Za-z0-9_-]/g, '_')
 }

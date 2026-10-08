@@ -3,6 +3,7 @@ import Head from 'next/head'
 import { AnimatePresence } from 'motion/react'
 
 import { KanbanBoard } from '@/components/kanban-board'
+import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu, type SideMenuProject } from '@/components/side-menu'
@@ -45,6 +46,7 @@ import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
 import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
+import { basenameFromPath } from '@/lib/workspace-path'
 import type {
   AgentCliId,
   AvailableUpdate,
@@ -137,6 +139,7 @@ export default function HomePage() {
   // Open terminal tabs, in bar order. Session-only by design — nothing here is
   // persisted, so a restart starts from an empty bar.
   const [tabs, setTabs] = useState<TerminalTab[]>([])
+  const [gridTerminals, setGridTerminals] = useState<GridTerminal[]>([])
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
@@ -233,6 +236,22 @@ export default function HomePage() {
   }, [board])
 
   const pickProjectFolder = () => pickFolder('選擇專案資料夾')
+
+  const openGridTerminal = (projectPath: string, taskId?: string) => {
+    const sessionKey = `terminal_${window.crypto.randomUUID()}`
+    setGridTerminals((current) => [...current, {
+      sessionKey,
+      title: basenameFromPath(projectPath),
+      projectPath,
+      ...(taskId ? { taskId } : {}),
+    }])
+    setView('terminals')
+  }
+
+  const openTaskGridTerminal = (taskId: string) => {
+    const task = findTask(board, taskId)
+    if (task?.projectPath) openGridTerminal(task.projectPath, taskId)
+  }
 
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
@@ -574,6 +593,7 @@ export default function HomePage() {
                   </div>
                 )}
                 <div className="min-h-0 flex-1">
+                <div className={view === 'terminals' ? 'hidden' : 'h-full'}>
                 <KanbanBoard
                   tabBar={
                     <TerminalTabBar
@@ -591,6 +611,7 @@ export default function HomePage() {
                   onEditTask={handleOpenEditTask}
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
+                  onOpenTaskTerminal={openTaskGridTerminal}
                   autoMode={autoMode}
                   workstationPath={workstationPath}
                   subAgents={subAgents}
@@ -635,6 +656,21 @@ export default function HomePage() {
                   detectAgents={detectAgents}
                   onCreateTask={handleCreateTask}
                 />
+                </div>
+                <div className={view === 'terminals' ? 'h-full' : 'hidden'}>
+                  <TerminalGrid
+                    view={view}
+                    onViewChange={setView}
+                    terminals={gridTerminals}
+                    recentProjects={recentProjects}
+                    onCreate={(projectPath) => openGridTerminal(projectPath)}
+                    onRename={(sessionKey, title) => setGridTerminals((current) => current.map((terminal) =>
+                      terminal.sessionKey === sessionKey ? { ...terminal, title } : terminal
+                    ))}
+                    onClose={(sessionKey) => setGridTerminals((current) => current.filter((terminal) => terminal.sessionKey !== sessionKey))}
+                    onBrowse={pickProjectFolder}
+                  />
+                </div>
                 </div>
               </div>
             </div>

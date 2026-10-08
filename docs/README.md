@@ -48,6 +48,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 
 | [jira-inbox](features/jira-inbox/spec.md) | Atlassian sign-in via `acli jira auth login --web` and a Jira tab of tickets assigned to me; Issues & PRs split into Jira / Issues / PRs tabs with their own filters; the terminal pane is hidden outside the board; item details in a modal; one-click card creation |
 | [work-order-page](features/work-order-page/spec.md) ([plan](features/work-order-page/plan.md)) | Refine the shared work-item view, Jira ticket layout, project selection, links, and attachment access |
+| [terminal-grid](features/terminal-grid/spec.md) ([plan](features/terminal-grid/plan.md)) | Independent project-folder terminals in a top-level grid, with one-click card actions |
 
 ## Adding a document
 
