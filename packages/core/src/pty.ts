@@ -171,6 +171,10 @@ export class PtyBackend implements SessionBackend {
     return this.scrollbacks.get(key) ?? null
   }
 
+  discardScrollback(key: string): void {
+    this.scrollbacks.delete(key)
+  }
+
   async isScrolledBack(): Promise<boolean> {
     return false
   }

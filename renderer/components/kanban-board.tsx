@@ -50,6 +50,7 @@ interface KanbanBoardProps {
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
+  onOpenTaskTerminal: (taskId: string) => void
   /** Board-wide Auto Mode, used by cards that carry no value of their own. */
   autoMode: boolean
   /** Workstation root, shown by the create form as the worktree's destination. */
@@ -170,6 +171,7 @@ export function KanbanBoard({
   onEditTask,
   onTaskDone,
   onDeleteTask,
+  onOpenTaskTerminal,
   autoMode,
   workstationPath,
   subAgents,
@@ -430,6 +432,7 @@ export function KanbanBoard({
             onSelectTask={onSelectTask}
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
+            onOpenTaskTerminal={onOpenTaskTerminal}
             onNewTask={onNewTask}
             view={view}
             onViewChange={onViewChange}

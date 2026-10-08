@@ -194,6 +194,19 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.getByRole('button', { name: '建立任務' }).click()
   await page.getByText('E2E card').first().waitFor()
 
+  // The card's extra shell is independent of its not-yet-provisioned worktree.
+  await page.getByRole('button', { name: '在專案目錄開啟 Terminal：E2E card' }).click()
+  await page.waitForFunction(() => document.activeElement?.classList.contains('xterm-helper-textarea'))
+  await page.locator('.xterm-helper-textarea:visible').last().focus()
+  await page.keyboard.type('pwd > vf-grid-pwd.txt')
+  await page.keyboard.press('Enter')
+  for (let attempt = 0; !fs.existsSync(path.join(projectPath, 'vf-grid-pwd.txt')) && attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.ok(fs.existsSync(path.join(projectPath, 'vf-grid-pwd.txt')), 'the shell wrote in the project root')
+  await page.getByRole('button', { name: /關閉 Terminal/ }).click()
+  await page.getByRole('tab', { name: '看板' }).click()
+
   // Start: core builds the launch; the fake agent runs in the worktree.
   await page.getByRole('button', { name: '開始' }).click()
   await waitForTerminal(page, 'fake-claude ready')
@@ -432,4 +445,57 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.getByText('已建立到 Backlog').waitFor()
   const afterGithub = await page.evaluate(() => window.vibeflow.getState())
   assert.equal(afterGithub.board.backlog[0].github.number, 112)
+})
+
+test('Web UI: terminal grid opens card project roots and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+  const browser = await launchBrowser()
+  if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
+  t.after(() => browser.close())
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-terminal-e2e-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
+  setPlatform(createNodePlatform({ userDataDir: tmp }))
+  const starts = []
+  const kills = []
+  const bus = new EventBus()
+  const sessions = {
+    kind: 'pty', starts, kills,
+    async start(key, options) { starts.push({ key, ...options }); return { pid: 1, scrollback: null } },
+    write() {}, resize() {},
+    async kill(key) { kills.push(key) },
+    async isAlive() { return false }, scrollback: () => null,
+    async list() { return [] }, shutdown() {},
+  }
+  const core = createCore({ sessions, bus, version: '9.9.9' })
+  const first = await core.handlers['vibeflow:createTask']({ title: 'Backlog terminal', projectPath, baseBranch: null })
+  const second = await core.handlers['vibeflow:createTask']({ title: 'Running terminal', projectPath, baseBranch: null })
+  const third = await core.handlers['vibeflow:createTask']({ title: 'Done terminal', projectPath, baseBranch: null })
+  core.handlers['vibeflow:setBoard']({ backlog: [first.task], in_progress: [second.task], done: [third.task] })
+  const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'terminal-e2e-token' })
+  t.after(async () => { core.shutdown(); await server.close() })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  await page.goto(server.loginUrl())
+
+  for (const title of ['Backlog terminal', 'Running terminal', 'Done terminal']) {
+    await page.getByRole('button', { name: `在專案目錄開啟 Terminal：${title}` }).click()
+    await page.getByRole('tab', { name: '終端機' }).waitFor()
+    assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
+    await page.getByRole('tab', { name: '看板' }).click()
+  }
+  await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
+  assert.equal(starts.length, 3)
+  assert.ok(starts.every(({ cwd, command }) => cwd === projectPath && command === undefined))
+  await page.getByRole('tab', { name: '終端機' }).click()
+  const titles = page.getByRole('textbox', { name: /編輯 Terminal 標題/ })
+  await titles.first().fill('My shell')
+  assert.equal(await titles.first().inputValue(), 'My shell')
+  await page.getByRole('button', { name: '關閉 Terminal：My shell' }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 2)
+  assert.equal(kills.length, 1)
+
+  await page.getByRole('button', { name: '新增 Terminal' }).click()
+  await page.getByRole('combobox', { name: '專案資料夾' }).selectOption(projectPath)
+  await page.getByRole('button', { name: '開啟 Terminal' }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
+  assert.equal(starts.at(-1).cwd, projectPath)
 })

@@ -329,6 +329,13 @@ export function createBridge(t: BridgeTransport) {
       cols?: number
       rows?: number
     }): Promise<StartResult> => t.invoke('pty:start', payload),
+    startStandalone: (payload: {
+      sessionKey: string
+      taskId?: string
+      projectPath?: string
+      cols?: number
+      rows?: number
+    }): Promise<StartResult> => t.invoke('terminal:start', payload),
     /** Join a running session without restarting it. */
     peek: (sessionKey: string): Promise<{ alive: boolean; scrollback: string | null }> =>
       t.invoke('pty:peek', sessionKey),

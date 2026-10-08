@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Terminal,
   Users,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -195,6 +196,7 @@ function TaskCard({
   onSelect,
   onEdit,
   onDelete,
+  onOpenTerminal,
 }: {
   task: Task
   column: ColumnId
@@ -205,6 +207,7 @@ function TaskCard({
   onSelect: () => void
   onEdit?: () => void
   onDelete: () => void
+  onOpenTerminal: () => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(
@@ -241,6 +244,14 @@ function TaskCard({
       <div className="group/head flex items-center gap-1.5 text-xs text-muted-foreground">
         <Layers className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{projectLabel(task)}</span>
+        <IconButton
+          aria-label={`在專案目錄開啟 Terminal：${task.title}`}
+          title="在專案目錄開啟額外 Terminal"
+          onClick={(event) => { event.stopPropagation(); onOpenTerminal() }}
+          className="size-6 shrink-0 p-1"
+        >
+          <Terminal className="size-3.5" />
+        </IconButton>
         {done ? (
           <span className="flex shrink-0 items-center gap-1 rounded-xs bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
             <CircleCheckBig className="size-2.5" />
@@ -398,6 +409,7 @@ export interface BoardColumnsProps {
   onSelectTask: (taskId: string) => void
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
+  onOpenTaskTerminal: (taskId: string) => void
   onNewTask: () => void
   view: BoardView
   onViewChange: (next: BoardView) => void
@@ -415,6 +427,7 @@ export function BoardColumns({
   onSelectTask,
   onEditTask,
   onDeleteTask,
+  onOpenTaskTerminal,
   onNewTask,
 }: BoardColumnsProps) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
@@ -481,6 +494,7 @@ export function BoardColumns({
                     onSelect={() => onSelectTask(task.id)}
                     onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}
                     onDelete={() => onDeleteTask(task.id)}
+                    onOpenTerminal={() => onOpenTaskTerminal(task.id)}
                   />
                 ))}
 

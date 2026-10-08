@@ -9,6 +9,7 @@ import {
   Settings,
   Smartphone,
   SquareKanban,
+  Terminal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -274,6 +275,14 @@ export function SideMenu({
             >
               <Inbox className="size-4" />
             </IconButton>
+            <IconButton
+              aria-label="終端機"
+              title="終端機"
+              onClick={() => onSelectView('terminals')}
+              className={cn('size-8', view === 'terminals' && 'text-primary hover:text-primary')}
+            >
+              <Terminal className="size-4" />
+            </IconButton>
           </SidebarModeContent>
         ) : (
           <motion.div
@@ -306,6 +315,15 @@ export function SideMenu({
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {githubCount ?? '—'}
                 </span>
+              </button>
+              <button
+                type="button"
+                aria-current={view === 'terminals' ? 'page' : undefined}
+                onClick={() => onSelectView('terminals')}
+                className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(view === 'terminals'))}
+              >
+                <Terminal className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">終端機</span>
               </button>
             </nav>
 

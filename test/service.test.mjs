@@ -21,6 +21,7 @@ function fakeSessions() {
     starts: [],
     writes: [],
     killed: [],
+    discarded: [],
     alive,
     async start(key, opts) {
       this.starts.push({ key, ...opts })
@@ -39,6 +40,7 @@ function fakeSessions() {
       return alive.has(key)
     },
     scrollback: () => null,
+    discardScrollback(key) { this.discarded.push(key) },
     async list() {
       return Array.from(alive)
     },
@@ -112,6 +114,31 @@ test('a shell is refused before the card has a worktree, never run in the projec
   const { core, sessions, task } = await coreWithTask(t)
   await assert.rejects(core.handlers['pty:start']({ taskId: task.id }), /還沒有 worktree/)
   assert.equal(sessions.starts.length, 0)
+})
+
+test('standalone terminals start in the card project even before provisioning and release on close', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_12345678-1234-1234-1234-123456789abc'
+  await core.handlers['terminal:start']({ sessionKey, taskId: task.id })
+  assert.equal(sessions.starts[0].cwd, task.projectPath)
+  assert.equal(sessions.starts[0].command, undefined)
+  assert.equal(task.worktreePath ?? null, null)
+  core.handlers['pty:input']({ sessionKey, data: 'pwd\r' })
+  assert.deepEqual(sessions.writes, [{ key: sessionKey, data: 'pwd\r' }])
+  await core.handlers['pty:kill'](sessionKey)
+  assert.deepEqual(sessions.killed, [sessionKey])
+  assert.deepEqual(sessions.discarded, [sessionKey])
+  assert.throws(() => core.handlers['pty:input']({ sessionKey, data: 'x' }), { code: 'INVALID_REQUEST' })
+})
+
+test('standalone terminals accept an existing absolute folder and reject invalid requests', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath })
+  assert.equal(sessions.starts[0].cwd, task.projectPath)
+  await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'bad', projectPath: task.projectPath }), { code: 'INVALID_REQUEST' })
+  await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'terminal_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', projectPath: path.join(task.projectPath, 'missing') }), { code: 'INVALID_REQUEST' })
+  await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'terminal_cccccccc-cccc-cccc-cccc-cccccccccccc', taskId: task.id, projectPath: task.projectPath }), { code: 'INVALID_REQUEST' })
 })
 
 test('resuming a session that is still running re-attaches instead of relaunching', async (t) => {
