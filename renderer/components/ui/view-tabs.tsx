@@ -4,10 +4,10 @@ export type BoardView = 'board' | 'github'
 
 const VIEWS: { id: BoardView; label: string }[] = [
   { id: 'board', label: '看板' },
-  { id: 'github', label: 'Issues & PRs' },
+  { id: 'github', label: '工作項目' },
 ]
 
-/** The「看板 ｜ Issues & PRs」switch heading the top pane, shared by both views. */
+/** The「看板 ｜ 工作項目」switch heading the top pane, shared by both views. */
 export function ViewTabs({
   value,
   onChange,

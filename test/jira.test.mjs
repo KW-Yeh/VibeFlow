@@ -11,7 +11,11 @@ const raw = {
     issuetype: { name: 'Story' }, priority: { name: 'High' }, duedate: '2026-10-29',
     project: { key: 'WR' }, customfield_10033: 8, customfield_10016: null,
     customfield_10020: [{ name: 'Old', state: 'closed' }, { name: 'Active sprint', state: 'active' }],
-    parent: { key: 'WR-100' }, description: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Details' }] }] },
+    parent: { key: 'WR-100' }, attachment: [
+      { id: '12345', filename: 'design.pdf', size: 2048, content: 'https://evil.example/file' },
+      { id: '../bad', filename: 'unsafe.pdf', size: 1 },
+      { id: '67890', filename: '', size: 1 },
+    ], description: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Details' }] }] },
     created: '2026-10-01T00:00:00Z', updated: '2026-10-02T00:00:00Z',
   },
 }
@@ -24,6 +28,7 @@ test('Jira search requests CLI-supported fields and view requests detail fields'
   const view = buildViewArgs('WR-5729', ['customfield_12345'])
   assert.deepEqual(view.slice(0, 4), ['jira', 'workitem', 'view', 'WR-5729'])
   assert.match(view[view.indexOf('--fields') + 1], /customfield_12345/)
+  assert.match(view[view.indexOf('--fields') + 1], /attachment/)
 })
 
 test('Jira ticket conversion reads points, sprint, category and ADF', () => {
@@ -33,6 +38,10 @@ test('Jira ticket conversion reads points, sprint, category and ADF', () => {
   assert.equal(ticket?.status.category, 'indeterminate')
   assert.equal(ticket?.description, 'Details')
   assert.equal(ticket?.dueDate, '2026-10-29')
+  assert.deepEqual(ticket?.attachments, [{ id: '12345', filename: 'design.pdf', size: 2048,
+    url: 'https://example.atlassian.net/rest/api/3/attachment/content/12345' }])
+  assert.deepEqual(toTicket({ ...raw, fields: { ...raw.fields, attachment: null } }, site)?.attachments, [])
+  assert.deepEqual(toTicket(raw, 'evil.example')?.attachments, [])
   assert.equal(toTicket(raw, site, ['customfield_10016'])?.storyPoints, null)
 })
 

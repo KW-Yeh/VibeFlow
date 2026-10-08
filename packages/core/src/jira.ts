@@ -3,6 +3,7 @@ import { defaultAcliRunner, getJiraAuthStatus, type AcliRunner, type JiraAuthSta
 
 export interface JiraRef { key: string; url: string; site: string }
 export type JiraStatusCategory = 'new' | 'indeterminate' | 'done'
+export interface JiraAttachment { id: string; filename: string; size: number | null; url: string }
 export interface JiraTicket {
   key: string
   url: string
@@ -15,6 +16,7 @@ export interface JiraTicket {
   dueDate: string | null
   sprint: string | null
   parentKey: string | null
+  attachments: JiraAttachment[]
   description: string
   createdAt: string
   updatedAt: string
@@ -43,7 +45,22 @@ export function buildSearchArgs(): string[] {
 
 export function buildViewArgs(key: string, pointFields = DEFAULT_POINT_FIELDS): string[] {
   return ['jira', 'workitem', 'view', key, '--fields',
-    [...new Set(['duedate', 'parent', 'created', 'updated', 'project', 'customfield_10020', ...pointFields])].join(','), '--json']
+    [...new Set(['duedate', 'parent', 'attachment', 'created', 'updated', 'project', 'customfield_10020', ...pointFields])].join(','), '--json']
+}
+
+function attachmentsOf(value: unknown, site: string): JiraAttachment[] {
+  if (!Array.isArray(value) || !/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.atlassian\.net$/.test(site)) return []
+  return value.flatMap((item) => {
+    const attachment = asRaw(item)
+    const id = String(attachment.id ?? '')
+    const filename = attachment.filename
+    if (!/^\d+$/.test(id) || typeof filename !== 'string' || !filename.trim()) return []
+    return [{
+      id, filename,
+      size: typeof attachment.size === 'number' && Number.isFinite(attachment.size) && attachment.size >= 0 ? attachment.size : null,
+      url: `https://${site}/rest/api/3/attachment/content/${id}`,
+    }]
+  })
 }
 
 export function isJiraRef(value: unknown): value is JiraRef {
@@ -76,6 +93,7 @@ export function toTicket(raw: unknown, site: string, pointFields = DEFAULT_POINT
     dueDate: typeof source.duedate === 'string' ? source.duedate : null,
     sprint: typeof activeSprint?.name === 'string' ? activeSprint.name : null,
     parentKey: typeof parent.key === 'string' ? parent.key : null,
+    attachments: attachmentsOf(source.attachment, site),
     description: adfToMarkdown(source.description), createdAt: String(source.created ?? ''), updatedAt: String(source.updated ?? ''),
   }
 }

@@ -3,7 +3,6 @@ import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { GithubView } from '@/components/github-view'
 import { JiraPanel, type JiraProject } from '@/components/jira-panel'
 import type { GithubFilters } from '@/lib/github-filter'
-import type { JiraFilters } from '@/lib/jira-filter'
 import type { GithubInbox, GithubItem, JiraInbox, JiraTicket } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -12,15 +11,13 @@ const TABS: { id: InboxTab; label: string }[] = [
   { id: 'jira', label: 'Jira' }, { id: 'issues', label: 'Issues' }, { id: 'prs', label: 'Pull Requests' },
 ]
 
-export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, jiraFilters, onJiraFiltersChange, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings }: {
+export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings }: {
   view: BoardView
   onViewChange: (view: BoardView) => void
   tab: InboxTab
   onTabChange: (tab: InboxTab) => void
   jira: { inbox: JiraInbox | null; loading: boolean; error: string | null; refresh: () => void }
   github: { inbox: GithubInbox | null; loading: boolean; error: string | null; refresh: () => void }
-  jiraFilters: JiraFilters
-  onJiraFiltersChange: (filters: JiraFilters) => void
   githubFilters: Record<'issues' | 'prs', GithubFilters>
   onGithubFiltersChange: (kind: 'issues' | 'prs', filters: GithubFilters) => void
   jiraCards: Map<string, string>
@@ -55,8 +52,8 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
         {entry.label}{counts[entry.id] !== null && <span className="text-xs tabular-nums text-muted-foreground/80">{counts[entry.id]}</span>}
       </button>)}
     </div>
-    {tab === 'jira' ? <JiraPanel {...jira} filters={jiraFilters} onFiltersChange={onJiraFiltersChange} onRefresh={jira.refresh}
-      boardCards={jiraCards} projects={projects} onCreate={onCreateJira} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings} />
+    {tab === 'jira' ? <JiraPanel {...jira} onRefresh={jira.refresh}
+      boardCards={jiraCards} projects={projects} onBrowseProject={onBrowseProject} onCreate={onCreateJira} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings} />
       : <GithubView view={view} onViewChange={onViewChange} inbox={github.inbox} loading={github.loading} error={github.error}
         onRefresh={github.refresh} filters={githubFilters[tab]} onFiltersChange={(filters) => onGithubFiltersChange(tab, filters)}
         boardCards={githubCards} onConvert={onConvertGithub} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings}
