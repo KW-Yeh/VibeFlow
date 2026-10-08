@@ -29,6 +29,13 @@ export function stripAnsi(value: string): string {
   return value.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').replace(/\x07/g, '')
 }
 
+export function hasSingleSitePrompt(output: string): boolean {
+  const clean = stripAnsi(output)
+  if (!/select the site to login/i.test(clean) || !/enter submit/i.test(clean)) return false
+  const sites = new Set([...clean.matchAll(/https:\/\/([a-z0-9.-]+\.atlassian\.net)\b/gi)].map((match) => match[1].toLowerCase()))
+  return sites.size === 1
+}
+
 export function parseAuthStatus(output: string): JiraAuthStatus {
   const clean = stripAnsi(output)
   const site = clean.match(/(?:site|host)\s*:\s*(?:https?:\/\/)?([a-z0-9.-]+\.atlassian\.net)/i)?.[1]
@@ -88,6 +95,7 @@ export function startJiraLogin(onEvent: (event: JiraAuthEvent) => void, run: Acl
   activeLogin = process
   let output = ''
   let sentUrl = false
+  let autoSelectedSite = false
   let cancelled = false
   activeCancel = () => { cancelled = true; onEvent({ type: 'cancelled' }) }
   process.onData((chunk) => {
@@ -97,6 +105,10 @@ export function startJiraLogin(onEvent: (event: JiraAuthEvent) => void, run: Acl
     const clean = stripAnsi(output)
     const url = clean.match(/https:\/\/[^\s<>"']+/)?.[0]
     if (url && !sentUrl) { sentUrl = true; onEvent({ type: 'url', url }) }
+    if (!autoSelectedSite && hasSingleSitePrompt(clean)) {
+      autoSelectedSite = true
+      process.write('\r')
+    }
   })
   process.onExit(async ({ exitCode }) => {
     if (activeLogin !== process) return

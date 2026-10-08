@@ -395,7 +395,7 @@ export function SettingsDialog({
         <div className="space-y-1 text-sm">
           <p className="font-medium">{jiraStatus?.installed === false ? '找不到 Atlassian CLI（acli）。' : jiraStatus?.authenticated ? '已登入 Atlassian' : '尚未登入 Atlassian。'}</p>
           {jiraStatus?.authenticated && <p className="text-muted-foreground">{jiraStatus.email ?? '帳號'} · {jiraStatus.site}</p>}
-          {jiraPhase === 'waiting' && <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />請在瀏覽器完成授權，然後在下方終端選擇相同 site。</p>}
+          {jiraPhase === 'waiting' && <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />請在瀏覽器完成授權；若帳號有多個 site，再於下方終端選擇。</p>}
           {jiraError && <p role="alert" className="text-destructive">{jiraError}</p>}
         </div>
         {(jiraBusy || jiraOutput) && <JiraAuthTerminal output={jiraOutput} active={jiraBusy} />}

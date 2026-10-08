@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildSearchArgs, buildViewArgs, createJiraService, isJiraRef, JIRA_INBOX_JQL, toTicket } from '../packages/core/src/jira.ts'
-import { parseAuthStatus } from '../packages/core/src/jira-auth.ts'
+import { hasSingleSitePrompt, parseAuthStatus } from '../packages/core/src/jira-auth.ts'
 
 const site = 'example.atlassian.net'
 const raw = {
@@ -48,6 +48,13 @@ test('auth status parses site and email without ANSI text', () => {
     installed: true, authenticated: true, site, email: 'user@example.com',
   })
   assert.equal(parseAuthStatus('Not logged in').authenticated, false)
+})
+
+test('Jira login selects only a complete single-site prompt automatically', () => {
+  const prompt = 'Select the site to login\r\n> https://example.atlassian.net\r\n↑ up • ↓ down • / filter • enter submit'
+  assert.equal(hasSingleSitePrompt(`\x1b[32m${prompt}\x1b[0m`), true)
+  assert.equal(hasSingleSitePrompt(prompt.replace('enter submit', '')), false)
+  assert.equal(hasSingleSitePrompt(prompt.replace('enter submit', '  https://other.atlassian.net\nenter submit')), false)
 })
 
 test('Jira inbox caches search for five minutes and force refreshes', async () => {
