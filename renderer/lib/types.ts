@@ -55,7 +55,7 @@ export type {
   GithubTaskLinks,
   GithubUser,
 } from '../../packages/core/src/github'
-export type { JiraInbox, JiraRef, JiraTicket, JiraStatusCategory } from '../../packages/core/src/jira'
+export type { JiraAttachment, JiraInbox, JiraRef, JiraTicket, JiraStatusCategory } from '../../packages/core/src/jira'
 export type { JiraAuthEvent, JiraAuthStatus } from '../../packages/core/src/jira-auth'
 export type {
   SubAgentRun,
