@@ -7,7 +7,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/** The board's projects — the set of repos the inbox is about. */
+/** Board projects only affect the optional local path for a discovered repo. */
 function projectSignature(board: BoardState): string {
   const paths = new Set<string>()
   for (const column of Object.values(board)) for (const t of column) if (t.projectPath) paths.add(t.projectPath)

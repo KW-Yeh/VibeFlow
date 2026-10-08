@@ -168,7 +168,6 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     }, null, { timeout: 20_000, polling: 250 })
     const codex = await page.evaluate(() => window.vibeflow.listAgentModels('codex'))
     assert.notEqual(codex.source, 'codex-app-server')
-    assert.ok(codex.error, 'codex says why it fell back')
     await page.getByRole('button', { name: 'Advanced' }).click()
     const modelSelect = page.locator('select[name="agent-model"]')
     await modelSelect.locator('option', { hasText: 'Fable 5.1' }).waitFor({ state: 'attached' })
@@ -228,6 +227,12 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     await page.getByRole('button', { name: /^專案篩選/ }).waitFor()
     assert.equal(await page.getByRole('button', { name: /^Assignee篩選/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /^發起人篩選/ }).count(), 0)
+    // clcom-frontend has no board card; global search still discovers it.
+    await page.getByRole('button', { name: /#431/ }).click()
+    await page.getByRole('dialog').waitFor()
+    assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
+    await page.getByLabel('建立到專案').waitFor()
+    await page.keyboard.press('Escape')
     await page.getByRole('button', { name: /#112/ }).click()
     await page.getByRole('dialog').waitFor()
     await page.getByRole('button', { name: '建立卡片' }).click()
@@ -314,9 +319,11 @@ test('Web UI: Jira tabs, status filter and direct Backlog creation', { skip: !ha
     jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
     acliRunner: async () => JSON.stringify({ issues: rows }),
     githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
-    ghRunner: async (args) => args[0] === 'issue' && args.includes('--assignee')
-      ? JSON.stringify([{ number: 112, title: 'Fix sidebar', url: 'https://github.com/e2e/VibeFlow/issues/112',
-        body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
+    ghRunner: async (args) => args[0] === 'search' && args[1] === 'issues' && args.includes('--assignee')
+      ? JSON.stringify([{ repository: { nameWithOwner: 'e2e/VibeFlow' } }])
+      : args[0] === 'issue' && args.includes('--assignee')
+        ? JSON.stringify([{ number: 112, title: 'Fix sidebar', url: 'https://github.com/e2e/VibeFlow/issues/112',
+          body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
   })
   const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'jira-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })

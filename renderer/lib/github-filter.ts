@@ -15,7 +15,7 @@ export const UNASSIGNED = ':unassigned'
 export interface GithubEntry<T extends GithubItem = GithubItem> {
   item: T
   projectName: string
-  projectPath: string
+  projectPath: string | null
 }
 
 export interface GithubFilterOptions {

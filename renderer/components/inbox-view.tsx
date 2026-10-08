@@ -12,7 +12,7 @@ const TABS: { id: InboxTab; label: string }[] = [
   { id: 'jira', label: 'Jira' }, { id: 'issues', label: 'Issues' }, { id: 'prs', label: 'Pull Requests' },
 ]
 
-export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, jiraFilters, onJiraFiltersChange, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings }: {
+export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, jiraFilters, onJiraFiltersChange, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings }: {
   view: BoardView
   onViewChange: (view: BoardView) => void
   tab: InboxTab
@@ -26,6 +26,7 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   jiraCards: Map<string, string>
   githubCards: Map<string, string>
   projects: JiraProject[]
+  onBrowseProject: () => Promise<string | null>
   onCreateJira: (ticket: JiraTicket, projectPath: string) => Promise<string>
   onConvertGithub: (item: GithubItem, projectPath: string) => Promise<string>
   onOpenTask: (taskId: string) => void
@@ -59,6 +60,6 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
       : <GithubView view={view} onViewChange={onViewChange} inbox={github.inbox} loading={github.loading} error={github.error}
         onRefresh={github.refresh} filters={githubFilters[tab]} onFiltersChange={(filters) => onGithubFiltersChange(tab, filters)}
         boardCards={githubCards} onConvert={onConvertGithub} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings}
-        sourceKind={tab} embedded />}
+        projects={projects} onBrowseProject={onBrowseProject} sourceKind={tab} embedded />}
   </div>
 }

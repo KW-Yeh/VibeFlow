@@ -1,6 +1,7 @@
 import {
   CircleDot,
   ExternalLink,
+  FolderOpen,
   GitPullRequest,
   GitPullRequestDraft,
   Loader2,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { GithubFilterMenu } from '@/components/github-filter-menu'
+import type { JiraProject } from '@/components/jira-panel'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -54,6 +56,8 @@ export interface GithubViewProps {
   onFiltersChange: (next: GithubFilters) => void
   /** Board card already made from an Issue/PR, keyed by `repo#number`. */
   boardCards: Map<string, string>
+  projects: JiraProject[]
+  onBrowseProject: () => Promise<string | null>
   onConvert: (item: GithubItem, projectPath: string) => Promise<string>
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
@@ -213,14 +217,18 @@ function MetaRow({ label, children }: { label: string; children: ReactNode }) {
 function DetailDrawer({
   entry,
   taskId,
+  projects,
+  onBrowseProject,
   onClose,
   onConvert,
   onOpenTask,
 }: {
   entry: GithubEntry
   taskId: string | undefined
+  projects: JiraProject[]
+  onBrowseProject: () => Promise<string | null>
   onClose: () => void
-  onConvert: () => Promise<string>
+  onConvert: (projectPath: string) => Promise<string>
   onOpenTask: (taskId: string) => void
 }) {
   const { item } = entry
@@ -228,11 +236,12 @@ function DetailDrawer({
   const [createdId, setCreatedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [projectPath, setProjectPath] = useState(entry.projectPath ?? '')
   const create = async () => {
-    if (creating) return
+    if (creating || !projectPath) return
     setCreating(true)
     setCreateError(null)
-    try { setCreatedId(await onConvert()) }
+    try { setCreatedId(await onConvert(projectPath)) }
     catch (err) { setCreateError(err instanceof Error ? err.message : String(err)) }
     finally { setCreating(false) }
   }
@@ -244,12 +253,24 @@ function DetailDrawer({
       footer={<div className="flex w-full flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => void openExternal(item.url)}><ExternalLink />在 GitHub 開啟</Button>
         {createdId && <span className="text-sm text-success">已建立到 Backlog</span>}
+        {!entry.projectPath && <div className="ml-auto flex items-center gap-1">
+          <select aria-label="建立到專案" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} disabled={creating}
+            className="h-9 max-w-56 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <option value="">選擇本機專案…</option>
+            {projectPath && !projects.some((project) => project.path === projectPath) && <option value={projectPath}>{projectPath}</option>}
+            {projects.map((project) => <option key={project.path} value={project.path}>{project.name} · {project.path}</option>)}
+          </select>
+          <IconButton aria-label="從資料夾選擇專案" title="從資料夾選擇專案" disabled={creating}
+            onClick={() => void onBrowseProject().then((path) => { if (path) setProjectPath(path) })}>
+            <FolderOpen className="size-4" />
+          </IconButton>
+        </div>}
         {linkedId ? <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => void create()} disabled={creating} title="已經有對應卡片，仍可再建一張">再建一張</Button>
+          <Button variant="ghost" size="sm" onClick={() => void create()} disabled={creating || !projectPath} title="已經有對應卡片，仍可再建一張">再建一張</Button>
           <Button size="sm" onClick={() => onOpenTask(linkedId)}><SquareArrowOutUpRight />前往卡片</Button>
         </div> : <div className="ml-auto flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">建立到：{entry.projectName}</span>
-          <Button size="sm" onClick={() => void create()} disabled={creating}>
+          {entry.projectPath && <span className="text-muted-foreground">建立到：{entry.projectName}</span>}
+          <Button size="sm" onClick={() => void create()} disabled={creating || !projectPath}>
             {creating ? <Loader2 className="animate-spin" /> : <Plus />}{creating ? '建立中…' : '建立卡片'}
           </Button>
         </div>}
@@ -384,6 +405,8 @@ export function GithubView({
   filters,
   onFiltersChange,
   boardCards,
+  projects,
+  onBrowseProject,
   onConvert,
   onOpenTask,
   onOpenSettings,
@@ -436,12 +459,13 @@ export function GithubView({
       </Notice>
     )
   } else if (repos.length === 0) {
-    body = <Notice>看板上的專案都沒有 GitHub 的 origin，因此沒有可顯示的 Issue 或 PR。</Notice>
+    body = <Notice>{error ?? '目前沒有與你相關的 open Issue 或 PR。'}</Notice>
   } else {
     body = (
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-5 pb-4 pt-3">
-        {failed.length > 0 && (
+        {(failed.length > 0 || error) && (
           <div role="alert" className="shrink-0 space-y-1 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error && <p>{error}</p>}
             {failed.map((r) => (
               <p key={r.repo} className="truncate" title={r.error}>
                 {r.repo}：{r.error}
@@ -543,8 +567,10 @@ export function GithubView({
             key={githubItemKey(selected.item)}
             entry={selected}
             taskId={boardCards.get(githubItemKey(selected.item))}
+            projects={projects}
+            onBrowseProject={onBrowseProject}
             onClose={() => setSelectedKey(null)}
-            onConvert={() => onConvert(selected.item, selected.projectPath)}
+            onConvert={(projectPath) => onConvert(selected.item, projectPath)}
             onOpenTask={onOpenTask}
           />
         )}

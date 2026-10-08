@@ -603,7 +603,7 @@ test('a card converted from GitHub keeps its source ref; a ref outside github.co
   )
 })
 
-test('github:inbox reads the board projects\' GitHub origins through the injected gh', async (t) => {
+test('github:inbox discovers related repos and maps board projects through the injected gh', async (t) => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)
   await git(projectPath, 'remote', 'add', 'origin', 'https://github.com/acme/demo.git')
@@ -615,6 +615,9 @@ test('github:inbox reads the board projects\' GitHub origins through the injecte
     githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
     ghRunner: async (args) => {
       calls.push(args)
+      if (args[0] === 'search' && args[1] === 'issues' && args.includes('--assignee')) {
+        return JSON.stringify([{ repository: { nameWithOwner: 'acme/demo' } }])
+      }
       if (args[0] === 'issue' && args.includes('--assignee')) {
         return JSON.stringify([{ number: 7, title: 'Fix it', url: 'https://github.com/acme/demo/issues/7', createdAt: '2026-10-01T00:00:00Z' }])
       }
@@ -629,7 +632,8 @@ test('github:inbox reads the board projects\' GitHub origins through the injecte
   const repo = inbox.repos.find((r) => r.repo === 'acme/demo')
   assert.equal(repo.projectPath, projectPath)
   assert.deepEqual(repo.issues.map((i) => i.number), [7])
-  assert.ok(calls.every((args) => args.includes('acme/demo')))
+  assert.ok(calls.some((args) => args[0] === 'search' && !args.includes('-R')))
+  assert.ok(calls.filter((args) => args[0] !== 'search').every((args) => args.includes('acme/demo')))
 
   await assert.rejects(core.handlers['github:inbox']('force'), { code: 'INVALID_REQUEST' })
 })

@@ -596,6 +596,7 @@ export default function HomePage() {
                       jiraCards={jiraCards}
                       githubCards={githubCards}
                       projects={projects}
+                      onBrowseProject={pickProjectFolder}
                       onCreateJira={createJiraTask}
                       onConvertGithub={handleConvertGithubItem}
                       onOpenTask={goToTask}

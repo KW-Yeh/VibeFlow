@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createGithubService,
+  findRelatedRepos,
   fetchPrIndex,
   fetchRepoItems,
   GITHUB_CACHE_TTL_MS,
@@ -81,6 +82,7 @@ test('isGithubRef accepts only issue/pr refs that point into their own repo', ()
   assert.equal(isGithubRef({ ...ok, url: 'https://evil.example/acme/demo/issues/3' }), false)
   assert.equal(isGithubRef({ ...ok, url: 'https://github.com/other/repo/issues/3' }), false)
   assert.equal(isGithubRef({ ...ok, repo: '../x' }), false)
+  assert.equal(isGithubRef({ ...ok, repo: 'acme/..' }), false)
 })
 
 test('mergeItems keeps one entry per number, newest first', () => {
@@ -126,6 +128,20 @@ test('fetchRepoItems asks for assigned + authored issues and assigned + authored
   assert.equal(prs.find((p) => p.number === 12).reviewDecision, 'REVIEW_REQUIRED')
   assert.equal(prs.find((p) => p.number === 10).reviewDecision, null)
   assert.equal(prs.find((p) => p.number === 13).reviewDecision, 'APPROVED')
+})
+
+test('global search discovers relevant repositories without board projects', async () => {
+  const { run, calls } = fakeGh([
+    [has('search', 'issues', '--assignee'), [
+      { repository: { nameWithOwner: 'acme/demo' } },
+      { repository: { nameWithOwner: 'other/repo' } },
+      { repository: { nameWithOwner: '../invalid' } },
+    ]],
+    [has('search', 'prs', '--reviewed-by'), [{ repository: { nameWithOwner: 'other/repo' } }]],
+  ])
+  assert.deepEqual(await findRelatedRepos(run), ['acme/demo', 'other/repo'])
+  assert.equal(calls.length, 6)
+  assert.ok(calls.every((args) => args.includes('--state') && args.includes('open') && args.includes('--limit')))
 })
 
 test('an older gh without issueType still lists issues, just without the type', async () => {
@@ -226,8 +242,26 @@ test('inbox reports a missing or signed-out gh without calling it', async () => 
   assert.equal(calls.length, 0)
 })
 
+test('inbox lists relevant repos when the board has no projects', async () => {
+  const { run } = fakeGh([
+    [has('search', 'issues', '--assignee'), [{ repository: { nameWithOwner: 'acme/demo' } }]],
+    [has('issue', 'acme/demo', '--assignee'), [issue(7)]],
+  ])
+  const svc = createGithubService({ run, authStatus: authed, repoOf: async () => null })
+  const result = await svc.inbox(board([]))
+  assert.equal(result.status, 'ok')
+  assert.deepEqual(result.repos.map((repo) => [repo.repo, repo.projectPath, repo.issues.map((item) => item.number)]), [
+    ['acme/demo', null, [7]],
+  ])
+})
+
 test('inbox: one entry per repo, mapped to its most recent project; failures stay per repo; non-GitHub projects skipped', async () => {
   const { run } = fakeGh([
+    [has('search', 'issues', '--assignee'), [
+      { repository: { nameWithOwner: 'acme/demo' } },
+      { repository: { nameWithOwner: 'broken/repo' } },
+      { repository: { nameWithOwner: 'external/repo' } },
+    ]],
     [has('broken/repo'), new Error('HTTP 403: rate limited')],
     [has('issue', 'acme/demo', '--assignee'), [issue(1)]],
   ])
@@ -244,6 +278,7 @@ test('inbox: one entry per repo, mapped to its most recent project; failures sta
   assert.deepEqual(result.repos.map((r) => [r.repo, r.projectPath, r.projectName]), [
     ['acme/demo', '/p/demo-copy', 'demo-copy'],
     ['broken/repo', '/p/broken', 'broken'],
+    ['external/repo', null, 'external/repo'],
   ])
   assert.deepEqual(result.repos[0].issues.map((i) => i.number), [1])
   assert.match(result.repos[1].error, /rate limited/)
@@ -252,25 +287,27 @@ test('inbox: one entry per repo, mapped to its most recent project; failures sta
 
 test('inbox and taskLinks are cached per repo until the TTL or a forced refresh', async () => {
   let clock = 1000
-  const { run, calls } = fakeGh([])
+  const { run, calls } = fakeGh([
+    [has('search', 'issues', '--assignee'), [{ repository: { nameWithOwner: 'acme/demo' } }]],
+  ])
   const svc = createGithubService({ run, authStatus: authed, repoOf: async () => 'acme/demo', now: () => clock })
   const b = board([task('a')])
 
   const first = await svc.inbox(b)
   assert.equal(first.fetchedAt, 1000)
   await svc.inbox(b)
-  assert.equal(calls.length, 6)
+  assert.equal(calls.length, 12)
 
   clock += 1000
   const forced = await svc.inbox(b, { force: true })
-  assert.equal(calls.length, 12)
+  assert.equal(calls.length, 24)
   assert.equal(forced.fetchedAt, 2000)
 
   clock += GITHUB_CACHE_TTL_MS
   await svc.inbox(b)
-  assert.equal(calls.length, 18)
+  assert.equal(calls.length, 36)
 
   await svc.taskLinks(b)
   await svc.taskLinks(b)
-  assert.equal(calls.length, 19)
+  assert.equal(calls.length, 37)
 })

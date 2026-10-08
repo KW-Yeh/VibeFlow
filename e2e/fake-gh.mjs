@@ -132,6 +132,18 @@ const withUrl = (kind) => (item) => ({
 
 if (args[0] === 'auth' && args[1] === 'status') {
   out({ hosts: { 'github.com': [{ active: true, login: me.login, state: 'success', gitProtocol: 'https' }] } })
+} else if (args[0] === 'search') {
+  const kind = args[1]
+  const filter = arg('--assignee') ? 'assignee' : arg('--author') ? 'author'
+    : arg('--review-requested') ? 'review-requested' : 'reviewed-by'
+  const names = kind === 'issues' ? Object.keys(ISSUES) : Object.keys(PRS)
+  out(names.filter((name) => {
+    const items = kind === 'issues' ? ISSUES[name] : PRS[name]
+    return items.some((item) => filter === 'assignee' ? item.assignees.some((user) => user.login === me.login)
+      : filter === 'author' ? item.author.login === me.login
+      : filter === 'review-requested' ? item.reviewDecision === 'REVIEW_REQUIRED'
+      : item.reviewedByMe === true)
+  }).map((name) => ({ repository: { nameWithOwner: `e2e/${name}` } })))
 } else if (args[0] === 'issue' && args[1] === 'list') {
   const issues = (ISSUES[name] ?? []).map(withUrl('issue'))
   const assignee = arg('--assignee')
