@@ -53,6 +53,11 @@ export interface ProgressNotifyPayload {
   notifications: ProgressNotification[]
 }
 
+export interface AvailableUpdate {
+  currentVersion: string
+  latestVersion: string
+}
+
 /** How a frontend reaches core. `invoke` answers; `send` is fire-and-forget. */
 export interface BridgeTransport {
   /** `ws` = browser or a remote TUI, `local` = same process. */
@@ -70,6 +75,9 @@ export function createBridge(t: BridgeTransport) {
     t.invoke('vibeflow:getState'),
   /** Running app version (package.json version baked into the build). */
   getVersion: (): Promise<string> => t.invoke('app:getVersion'),
+  getUpdateStatus: (): Promise<AvailableUpdate | null> => t.invoke('host:updateStatus'),
+  onUpdateAvailable: (callback: (update: AvailableUpdate | null) => void): (() => void) =>
+    t.on('update:available', (payload) => callback(payload as AvailableUpdate | null)),
   /**
    * Fired when an external write (e.g. CLI) changes the store backing file.
    * The main process debounces and emits the fresh state so the board can

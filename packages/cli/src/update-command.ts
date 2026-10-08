@@ -29,7 +29,7 @@ function npmRunner(args: string[], inherit: boolean): NpmResult {
   })
 }
 
-function packageName(packageRoot: string): string | null {
+export function packageName(packageRoot: string): string | null {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as { name?: unknown }
     if (typeof pkg.name !== 'string') return null

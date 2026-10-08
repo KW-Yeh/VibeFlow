@@ -16,6 +16,9 @@ export function installWebBridge(): void {
     // Board changes made while disconnected were pushed to nobody.
     onReconnect: () => {
       void bridge.getState().then((state) => transport.dispatch('state:changed', state))
+      void bridge.getUpdateStatus()
+        .then((status) => transport.dispatch('update:available', status))
+        .catch(() => {})
     },
     onStatus: (connected) => {
       window.dispatchEvent(new CustomEvent(CONNECTION_EVENT, { detail: { connected } }))

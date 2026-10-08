@@ -69,6 +69,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `tui.test.mjs` | `packages/tui/src/index.ts` | TUI board moves and selection |
 | `tui-task-form.test.mjs` | `packages/tui/src/task-form.ts` | TUI new/edit task form defaults and validation |
 | `update-command.test.mjs` | `packages/cli/src/update-command.ts`, `main.ts` | global npm update command, source/local/npx/link refusal, npm failure and CLI dispatch |
+| `update-check.test.mjs` | `packages/cli/src/update-check.ts` | npm latest comparison, release status, and the two-hour interval |
 | `ui-consistency.test.mjs` | `renderer/**` (source grep) | design-system rules: radius ladder, focus rings, `DialogShell` headers, terminal inset, inert mermaid |
 | `web-server.test.mjs` | `packages/core/src/web-server.ts`, `ws-transport.ts` | loopback only, token → cookie, Host / Origin checks |
 

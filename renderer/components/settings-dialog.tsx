@@ -24,6 +24,7 @@ import {
   cancelJiraAuthLogin,
   detectAgents,
   getGithubAuthStatus,
+  getAppVersion,
   getJiraAuthStatus,
   listAgentModels,
   logoutGithubAuth,
@@ -98,6 +99,7 @@ export function SettingsDialog({
   onClose,
 }: SettingsDialogProps) {
   const [text, setText] = useState('')
+  const [appVersion, setAppVersion] = useState<string | null | undefined>(undefined)
   const [workstation, setWorkstation] = useState('')
   const [auto, setAuto] = useState(true)
   const [notif, setNotif] = useState<NotificationSettings>(notifications)
@@ -149,6 +151,10 @@ export function SettingsDialog({
   useEffect(() => {
     if (!open) return
     let cancelled = false
+    setAppVersion(undefined)
+    void getAppVersion()
+      .then((version) => { if (!cancelled) setAppVersion(version) })
+      .catch(() => { if (!cancelled) setAppVersion(null) })
     setModelLists({})
     setInstalled(undefined)
     void detectAgents()
@@ -507,6 +513,7 @@ export function SettingsDialog({
         <LibraryPanel onEditingChange={setLibraryEditing} />
       ) : (
         <div className="space-y-6">
+          <p className="text-sm text-muted-foreground">VibeFlow 版本：{appVersion === undefined ? '讀取中…' : appVersion ? `v${appVersion}` : '無法取得'}</p>
           <section className="space-y-2">
             <TaskAutoModeToggle value={auto} onChange={setAuto} />
             <p className="text-sm text-muted-foreground">

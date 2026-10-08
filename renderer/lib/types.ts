@@ -70,7 +70,7 @@ export type {
   TodoStatus,
   TokenUsage,
 } from '../../packages/core/src/progress'
-export type { ProgressNotifyPayload, ProgressUpdatePayload } from '../../packages/core/src/client'
+export type { AvailableUpdate, ProgressNotifyPayload, ProgressUpdatePayload } from '../../packages/core/src/client'
 export type {
   ChatMessage,
   ChatAttachment,

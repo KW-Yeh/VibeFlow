@@ -29,6 +29,7 @@ Channels added since the inventory:
 | `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force }` |
 | `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
+| `host:updateStatus` / event `update:available` | Host's latest npm release check, broadcast when a newer version appears or clears |
 | `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
 | event `progress:update` | `{ taskId, progress }` on every change to a tracked card's progress |
 | event `progress:notify` | `{ taskId, title, notifications }` stage notifications, already filtered by `settings.notifications` |

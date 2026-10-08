@@ -1,4 +1,5 @@
 import type {
+  AvailableUpdate,
   AgentCli,
   AgentCliId,
   AgentEffort,
@@ -62,6 +63,16 @@ export async function loadState(): Promise<VibeFlowState | null> {
 export async function getAppVersion(): Promise<string | null> {
   const b = bridge()
   return b ? b.getVersion() : null
+}
+
+export async function getUpdateStatus(): Promise<AvailableUpdate | null> {
+  const b = bridge()
+  return b ? b.getUpdateStatus() : null
+}
+
+export function onUpdateAvailable(callback: (update: AvailableUpdate | null) => void): () => void {
+  const b = bridge()
+  return b ? b.onUpdateAvailable(callback) : () => {}
 }
 
 export async function persistBoard(board: BoardState): Promise<void> {

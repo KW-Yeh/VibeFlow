@@ -326,7 +326,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.ok(!/Error/.test(hostLog), hostLog)
 })
 
-test('Web UI: Jira status columns, attachment links and folder-picked Backlog creation', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+test('Web UI: update notice, version, Jira status columns, attachment links and folder-picked Backlog creation', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
   const browser = await launchBrowser()
   if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
   t.after(() => browser.close())
@@ -365,11 +365,22 @@ test('Web UI: Jira status columns, attachment links and folder-picked Backlog cr
         ? JSON.stringify([{ number: 112, title: 'Fix sidebar', url: 'https://github.com/e2e/VibeFlow/issues/112',
           body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
   })
-  const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'jira-e2e-token' })
+  const server = await startWebServer({ handlers: {
+    ...core.handlers,
+    'host:updateStatus': () => ({ currentVersion: '9.9.9', latestVersion: '10.0.0' }),
+  }, bus, staticDir: webDir, token: 'jira-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
   await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
+  await page.getByText('VibeFlow v10.0.0 已發布', { exact: false }).waitFor()
+  await page.getByRole('button', { name: '關閉更新提示' }).click()
+  assert.equal(await page.getByText('VibeFlow v10.0.0 已發布', { exact: false }).count(), 0)
+  bus.emit('update:available', { currentVersion: '9.9.9', latestVersion: '10.1.0' })
+  await page.getByText('VibeFlow v10.1.0 已發布', { exact: false }).waitFor()
+  await page.getByRole('button', { name: '設定 System Prompt' }).first().click()
+  await page.getByText('VibeFlow 版本：v9.9.9').waitFor()
+  await page.getByRole('button', { name: '取消' }).click()
   await page.getByRole('tab', { name: '工作項目' }).first().click()
   await page.getByRole('tab', { name: /Jira/ }).waitFor()
   assert.equal(await page.getByRole('tab', { name: /Jira/ }).getAttribute('aria-selected'), 'true')

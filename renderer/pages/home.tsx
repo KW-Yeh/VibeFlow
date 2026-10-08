@@ -17,7 +17,7 @@ import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { NotificationToaster, type Toast } from '@/components/notification-toaster'
 import { withNotificationDefaults } from '@/components/notification-settings'
 import { DialogShell } from '@/components/ui/dialog-shell'
-import { Loader2 } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
   cleanupTask,
@@ -25,12 +25,14 @@ import {
   deleteTask,
   detectAgents,
   getGitInfo,
+  getUpdateStatus,
   getProgress,
   initRepository,
   listRecentProjects,
   loadState,
   onProgressNotify,
   onProgressUpdate,
+  onUpdateAvailable,
   onStateChanged,
   onSubAgentsUpdate,
   persistBoard,
@@ -45,6 +47,7 @@ import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
 import type {
   AgentCliId,
+  AvailableUpdate,
   AgentEffort,
   AttachmentInput,
   BoardState,
@@ -101,6 +104,8 @@ export default function HomePage() {
     withNotificationDefaults()
   )
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
+  const [dismissedUpdate, setDismissedUpdate] = useState<string | null>(null)
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = only the built-in Artifact instructions).
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -191,6 +196,13 @@ export default function HomePage() {
     return onProgressUpdate(({ taskId, progress: value }) => {
       setProgress((prev) => ({ ...prev, [taskId]: value }))
     })
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const unsubscribe = onUpdateAvailable(setAvailableUpdate)
+    void getUpdateStatus().then((update) => { if (active) setAvailableUpdate(update) }).catch(() => {})
+    return () => { active = false; unsubscribe() }
   }, [])
 
   // A frontend that connects mid-run asks once per running card; updates follow on the bus.
@@ -549,6 +561,18 @@ export default function HomePage() {
                 }}
               />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                {availableUpdate && dismissedUpdate !== availableUpdate.latestVersion && (
+                  <div role="status" className="flex items-center gap-3 border-b border-border bg-primary/10 px-4 py-2 text-sm">
+                    <span className="min-w-0 flex-1">
+                      VibeFlow v{availableUpdate.latestVersion} 已發布（目前 v{availableUpdate.currentVersion}）。
+                      全域 npm 安裝可執行 <code className="rounded-xs bg-background px-1 py-0.5">vibeflow update</code>；其他安裝方式請依原方式更新。完成後重新啟動 VibeFlow。
+                    </span>
+                    <button type="button" aria-label="關閉更新提示" onClick={() => setDismissedUpdate(availableUpdate.latestVersion)}
+                      className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                )}
                 <div className="min-h-0 flex-1">
                 <KanbanBoard
                   tabBar={
