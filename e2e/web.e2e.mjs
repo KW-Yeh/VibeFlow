@@ -214,7 +214,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
 
   if (canFakeGh) {
     // Issues & PRs: a project whose origin is on GitHub lists its Issues; one
-    // converts into a Backlog card through the prefilled new-task form.
+    // creates a Backlog card directly from the detail modal.
     const gh = await makeRepo({ withRemote: false })
     t.after(gh.cleanup)
     await git(gh.projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
@@ -224,14 +224,14 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     )
     await page.getByText('Seed card').first().waitFor()
     await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('tab', { name: /^Issues/ }).last().click()
+    await page.getByRole('button', { name: /^專案篩選/ }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /^Assignee篩選/ }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: /^發起人篩選/ }).count(), 0)
     await page.getByRole('button', { name: /#112/ }).click()
-    await page.getByRole('button', { name: '轉為 Backlog 卡片' }).click()
-    const titleInput = page.getByPlaceholder('例如：實作登入頁面')
-    await page.waitForFunction(
-      () => document.querySelector('input[name="task-title"]')?.value === '側邊欄搜尋在中文輸入法組字時會閃爍'
-    )
-    assert.equal(await titleInput.inputValue(), '側邊欄搜尋在中文輸入法組字時會閃爍')
-    await page.getByRole('button', { name: '建立任務' }).click()
+    await page.getByRole('dialog').waitFor()
+    await page.getByRole('button', { name: '建立卡片' }).click()
+    await page.getByText('已建立到 Backlog').waitFor()
     await page.getByRole('button', { name: '前往卡片' }).waitFor()
     const converted = (await page.evaluate(() => window.vibeflow.getState())).board.backlog.find(
       (c) => c.github?.number === 112
@@ -243,12 +243,14 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
       url: 'https://github.com/e2e/VibeFlow/issues/112',
     })
     assert.equal(converted.projectPath, gh.projectPath)
-    await page.getByRole('tab', { name: '看板' }).first().click()
+    assert.equal(converted.title, '側邊欄搜尋在中文輸入法組字時會閃爍')
+    await page.getByRole('button', { name: '前往卡片' }).click()
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
 
-    // Filters: the PR I approved (no longer awaiting my review) is listed; each
-    // column runs highest number first; filters OR within, AND across, and clear.
+    // PR filters remain independent of Issues and include reviewed PRs.
     await page.getByRole('tab', { name: 'Issues & PRs' }).first().click()
+    await page.getByRole('tab', { name: /^Pull Requests/ }).click()
+    await page.getByRole('button', { name: /^Assignee篩選/ }).waitFor()
     await page.getByRole('button', { name: /#107/ }).waitFor()
     const listed = () =>
       page.$$eval('button[aria-pressed]', (cards) =>
@@ -259,15 +261,15 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
       await page.getByRole('menuitemcheckbox', { name: option, exact: true }).click()
       await page.keyboard.press('Escape')
     }
-    assert.deepEqual(await listed(), [112, 108, 107, 105, 103])
+    assert.deepEqual(await listed(), [107, 105, 103])
     await tick('發起人', 'dev-amy')
-    assert.deepEqual(await listed(), [108, 103])
+    assert.deepEqual(await listed(), [103])
     await tick('發起人', 'dev-ben')
-    assert.deepEqual(await listed(), [108, 107, 103])
+    assert.deepEqual(await listed(), [107, 103])
     await tick('Assignee', '未指派')
     assert.deepEqual(await listed(), [107])
     await page.getByRole('button', { name: '清除篩選' }).click()
-    assert.deepEqual(await listed(), [112, 108, 107, 105, 103])
+    assert.deepEqual(await listed(), [107, 105, 103])
   }
 
   // Another origin cannot open the socket, even from the same browser.

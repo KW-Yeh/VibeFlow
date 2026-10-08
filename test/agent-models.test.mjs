@@ -30,7 +30,7 @@ const builtin = (id) => AGENT_CLIS.find((a) => a.id === id).models
 
 function codexHome(t, contents) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-codex-home-'))
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   if (contents !== undefined) fs.writeFileSync(path.join(dir, 'models_cache.json'), contents)
   return dir
 }
@@ -240,7 +240,7 @@ test('codex: app-server runs with the user\'s own CODEX_HOME, not the library\'s
 
 function nodeScript(t, source) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-json-lines-'))
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   const file = path.join(dir, 'cli.cjs')
   fs.writeFileSync(file, source)
   return { dir, file }

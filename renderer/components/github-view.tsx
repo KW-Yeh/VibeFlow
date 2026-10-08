@@ -487,14 +487,14 @@ export function GithubView({
     >
       <div className={cn('flex shrink-0 items-center gap-3 border-b border-border px-5', embedded ? 'h-11' : 'h-12')}>
         {!embedded && <><ViewTabs value={view} onChange={onViewChange} /><span className="h-4 w-px bg-border" /></>}
-        {sourceKind !== 'issues' && <GithubFilterMenu
+        <GithubFilterMenu
           name="專案"
           allLabel="所有專案"
           icon={Layers}
           options={options.projects}
           value={filters.projects}
           onChange={setFilter('projects')}
-        />}
+        />
         {sourceKind !== 'issues' && <GithubFilterMenu
           name="Assignee"
           allLabel="所有 Assignee"
@@ -504,14 +504,14 @@ export function GithubView({
           onChange={setFilter('assignees')}
           optionLabel={assigneeLabel}
         />}
-        <GithubFilterMenu
+        {sourceKind !== 'issues' && <GithubFilterMenu
           name="發起人"
           allLabel="所有發起人"
           icon={UserPen}
           options={options.authors}
           value={filters.authors}
           onChange={setFilter('authors')}
-        />
+        />}
         {filtered && (
           <button
             type="button"
