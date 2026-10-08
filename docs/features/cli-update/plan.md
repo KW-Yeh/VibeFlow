@@ -1,10 +1,10 @@
 # Plan：CLI 自動更新
 
-- 狀態：待確認
+- 狀態：已確認
 - 對應 Spec：[spec.md](./spec.md)
 - Spec 確認依據：2026-10-08，使用者回覆「按照建議」，確認全域 npm 安裝與手動重啟 host
 - 更新日期：2026-10-08
-- 確認紀錄：尚未確認
+- 確認紀錄：2026-10-08，使用者回覆「確認」，同意依此 Plan 實作。
 
 ## 現有程式碼調查
 
@@ -18,7 +18,7 @@
 
 ## 方案與取捨
 
-新增獨立的 `packages/cli/src/update-command.ts` 處理辨識與安裝，`main.ts` 僅連接 dispatch 和 help。從目前執行的 bundle 旁讀取 npm 套件名稱，並以 `npm root -g` 確認該 bundle 位於 npm 的全域套件目錄；兩側路徑正規化以支援 symlink 及跨平台路徑。確認後以參數陣列執行 `npm install -g <package>@latest`，不經 shell，以免套件名稱或路徑被解讀成命令。npm 命令繼承終端機輸出以保留下載進度及原始錯誤。成功時印出完成與手動重啟提示；失敗時回傳非零退出碼。
+新增獨立的 `packages/cli/src/update-command.ts` 處理辨識與安裝，`main.ts` 僅連接 dispatch 和 help。從目前執行的 bundle 旁讀取 npm 套件名稱，並以 `npm root -g` 確認該 bundle 位於 npm 的全域套件目錄；兩側路徑正規化後比較，拒絕 npm link。確認後以參數陣列執行 `npm install -g <package>@latest`；macOS/Linux 不經 shell，Windows 因 npm 由 `.cmd` shim 提供，需透過 shell 啟動，套件名稱先依 npm 名稱規則驗證。npm 命令繼承終端機輸出以保留下載進度及原始錯誤。成功時印出完成與手動重啟提示；失敗時回傳非零退出碼。
 
 不預先向 registry 查版本：npm 安裝指令本身會取得 `latest` 並處理相同版本情況，額外查詢會增加失敗點，也可能與實際安裝結果不同。來源非全域安裝時提前結束，不在 checkout、`npx` cache 或本地依賴執行全域安裝。
 
@@ -64,4 +64,14 @@
 
 ## 實作與驗證紀錄
 
-尚未實作；確認 Plan 後記錄實際結果。
+2026-10-08：
+
+- 階段 1：加入全域 npm 安裝辨識、`@latest` 安裝流程與隔離測試；commit `5e8c7aa`。
+- 階段 2：接上頂層 `update`、help、README 與專案指引；commit `5c5e317`。
+- `node scripts/run-tests.mjs ./test/update-command.test.mjs`：4/4 通過；含全域安裝、原始碼／本地／npx／npm link 拒絕、npm 失敗及 CLI dispatch。
+- `npx tsc --noEmit -p tsconfig.json`：通過。
+- `npm test`：430/430 通過。
+- `npm run build:npm`、`npm pack ./dist-npm`：通過；Web UI 隨 npm 打包流程完成靜態建置。
+- Tarball 安裝到 Artifact `scratch/npm-prefix` 後執行 `vibeflow doctor --skip agents`：所有檢查通過。npm 發出安裝腳本 allow-scripts 提示，但 doctor 已驗證 node-pty 可用。
+- 暫存安裝的 `vibeflow update` 透過假 npm 執行，記錄的呼叫依序為 `root -g`、`install -g @kw-yeh/vibeflow@latest`；成功訊息含自行重啟提示。未更新使用者的全域套件。
+- 本次沒有改 Web UI 流程、transport 或 handler table；依專案完成標準，無需 `test:e2e`。沒有 UI 樣式改動，像素級比對不適用。沒有驗收影片，PR 不需影片 comment。
