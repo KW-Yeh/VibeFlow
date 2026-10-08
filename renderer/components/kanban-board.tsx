@@ -17,7 +17,7 @@ import {
 import { BoardColumns } from '@/components/board-columns'
 import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
-import { NewTaskForm, type NewTaskDraft } from '@/components/new-task-dialog'
+import { NewTaskForm } from '@/components/new-task-dialog'
 import type { BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -72,8 +72,6 @@ interface KanbanBoardProps {
   openTabIds: string[]
   /** Pre-fill the inline new-task form with this existing project folder. */
   initialProjectPath?: string | null
-  /** Pre-fill the inline new-task form from a GitHub Issue/PR. */
-  newTaskDraft?: NewTaskDraft | null
   newTaskNonce: number
   /** Which view the top pane shows; the workspace below is the same for both. */
   view: BoardView
@@ -183,7 +181,6 @@ export function KanbanBoard({
   onTaskInteract,
   openTabIds,
   initialProjectPath,
-  newTaskDraft,
   newTaskNonce,
   view,
   onViewChange,
@@ -416,10 +413,10 @@ export function KanbanBoard({
       className="flex h-full flex-col overflow-hidden bg-background text-foreground"
     >
       <div
-        style={boardHeight === null ? undefined : { height: boardHeight }}
+        style={view === 'github' || boardHeight === null ? undefined : { height: boardHeight }}
         className={cn(
           'min-h-0 overflow-hidden border-b border-border',
-          boardHeight === null ? 'flex-1' : 'shrink-0'
+          view === 'github' || boardHeight === null ? 'flex-1' : 'shrink-0'
         )}
       >
         {view === 'github' ? (
@@ -459,12 +456,12 @@ export function KanbanBoard({
             nudgeSplitter(24)
           }
         }}
-        className="flex h-2.5 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className={cn('flex h-2.5 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50', view === 'github' && 'hidden')}
       >
         <span className="h-0.5 w-12 rounded-full bg-input" />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', view === 'github' && 'hidden')}>
         {tabBar}
         <main className="min-h-0 flex-1">
         {(() => {
@@ -546,7 +543,6 @@ export function KanbanBoard({
                       key={`${initialProjectPath ?? 'new'}:${newTaskNonce}`}
                       inline
                       initialProjectPath={initialProjectPath}
-                      initialDraft={newTaskDraft}
                       creating={creating}
                       error={createError}
                       pickFolder={pickFolder}

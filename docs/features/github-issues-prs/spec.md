@@ -5,6 +5,7 @@
 - 需求來源：VibeFlow 卡片「加入 Issue 與 PR」的任務描述（2026-10-06），以及 design 畫布
   <https://claude.ai/artifact/RA72hrtsXNvGpF5VzkNU5q> 上使用者選定的方案
 - 更新日期：2026-10-06
+- 2026-10-08 需求更新：Issues／PRs 改為跨所有 GitHub repo 搜尋與登入者相關的 open 項目，不再以看板專案決定抓取範圍。沒有對應看板專案的 repo 仍顯示；從其 Issue／PR 建卡時，先選擇本機專案資料夾。
 - 確認紀錄：2026-10-06 部分決策已確認（不是整份 Spec 確認）——layout 採方案 C（主畫面分頁 + 詳情抽屜）；
   任務卡片採變體 2（編號併入分支列）；資料範圍為「指派給我 + 我建立的」；需求中的「tag」= GitHub Issue Type。
   2026-10-06 整份 Spec 確認——側邊欄專案列的「在此專案新增任務」與「刪除整個專案」兩個操作都移除；
@@ -18,7 +19,7 @@ Backlog 卡片交給 agent 處理；處理中的卡片也要看得出對應哪�
 
 目標：
 
-1. 新增「Issues & PRs」檢視，列出看板上各專案 GitHub repo 中跟我有關的 open Issue 與 PR。
+1. 在「Issues & PRs」檢視列出所有 GitHub repo 中跟我有關的 open Issue 與 PR，無須先建立看板卡片。
 2. 可查看單一 Issue／PR 的詳細內容並前往 GitHub。
 3. 經確認後把 Issue／PR 轉成 Backlog 卡片。
 4. 看板上的任務卡片顯示它對應的 Issue／PR。
@@ -52,7 +53,7 @@ Backlog 卡片交給 agent 處理；處理中的卡片也要看得出對應哪�
 
 | 情境或觸發條件 | 預期行為 |
 | --- | --- |
-| 開啟 Issues & PRs 分頁，或按重新整理 | 依看板上各專案的 `origin` 推出 GitHub repo，抓取 open Issue（指派給我或我建立的）與 open PR（指派給我、我建立的、或請我 review 的），去重後依建立時間新到舊排列 |
+| 開啟 Issues & PRs 分頁，或按重新整理 | 跨 GitHub repo 搜尋 open Issue（指派給我或我建立的）與 open PR（指派給我、我建立的、請我 review 或我已 review 的），再抓各 repo 詳情；看板專案 `origin` 只用於對應本機路徑 |
 | 資料已在 5 分鐘內抓過 | 直接顯示快取，不重新抓；重新整理按鈕一律強制重抓 |
 | 某專案沒有 GitHub `origin` | 跳過該專案，不視為錯誤 |
 | 未安裝 `gh` 或未登入 | 檢視顯示說明，並提供按鈕開啟設定中既有的 GitHub 登入 |
@@ -75,7 +76,7 @@ Backlog 卡片交給 agent 處理；處理中的卡片也要看得出對應哪�
 
 - [ ] AC-1：側邊欄不再出現任務樹與「搜尋任務」，改為「檢視」與「專案」兩區；專案列顯示 Issue · PR 數量。
 - [ ] AC-2：看板區頂部可切換「看板 ｜ Issues & PRs」，切換時下半部工作區不受影響（終端機不重啟）。
-- [ ] AC-3：Issues & PRs 檢視列出看板專案 repo 中指派給我或我建立的 open Issue，以及指派給我、我建立或請我 review 的 open PR，卡片欄位符合「範圍」所列。
+- [ ] AC-3：Issues & PRs 檢視列出所有 repo 中指派給我或我建立的 open Issue，以及指派給我、我建立、請我 review 或我已 review 的 open PR；沒有看板卡片的 repo 也要出現。
 - [ ] AC-4：點卡片開啟詳情抽屜，顯示內文與所有欄位；「在 GitHub 開啟」開到正確 URL。
 - [ ] AC-5：「轉為 Backlog 卡片」開啟預填好的新增任務表單；建立後 Backlog 出現新卡，分支列顯示該 Issue／PR 編號。
 - [ ] AC-6：由 PR 轉成的卡片，分支 = PR head branch；啟動時沿用 origin 上的該分支，而不是從 base 新開。

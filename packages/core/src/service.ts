@@ -33,6 +33,8 @@ import {
   type GitHubCliAuthStatus,
 } from './github-auth'
 import { createGithubService, isGithubRef, parseGithubRepo, type GhRunner, type GithubRef } from './github'
+import { createJiraService, DEFAULT_POINT_FIELDS, isJiraRef, type JiraRef } from './jira'
+import { cancelJiraLogin, getJiraAuthStatus, inputJiraLogin, logoutJira, startJiraLogin, type AcliRunner, type JiraAuthStatus } from './jira-auth'
 import {
   captureTaskOutcome,
   commitAndPush,
@@ -118,6 +120,7 @@ export interface CreateTaskPayload {
   autoMode?: boolean
   attachments?: AttachmentInput[]
   github?: GithubRef
+  jira?: JiraRef
 }
 
 export interface UpdateTaskPayload {
@@ -219,6 +222,8 @@ export interface CoreOptions {
   /** Stand-in for the `gh` CLI; tests override it. */
   ghRunner?: GhRunner
   githubAuthStatus?: () => Promise<GitHubCliAuthStatus>
+  acliRunner?: AcliRunner
+  jiraAuthStatus?: () => Promise<JiraAuthStatus>
   /** Where the agent model lists come from; tests pass one that never starts a CLI. */
   modelCatalog?: ModelCatalog
 }
@@ -243,7 +248,7 @@ export interface Core {
  * Build the core: one handler per channel in IPC_API_MAP.md, all taking task
  * ids rather than paths or commands, and all events on one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, modelCatalog }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
 
@@ -438,6 +443,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     authStatus: githubAuthStatus ?? getGitHubCliAuthStatus,
     repoOf: async (projectPath) => parseGithubRepo((await getGitInfo(projectPath)).remoteUrl),
   })
+  const jira = createJiraService({
+    run: acliRunner,
+    authStatus: jiraAuthStatus ?? (() => getJiraAuthStatus(acliRunner)),
+    pointFields: () => getSettings().jira?.storyPointsFields?.length ? getSettings().jira!.storyPointsFields! : DEFAULT_POINT_FIELDS,
+  })
 
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
@@ -461,7 +471,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     },
 
     'vibeflow:setSettings': (patch) => {
-      setSettings(obj<Partial<AppSettings>>(patch, 'patch'))
+      const value = obj<Partial<AppSettings>>(patch, 'patch')
+      if (value.jira !== undefined) {
+        const fields = obj<{ storyPointsFields?: unknown }>(value.jira, 'jira')?.storyPointsFields
+        if (fields !== undefined && (!Array.isArray(fields) || !fields.every((field) => typeof field === 'string' && /^customfield_\d+$/.test(field)))) invalid('jira.storyPointsFields must contain customfield IDs')
+        jira.clear()
+      }
+      setSettings(value)
       return getState()
     },
 
@@ -483,6 +499,25 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'github:taskLinks': async (payload) => {
       const p = payload === undefined ? {} : obj<{ force?: unknown }>(payload, 'payload')
       return github.taskLinks(getState().board, { force: p.force === true })
+    },
+    'jira:authStatus': () => (jiraAuthStatus ?? (() => getJiraAuthStatus(acliRunner)))(),
+    'settings:startJiraAuthLogin': () => {
+      startJiraLogin((event) => {
+        if (event.type === 'success') jira.clear()
+        bus.emit('jira-auth:event', event)
+      }, acliRunner)
+    },
+    'settings:cancelJiraAuthLogin': () => cancelJiraLogin(),
+    'settings:inputJiraAuthLogin': (payload) => inputJiraLogin(str(payload, 'input').slice(0, 1000)),
+    'settings:logoutJiraAuth': async () => {
+      const status = await logoutJira(acliRunner)
+      jira.clear()
+      bus.emit('jira-auth:event', { type: 'signed-out', status })
+      return status
+    },
+    'jira:inbox': (payload) => {
+      const p = payload === undefined ? {} : obj<{ force?: unknown }>(payload, 'payload')
+      return jira.inbox({ force: p.force === true })
     },
 
     'env:detectAgents': () => detectAgents(),
@@ -520,6 +555,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       if (p.agentCli !== undefined && !AGENT_IDS.includes(p.agentCli)) invalid('unknown agent')
       if (p.github !== undefined && !isGithubRef(p.github)) invalid('github must be an issue or pr ref on github.com')
+      if (p.jira !== undefined && !isJiraRef(p.jira)) invalid('jira must be a Jira ticket ref')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
         title: p.title,
@@ -533,6 +569,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         autoMode: p.autoMode,
         attachments: p.attachments,
         github: p.github,
+        jira: p.jira,
       })
       return { state: getState(), task }
     },
@@ -1013,6 +1050,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       models.warm()
     },
     shutdown() {
+      cancelJiraLogin()
       sessions.shutdown()
       cancelAllChatSends()
       unwatchAllSubAgents()

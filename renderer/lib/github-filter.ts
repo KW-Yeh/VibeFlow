@@ -15,7 +15,7 @@ export const UNASSIGNED = ':unassigned'
 export interface GithubEntry<T extends GithubItem = GithubItem> {
   item: T
   projectName: string
-  projectPath: string
+  projectPath: string | null
 }
 
 export interface GithubFilterOptions {
@@ -39,8 +39,8 @@ function choices(seen: Iterable<string>, ticked: string[]): string[] {
   return Array.from(new Set([...seen, ...ticked])).sort(byName)
 }
 
-export function githubFilterOptions(repos: GithubRepoInbox[], filters: GithubFilters): GithubFilterOptions {
-  const items: GithubItem[] = repos.flatMap((r) => [...r.issues, ...r.prs])
+export function githubFilterOptions(repos: GithubRepoInbox[], filters: GithubFilters, kind?: 'issues' | 'prs'): GithubFilterOptions {
+  const items: GithubItem[] = repos.flatMap((r) => kind ? r[kind] : [...r.issues, ...r.prs])
   return {
     projects: choices(
       repos.map((r) => r.projectName),

@@ -20,6 +20,10 @@ import type {
   GitHubCliAuthStatus,
   GithubInbox,
   GithubRef,
+  JiraInbox,
+  JiraAuthStatus,
+  JiraAuthEvent,
+  JiraRef,
   GithubTaskLinks,
   LibraryEntry,
   LibraryKind,
@@ -80,6 +84,24 @@ export async function getGithubAuthStatus(): Promise<GitHubCliAuthStatus | null>
 export async function getGithubInbox(opts?: { force?: boolean }): Promise<GithubInbox | null> {
   const b = bridge()
   return b ? b.getGithubInbox(opts) : null
+}
+export async function getJiraAuthStatus(): Promise<JiraAuthStatus | null> {
+  const b = bridge()
+  return b ? b.getJiraAuthStatus() : null
+}
+
+export async function startJiraAuthLogin(): Promise<void> { const b = bridge(); if (b) await b.startJiraAuthLogin() }
+export async function cancelJiraAuthLogin(): Promise<void> { const b = bridge(); if (b) await b.cancelJiraAuthLogin() }
+export async function inputJiraAuthLogin(input: string): Promise<void> { const b = bridge(); if (b) await b.inputJiraAuthLogin(input) }
+export async function logoutJiraAuth(): Promise<JiraAuthStatus | null> { const b = bridge(); return b ? b.logoutJiraAuth() : null }
+export function onJiraAuthEvent(callback: (event: JiraAuthEvent) => void): () => void {
+  const b = bridge()
+  return b ? b.onJiraAuthEvent(callback) : () => {}
+}
+
+export async function getJiraInbox(opts?: { force?: boolean }): Promise<JiraInbox | null> {
+  const b = bridge()
+  return b ? b.getJiraInbox(opts) : null
 }
 
 export async function getGithubTaskLinks(
@@ -184,6 +206,7 @@ export async function createTask(payload: {
   autoMode?: boolean
   attachments?: AttachmentInput[]
   github?: GithubRef
+  jira?: JiraRef
 }): Promise<{ state: VibeFlowState; task: Task } | null> {
   const b = bridge()
   return b ? b.createTask(payload) : null

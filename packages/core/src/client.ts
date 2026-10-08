@@ -36,6 +36,8 @@ import type {
   GitHubCliAuthStatus,
 } from './github-auth'
 import type { GithubInbox, GithubRef, GithubTaskLinks } from './github'
+import type { JiraInbox, JiraRef } from './jira'
+import type { JiraAuthEvent, JiraAuthStatus } from './jira-auth'
 import type { LaunchIntent } from './service'
 import type { StartResult } from './session-backend'
 
@@ -91,6 +93,14 @@ export function createBridge(t: BridgeTransport) {
     /** Open Issues/PRs of the board's GitHub repos that involve me; cached unless `force`. */
     getGithubInbox: (opts?: { force?: boolean }): Promise<GithubInbox> =>
       t.invoke('github:inbox', opts ?? {}),
+    getJiraAuthStatus: (): Promise<JiraAuthStatus> => t.invoke('jira:authStatus'),
+    startJiraAuthLogin: (): Promise<void> => t.invoke('settings:startJiraAuthLogin'),
+    cancelJiraAuthLogin: (): Promise<void> => t.invoke('settings:cancelJiraAuthLogin'),
+    inputJiraAuthLogin: (input: string): Promise<void> => t.invoke('settings:inputJiraAuthLogin', input),
+    logoutJiraAuth: (): Promise<JiraAuthStatus> => t.invoke('settings:logoutJiraAuth'),
+    onJiraAuthEvent: (callback: (event: JiraAuthEvent) => void): (() => void) =>
+      t.on('jira-auth:event', (event) => callback(event as JiraAuthEvent)),
+    getJiraInbox: (opts?: { force?: boolean }): Promise<JiraInbox> => t.invoke('jira:inbox', opts ?? {}),
     /** The Issue/PR each card belongs to, keyed by task id. */
     getGithubTaskLinks: (opts?: { force?: boolean }): Promise<Record<string, GithubTaskLinks>> =>
       t.invoke('github:taskLinks', opts ?? {}),
@@ -126,6 +136,7 @@ export function createBridge(t: BridgeTransport) {
     autoMode?: boolean
     attachments?: AttachmentInput[]
     github?: GithubRef
+    jira?: JiraRef
   }): Promise<{ state: VibeFlowState; task: Task }> =>
     t.invoke('vibeflow:createTask', payload),
   updateTask: (payload: {

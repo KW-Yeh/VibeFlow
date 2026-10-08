@@ -65,8 +65,8 @@ export type GithubItem = GithubIssue | GithubPr
 
 export interface GithubRepoInbox {
   repo: string
-  /** The board project this repo was found through — where a converted card goes. */
-  projectPath: string
+  /** A matching board project, when one exists. Other repos need a project chosen at conversion. */
+  projectPath: string | null
   projectName: string
   issues: GithubIssue[]
   prs: GithubPr[]
@@ -79,7 +79,7 @@ export interface GithubInbox {
   status: GithubInboxStatus
   /** The account `@me` resolves to. */
   login?: string
-  /** When the oldest repo shown was fetched; 0 when nothing was. */
+  /** When discovery or the oldest repo was fetched. */
   fetchedAt: number
   repos: GithubRepoInbox[]
 }
@@ -121,6 +121,7 @@ export function parseGithubRepo(remoteUrl: string | null | undefined): string | 
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+const isRepoName = (repo: string): boolean => REPO_RE.test(repo) && repo.split('/').every((part) => part !== '.' && part !== '..')
 
 export function isGithubRef(value: unknown): value is GithubRef {
   if (!value || typeof value !== 'object') return false
@@ -128,7 +129,7 @@ export function isGithubRef(value: unknown): value is GithubRef {
   return (
     (v.kind === 'issue' || v.kind === 'pr') &&
     typeof v.repo === 'string' &&
-    REPO_RE.test(v.repo) &&
+    isRepoName(v.repo) &&
     typeof v.number === 'number' &&
     Number.isInteger(v.number) &&
     v.number > 0 &&
@@ -143,6 +144,7 @@ const PR_FIELDS = `${ITEM_FIELDS},state,isDraft,reviewDecision,headRefName,baseR
 const PR_INDEX_FIELDS = 'number,url,state,isDraft,headRefName,closingIssuesReferences'
 const LIST_LIMIT = '50'
 const PR_INDEX_LIMIT = '100'
+const SEARCH_LIMIT = '1000'
 
 type Raw = Record<string, unknown>
 
@@ -256,6 +258,28 @@ export async function fetchRepoItems(
     issues: mergeItems([assignedIssues, authoredIssues]),
     prs: mergeItems([assignedPrs, authoredPrs, reviewPrs, reviewedPrs]),
   }
+}
+
+/** Discover relevant repos across the signed-in account, including repos with no board card. */
+export async function findRelatedRepos(run: GhRunner): Promise<string[]> {
+  const searches: [string, string[]][] = [
+    ['issues', ['--assignee', '@me']],
+    ['issues', ['--author', '@me']],
+    ['prs', ['--assignee', '@me']],
+    ['prs', ['--author', '@me']],
+    ['prs', ['--review-requested', '@me']],
+    ['prs', ['--reviewed-by', '@me']],
+  ]
+  const results = await Promise.all(searches.map(([kind, filter]) => runJson(run, [
+    'search', kind, '--state', 'open', '--limit', SEARCH_LIMIT, ...filter, '--json', 'repository',
+  ])))
+  const found = new Set<string>()
+  for (const rows of results) for (const row of rows) {
+    const repository = row.repository as Raw | undefined
+    const name = repository?.nameWithOwner
+    if (typeof name === 'string' && isRepoName(name)) found.add(name)
+  }
+  return Array.from(found).sort()
 }
 
 export interface PrIndexEntry {
@@ -408,6 +432,7 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
   const items = new Map<string, CacheEntry<{ issues: GithubIssue[]; prs: GithubPr[] }>>()
   const indexes = new Map<string, CacheEntry<PrIndexEntry[]>>()
   const repos = new Map<string, CacheEntry<string | null>>()
+  const discovery = new Map<string, CacheEntry<string[]>>()
 
   function cached<T>(map: Map<string, CacheEntry<T>>, key: string, force: boolean, load: () => Promise<T>): CacheEntry<T> {
     const hit = map.get(key)
@@ -442,11 +467,12 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
       const repoProject = new Map<string, string>()
       for (const [project, repo] of byProject) if (!repoProject.has(repo)) repoProject.set(repo, project)
 
-      const entries = Array.from(repoProject.entries())
+      const discovered = cached(discovery, 'related', force, () => findRelatedRepos(run))
+      const entries = (await discovered.value).map((repo) => [repo, repoProject.get(repo) ?? null] as const)
       const results = await Promise.all(
         entries.map(async ([repo, projectPath]): Promise<{ at: number; inbox: GithubRepoInbox }> => {
           const entry = cached(items, repo, force, () => fetchRepoItems(run, repo))
-          const head = { repo, projectPath, projectName: basename(projectPath) }
+          const head = { repo, projectPath, projectName: projectPath ? basename(projectPath) : repo }
           try {
             return { at: entry.at, inbox: { ...head, ...(await entry.value) } }
           } catch (err) {
@@ -457,7 +483,7 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
       return {
         status: 'ok',
         ...(auth.login ? { login: auth.login } : {}),
-        fetchedAt: results.length ? Math.min(...results.map((r) => r.at)) : 0,
+        fetchedAt: Math.min(discovered.at, ...results.map((r) => r.at)),
         repos: results.map((r) => r.inbox).sort((a, b) => a.repo.localeCompare(b.repo)),
       }
     },

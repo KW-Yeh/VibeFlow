@@ -39,8 +39,7 @@
 2. **登入用 node-pty 執行 acli**，與 `gh auth login` 相同。
    - acli 可能有互動提示（例如選 site），需要 TTY；輸出中出現的 URL 會轉成 `url` event，作為瀏覽器沒有自動開啟時的備援。
    - 不設定 `BROWSER=true`，讓 acli 自己開瀏覽器。host 只綁 loopback，所以使用者就在同一台機器上。
-3. **一次 search 就把需要的欄位全部抓回來**（含 description），不額外對每張 ticket 呼叫 `view`。
-   - 如果 spike 證實 `--fields` 抓不到 custom field，改用備援方案：search 只取 key，再以最多 4 個並行的 `acli jira workitem view <KEY> --fields "*all" --json` 補欄位。兩種方式都封裝在 `fetchJiraTickets` 內，對外的介面不變。
+3. **先 search，再以 view 補詳細欄位。** 真實 `acli` 1.3.39 的 search 拒絕 `duedate`、`parent`、`created`、`updated`、`project` 與 custom fields。search 只取 CLI 支援的基本欄位，再以最多 6 個並行的 `acli jira workitem view <KEY> --fields ... --json` 補欄位；單張 detail 失敗時保留基本資料並顯示提示。
 4. **Story Points 用候選欄位清單**，預設 `['customfield_10033', 'customfield_10016']`，取第一個數值。`settings.jira.storyPointsFields` 可以覆寫。因為無法用 acli 依欄位名稱查 ID，這是最低成本的跨 site 做法。
 5. **Description 在 core 轉成 Markdown**（新增 `jira-adf.ts`）。renderer 已有 Markdown 管線，raw HTML 是關閉的，所以不要把 ADF 轉成 HTML。
 6. **分頁、篩選、modal 都在 renderer。** core 只提供資料。`GithubView` 拆成容器加上三個 panel，避免一個檔案超過 800 行。
@@ -159,4 +158,11 @@
 
 ## 實作與驗證紀錄
 
-（實作後填寫，不要預先填寫通過。）
+- 2026-10-07：完成 Jira 資料層、ADF 轉 Markdown、`jira:inbox`/授權 handler、三個來源分頁、Status 篩選、Jira 詳情 modal 與直接建卡。GitHub Issue/PR 也改為 modal 內直接建卡；Issues & PRs 檢視隱藏下方工作區但保持 mounted。
+- 在 Windows x64 依 [Atlassian 官方安裝指南](https://developer.atlassian.com/cloud/acli/guides/install-windows/) 將官方 `acli.exe` 安裝至使用者 PATH；`acli --version` 為 `1.3.39-stable`。本機 `workitem search --help` 確認支援 `--jql`、`--fields`、`--json`、`--paginate`、`--limit`。尚未登入時，`auth status` 以 exit 1 回報 `unauthorized`。
+- PTY 執行 `acli jira auth login --web` 顯示 `Authenticating...` 後回報 `authentication failed`；使用者在瀏覽器完成授權後，`auth status` 仍是 `unauthorized`。依官方 OAuth 流程，網頁 Accept 後還須在 CLI 終端選擇相同 site，因此設定頁已加入互動式 CLI 終端。真實 search JSON、custom field 與 site/email status 格式仍待登入成功後驗證；測試以假 runner 覆蓋陣列和 `{ issues }` 格式，未把真實 ticket 內容存入 fixture。
+- 驗證：core/renderer TypeScript、`npm run build:web`、Jira 單元測試、service 測試，以及含 Jira 建卡流程的 `npm run test:e2e` 通過。完整 `npm test` 在此 Windows 環境有 5 個既有環境失敗：3 個 Node 路徑含空白的 CLI 子程序測試、2 個缺少 symlink 權限的 artifact 測試；Jira 測試全部通過。
+- 2026-10-08：修正 Issues 分頁篩選列（僅顯示專案篩選），將原本仍使用預填表單的 E2E 改成 modal 直接建卡流程，並讓 Windows 子程序測試清理暫存目錄時重試短暫的檔案鎖。macOS 本機驗證：core/renderer TypeScript、`npm test`（421 通過）、`npm run build:web`、`npm run test:e2e`（2 通過）。本機未安裝 `acli`，因此真實 Atlassian OAuth、ticket JSON/custom fields 與登出流程仍未驗證。
+- 2026-10-08：依追加需求，GitHub 收件匣改用 `gh search` 跨 repo 找出登入者被指派、建立、被請求 review 或已 review 的 open 項目，再沿用原本每個 repo 的詳細資料查詢與快取。看板專案僅供對應本機路徑；沒有對應卡片的 repo 仍可顯示，建卡前需選本機專案。測試新增空看板與外部 repo 案例，並以假 `gh` 驗證瀏覽器列表。
+- 2026-10-08：macOS `acli` 1.3.39 真實驗證。設定頁重新登入會開啟 Chrome 授權頁；網頁顯示成功後，VibeFlow 內的 CLI 終端顯示單一 site 選項，按 Enter 後顯示 `Authentication successful` 並恢復已登入狀態。原本的 search 欄位包含 CLI 不支援的 detail/custom fields，導致收件匣為 0；已改成 search 基本欄位後並行 view 詳情。真實環境載入 18 張 ticket，17 張有 Story Points、8 張有期限、8 張有 Sprint。隔離 store 的 Web UI 顯示 Jira 18 筆。core TypeScript、`npm test`（425 通過）、`npm run test:e2e`（2 通過）。
+- 2026-10-08：補上單一 site 自動選擇。PTY 輸出完整顯示 site 選單及 Enter 提示且只含一個不同的 Atlassian site 時，core 自動送出一次 Enter；多 site 保留手動選擇。真實 macOS `acli` 1.3.39 重新登入已驗證：只按 VibeFlow 的「重新登入」，瀏覽器授權後終端自行顯示 `Authentication successful`，設定頁恢復已登入，過程中未手動輸入。

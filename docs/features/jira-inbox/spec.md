@@ -7,6 +7,7 @@
   todo、in progress、done、architecture status，卡片顯示名稱、point、期限、編號；Issue 只留專案 filter；PR 保留現有全部
   filter。移除下方 terminal 區域，只在看板區才有；卡片詳情改成 modal；建立卡片時直接產生卡片，而不是只預填表單。」
 - 更新日期：2026-10-07
+- 2026-10-08 需求更新：Issues／PRs 跨所有與登入者相關的 GitHub repo 搜尋，與看板專案無關；沒有對應本機專案的項目，建卡前需選擇資料夾。
 - 確認紀錄：2026-10-07 部分決策已確認（不是整份 Spec 確認）：
   1. Jira ticket 建卡時，在詳情 modal 底部選專案，**選了專案才能按「建立卡片」**；
   2. Done 的 ticket **只抓目前 active sprint** 內的；
@@ -72,7 +73,7 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | 開啟設定 | 「GitHub」列下方新增「Atlassian（Jira）」列，顯示目前狀態摘要（未安裝／未登入／`<email> · <site>`），點擊進入子頁 |
 | 子頁：acli 未安裝 | 顯示「找不到 Atlassian CLI（acli）。」以及安裝說明連結（`https://developer.atlassian.com/cloud/acli/guides/install-acli/`，以外部瀏覽器開啟）和「重新檢查」按鈕 |
 | 子頁：未登入 | 顯示「尚未登入 Atlassian。」與主要按鈕「使用瀏覽器登入」 |
-| 按「使用瀏覽器登入」 | core 執行 `acli jira auth login --web`，acli 會自行開啟瀏覽器。畫面進入等待狀態：「請在瀏覽器完成 Atlassian 登入…」，旁邊有轉圈圖示和「取消」按鈕；若 acli 輸出了授權網址，額外顯示「瀏覽器沒有開啟？手動開啟登入頁」連結 |
+| 按「使用瀏覽器登入」 | core 執行 `acli jira auth login --web`，acli 會自行開啟瀏覽器。完成網頁授權後，只有一個 Jira site 時自動選取；多個 site 時在互動式 CLI 終端供使用者選擇。另有等待狀態與「取消」按鈕。若 acli 輸出了授權網址，額外顯示手動開啟登入頁的連結 |
 | 瀏覽器授權完成 | 子頁顯示「已登入」、site、email 和「登出」按鈕；Issues & PRs 的 Jira 分頁自動重新抓取 |
 | 按「取消」或關閉設定 | 結束 acli 登入程序，回到未登入狀態，不顯示錯誤 |
 | acli 登入失敗 | 顯示 acli 的錯誤輸出（去除 ANSI），可再按一次「使用瀏覽器登入」 |
@@ -99,6 +100,7 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | 情境或觸發條件 | 預期行為 |
 | --- | --- |
 | 抓取範圍 | JQL：`assignee = currentUser() AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC`，抓全部（分頁抓取，最多 200 筆） |
+| 欄位讀取 | `acli jira workitem search` 取基本欄位，再以並行 `view` 取期限、Sprint、Story Points 等詳細欄位；單張詳情失敗時保留基本資料並顯示提示 |
 | 排序 | 先依期限由近到遠，沒有期限的排最後；期限相同時依 key 的數字由大到小 |
 | Status 篩選選項 | 抓到的所有 status 名稱。順序依 status category（To Do 類 → 進行中類 → Done 類），同類內依名稱排序。已勾選但重新整理後消失的值仍保留，方便取消 |
 | Status 篩選 | 複選。沒勾任何選項時顯示全部；勾了就只顯示這些 status 的 ticket。按鈕文字規則與現有篩選相同：沒勾 =「所有 Status」，勾一個 = 該值，勾多個 =「Status · N」 |
@@ -128,10 +130,10 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | Issues 篩選 | 只有「專案」複選，行為與現在相同 |
 | PRs 篩選 | 「專案」「Assignee」「發起人」三個複選，行為與現在相同（含「未指派」選項） |
 | 篩選的獨立性 | Issues 的專案篩選和 PRs 的專案篩選是兩份獨立的值。只有側邊欄點專案時會同時設定兩者 |
-| 選項來源 | Issues 的專案選項只來自有 Issue 的 repo 以及所有有 GitHub repo 的專案；PRs 的 Assignee／發起人選項只從 PR 彙整（不再混入 Issue 的人） |
+| 選項來源 | 專案選項來自跨 repo 搜尋發現的相關專案；PRs 的 Assignee／發起人選項只從 PR 彙整（不再混入 Issue 的人） |
 | 卡片內容 | 與現有 `GithubCard` 相同 |
 | 排序 | 與現在相同：先依專案名稱，同專案內依編號由大到小 |
-| 未登入、gh 未安裝、沒有 GitHub 專案 | 沿用現有提示文案，在兩個分頁都顯示 |
+| 未登入、gh 未安裝、沒有相關 open 項目 | 在兩個分頁顯示對應提示，不依賴看板是否已有 GitHub 專案 |
 | repo 抓取錯誤 | 紅色提示列沿用現有規則，依該分頁的專案篩選過濾 |
 
 ### F. 詳情 modal（三類共用）
@@ -151,6 +153,7 @@ Issues & PRs 檢視（`docs/features/github-issues-prs/`、`docs/features/github
 | 情境或觸發條件 | 預期行為 |
 | --- | --- |
 | Issue／PR，尚未有卡片 | 底部右側顯示「建立到：`<專案名>`」（muted）和主要按鈕「建立卡片」 |
+| Issue／PR 的 repo 尚未對應看板專案 | 仍顯示項目；底部需先選擇最近使用的本機專案或瀏覽資料夾，未選時停用「建立卡片」 |
 | Jira，尚未有卡片 | 底部右側顯示專案下拉（placeholder：「選擇專案…」）和「建立卡片」。**沒選專案時按鈕停用**，hover 時 title 顯示「先選擇要建立到哪個專案」 |
 | Jira 專案下拉的選項 | 看板上所有卡片的專案，加上最近使用的專案（`projects:listRecent`），依路徑去重、依名稱排序；每列顯示專案名稱（主要文字）和路徑（muted、截斷）。不預選任何專案，也不記住上次的選擇 |
 | 按「建立卡片」 | 按鈕顯示轉圈和「建立中…」，按鈕與下拉都停用；不顯示全螢幕的「建立任務中」對話框 |

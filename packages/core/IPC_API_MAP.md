@@ -26,6 +26,8 @@ Channels added since the inventory:
 | `pty:peek` | Join a running session without restarting it (TUI terminal view) |
 | `pty:scrolled` / `pty:scroll-bottom` | Whether a session's own history view (tmux copy-mode) is off the live output, and return it there |
 | `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
+| `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force }` |
+| `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
 | `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
 | event `progress:update` | `{ taskId, progress }` on every change to a tracked card's progress |
@@ -136,7 +138,7 @@ are.
 | `settings:cancelGithubAuthLogin` | core | `github.cancelLogin()` | | |
 | `settings:logoutGithubAuth` | core | `github.logout()` | | |
 | event `github-auth:event` | core | `on('github:auth')` | | |
-| `github:inbox` | core | `getGithubInbox({ force? })` | | Open Issues/PRs of the board projects' GitHub repos that involve the `gh` user; repos come from each card's project `origin`, cached 5 min per repo |
+| `github:inbox` | core | `getGithubInbox({ force? })` | | Account-wide search discovers GitHub repos with open Issues/PRs involving the `gh` user, even without board cards; results cached 5 min, with board `origin`s used only to map a local project path |
 | `github:taskLinks` | core | `getGithubTaskLinks({ force? })` | | Task id → linked Issue/PR (card's `github` source, PR by branch, `outcome.pr`, closing issues) |
 
 ## Host-specific

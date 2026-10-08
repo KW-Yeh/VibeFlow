@@ -188,7 +188,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   ├── specs.ts           a task's spec.md files (the 決策 tab), from worktree or branch
-│   ├── github.ts          Issues & PRs view: board projects' GitHub repos via `gh`, card ↔ Issue/PR links
+│   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
@@ -329,8 +329,8 @@ docs/                      everything that is not code (index: docs/README.md)
   effort through `effort.ts` (`clampEffort`), and the launch omits it for a model
   that takes none. `test/fixtures/agent-models/` pins both answer shapes.
 - **Issues & PRs come from the user's own `gh`** (`packages/core/src/github.ts`,
-  spec: `docs/features/github-issues-prs/`). Repos are the board projects' `origin`s
-  on github.com; the list is the open Issues/PRs assigned to, opened by (and for PRs,
+  spec: `docs/features/github-issues-prs/`). Account-wide search discovers github.com
+  repos independently of the board; the list is the open Issues/PRs assigned to, opened by (and for PRs,
   awaiting review from or already reviewed by) the signed-in `gh` account. Fetches
   are cached per repo for 5 minutes; the view's refresh button forces one. A card converted from an
   Issue/PR stores it in `Task.github`; other cards find their PR by branch

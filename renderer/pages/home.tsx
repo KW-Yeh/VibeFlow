@@ -6,8 +6,7 @@ import { KanbanBoard } from '@/components/kanban-board'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu, type SideMenuProject } from '@/components/side-menu'
-import { GithubView } from '@/components/github-view'
-import type { NewTaskDraft } from '@/components/new-task-dialog'
+import { InboxView, type InboxTab } from '@/components/inbox-view'
 import type { BoardView } from '@/components/ui/view-tabs'
 import {
   TerminalTabBar,
@@ -42,13 +41,17 @@ import {
 import { boardGithubCards, draftFromItem } from '@/lib/github-display'
 import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
 import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
+import { useJiraInbox } from '@/lib/use-jira'
+import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
+import { EMPTY_JIRA_FILTERS, type JiraFilters } from '@/lib/jira-filter'
 import type {
   AgentCliId,
   AgentEffort,
   AttachmentInput,
   BoardState,
   GithubItem,
-  GithubRef,
+  JiraTicket,
+  RecentProjectEntry,
   NotificationSettings,
   ProgressNotification,
   SubAgentRun,
@@ -104,6 +107,7 @@ export default function HomePage() {
   const [systemPrompt, setSystemPrompt] = useState('')
   // Global workstation path ('' = the ~/Desktop default is in effect).
   const [workstationPath, setWorkstationPath] = useState('')
+  const [jiraStoryPointsFields, setJiraStoryPointsFields] = useState<string[]>([])
   const [loaded, setLoaded] = useState(false)
 
   // Settings dialog state
@@ -133,10 +137,14 @@ export default function HomePage() {
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
 
-  const [newTaskDraft, setNewTaskDraft] = useState<NewTaskDraft | null>(null)
   // Which view the top pane shows, and what the Issues & PRs view is narrowed to (session only).
   const [view, setView] = useState<BoardView>('board')
-  const [githubFilters, setGithubFilters] = useState<GithubFilters>(EMPTY_GITHUB_FILTERS)
+  const [githubFilters, setGithubFilters] = useState<Record<'issues' | 'prs', GithubFilters>>({
+    issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
+  })
+  const [jiraFilters, setJiraFilters] = useState<JiraFilters>(EMPTY_JIRA_FILTERS)
+  const [inboxTab, setInboxTab] = useState<InboxTab | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
 
   useEffect(() => {
     let active = true
@@ -147,6 +155,7 @@ export default function HomePage() {
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
+        setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
         setNotificationSettings(withNotificationDefaults(state.settings.notifications))
       }
       setLoaded(true)
@@ -175,6 +184,7 @@ export default function HomePage() {
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
+      setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
       setNotificationSettings(withNotificationDefaults(state.settings.notifications))
     })
   }, [])
@@ -223,6 +233,7 @@ export default function HomePage() {
   // tab in place — VSCode's single-click behaviour — while a pinned open always
   // gets its own slot at the end of the bar.
   const openTab = (taskId: string, opts?: { pin?: boolean }) => {
+    setView('board')
     setTabs((prev) => {
       const existing = prev.find((t) => t.taskId === taskId)
       if (existing) {
@@ -306,28 +317,26 @@ export default function HomePage() {
   }
 
   const handleOpenNewTask = () => {
+    setView('board')
     setCreateError(null)
     setNewTaskInitialProject(null)
-    setNewTaskDraft(null)
     setNewTaskNonce((nonce) => nonce + 1)
     setSelectedTaskId(null)
   }
 
-  // An Issue/PR becomes a card through the same form a hand-made card uses,
-  // so the user reviews and adjusts it before anything is created.
-  const handleConvertGithubItem = (item: GithubItem, projectPath: string) => {
-    setCreateError(null)
-    setNewTaskInitialProject(projectPath)
-    setNewTaskDraft(draftFromItem(item))
-    setNewTaskNonce((nonce) => nonce + 1)
-    setSelectedTaskId(null)
+  const handleConvertGithubItem = async (item: GithubItem, projectPath: string): Promise<string> => {
+    const result = await createTask({ baseBranch: null, ...draftFromItem(item), projectPath, autoMode })
+    if (!result) throw new Error('未連線到 VibeFlow core')
+    setBoard(result.state.board)
+    return result.task.id
   }
 
   const handleSaveSettings = async (
     nextPrompt: string,
     nextWorkstation: string,
     nextAutoMode: boolean,
-    nextNotifications: NotificationSettings
+    nextNotifications: NotificationSettings,
+    nextJiraStoryPointsFields: string[]
   ) => {
     setSavingSettings(true)
     setSettingsError(null)
@@ -337,11 +346,13 @@ export default function HomePage() {
         workstationPath: nextWorkstation || undefined,
         autoMode: nextAutoMode,
         notifications: nextNotifications,
+        jira: { storyPointsFields: nextJiraStoryPointsFields },
       })
       setSystemPrompt(nextPrompt)
       setWorkstationPath(nextWorkstation)
       setAutoMode(nextAutoMode)
       setNotificationSettings(nextNotifications)
+      setJiraStoryPointsFields(nextJiraStoryPointsFields)
       setSettingsOpen(false)
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err))
@@ -360,8 +371,7 @@ export default function HomePage() {
     model: string,
     effort: AgentEffort,
     taskAutoMode: boolean,
-    attachments: AttachmentInput[],
-    github?: GithubRef
+    attachments: AttachmentInput[]
   ) => {
     setCreating(true)
     setCreateError(null)
@@ -377,11 +387,9 @@ export default function HomePage() {
         effort,
         autoMode: taskAutoMode,
         attachments,
-        github,
       })
       if (result) {
         setBoard(result.state.board)
-        setNewTaskDraft(null)
         // A task the user just created is never throwaway — open it pinned so
         // the next single-click elsewhere can't discard it.
         openTab(result.task.id, { pin: true })
@@ -453,9 +461,19 @@ export default function HomePage() {
   // the host never registers with the public PeerJS broker. The dialog and the
   // host stay wired up so the feature can be handed back with one prop.
   const github = useGithubInbox(board, loaded)
+  const jira = useJiraInbox(loaded)
   const taskLinks = useGithubTaskLinks(board, loaded)
   const allTasks = [...board.in_progress, ...board.backlog, ...board.done]
   const githubCards = boardGithubCards(allTasks)
+  const jiraCards = boardJiraCards(allTasks)
+  const currentInboxTab = inboxTab ?? (jira.inbox?.status === 'ok' ? 'jira' : 'issues')
+  const projects = Array.from(new Map([
+    ...allTasks.filter((task) => task.projectPath).map((task) => [task.projectPath!, { path: task.projectPath!, name: task.projectName ?? task.projectPath! }] as const),
+    ...recentProjects.filter((project) => !project.missing).map((project) => [project.path, { path: project.path, name: project.name }] as const),
+  ]).values()).sort((a, b) => a.name.localeCompare(b.name))
+  useEffect(() => {
+    if (loaded) void listRecentProjects().then(setRecentProjects)
+  }, [loaded, board.backlog.length])
   const githubRepos = github.inbox?.status === 'ok' ? github.inbox.repos : null
   const githubCount = githubRepos
     ? githubRepos.reduce((sum, r) => sum + r.issues.length + r.prs.length, 0)
@@ -477,9 +495,24 @@ export default function HomePage() {
 
   // A sidebar project narrows the view to just that project; clicking it again widens it back.
   const selectGithubProject = (name: string) => {
-    const only = view === 'github' && githubFilters.projects.length === 1 && githubFilters.projects[0] === name
-    setGithubFilters({ ...githubFilters, projects: only ? [] : [name] })
+    const only = view === 'github' && githubFilters.issues.projects.length === 1 && githubFilters.issues.projects[0] === name
+    const projects = only ? [] : [name]
+    setGithubFilters((previous) => ({ issues: { ...previous.issues, projects }, prs: { ...previous.prs, projects } }))
+    if (currentInboxTab === 'jira') setInboxTab('issues')
     setView('github')
+  }
+
+  const createJiraTask = async (ticket: JiraTicket, projectPath: string): Promise<string> => {
+    const draft = draftFromTicket(ticket)
+    const result = await createTask({ ...draft, projectPath, baseBranch: null, autoMode })
+    if (!result) throw new Error('未連線到 VibeFlow core')
+    setBoard(result.state.board)
+    return result.task.id
+  }
+
+  const goToTask = (taskId: string) => {
+    setView('board')
+    openTab(taskId, { pin: true })
   }
 
   const remoteHost = useRemoteHost({
@@ -508,7 +541,7 @@ export default function HomePage() {
                 taskCount={allTasks.length}
                 githubCount={githubCount}
                 projects={sideMenuProjects}
-                activeProjects={githubFilters.projects}
+                activeProjects={Array.from(new Set([...githubFilters.issues.projects, ...githubFilters.prs.projects]))}
                 onSelectProject={selectGithubProject}
                 onNewTask={handleOpenNewTask}
                 remoteActive={!!remoteHost.roomCode}
@@ -544,27 +577,29 @@ export default function HomePage() {
                   onTaskInteract={pinTab}
                   openTabIds={tabs.map((t) => t.taskId)}
                   initialProjectPath={newTaskInitialProject}
-                  newTaskDraft={newTaskDraft}
                   newTaskNonce={newTaskNonce}
                   view={view}
                   onViewChange={setView}
                   taskLinks={taskLinks.links}
                   githubView={
-                    <GithubView
+                    <InboxView
                       view={view}
                       onViewChange={setView}
-                      inbox={github.inbox}
-                      loading={github.loading}
-                      error={github.error}
-                      onRefresh={() => {
-                        void github.refresh()
-                        void taskLinks.refresh()
-                      }}
-                      filters={githubFilters}
-                      onFiltersChange={setGithubFilters}
-                      boardCards={githubCards}
-                      onConvert={handleConvertGithubItem}
-                      onOpenTask={openTab}
+                      tab={currentInboxTab}
+                      onTabChange={setInboxTab}
+                      jira={jira}
+                      github={{ ...github, refresh: () => { void github.refresh(); void taskLinks.refresh() } }}
+                      jiraFilters={jiraFilters}
+                      onJiraFiltersChange={setJiraFilters}
+                      githubFilters={githubFilters}
+                      onGithubFiltersChange={(kind, filters) => setGithubFilters((previous) => ({ ...previous, [kind]: filters }))}
+                      jiraCards={jiraCards}
+                      githubCards={githubCards}
+                      projects={projects}
+                      onBrowseProject={pickProjectFolder}
+                      onCreateJira={createJiraTask}
+                      onConvertGithub={handleConvertGithubItem}
+                      onOpenTask={goToTask}
                       onOpenSettings={() => {
                         setSettingsError(null)
                         setSettingsOpen(true)
@@ -601,6 +636,7 @@ export default function HomePage() {
               workstationPath={workstationPath}
               autoMode={autoMode}
               notifications={notificationSettings}
+              jiraStoryPointsFields={jiraStoryPointsFields}
               saving={savingSettings}
               error={settingsError}
               onSave={handleSaveSettings}

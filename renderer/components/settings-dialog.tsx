@@ -15,18 +15,24 @@ import {
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { LibraryPanel } from '@/components/library-panel'
+import { JiraAuthTerminal } from '@/components/jira-auth-terminal'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { NotificationSettingsSection, desktopPermission } from '@/components/notification-settings'
 import { fieldClass } from '@/components/ui/field'
 import {
   cancelGithubAuthLogin,
+  cancelJiraAuthLogin,
   detectAgents,
   getGithubAuthStatus,
+  getJiraAuthStatus,
   listAgentModels,
   logoutGithubAuth,
+  logoutJiraAuth,
   onGithubAuthEvent,
+  onJiraAuthEvent,
   openExternal,
   startGithubAuthLogin,
+  startJiraAuthLogin,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
@@ -35,6 +41,7 @@ import type {
   AgentModelList,
   AgentModelSource,
   GitHubCliAuthStatus,
+  JiraAuthStatus,
 } from '@/lib/types'
 
 const MODEL_AGENTS: { id: AgentCliId; name: string }[] = [
@@ -61,6 +68,7 @@ interface SettingsDialogProps {
   autoMode: boolean
   /** Stage notification preferences (defaults already applied). */
   notifications: NotificationSettings
+  jiraStoryPointsFields: string[]
   saving: boolean
   error: string | null
   /** Called with the new custom prompt ('' = default), workstation path ('' = default), Auto Mode and notifications. */
@@ -68,7 +76,8 @@ interface SettingsDialogProps {
     systemPrompt: string,
     workstationPath: string,
     autoMode: boolean,
-    notifications: NotificationSettings
+    notifications: NotificationSettings,
+    jiraStoryPointsFields: string[]
   ) => void
   /** Native folder picker — returns the chosen absolute path, or null. */
   onPickFolder: () => Promise<string | null>
@@ -81,6 +90,7 @@ export function SettingsDialog({
   workstationPath,
   autoMode,
   notifications,
+  jiraStoryPointsFields,
   saving,
   error,
   onSave,
@@ -91,12 +101,20 @@ export function SettingsDialog({
   const [workstation, setWorkstation] = useState('')
   const [auto, setAuto] = useState(true)
   const [notif, setNotif] = useState<NotificationSettings>(notifications)
+  const [pointFieldsText, setPointFieldsText] = useState('')
   const [desktopBlocked, setDesktopBlocked] = useState(false)
   const [modelLists, setModelLists] = useState<Partial<Record<AgentCliId, AgentModelList | null>>>({})
   const [refreshing, setRefreshing] = useState<AgentCliId | null>(null)
   /** CLIs found on PATH; undefined while detecting, null when detection failed. */
   const [installed, setInstalled] = useState<AgentCliId[] | null | undefined>(undefined)
   const [githubPage, setGithubPage] = useState(false)
+  const [jiraPage, setJiraPage] = useState(false)
+  const [jiraStatus, setJiraStatus] = useState<JiraAuthStatus | null>(null)
+  const [jiraPhase, setJiraPhase] = useState<'idle' | 'waiting' | 'error'>('idle')
+  const [jiraUrl, setJiraUrl] = useState('')
+  const [jiraOutput, setJiraOutput] = useState('')
+  const [jiraError, setJiraError] = useState<string | null>(null)
+  const [jiraBusy, setJiraBusy] = useState(false)
   const [githubStatus, setGithubStatus] = useState<GitHubCliAuthStatus | null>(null)
   const [githubPhase, setGithubPhase] = useState<GithubAuthPhase>('idle')
   const [githubCode, setGithubCode] = useState('')
@@ -111,15 +129,22 @@ export function SettingsDialog({
       setWorkstation(workstationPath)
       setAuto(autoMode)
       setNotif(notifications)
+      setPointFieldsText(jiraStoryPointsFields.join(', '))
       setDesktopBlocked(desktopPermission() === 'denied' || desktopPermission() === 'unsupported')
       setGithubPage(false)
+      setJiraPage(false)
+      setJiraPhase('idle')
+      setJiraError(null)
+      setJiraUrl('')
+      setJiraOutput('')
+      void getJiraAuthStatus().then(setJiraStatus)
       setGithubPhase('idle')
       setGithubCode('')
       setGithubError(null)
       setCopiedCode(false)
       void getGithubAuthStatus().then(setGithubStatus)
     }
-  }, [open, systemPrompt, workstationPath, autoMode, notifications])
+  }, [open, systemPrompt, workstationPath, autoMode, notifications, jiraStoryPointsFields])
 
   useEffect(() => {
     if (!open) return
@@ -142,6 +167,19 @@ export function SettingsDialog({
     return () => {
       cancelled = true
     }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    return onJiraAuthEvent((event) => {
+      if (event.type === 'starting') { setJiraPhase('waiting'); setJiraBusy(true); setJiraError(null) }
+      if (event.type === 'output') setJiraOutput((output) => (output + event.data).slice(-32000))
+      if (event.type === 'url') setJiraUrl(event.url)
+      if (event.type === 'success') { setJiraStatus(event.status); setJiraPhase('idle'); setJiraBusy(false) }
+      if (event.type === 'signed-out') { setJiraStatus(event.status); setJiraPhase('idle'); setJiraBusy(false) }
+      if (event.type === 'cancelled') { setJiraPhase('idle'); setJiraBusy(false) }
+      if (event.type === 'error') { setJiraPhase('error'); setJiraBusy(false); setJiraError(event.error) }
+    })
   }, [open])
 
   const refreshModels = async (agentId: AgentCliId) => {
@@ -191,11 +229,13 @@ export function SettingsDialog({
   const [libraryEditing, setLibraryEditing] = useState(false)
   const trimmed = text.trim()
   const isUnset = trimmed === ''
-  const canSubmit = !saving && !githubPage
+  const pointFields = pointFieldsText.split(',').map((value) => value.trim()).filter(Boolean)
+  const validPointFields = pointFields.every((field) => /^customfield_\d+$/.test(field))
+  const canSubmit = !saving && !githubPage && !jiraPage && validPointFields
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSave(trimmed, workstation.trim(), auto, notif)
+    onSave(trimmed, workstation.trim(), auto, notif, pointFields)
   }
 
   const handlePickWorkstation = async () => {
@@ -247,10 +287,29 @@ export function SettingsDialog({
   }
 
   const handleClose = () => {
+    if (jiraBusy) void cancelJiraAuthLogin()
     if (githubPage && (githubPhase === 'starting' || githubPhase === 'waiting')) {
       void cancelGithubAuthLogin()
     }
     onClose()
+  }
+
+  const startJira = async () => {
+    setJiraPhase('waiting')
+    setJiraBusy(true)
+    setJiraError(null)
+    setJiraUrl('')
+    setJiraOutput('')
+    try { await startJiraAuthLogin() }
+    catch (err) { setJiraBusy(false); setJiraPhase('error'); setJiraError(err instanceof Error ? err.message : String(err)) }
+  }
+
+  const closeJiraPage = async () => {
+    if (jiraBusy) await cancelJiraAuthLogin()
+    setJiraPage(false)
+    setJiraBusy(false)
+    setJiraPhase('idle')
+    setJiraStatus(await getJiraAuthStatus())
   }
 
   const copyGithubCode = async () => {
@@ -266,14 +325,14 @@ export function SettingsDialog({
         <DialogShell
           key="settings-dialog"
       title={
-        githubPage
+        jiraPage ? 'Atlassian（Jira）' : githubPage
           ? '登入 GitHub CLI'
           : libraryPage
           ? 'Library'
           : '設定'
       }
       description={
-        githubPage
+        jiraPage ? '登入 Atlassian 以讀取指派給你的 Jira ticket。' : githubPage
           ? '使用 GitHub CLI 的網頁授權流程登入 github.com。'
           : libraryPage
           ? 'VibeFlow 自有的 skill / prompt / script，啟動任務時投遞給 Claude 與 Codex。'
@@ -284,7 +343,10 @@ export function SettingsDialog({
       showHeader
       contentClassName="max-w-2xl"
       footer={
-        githubPage ? (
+        jiraPage ? <>
+          <Button variant="ghost" size="sm" onClick={() => void closeJiraPage()}>返回設定</Button>
+          <Button size="sm" disabled={saving || jiraBusy || !validPointFields} onClick={() => onSave(trimmed, workstation.trim(), auto, notif, pointFields)}>儲存設定</Button>
+        </> : githubPage ? (
           <>
             <Button
               variant="ghost"
@@ -325,7 +387,36 @@ export function SettingsDialog({
         )
       }
     >
-      {githubPage ? (
+      {jiraPage ? <div className="space-y-5">
+        <button type="button" onClick={() => void closeJiraPage()}
+          className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <ArrowLeft className="size-4" />返回設定
+        </button>
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">{jiraStatus?.installed === false ? '找不到 Atlassian CLI（acli）。' : jiraStatus?.authenticated ? '已登入 Atlassian' : '尚未登入 Atlassian。'}</p>
+          {jiraStatus?.authenticated && <p className="text-muted-foreground">{jiraStatus.email ?? '帳號'} · {jiraStatus.site}</p>}
+          {jiraPhase === 'waiting' && <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />請在瀏覽器完成授權；若帳號有多個 site，再於下方終端選擇。</p>}
+          {jiraError && <p role="alert" className="text-destructive">{jiraError}</p>}
+        </div>
+        {(jiraBusy || jiraOutput) && <JiraAuthTerminal output={jiraOutput} active={jiraBusy} />}
+        {jiraStatus?.installed === false ? <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void openExternal('https://developer.atlassian.com/cloud/acli/guides/install-acli/')}><ExternalLink />安裝說明</Button>
+          <Button size="sm" onClick={() => void getJiraAuthStatus().then(setJiraStatus)}><RefreshCw />重新檢查</Button>
+        </div> : <div className="flex flex-wrap gap-2">
+          {jiraBusy ? <Button variant="outline" size="sm" onClick={() => void cancelJiraAuthLogin()}>取消</Button>
+            : <Button size="sm" onClick={() => void startJira()}>{jiraStatus?.authenticated ? '重新登入' : '使用瀏覽器登入'}</Button>}
+          {jiraStatus?.authenticated && <Button variant="outline" size="sm" disabled={jiraBusy} onClick={async () => {
+            try { setJiraStatus(await logoutJiraAuth()) } catch (err) { setJiraError(err instanceof Error ? err.message : String(err)) }
+          }}><LogOut />登出</Button>}
+          {jiraUrl && <Button variant="ghost" size="sm" onClick={() => void openExternal(jiraUrl)}><ExternalLink />手動開啟登入頁</Button>}
+        </div>}
+        <label className="block space-y-1.5 text-sm">
+          <span className="font-medium">Story Points 欄位 ID</span>
+          <input value={pointFieldsText} onChange={(event) => setPointFieldsText(event.target.value)}
+            placeholder="customfield_10033, customfield_10016" className={cn(fieldClass, 'font-mono text-sm')} />
+          {!validPointFields && <span className="text-destructive">請使用 customfield_12345 格式，以逗號分隔。</span>}
+        </label>
+      </div> : githubPage ? (
         <div className="space-y-5">
           <button
             type="button"
@@ -656,6 +747,13 @@ export function SettingsDialog({
                   </Button>
                 )}
               </div>
+              <button type="button" onClick={() => setJiraPage(true)}
+                className="flex w-full items-center gap-3 rounded-md border border-border/60 px-3 py-2.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                {jiraStatus?.authenticated ? <CheckCircle2 className="size-4 shrink-0 text-success" /> : <span className="size-4 shrink-0 rounded-full border border-muted-foreground/50" />}
+                <span className="min-w-0 flex-1"><span className="block text-base font-medium">Atlassian（Jira）</span>
+                  <span className="block truncate text-sm text-muted-foreground">{jiraStatus?.authenticated ? `${jiraStatus.email ?? '帳號'} · ${jiraStatus.site}` : jiraStatus?.installed === false ? '找不到 Atlassian CLI（acli）' : '尚未登入'}</span>
+                </span>
+              </button>
             </div>
             {githubError && !githubPage && (
               <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">

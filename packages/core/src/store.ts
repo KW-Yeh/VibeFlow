@@ -4,6 +4,7 @@ import { join } from 'path'
 import type { AgentCliId, AgentEffort } from './agents'
 import type { TokenUsage } from './progress'
 import type { GithubRef } from './github'
+import type { JiraRef } from './jira'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -84,6 +85,8 @@ export interface Task {
   usage?: TokenUsage
   /** The GitHub Issue or PR this card was converted from. Absent = created by hand. */
   github?: GithubRef
+  /** The Jira ticket this card was created from. */
+  jira?: JiraRef
 }
 
 /**
@@ -167,6 +170,7 @@ export interface AppSettings {
   workstationPath?: string
   /** Stage notifications. Absent = DEFAULT_NOTIFICATION_SETTINGS. */
   notifications?: NotificationSettings
+  jira?: { storyPointsFields?: string[] }
 }
 
 /** Which progress milestones are announced, and how (task-progress spec). */

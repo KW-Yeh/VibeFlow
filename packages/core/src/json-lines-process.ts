@@ -95,12 +95,14 @@ export function spawnJsonLines(
     }
   })
   proc.on('exit', (code, signal) => {
-    finished()
     clearTimeout(timer)
     clearTimeout(graceTimer)
     const reason = signal ? `was killed (${signal})` : `exited with code ${code}`
     fail(new Error(`${bin} ${reason}${stderr.trim() ? `: ${stderr.trim()}` : ''}`))
   })
+  // On Windows cmd.exe can exit before its child releases the inherited pipes.
+  // 'close' waits for those handles, so callers may safely remove the CLI's cwd.
+  proc.on('close', finished)
   // A CLI that exits before reading stdin makes writes fail with EPIPE; the
   // exit above is the error worth reporting.
   proc.stdin.on('error', () => {})
