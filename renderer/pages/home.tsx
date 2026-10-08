@@ -43,7 +43,6 @@ import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
 import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
-import { EMPTY_JIRA_FILTERS, type JiraFilters } from '@/lib/jira-filter'
 import type {
   AgentCliId,
   AgentEffort,
@@ -142,7 +141,6 @@ export default function HomePage() {
   const [githubFilters, setGithubFilters] = useState<Record<'issues' | 'prs', GithubFilters>>({
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
   })
-  const [jiraFilters, setJiraFilters] = useState<JiraFilters>(EMPTY_JIRA_FILTERS)
   const [inboxTab, setInboxTab] = useState<InboxTab | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
 
@@ -589,8 +587,6 @@ export default function HomePage() {
                       onTabChange={setInboxTab}
                       jira={jira}
                       github={{ ...github, refresh: () => { void github.refresh(); void taskLinks.refresh() } }}
-                      jiraFilters={jiraFilters}
-                      onJiraFiltersChange={setJiraFilters}
                       githubFilters={githubFilters}
                       onGithubFiltersChange={(kind, filters) => setGithubFilters((previous) => ({ ...previous, [kind]: filters }))}
                       jiraCards={jiraCards}

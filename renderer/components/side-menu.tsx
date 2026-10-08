@@ -267,8 +267,8 @@ export function SideMenu({
               <SquareKanban className="size-4" />
             </IconButton>
             <IconButton
-              aria-label="Issues & PRs"
-              title="Issues & PRs"
+              aria-label="工作項目"
+              title="工作項目"
               onClick={() => onSelectView('github')}
               className={cn('size-8', view === 'github' && 'text-primary hover:text-primary')}
             >
@@ -302,7 +302,7 @@ export function SideMenu({
                 className={cn(ROW, 'focus-visible:ring-[3px] focus-visible:ring-ring/50', rowTone(view === 'github'))}
               >
                 <Inbox className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">Issues &amp; PRs</span>
+                <span className="min-w-0 flex-1 truncate">工作項目</span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {githubCount ?? '—'}
                 </span>

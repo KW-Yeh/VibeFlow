@@ -46,7 +46,7 @@
 ## 實作順序與待辦
 
 1. [x] **階段 A：基準與資料層。** 用隔離 store 和固定 Jira fixture 擷取現況；實作附件資料解析與單元測試，跑 core 型別及對應測試；完成後提交 `feat: expose Jira attachment metadata`。
-2. [ ] **階段 B：Jira 清單與詳情。** 實作「工作項目」文案、Status 欄位、資料夾選取、key/Parent 連結及附件列表；更新純 helper 測試，跑 renderer 型別、`npm test`、Web build；完成後提交 `feat: organize Jira tickets by status`。
+2. [x] **階段 B：Jira 清單與詳情。** 實作「工作項目」文案、Status 欄位、資料夾選取、key/Parent 連結及附件列表；更新純 helper 測試，跑 renderer 型別、`npm test`、Web build；完成後提交 `feat: organize Jira tickets by status`。
 3. [ ] **階段 C：E2E 與畫面驗收。** 擴充瀏覽器流程；在 375／768／1440px 產生像素差圖、檢查截圖與水平溢出；跑全套 Definition of Done 與 live Web UI；更新 README 和本 Plan 的實測結果。錄影若有產出，存到指定 Artifacts 根目錄。完成後提交 `test: cover work item page flows`（若含文件可改成最貼切的 conventional commit）。
 4. [ ] **階段 D：交付。** 檢查 diff、提交狀態和驗收證據；push 分支，依 repo `pr` skill 建立英文標題／內容的 Draft PR。若已產出驗收影片，在 PR 新增一則 comment 上傳影片；沒有影片則不新增該 comment。
 
@@ -81,3 +81,4 @@
 ## 實作與驗證紀錄
 
 - 2026-10-08，階段 A：以隔離 store、三張固定 Jira ticket 擷取改動前 375／768／1440px 的清單與詳情畫面，基準圖留在 Artifacts `scratch/`。本機 `acli` 1.3.39 確認 `--fields attachment` 回傳 `fields.attachment[]`（id、filename、size、content）；附件 URL 由 site 與純數字 id 組成，忽略原始 content URL。`node scripts/run-tests.mjs ./test/jira.test.mjs` 9/9 通過，`npx tsc --noEmit -p tsconfig.json` 通過。
+- 2026-10-08，階段 B：依實際 Status 分欄、移除 Jira Status filter、加入資料夾選擇、Jira key/Parent 連結與附件清單；截圖目視檢查 375／768／1440px 的清單和詳情，無明顯重疊或頁面水平溢出。`node scripts/run-tests.mjs ./test/jira-columns.test.mjs` 2/2、`npx tsc --noEmit -p renderer/tsconfig.json`、`npm test` 426/426、`npm run build:web` 均通過；完整像素差圖與 E2E 待階段 C。
