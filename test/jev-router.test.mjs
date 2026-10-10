@@ -145,7 +145,8 @@ test('POSIX planning starts each agent in a worktree with spaces and passes the 
       }, catalog)
       assert.equal(result.status, 'routed', result.reason)
       assert.equal(result.plan, 'Inspect, implement, verify.')
-      assert.equal((await fs.readFile(env.VIBEFLOW_JEV_CWD, 'utf8')).trim(), worktree)
+      assert.equal(await fs.realpath((await fs.readFile(env.VIBEFLOW_JEV_CWD, 'utf8')).trim()),
+        await fs.realpath(worktree))
       assert.match(await fs.readFile(env.VIBEFLOW_JEV_PROMPT, 'utf8'), /保持中文內容 & symbols/)
       assert.deepEqual((await fs.readFile(env.VIBEFLOW_JEV_ARGS, 'utf8')).trim().split('\n'),
         agent === 'claude'
