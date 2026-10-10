@@ -257,6 +257,34 @@ test('a launch passes the effort through when the model is unknown', async (t) =
   assert.match(command, /--model claude-custom-1 --effort max /)
 })
 
+test('a family-only card uses Jev while an explicit model bypasses it', async (t) => {
+  const calls = []
+  const router = { async route(task, list) {
+    calls.push({ task, list })
+    return { status: 'routed', model: 'haiku', plannerModel: 'opus', plan: 'Inspect the auth flow.' }
+  } }
+  const { core, sessions, task } = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+  })
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  assert.equal(calls.length, 1)
+  assert.match(sessions.starts[0].command, /--model haiku /)
+  assert.match(sessions.starts[0].command, /Inspect the auth flow/)
+  const routed = core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id)
+  assert.equal(routed.model, undefined)
+  assert.equal(routed.jevRoute.model, 'haiku')
+  await core.handlers['pty:start']({ taskId: task.id, launch: { resume: true }, fresh: true })
+  assert.equal(calls.length, 1)
+
+  const fixed = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+    task: { model: 'sonnet' },
+  })
+  await fixed.core.handlers['pty:start']({ taskId: fixed.task.id, launch: {} })
+  assert.equal(calls.length, 1)
+  assert.match(fixed.sessions.starts[0].command, /--model sonnet /)
+})
+
 test('updateTask rejects an unknown effort', async (t) => {
   const { core, task } = await coreWithTask(t)
   await assert.rejects(
@@ -269,6 +297,19 @@ test('the API-key connection channels are gone', async (t) => {
   const { core } = await coreWithTask(t)
   assert.equal(core.handlers['settings:connectAgent'], undefined)
   assert.equal(core.handlers['settings:refreshAgentModels'], undefined)
+})
+
+test('Jev key settings expose status only and never put the key in board state', async (t) => {
+  const { core } = await coreWithTask(t)
+  const key = 'test-jev-secret'
+  const status = core.handlers['settings:saveJevApiKey']({ apiKey: key })
+  assert.deepEqual(status, { configured: true, source: 'saved' })
+  assert.deepEqual(core.handlers['settings:jevKeyStatus'](), status)
+  assert.equal(JSON.stringify(core.handlers['vibeflow:getState']()).includes(key), false)
+  assert.equal((await fs.readFile(path.join(storeDir, 'jev-api-key'), 'utf8')), key)
+  assert.throws(() => core.handlers['settings:saveJevApiKey']({ apiKey: 123 }), { code: 'INVALID_REQUEST' })
+  core.handlers['settings:removeJevApiKey']()
+  assert.equal((await fs.readdir(storeDir)).includes('jev-api-key'), false)
 })
 
 test('only http(s) links can be opened on the host', async (t) => {

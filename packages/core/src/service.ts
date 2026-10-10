@@ -24,6 +24,8 @@ import {
 import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
 import { AGENT_EFFORTS, detectAgents, type AgentCliId, type AgentEffort } from './agents'
 import { createModelCatalog, type ModelCatalog } from './agent-models'
+import { createJevRouter, type JevRouter } from './jev-router'
+import { jevKeyStatus, readJevApiKey, removeJevApiKey, saveJevApiKey } from './jev-credentials'
 import { clampEffort } from './effort'
 import {
   cancelGitHubCliLogin,
@@ -235,6 +237,8 @@ export interface CoreOptions {
   jiraAuthStatus?: () => Promise<JiraAuthStatus>
   /** Where the agent model lists come from; tests pass one that never starts a CLI. */
   modelCatalog?: ModelCatalog
+  /** Injectable Jev routing for tests. */
+  jevRouter?: JevRouter
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -258,9 +262,11 @@ export interface Core {
  * take ids; a standalone shell may take a selected folder when no task exists.
  * No channel accepts a client-supplied shell command. Events use one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
+  const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
+  const routing = new Map<string, Promise<Task['jevRoute']>>()
   const standaloneTerminals = new Map<string, string>()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
@@ -364,8 +370,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
    * The card keeps the effort the user picked; what reaches the CLI is what
    * the model actually running accepts. Unknown models get the card's value.
    */
-  function launchEffort(task: Task): Task['effort'] {
-    const model = models.findModel(taskAgent(task), taskModel(task))
+  function launchEffort(task: Task, selectedModel = taskModel(task)): Task['effort'] {
+    const model = models.findModel(taskAgent(task), selectedModel)
     return model?.efforts ? clampEffort(task.effort, model.efforts) : task.effort
   }
 
@@ -373,8 +379,26 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
+    let route = task.model?.trim() ? undefined : task.jevRoute
+    if (!task.model?.trim() && !intent.resume && intent.includeTaskPrompt !== false) {
+      let pending = routing.get(task.id)
+      if (!pending) {
+        pending = (async () => {
+          const candidateModels = (await (router.enabled === false
+            ? models.get(taskAgent(task))
+            : models.refresh(taskAgent(task)))).models
+          const selected = await router.route(task, candidateModels)
+          updateTask(task.id, { jevRoute: selected })
+          bus.emit('state:changed', getState())
+          return selected
+        })().finally(() => routing.delete(task.id))
+        routing.set(task.id, pending)
+      }
+      route = await pending
+    }
+    const selectedModel = task.model?.trim() ? taskModel(task) : route?.model
     return buildAgentCommand(
-      { ...task, effort: launchEffort(task) },
+      { ...task, model: selectedModel, effort: launchEffort(task, selectedModel) },
       settings.systemPrompt ?? '',
       {
         resume: intent.resume === true,
@@ -382,6 +406,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         library: library ?? undefined,
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
+        preflightPlan: !intent.resume ? route?.plan : undefined,
       },
       task.workspacePath
     )
@@ -496,6 +521,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return getState()
     },
 
+    'settings:jevKeyStatus': () => jevKeyStatus(),
+    'settings:saveJevApiKey': (payload) => {
+      const p = obj<{ apiKey: unknown }>(payload, 'payload')
+      return saveJevApiKey(str(p.apiKey, 'apiKey'))
+    },
+    'settings:removeJevApiKey': () => removeJevApiKey(),
+
     'settings:githubAuthStatus': () => getGitHubCliAuthStatus(),
     'settings:startGithubAuthLogin': () => {
       startGitHubCliLogin((payload) => bus.emit('github-auth:event', payload))
@@ -606,7 +638,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         // Never provisioned: no code, artifacts or sub-agents to discard.
         await teardownTask(task.id)
         progress.untrack(task.id)
-        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID() })
+        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined })
         const reset = findTask(task.id)
         if (!reset) throw new Error('找不到要重置的任務')
         return { state: getState(), task: reset }
@@ -621,7 +653,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       // The tokens are spent even though the work is thrown away.
       const usage = usageThroughCurrentRun(task)
       progress.untrack(task.id)
-      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), ...(usage ? { usage } : {}) })
+      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...(usage ? { usage } : {}) })
       const reset = findTask(task.id)
       if (!reset) throw new Error('找不到要重置的任務')
       bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
@@ -691,6 +723,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         description: p.description?.trim() || undefined,
         agentCli: p.agentCli,
         model: p.model || undefined,
+        jevRoute: undefined,
         effort: p.effort,
         autoMode: p.autoMode,
         ...gitPatch,

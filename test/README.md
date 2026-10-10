@@ -32,6 +32,8 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | Suite | Target | What it checks |
 |---|---|---|
 | `agent-models.test.mjs` | `packages/core/src/agent-models.ts`, `claude-models.ts`, `codex-models.ts`, `json-lines-process.ts` | model catalog: Claude `initialize` and codex app-server handshakes against `fixtures/agent-models/`, account fields dropped, fallbacks, child-process timeout/exit, in-memory cache |
+| `jev-router.test.mjs` | `packages/core/src/jev-router.ts` | two Jev decisions, optional read-only planning, candidate validation and fallback; POSIX CLI launch with spaces in paths and a multiline prompt |
+| `jev-credentials.test.mjs` | `packages/core/src/jev-credentials.ts` | host-only key file under a macOS-style data path, environment fallback, permissions and validation |
 | `agent-print.test.mjs` | `packages/core/src/agent-print.ts` | one-shot agent CLI runs: stdin prompt, exit codes, missing CLI |
 | `agents.test.mjs` | `packages/core/src/agents.ts` | agent registry, default model, default task effort |
 | `effort.test.mjs` | `packages/core/src/effort.ts` | effort levels, per-model allowed levels, lowering an unsupported effort |

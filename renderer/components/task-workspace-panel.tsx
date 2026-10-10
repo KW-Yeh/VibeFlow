@@ -417,6 +417,14 @@ function TaskInfo({
         </p>
       )}
 
+      {task.jevRoute && (
+        <div className="rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
+          Jev：{task.jevRoute.model ?? 'CLI 預設模型'}
+          {task.jevRoute.plannerModel && ` · 先由 ${task.jevRoute.plannerModel} 規劃`}
+          {task.jevRoute.reason && <p>自動選擇未完成：{task.jevRoute.reason}</p>}
+        </div>
+      )}
+
       <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
         {task.projectName && (
           <div className="flex items-center gap-2">

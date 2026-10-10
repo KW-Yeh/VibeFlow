@@ -139,6 +139,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
         [pathKey]: `${fakeBin}${path.delimiter}${process.env[pathKey]}`,
         HOME: home,
         VIBEFLOW_WEB_DIR: webDir,
+        TYPESAFE_API_KEY: '', // exercise the visible CLI-default fallback
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     }
@@ -210,6 +211,10 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // Start: core builds the launch; the fake agent runs in the worktree.
   await page.getByRole('button', { name: '開始' }).click()
   await waitForTerminal(page, 'fake-claude ready')
+  const routedState = await page.evaluate(() => window.vibeflow.getState())
+  assert.equal(routedState.board.in_progress[0]?.jevRoute?.status, 'fallback')
+  assert.match(routedState.board.in_progress[0]?.jevRoute?.reason ?? '', /TYPESAFE_API_KEY/)
+  await page.getByText('Jev：CLI 預設模型（備援）').first().waitFor()
 
   // Both printed URLs and OSC 8 hyperlinks open safely in a new tab.
   await waitForTerminal(page, 'https://example.com/plain-link')
@@ -393,6 +398,13 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.getByText('VibeFlow v10.1.0 已發布', { exact: false }).waitFor()
   await page.getByRole('button', { name: '設定 System Prompt' }).first().click()
   await page.getByText('VibeFlow 版本：v9.9.9').waitFor()
+  await page.getByLabel('Jev API key').fill('e2e-jev-secret')
+  await page.getByRole('button', { name: '儲存金鑰' }).click()
+  await page.getByText('已設定 Jev API key（本機儲存）').waitFor()
+  assert.equal((await page.getByLabel('Jev API key').inputValue()), '')
+  assert.equal(JSON.stringify(await page.evaluate(() => window.vibeflow.getState())).includes('e2e-jev-secret'), false)
+  await page.getByRole('button', { name: '移除金鑰' }).click()
+  await page.waitForFunction(async () => (await window.vibeflow.getJevKeyStatus()).source !== 'saved')
   await page.getByRole('button', { name: '取消' }).click()
   await page.getByRole('tab', { name: '工作項目' }).first().click()
   await page.getByRole('tab', { name: /Jira/ }).waitFor()

@@ -330,6 +330,13 @@ function TaskCard({
 
       {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
 
+      {task.jevRoute && (
+        <p className="mt-1.5 truncate text-xs text-muted-foreground" title={task.jevRoute.reason}>
+          Jev：{task.jevRoute.model ?? 'CLI 預設模型'}{task.jevRoute.plannerModel ? ` · ${task.jevRoute.plannerModel} 規劃` : ''}
+          {task.jevRoute.status === 'fallback' ? '（備援）' : ''}
+        </p>
+      )}
+
       {column === 'backlog' && task.launchError && (
         <p className="mt-1.5 truncate text-xs text-destructive" title={task.launchError}>
           開始失敗：{task.launchError}

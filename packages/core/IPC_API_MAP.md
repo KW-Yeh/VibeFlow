@@ -67,6 +67,7 @@ are.
 | `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |
 | `vibeflow:deleteTask` | core | `deleteTask(id)` | | Also deletes a legacy decision record |
 | `vibeflow:setSettings` | core | `updateSettings(patch)` | | |
+| `settings:jevKeyStatus` / `settings:saveJevApiKey` / `settings:removeJevApiKey` | core | Jev key status, save, remove | | Key is stored in a host-only file, never in board state; status returns no key bytes |
 | `projects:listRecent` | core | `listRecentProjects()` | | |
 | `board:getCliLaunchInfo` | core | `getCliLaunchInfo()` | | Now reads `PlatformServices.sourceRoot()` |
 | `attachments:write` | core | `writeAttachments(id, files)` | | Into the worktree, or the staging dir while the card has none |
@@ -75,7 +76,7 @@ are.
 
 | Channel | Where | `VibeFlowApi` | Path in | Notes |
 |---|---|---|---|---|
-| `pty:start` | core | `term.start({ taskId, launch })` | ~~cwd, command~~ | **Done.** The renderer sends a launch intent (`{ resume, includeTaskPrompt }`, or none for a shell). Core resolves the cwd and builds the command (`launch.ts`, formerly `renderer/lib/claude.ts`). A launch on a card with no worktree provisions it first (`ensureProvisioned`); a shell on one is refused |
+| `pty:start` | core | `term.start({ taskId, launch })` | ~~cwd, command~~ | **Done.** The renderer sends a launch intent (`{ resume, includeTaskPrompt }`, or none for a shell). Core resolves the cwd and builds the command (`launch.ts`, formerly `renderer/lib/claude.ts`). A launch on a card with no worktree provisions it first (`ensureProvisioned`); a shell on one is refused. Family-only cards route through Jev at launch (optional planning and model choice), with CLI-default fallback; explicit models bypass it. |
 | `terminal:start` | core | `term.startStandalone({ sessionKey, taskId?, projectPath? })` | selected folder when no task exists | Starts an independent shell in a card's project root or a validated selected directory; `pty:kill` releases it. |
 | `pty:input` | core | `writeInput(id, data)` | | Keyed by `sessionKey`, not task id (a task has several terminal tabs) |
 | `pty:resize` | core | `resize(id, cols, rows)` | | Same `sessionKey` note |

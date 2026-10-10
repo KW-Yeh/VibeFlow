@@ -5,6 +5,7 @@ import type { AgentCliId, AgentEffort } from './agents'
 import type { TokenUsage } from './progress'
 import type { GithubRef } from './github'
 import type { JiraRef } from './jira'
+import type { JevRoute } from './jev-router'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -37,8 +38,10 @@ export interface Task {
   pushed?: boolean
   /** Agent CLI used for this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
-  /** Model id. Absent = agent's default model. */
+  /** Model id. Absent = Jev routes this run when configured. */
   model?: string
+  /** Effective model and optional planning result for an automatically routed run. */
+  jevRoute?: JevRoute
   /** Reasoning depth. Absent = provider/model default. */
   effort?: AgentEffort
   /**

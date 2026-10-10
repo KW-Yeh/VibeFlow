@@ -25,6 +25,7 @@ import type {
   JiraAuthStatus,
   JiraAuthEvent,
   JiraRef,
+  JevKeyStatus,
   GithubTaskLinks,
   LibraryEntry,
   LibraryKind,
@@ -85,6 +86,21 @@ export async function setSettings(
 ): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.setSettings(patch) : null
+}
+
+export async function getJevKeyStatus(): Promise<JevKeyStatus | null> {
+  const b = bridge()
+  return b ? b.getJevKeyStatus() : null
+}
+
+export async function saveJevApiKey(apiKey: string): Promise<JevKeyStatus | null> {
+  const b = bridge()
+  return b ? b.saveJevApiKey(apiKey) : null
+}
+
+export async function removeJevApiKey(): Promise<JevKeyStatus | null> {
+  const b = bridge()
+  return b ? b.removeJevApiKey() : null
 }
 
 export async function getGithubAuthStatus(): Promise<GitHubCliAuthStatus | null> {

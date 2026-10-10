@@ -79,6 +79,7 @@ export type {
 export type { AttachmentInput } from '../../packages/core/src/attachments'
 export type { ChatChunk, ChatPhase, PhaseType } from '../../packages/core/src/chat-session'
 export type { LaunchIntent } from '../../packages/core/src/service'
+export type { JevKeyStatus } from '../../packages/core/src/jev-credentials'
 export type { StartResult } from '../../packages/core/src/session-backend'
 export type {
   AgentModelList,

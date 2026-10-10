@@ -45,6 +45,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [github-issues-prs](features/github-issues-prs/spec.md) | Replace the sidebar task tree with an Issues & PRs view (GitHub via `gh`), convert an Issue/PR into a Backlog card, and show each card's linked Issue/PR |
 | [github-filters](features/github-filters/spec.md) | Project / assignee / author multi-select filters and project-then-number ordering in the Issues & PRs view; PRs I have reviewed stay listed |
 | [agent-model-catalog](features/agent-model-catalog/spec.md) | Claude Code and Codex model lists from the signed-in local CLIs (`claude` stream-json `initialize`, `codex app-server` `model/list`; no API key, no prompt), and the effort slider follows each model's supported levels (adds `max` / `ultra`); falls back to the builtin lists |
+| [jev-routing](features/jev-routing/spec.md) ([plan](features/jev-routing/plan.md)) | Route family-only cards through Jev's planning and model decisions; explicit model choices bypass routing |
 
 | [jira-inbox](features/jira-inbox/spec.md) | Atlassian sign-in via `acli jira auth login --web` and a Jira tab of tickets assigned to me; Issues & PRs split into Jira / Issues / PRs tabs with their own filters; the terminal pane is hidden outside the board; item details in a modal; one-click card creation |
 | [work-order-page](features/work-order-page/spec.md) ([plan](features/work-order-page/plan.md)) | Refine the shared work-item view, Jira ticket layout, project selection, links, and attachment access |

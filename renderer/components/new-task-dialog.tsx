@@ -264,7 +264,6 @@ export function AgentModelFields({
   }, [agentCli])
   const listed = models ?? []
   const description = customOpen ? undefined : modelFor(listed, model || undefined)?.description
-  const defaultLabel = listed.find((m) => m.isDefault)?.label
   const modelOptions = model && !customOpen && !listed.some((m) => m.id === model)
     ? [{ id: model, label: model }, ...listed]
     : listed
@@ -330,7 +329,7 @@ export function AgentModelFields({
           }}
           className={F}
         >
-          <option value="">{defaultLabel ? `使用預設 model（${defaultLabel}）` : '使用預設 model'}</option>
+          <option value="">自動選擇（Jev）</option>
           {modelOptions.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -345,6 +344,11 @@ export function AgentModelFields({
           </p>
         )}
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        {!model && !customOpen && (
+          <p className="text-sm text-muted-foreground">
+            只選 Agent CLI 時，Jev 會判斷是否先規劃並選擇執行模型。可到「設定」輸入 Jev API key；未設定或呼叫失敗時使用 CLI 預設模型。
+          </p>
+        )}
         {customOpen && (
           <input
             name={`${title.toLowerCase().replace(/\s+/g, '-')}-custom-model`}

@@ -24,7 +24,7 @@ vibeflow
 - **即時終端機**：每張卡都有自己的互動式終端機，agent 要你確認時直接在畫面上回答。
 - **關掉也不會中斷**：裝了 tmux 時，agent 跑在背景 session 裡；關掉瀏覽器甚至 VibeFlow 本身，任務都會繼續，重新開啟就接回來。
 - **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及「決策」分頁：顯示這張卡的分支新增或修改的 `spec.md`（agent 做了哪些決定、為什麼）。卡片完成後打開時預設顯示決策；本地分支刪掉後，會改從 `origin/<branch>` 或 GitHub PR 的 merge commit 讀回合併當時的內容（squash／rebase merge 的卡片讀不回來）。
-- **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。
+- **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。只選 agent 家族、不選 model 時，可透過 Jev 自動判斷是否先規劃及選擇執行模型；在「設定 → Jev 自動選模」輸入 TypeSafe Jev API key，或在啟動 VibeFlow 的環境設定 `TYPESAFE_API_KEY`。若沒有金鑰或 Jev 暫時無法使用，會顯示原因並使用該 CLI 的預設模型。指定 model 版本時不呼叫 Jev。
 - **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
 - **Jira 工作收件匣**：安裝 [Atlassian CLI（Windows）](https://developer.atlassian.com/cloud/acli/guides/install-windows/) 或 [Atlassian CLI（macOS）](https://developer.atlassian.com/cloud/acli/guides/install-macos/)，再到設定登入，就能在「工作項目」的 Jira 分頁依狀態查看指派給自己的 ticket、開啟附件，並選擇本機專案建立 Backlog 卡片。
 - **GitHub Issues 與 PRs**：使用已登入的 `gh` 跨所有相關 repo 顯示 open 項目，即使該 repo 尚未出現在看板；建卡時可選擇本機專案資料夾。

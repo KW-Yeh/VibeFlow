@@ -275,6 +275,8 @@ function namespaceHash(namespace: string): string {
 
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
+  /** Read-only preparation from a separate planning model. */
+  preflightPlan?: string
   /**
    * Include the card title and description as the launch's initial message.
    * Defaults to true. Set false for an interactive agent shell that receives
@@ -459,7 +461,9 @@ export function buildAgentCommand(
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
-  const prompt = includeTaskPrompt && !opts?.resume ? buildPrompt(task) : ''
+  const prompt = includeTaskPrompt && !opts?.resume
+    ? [buildPrompt(task), opts?.preflightPlan ? `前置規劃（供參考，請先核對程式碼再執行）：\n${opts.preflightPlan}` : ''].filter(Boolean).join('\n\n')
+    : ''
   // An agent-only launch is intentionally independent from the task's pinned
   // conversation. Claude creates a fresh interactive session of its own.
   const sessionId = agent === 'claude' && includeTaskPrompt

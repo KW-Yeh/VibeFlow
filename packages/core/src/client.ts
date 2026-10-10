@@ -39,6 +39,7 @@ import type { GithubInbox, GithubRef, GithubTaskLinks } from './github'
 import type { JiraInbox, JiraRef } from './jira'
 import type { JiraAuthEvent, JiraAuthStatus } from './jira-auth'
 import type { LaunchIntent } from './service'
+import type { JevKeyStatus } from './jev-credentials'
 import type { StartResult } from './session-backend'
 
 export interface ProgressUpdatePayload {
@@ -90,6 +91,10 @@ export function createBridge(t: BridgeTransport) {
     t.invoke('vibeflow:setBoard', board),
     setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
       t.invoke('vibeflow:setSettings', patch),
+    getJevKeyStatus: (): Promise<JevKeyStatus> => t.invoke('settings:jevKeyStatus'),
+    saveJevApiKey: (apiKey: string): Promise<JevKeyStatus> =>
+      t.invoke('settings:saveJevApiKey', { apiKey }),
+    removeJevApiKey: (): Promise<JevKeyStatus> => t.invoke('settings:removeJevApiKey'),
     getGithubAuthStatus: (): Promise<GitHubCliAuthStatus> =>
       t.invoke('settings:githubAuthStatus'),
     startGithubAuthLogin: (): Promise<void> =>

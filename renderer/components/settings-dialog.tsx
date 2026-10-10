@@ -26,14 +26,17 @@ import {
   getGithubAuthStatus,
   getAppVersion,
   getJiraAuthStatus,
+  getJevKeyStatus,
   listAgentModels,
   logoutGithubAuth,
   logoutJiraAuth,
+  removeJevApiKey,
   onGithubAuthEvent,
   onJiraAuthEvent,
   openExternal,
   startGithubAuthLogin,
   startJiraAuthLogin,
+  saveJevApiKey,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
@@ -43,6 +46,7 @@ import type {
   AgentModelSource,
   GitHubCliAuthStatus,
   JiraAuthStatus,
+  JevKeyStatus,
 } from '@/lib/types'
 
 const MODEL_AGENTS: { id: AgentCliId; name: string }[] = [
@@ -107,6 +111,10 @@ export function SettingsDialog({
   const [desktopBlocked, setDesktopBlocked] = useState(false)
   const [modelLists, setModelLists] = useState<Partial<Record<AgentCliId, AgentModelList | null>>>({})
   const [refreshing, setRefreshing] = useState<AgentCliId | null>(null)
+  const [jevStatus, setJevStatus] = useState<JevKeyStatus | null | undefined>(undefined)
+  const [jevKeyInput, setJevKeyInput] = useState('')
+  const [jevBusy, setJevBusy] = useState(false)
+  const [jevError, setJevError] = useState<string | null>(null)
   /** CLIs found on PATH; undefined while detecting, null when detection failed. */
   const [installed, setInstalled] = useState<AgentCliId[] | null | undefined>(undefined)
   const [githubPage, setGithubPage] = useState(false)
@@ -134,6 +142,13 @@ export function SettingsDialog({
       setPointFieldsText(jiraStoryPointsFields.join(', '))
       setDesktopBlocked(desktopPermission() === 'denied' || desktopPermission() === 'unsupported')
       setGithubPage(false)
+      setJevKeyInput('')
+      setJevError(null)
+      setJevStatus(undefined)
+      void getJevKeyStatus().then(setJevStatus).catch((err) => {
+        setJevStatus(null)
+        setJevError(err instanceof Error ? err.message : String(err))
+      })
       setJiraPage(false)
       setJiraPhase('idle')
       setJiraError(null)
@@ -195,6 +210,37 @@ export function SettingsDialog({
       setModelLists((prev) => ({ ...prev, [agentId]: list }))
     } finally {
       setRefreshing(null)
+    }
+  }
+
+  const saveJevKey = async () => {
+    if (!jevKeyInput.trim()) return
+    setJevBusy(true)
+    setJevError(null)
+    try {
+      const status = await saveJevApiKey(jevKeyInput)
+      if (!status) throw new Error('未連線到 VibeFlow core')
+      setJevStatus(status)
+      setJevKeyInput('')
+    } catch (err) {
+      setJevError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setJevBusy(false)
+    }
+  }
+
+  const clearJevKey = async () => {
+    setJevBusy(true)
+    setJevError(null)
+    try {
+      const status = await removeJevApiKey()
+      if (!status) throw new Error('未連線到 VibeFlow core')
+      setJevStatus(status)
+      setJevKeyInput('')
+    } catch (err) {
+      setJevError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setJevBusy(false)
     }
   }
 
@@ -624,9 +670,43 @@ export function SettingsDialog({
 
           <section className="space-y-3">
             <div>
+              <h3 className="text-base font-medium">Jev 自動選模</h3>
+              <p className="text-sm text-muted-foreground">
+                只選 Agent CLI、不指定模型的卡片會使用 Jev。金鑰只儲存在本機主機資料目錄，不會放入看板狀態或回傳給瀏覽器。
+              </p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {jevStatus === undefined ? '讀取金鑰狀態中…' : jevStatus === null ? '無法讀取 Jev 金鑰狀態' : jevStatus.source === 'saved' ? '已設定 Jev API key（本機儲存）' : jevStatus.source === 'environment' ? '已透過 TYPESAFE_API_KEY 環境變數設定' : '尚未設定 Jev API key'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="password"
+                aria-label="Jev API key"
+                name="jev-api-key"
+                autoComplete="off"
+                spellCheck={false}
+                value={jevKeyInput}
+                onChange={(event) => setJevKeyInput(event.target.value)}
+                placeholder="輸入 TypeSafe Jev API key"
+                className={cn(fieldClass, 'min-w-48 flex-1 font-mono text-sm')}
+              />
+              <Button size="sm" disabled={jevBusy || !jevKeyInput.trim()} onClick={() => void saveJevKey()}>
+                {jevBusy ? '處理中…' : '儲存金鑰'}
+              </Button>
+              {jevStatus?.source === 'saved' && (
+                <Button size="sm" variant="outline" disabled={jevBusy} onClick={() => void clearJevKey()}>
+                  移除金鑰
+                </Button>
+              )}
+            </div>
+            {jevError && <p role="alert" className="text-sm text-destructive">{jevError}</p>}
+          </section>
+
+          <section className="space-y-3">
+            <div>
               <h3 className="text-base font-medium">CLI 與帳號設定</h3>
               <p className="text-sm text-muted-foreground">
-                Model 清單直接取自已登入的 Agent CLI，不需要 API key；設定 GitHub CLI 以支援本機 GitHub 操作。
+                Model 清單直接取自已登入的 Agent CLI，不需要 API key；Jev 自動選模使用上方獨立的金鑰。設定 GitHub CLI 以支援本機 GitHub 操作。
               </p>
             </div>
             <div className="grid gap-2">
