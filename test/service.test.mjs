@@ -116,7 +116,7 @@ test('a shell is refused before the card has a worktree, never run in the projec
   assert.equal(sessions.starts.length, 0)
 })
 
-test('standalone terminals start in the card project even before provisioning and release on close', async (t) => {
+test('Backlog standalone terminals stay in the project without provisioning and release on close', async (t) => {
   const { core, sessions, task } = await coreWithTask(t)
   const sessionKey = 'terminal_12345678-1234-1234-1234-123456789abc'
   await core.handlers['terminal:start']({ sessionKey, taskId: task.id })
@@ -129,6 +129,28 @@ test('standalone terminals start in the card project even before provisioning an
   assert.deepEqual(sessions.killed, [sessionKey])
   assert.deepEqual(sessions.discarded, [sessionKey])
   assert.throws(() => core.handlers['pty:input']({ sessionKey, data: 'x' }), { code: 'INVALID_REQUEST' })
+})
+
+test('running-card standalone terminals use the branch worktree', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: [task], done: [] })
+  const sessionKey = 'terminal_dddddddd-dddd-dddd-dddd-dddddddddddd'
+  await core.handlers['terminal:start']({ sessionKey, taskId: task.id })
+  const running = cardIn(core, 'in_progress', task.id)
+  assert.ok(running.worktreePath)
+  assert.equal(sessions.starts[0].cwd, running.worktreePath)
+  assert.notEqual(sessions.starts[0].cwd, task.projectPath)
+  assert.equal(sessions.starts[0].command, undefined)
+})
+
+test('completed-card standalone terminals use the project after worktree cleanup', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: [], done: [task] })
+  await core.handlers['terminal:start']({
+    sessionKey: 'terminal_eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', taskId: task.id,
+  })
+  assert.equal(sessions.starts[0].cwd, task.projectPath)
+  assert.equal(cardIn(core, 'done', task.id).worktreePath, undefined)
 })
 
 test('standalone terminals accept an existing absolute folder and reject invalid requests', async (t) => {

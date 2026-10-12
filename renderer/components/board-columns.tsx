@@ -217,6 +217,7 @@ function TaskCard({
   const menuOpen = menuAnchor !== null
   const running = column === 'in_progress'
   const done = column === 'done'
+  const terminalDirectory = running || (done && task.worktreePath) ? '分支' : '專案'
 
   return (
     <div
@@ -246,8 +247,8 @@ function TaskCard({
         <Layers className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{projectLabel(task)}</span>
         <IconButton
-          aria-label={`在專案目錄開啟 Terminal：${task.title}`}
-          title="在專案目錄開啟額外 Terminal"
+          aria-label={`在${terminalDirectory}目錄開啟 Terminal：${task.title}`}
+          title={`在${terminalDirectory}目錄開啟額外 Terminal`}
           onClick={(event) => { event.stopPropagation(); onOpenTerminal() }}
           className="size-6 shrink-0 p-1"
         >

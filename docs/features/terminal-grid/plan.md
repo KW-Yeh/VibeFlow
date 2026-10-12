@@ -11,3 +11,7 @@
 - `npm run build:web`: passed.
 - `npm run test:e2e`: 3 passed. The real PTY test wrote a file into the project root from a Backlog card's extra terminal. The grid test covered all three card columns, manual folder selection, rename, view switching, and close.
 - Full `npm test` has five unrelated Windows environment failures: three CLI process tests cannot execute a Node path under `C:\Program Files`, and two symlink tests receive `EPERM`.
+
+## Follow-up: branch worktree terminals
+
+Running-card terminals now resolve their cwd from the card's worktree. Backlog cards keep using the original project directory without provisioning; completed cards use their worktree if present and otherwise use the project directory. The grid shows the actual directory, while manually selected terminals keep using the selected folder.

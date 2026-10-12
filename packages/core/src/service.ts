@@ -783,9 +783,19 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const key = str(p.sessionKey, 'sessionKey')
       if (!/^terminal_[0-9a-f-]{36}$/.test(key)) invalid('invalid standalone terminal key')
       if (Boolean(p.taskId) === Boolean(p.projectPath)) invalid('provide taskId or projectPath')
-      const cwd = str(p.taskId ? requireTask(p.taskId).projectPath : p.projectPath, 'projectPath')
+      let cwd: string
+      if (p.taskId) {
+        const requested = requireTask(p.taskId)
+        const column = columnOf(requested.id)
+        const task = column === 'in_progress' && !requested.worktreePath
+          ? await ensureProvisioned(requested)
+          : requested
+        cwd = str(column === 'backlog' ? task.projectPath : task.worktreePath ?? task.projectPath, 'directory')
+      } else {
+        cwd = str(p.projectPath, 'projectPath')
+      }
       if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-        invalid('projectPath must be an existing absolute directory')
+        invalid('terminal directory must be an existing absolute directory')
       }
       const previous = standaloneTerminals.get(key)
       if (previous && previous !== cwd) invalid('terminal key already belongs to another directory')

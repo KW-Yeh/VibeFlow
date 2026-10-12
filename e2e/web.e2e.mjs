@@ -459,7 +459,7 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   assert.equal(afterGithub.board.backlog[0].github.number, 112)
 })
 
-test('Web UI: terminal grid opens card project roots and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+test('Web UI: terminal grid opens the card column directory and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
   const browser = await launchBrowser()
   if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
   t.after(() => browser.close())
@@ -467,6 +467,9 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
   setPlatform(createNodePlatform({ userDataDir: tmp }))
+  const workstationPath = path.join(tmp, 'workstation')
+  fs.mkdirSync(workstationPath)
+  getStore().set('settings', { autoMode: true, workstationPath })
   const starts = []
   const kills = []
   const bus = new EventBus()
@@ -490,7 +493,8 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   assert.equal(await page.getByText(/個任務 · .*個專案/).count(), 0)
 
   for (const title of ['Backlog terminal', 'Running terminal', 'Done terminal']) {
-    await page.getByRole('button', { name: `在專案目錄開啟 Terminal：${title}` }).click()
+    const directory = title === 'Running terminal' ? '分支' : '專案'
+    await page.getByRole('button', { name: `在${directory}目錄開啟 Terminal：${title}` }).click()
     await page.getByRole('tab', { name: '終端機' }).waitFor()
     assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
     await page.getByRole('tab', { name: '看板' }).click()
@@ -499,8 +503,15 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   }
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
   assert.equal(starts.length, 3)
-  assert.ok(starts.every(({ cwd, command }) => cwd === projectPath && command === undefined))
+  const runningCard = core.handlers['vibeflow:getState']().board.in_progress[0]
+  assert.ok(runningCard.worktreePath)
+  assert.deepEqual(
+    starts.map(({ cwd }) => cwd).sort(),
+    [projectPath, runningCard.worktreePath, projectPath].sort()
+  )
+  assert.ok(starts.every(({ command }) => command === undefined))
   await page.getByRole('tab', { name: '終端機' }).click()
+  await page.getByText(runningCard.worktreePath).waitFor()
   const titles = page.getByRole('textbox', { name: /編輯 Terminal 標題/ })
   await titles.first().fill('My shell')
   assert.equal(await titles.first().inputValue(), 'My shell')
@@ -520,5 +531,9 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   await page.getByRole('combobox', { name: '專案資料夾' }).selectOption(projectPath)
   await page.getByRole('button', { name: '開啟 Terminal' }).click()
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
+  for (let attempt = 0; starts.length < 4 && attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(starts.length, 4)
   assert.equal(starts.at(-1).cwd, projectPath)
 })

@@ -21,6 +21,7 @@ export function TerminalGrid({
   view,
   onViewChange,
   terminals,
+  taskWorktreePaths,
   focusedSessionKey,
   recentProjects,
   onCreate,
@@ -31,6 +32,7 @@ export function TerminalGrid({
   view: BoardView
   onViewChange: (view: BoardView) => void
   terminals: GridTerminal[]
+  taskWorktreePaths: Record<string, string>
   focusedSessionKey: string | null
   recentProjects: RecentProjectEntry[]
   onCreate: (projectPath: string) => void
@@ -65,48 +67,54 @@ export function TerminalGrid({
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 auto-rows-[minmax(320px,1fr)] gap-4 overflow-y-auto p-4 lg:grid-cols-2">
-          {terminals.map((terminal) => (
-            <section
-              key={terminal.sessionKey}
-              ref={(node) => {
-                if (node) terminalRefs.current.set(terminal.sessionKey, node)
-                else terminalRefs.current.delete(terminal.sessionKey)
-              }}
-              tabIndex={-1}
-              aria-label={`Terminal：${terminal.title}`}
-              className={cn(
-                'flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-md border bg-card outline-none',
-                focusedSessionKey === terminal.sessionKey ? 'border-primary ring-2 ring-primary/30' : 'border-border'
-              )}
-            >
-              <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-                <input
-                  aria-label={`編輯 Terminal 標題：${terminal.title}`}
-                  title="點擊編輯標題"
-                  value={terminal.title}
-                  onChange={(event) => onRename(terminal.sessionKey, event.target.value)}
-                  onBlur={() => { if (!terminal.title.trim()) onRename(terminal.sessionKey, basenameFromPath(terminal.projectPath)) }}
-                  className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          {terminals.map((terminal) => {
+            const directory = terminal.taskId
+              ? taskWorktreePaths[terminal.taskId] ?? terminal.projectPath
+              : terminal.projectPath
+            return (
+              <section
+                key={terminal.sessionKey}
+                ref={(node) => {
+                  if (node) terminalRefs.current.set(terminal.sessionKey, node)
+                  else terminalRefs.current.delete(terminal.sessionKey)
+                }}
+                tabIndex={-1}
+                aria-label={`Terminal：${terminal.title}`}
+                className={cn(
+                  'flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-md border bg-card outline-none',
+                  focusedSessionKey === terminal.sessionKey ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+                )}
+              >
+                <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+                  <input
+                    aria-label={`編輯 Terminal 標題：${terminal.title}`}
+                    title="點擊編輯標題"
+                    value={terminal.title}
+                    onChange={(event) => onRename(terminal.sessionKey, event.target.value)}
+                    onBlur={() => { if (!terminal.title.trim()) onRename(terminal.sessionKey, basenameFromPath(terminal.projectPath)) }}
+                    className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                  <IconButton
+                    aria-label={`關閉 Terminal：${terminal.title}`}
+                    title="關閉並釋放 Terminal"
+                    onClick={() => onClose(terminal.sessionKey)}
+                    className="size-7 shrink-0"
+                  >
+                    <X className="size-4" />
+                  </IconButton>
+                </div>
+                <div className="truncate border-b border-border px-3 py-1 font-mono text-xs text-muted-foreground" title={directory}>
+                  {directory}
+                </div>
+                <StandaloneTerminal
+                  sessionKey={terminal.sessionKey}
+                  projectPath={terminal.projectPath}
+                  displayPath={directory}
+                  taskId={terminal.taskId}
                 />
-                <IconButton
-                  aria-label={`關閉 Terminal：${terminal.title}`}
-                  title="關閉並釋放 Terminal"
-                  onClick={() => onClose(terminal.sessionKey)}
-                  className="size-7 shrink-0"
-                >
-                  <X className="size-4" />
-                </IconButton>
-              </div>
-              <div className="truncate border-b border-border px-3 py-1 font-mono text-xs text-muted-foreground" title={terminal.projectPath}>
-                {terminal.projectPath}
-              </div>
-              <StandaloneTerminal
-                sessionKey={terminal.sessionKey}
-                projectPath={terminal.projectPath}
-                taskId={terminal.taskId}
-              />
-            </section>
-          ))}
+              </section>
+            )
+          })}
         </div>
       )}
 

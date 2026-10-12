@@ -539,7 +539,7 @@ export async function termStart(payload: {
   return b ? b.term.start(payload) : null
 }
 
-/** Start a shell in a selected folder or a card's project root. */
+/** Start a shell in a selected folder or a card's current working directory. */
 export async function standaloneTermStart(payload: {
   sessionKey: string
   taskId?: string

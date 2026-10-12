@@ -656,6 +656,9 @@ export default function HomePage() {
                     view={view}
                     onViewChange={setView}
                     terminals={gridTerminals}
+                    taskWorktreePaths={Object.fromEntries([...board.in_progress, ...board.done]
+                      .filter((task) => task.worktreePath)
+                      .map((task) => [task.id, task.worktreePath!]))}
                     focusedSessionKey={focusedGridTerminal}
                     recentProjects={recentProjects}
                     onCreate={(projectPath) => openGridTerminal(projectPath)}

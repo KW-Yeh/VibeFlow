@@ -8,10 +8,12 @@ import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/term
 export function StandaloneTerminal({
   sessionKey,
   projectPath,
+  displayPath,
   taskId,
 }: {
   sessionKey: string
   projectPath: string
+  displayPath?: string
   taskId?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -127,5 +129,5 @@ export function StandaloneTerminal({
     }
   }, [sessionKey, projectPath, taskId])
 
-  return <div ref={hostRef} className="min-h-0 min-w-0 flex-1 overflow-hidden p-2" aria-label={`終端機：${projectPath}`} />
+  return <div ref={hostRef} className="min-h-0 min-w-0 flex-1 overflow-hidden p-2" aria-label={`終端機：${displayPath ?? projectPath}`} />
 }
