@@ -73,7 +73,6 @@ import type {
   ColumnId,
   DiffEntry,
   DiffFile,
-  SubAgentRun,
   Task,
   TaskArtifact,
   TaskSpec,
@@ -207,7 +206,6 @@ interface LaunchEntry {
 interface TaskWorkspacePanelProps {
   task: Task
   column: ColumnId
-  subAgents: SubAgentRun[]
   /** Live progress (running cards only); done cards show their stored usage. */
   progress?: TaskProgress | null
   launch?: LaunchEntry
@@ -217,7 +215,6 @@ interface TaskWorkspacePanelProps {
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
-  onOpenSubAgents: (taskId: string) => void
   /** Real user interaction with this workspace — pins its preview tab. */
   onInteract?: () => void
 }
@@ -386,16 +383,7 @@ function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
   )
 }
 
-function TaskInfo({
-  task,
-  column,
-  subAgents,
-  progress,
-  onOpenSubAgents,
-}: Pick<
-  TaskWorkspacePanelProps,
-  'task' | 'column' | 'subAgents' | 'progress' | 'onOpenSubAgents'
->) {
+function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'task' | 'column' | 'progress'>) {
   return (
     <div className="space-y-4 text-base">
       <div>
@@ -458,17 +446,6 @@ function TaskInfo({
       )}
 
       {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}
-
-      {subAgents.length > 0 && (
-        <button
-          type="button"
-          onClick={() => onOpenSubAgents(task.id)}
-          className="flex w-full items-center justify-between rounded-md border border-border/70 px-2.5 py-2 text-left text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <span>{subAgents.length} sub-agent runs</span>
-          <span>View</span>
-        </button>
-      )}
     </div>
   )
 }
@@ -1373,7 +1350,6 @@ function DiffContent({ taskId, diff }: { taskId: string; diff: TaskDiff }) {
 export function TaskWorkspacePanel({
   task,
   column,
-  subAgents,
   progress,
   launch,
   onStart,
@@ -1382,7 +1358,6 @@ export function TaskWorkspacePanel({
   onComplete,
   onEdit,
   onDelete,
-  onOpenSubAgents,
   onInteract,
 }: TaskWorkspacePanelProps) {
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab | null>(null)
@@ -1649,9 +1624,7 @@ export function TaskWorkspacePanel({
             <TaskInfo
               task={task}
               column={column}
-              subAgents={subAgents}
               progress={progress}
-              onOpenSubAgents={onOpenSubAgents}
             />
           </InfoSection>
         </main>
@@ -1668,9 +1641,7 @@ export function TaskWorkspacePanel({
                 <TaskInfo
                   task={task}
                   column={column}
-                  subAgents={subAgents}
                   progress={progress}
-                  onOpenSubAgents={onOpenSubAgents}
                 />
               ) : (
                 <SpecContent specs={specs} />
@@ -1742,9 +1713,7 @@ export function TaskWorkspacePanel({
                 <TaskInfo
                   task={task}
                   column={column}
-                  subAgents={subAgents}
                   progress={progress}
-                  onOpenSubAgents={onOpenSubAgents}
                 />
               ) : activeTab === 'spec' ? (
                 <SpecContent specs={specs} />

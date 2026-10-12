@@ -15,7 +15,6 @@ import {
 } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
-import { SubAgentDrawer } from '@/components/sub-agent-drawer'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import type { BoardView } from '@/components/ui/view-tabs'
@@ -38,7 +37,6 @@ import type {
   GithubRef,
   GithubTaskLinks,
   RecentProjectEntry,
-  SubAgentRun,
   LaunchIntent,
   Task,
   TaskProgress,
@@ -55,8 +53,6 @@ interface KanbanBoardProps {
   autoMode: boolean
   /** Workstation root, shown by the create form as the worktree's destination. */
   workstationPath?: string
-  /** Live sub-agent runs keyed by task id (session-only, not persisted). */
-  subAgents: Record<string, SubAgentRun[]>
   /** Live progress of running cards keyed by task id (from core's transcript reader). */
   progress: Record<string, TaskProgress>
   /** Currently selected task id (shown in the workspace panel). */
@@ -123,12 +119,6 @@ function readStoredBoardHeight(): number | null {
   return Number.isFinite(raw) && raw >= MIN_BOARD_HEIGHT ? raw : null
 }
 
-interface SubAgentDrawerSnapshot {
-  taskId: string
-  taskTitle: string
-  runs: SubAgentRun[]
-}
-
 function WorkspaceSurface({
   active,
   children,
@@ -174,7 +164,6 @@ export function KanbanBoard({
   onOpenTaskTerminal,
   autoMode,
   workstationPath,
-  subAgents,
   progress,
   selectedTaskId,
   onSelectTask,
@@ -197,9 +186,6 @@ export function KanbanBoard({
   detectAgents,
   onCreateTask,
 }: KanbanBoardProps) {
-  // Task whose sub-agent drawer is open (null = closed).
-  const [subAgentTaskId, setSubAgentTaskId] = useState<string | null>(null)
-  const subAgentDrawerSnapshotRef = useRef<SubAgentDrawerSnapshot | null>(null)
   // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
   // the DOM (just hidden) so PTY state survives switching tasks; it is dropped
   // only when its tab closes — and only for tasks that are not in progress.
@@ -380,35 +366,6 @@ export function KanbanBoard({
     window.localStorage.setItem(SPLIT_STORAGE_KEY, String(next))
   }
 
-  const subAgentTask = subAgentTaskId
-    ? Object.values(board)
-        .flat()
-        .find((task) => task.id === subAgentTaskId)
-    : null
-  const liveSubAgentRuns = subAgentTaskId
-    ? subAgents[subAgentTaskId]
-    : undefined
-  const liveSubAgentDrawer =
-    subAgentTaskId && subAgentTask
-      ? {
-          taskId: subAgentTaskId,
-          taskTitle: subAgentTask.title,
-          runs: liveSubAgentRuns ?? [],
-        }
-      : null
-
-  useEffect(() => {
-    if (!subAgentTaskId || !subAgentTask) return
-    subAgentDrawerSnapshotRef.current = {
-      taskId: subAgentTaskId,
-      taskTitle: subAgentTask.title,
-      runs: liveSubAgentRuns ?? [],
-    }
-  }, [subAgentTaskId, subAgentTask, liveSubAgentRuns])
-
-  const subAgentDrawerSnapshot =
-    liveSubAgentDrawer ?? subAgentDrawerSnapshotRef.current
-
   return (
     <div
       ref={splitRef}
@@ -426,7 +383,6 @@ export function KanbanBoard({
         ) : (
           <BoardColumns
             board={board}
-            subAgents={subAgents}
             progress={progress}
             selectedTaskId={selectedTaskId ?? null}
             onSelectTask={onSelectTask}
@@ -516,7 +472,6 @@ export function KanbanBoard({
                     <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
-                      subAgents={subAgents[entry.task.id] ?? []}
                       progress={progress[entry.task.id] ?? null}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
@@ -525,7 +480,6 @@ export function KanbanBoard({
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}
-                      onOpenSubAgents={setSubAgentTaskId}
                       onInteract={
                         onTaskInteract ? () => onTaskInteract(taskId) : undefined
                       }
@@ -565,14 +519,6 @@ export function KanbanBoard({
         })()}
         </main>
       </div>
-
-      <SubAgentDrawer
-        open={subAgentTaskId !== null}
-        taskId={subAgentDrawerSnapshot?.taskId ?? ''}
-        taskTitle={subAgentDrawerSnapshot?.taskTitle ?? ''}
-        runs={subAgentDrawerSnapshot?.runs ?? []}
-        onClose={() => setSubAgentTaskId(null)}
-      />
 
       <AnimatePresence>
         {confirmDone && (

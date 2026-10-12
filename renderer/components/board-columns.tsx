@@ -12,7 +12,6 @@ import {
   Plus,
   Trash2,
   Terminal,
-  Users,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -27,7 +26,6 @@ import type {
   ColumnId,
   GithubLink,
   GithubTaskLinks,
-  SubAgentRun,
   Task,
   TaskProgress,
 } from '@/lib/types'
@@ -189,7 +187,6 @@ function GithubLinkButton({ link }: { link: GithubLink }) {
 function TaskCard({
   task,
   column,
-  subAgentCount,
   progress,
   links,
   selected,
@@ -200,7 +197,6 @@ function TaskCard({
 }: {
   task: Task
   column: ColumnId
-  subAgentCount: number
   progress: TaskProgress | null
   links?: GithubTaskLinks
   selected: boolean
@@ -303,12 +299,6 @@ function TaskCard({
             <span className="text-muted-foreground/70">（開始時建立）</span>
           )}
         </span>
-        {running && subAgentCount > 0 && (
-          <span className="flex shrink-0 items-center gap-1">
-            <Users className="size-3" />
-            {subAgentCount}
-          </span>
-        )}
         {links?.issue && <GithubLinkButton link={links.issue} />}
         {links?.pr && <GithubLinkButton link={links.pr} />}
       </div>
@@ -395,7 +385,6 @@ export function ProjectFilter({
 
 export interface BoardColumnsProps {
   board: BoardState
-  subAgents: Record<string, SubAgentRun[]>
   progress: Record<string, TaskProgress>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
@@ -410,7 +399,6 @@ export interface BoardColumnsProps {
 
 export function BoardColumns({
   board,
-  subAgents,
   progress,
   view,
   onViewChange,
@@ -479,7 +467,6 @@ export function BoardColumns({
                     key={task.id}
                     task={task}
                     column={column}
-                    subAgentCount={(subAgents[task.id] ?? []).length}
                     progress={column === 'in_progress' ? progress[task.id] ?? null : null}
                     links={taskLinks[task.id]}
                     selected={task.id === selectedTaskId}

@@ -58,10 +58,6 @@ export type {
 export type { JiraAttachment, JiraInbox, JiraRef, JiraTicket, JiraStatusCategory } from '../../packages/core/src/jira'
 export type { JiraAuthEvent, JiraAuthStatus } from '../../packages/core/src/jira-auth'
 export type {
-  SubAgentRun,
-  SubAgentStatus,
-} from '../../packages/core/src/subagents'
-export type {
   Activity,
   ProgressNotification,
   ProgressNotificationKind,

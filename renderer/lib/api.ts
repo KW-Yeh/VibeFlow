@@ -33,7 +33,6 @@ import type {
   RecentProjectEntry,
   ProgressNotifyPayload,
   ProgressUpdatePayload,
-  SubAgentRun,
   Task,
   TaskArtifact,
   TaskProgress,
@@ -437,17 +436,6 @@ export function onStateChanged(
 ): () => void {
   const b = bridge()
   return b ? b.onStateChanged(callback) : () => {}
-}
-
-/**
- * Subscribe to live sub-agent updates pushed from the main process while a
- * session runs. Returns an unsubscribe function (no-op without the bridge).
- */
-export function onSubAgentsUpdate(
-  callback: (payload: { taskId: string; subAgents: SubAgentRun[] }) => void
-): () => void {
-  const b = bridge()
-  return b ? b.onSubAgentsUpdate(callback) : () => {}
 }
 
 /** A running card's progress now; null when there is nothing to show or no bridge. */

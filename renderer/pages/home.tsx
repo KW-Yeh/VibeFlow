@@ -35,7 +35,6 @@ import {
   onProgressUpdate,
   onUpdateAvailable,
   onStateChanged,
-  onSubAgentsUpdate,
   persistBoard,
   pickFolder,
   setSettings,
@@ -58,7 +57,6 @@ import type {
   RecentProjectEntry,
   NotificationSettings,
   ProgressNotification,
-  SubAgentRun,
   Task,
   TaskProgress,
 } from '@/lib/types'
@@ -95,12 +93,8 @@ function findTask(board: BoardState, taskId: string): Task | null {
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
-  // Sub-agent runs are session-only (never persisted to the store), so they
-  // live in their own state keyed by task id — kept out of `board` so a
-  // persistBoard write can't leak them to disk.
-  const [subAgents, setSubAgents] = useState<Record<string, SubAgentRun[]>>({})
   // Live progress of running cards, read by core from each agent's transcript.
-  // Session-only like sub-agents; a done card shows its stored Task.usage.
+  // Session-only; a done card shows its stored Task.usage.
   const [progress, setProgress] = useState<Record<string, TaskProgress>>({})
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(
     withNotificationDefaults()
@@ -174,14 +168,6 @@ export default function HomePage() {
   // The sidebar no longer auto-opens: the board's three columns already list
   // every task, so an expanded sidebar would repeat them. It stays collapsed to
   // its icon rail (projects, settings) until opened by hand.
-
-  // Live sub-agent updates pushed from main while sessions run. Kept in a
-  // dedicated state map (not merged into `board`) so they stay session-only.
-  useEffect(() => {
-    return onSubAgentsUpdate(({ taskId, subAgents: runs }) => {
-      setSubAgents((prev) => ({ ...prev, [taskId]: runs }))
-    })
-  }, [])
 
   // Refresh board when the CLI (or any external writer) changes the store file.
   useEffect(() => {
@@ -614,7 +600,6 @@ export default function HomePage() {
                   onOpenTaskTerminal={openTaskGridTerminal}
                   autoMode={autoMode}
                   workstationPath={workstationPath}
-                  subAgents={subAgents}
                   progress={progress}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}
