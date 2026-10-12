@@ -502,6 +502,9 @@ test('Web UI: terminal grid opens the card column directory and selected folders
       .getByRole('button', { name: `查看 Terminal：${path.basename(projectPath)}` }).waitFor()
   }
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
+  for (let attempt = 0; starts.length < 3 && attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
   assert.equal(starts.length, 3)
   const runningCard = core.handlers['vibeflow:getState']().board.in_progress[0]
   assert.ok(runningCard.worktreePath)
