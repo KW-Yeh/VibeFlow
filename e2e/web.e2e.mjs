@@ -487,12 +487,15 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   t.after(async () => { core.shutdown(); await server.close() })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
+  assert.equal(await page.getByText(/個任務 · .*個專案/).count(), 0)
 
   for (const title of ['Backlog terminal', 'Running terminal', 'Done terminal']) {
     await page.getByRole('button', { name: `在專案目錄開啟 Terminal：${title}` }).click()
     await page.getByRole('tab', { name: '終端機' }).waitFor()
     assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
     await page.getByRole('tab', { name: '看板' }).click()
+    await page.getByRole('button', { name: `開啟任務：${title}` })
+      .getByRole('button', { name: `查看 Terminal：${path.basename(projectPath)}` }).waitFor()
   }
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
   assert.equal(starts.length, 3)
@@ -501,9 +504,17 @@ test('Web UI: terminal grid opens card project roots and selected folders, keeps
   const titles = page.getByRole('textbox', { name: /編輯 Terminal 標題/ })
   await titles.first().fill('My shell')
   assert.equal(await titles.first().inputValue(), 'My shell')
+  await page.getByRole('tab', { name: '看板' }).click()
+  await page.getByRole('button', { name: '開啟任務：Backlog terminal' })
+    .getByRole('button', { name: '查看 Terminal：My shell' }).click()
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Terminal：My shell')
+  assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
   await page.getByRole('button', { name: '關閉 Terminal：My shell' }).click()
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 2)
   assert.equal(kills.length, 1)
+  await page.getByRole('tab', { name: '看板' }).click()
+  assert.equal(await page.getByRole('button', { name: '查看 Terminal：My shell' }).count(), 0)
+  await page.getByRole('tab', { name: '終端機' }).click()
 
   await page.getByRole('button', { name: '新增 Terminal' }).click()
   await page.getByRole('combobox', { name: '專案資料夾' }).selectOption(projectPath)

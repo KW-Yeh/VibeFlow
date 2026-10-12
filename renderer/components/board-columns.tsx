@@ -30,6 +30,7 @@ import type {
   TaskProgress,
 } from '@/lib/types'
 import { TaskProgressBadge } from '@/components/task-progress'
+import type { GridTerminal } from '@/components/terminal-grid'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -194,6 +195,8 @@ function TaskCard({
   onEdit,
   onDelete,
   onOpenTerminal,
+  terminals,
+  onShowTerminal,
 }: {
   task: Task
   column: ColumnId
@@ -204,6 +207,8 @@ function TaskCard({
   onEdit?: () => void
   onDelete: () => void
   onOpenTerminal: () => void
+  terminals: GridTerminal[]
+  onShowTerminal: (sessionKey: string) => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(
@@ -303,6 +308,24 @@ function TaskCard({
         {links?.pr && <GithubLinkButton link={links.pr} />}
       </div>
 
+      {terminals.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5" aria-label="已開啟的 Terminal">
+          {terminals.map((terminal) => (
+            <button
+              key={terminal.sessionKey}
+              type="button"
+              aria-label={`查看 Terminal：${terminal.title}`}
+              title={terminal.title}
+              onClick={(event) => { event.stopPropagation(); onShowTerminal(terminal.sessionKey) }}
+              className="flex max-w-full items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <Terminal className="size-3 shrink-0" />
+              <span className="min-w-0 truncate">{terminal.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
 
       {task.jevRoute && (
@@ -391,6 +414,8 @@ export interface BoardColumnsProps {
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onOpenTaskTerminal: (taskId: string) => void
+  taskTerminals: GridTerminal[]
+  onShowTaskTerminal: (sessionKey: string) => void
   onNewTask: () => void
   view: BoardView
   onViewChange: (next: BoardView) => void
@@ -408,6 +433,8 @@ export function BoardColumns({
   onEditTask,
   onDeleteTask,
   onOpenTaskTerminal,
+  taskTerminals,
+  onShowTaskTerminal,
   onNewTask,
 }: BoardColumnsProps) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
@@ -425,8 +452,6 @@ export function BoardColumns({
       ? board[column].filter((task) => projectLabel(task) === activeFilter)
       : board[column]
 
-  const total = allTasks.length
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
@@ -437,9 +462,6 @@ export function BoardColumns({
           value={activeFilter}
           onChange={setProjectFilter}
         />
-        <span className="text-sm tabular-nums text-muted-foreground">
-          {total} 個任務 · {projects.length} 個專案
-        </span>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
@@ -474,6 +496,8 @@ export function BoardColumns({
                     onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}
                     onDelete={() => onDeleteTask(task.id)}
                     onOpenTerminal={() => onOpenTaskTerminal(task.id)}
+                    terminals={taskTerminals.filter((terminal) => terminal.taskId === task.id)}
+                    onShowTerminal={onShowTaskTerminal}
                   />
                 ))}
 

@@ -15,6 +15,7 @@ import {
 } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
+import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
 import { NewTaskForm } from '@/components/new-task-dialog'
 import type { BoardView } from '@/components/ui/view-tabs'
@@ -49,6 +50,8 @@ interface KanbanBoardProps {
   onTaskDone: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onOpenTaskTerminal: (taskId: string) => void
+  taskTerminals: GridTerminal[]
+  onShowTaskTerminal: (sessionKey: string) => void
   /** Board-wide Auto Mode, used by cards that carry no value of their own. */
   autoMode: boolean
   /** Workstation root, shown by the create form as the worktree's destination. */
@@ -162,6 +165,8 @@ export function KanbanBoard({
   onTaskDone,
   onDeleteTask,
   onOpenTaskTerminal,
+  taskTerminals,
+  onShowTaskTerminal,
   autoMode,
   workstationPath,
   progress,
@@ -389,6 +394,8 @@ export function KanbanBoard({
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onOpenTaskTerminal={onOpenTaskTerminal}
+            taskTerminals={taskTerminals}
+            onShowTaskTerminal={onShowTaskTerminal}
             onNewTask={onNewTask}
             view={view}
             onViewChange={onViewChange}

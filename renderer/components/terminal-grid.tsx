@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { StandaloneTerminal } from '@/components/standalone-terminal'
 import { ProjectFolderPicker, isProjectMissing } from '@/components/project-folder-picker'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import type { RecentProjectEntry } from '@/lib/types'
 import { basenameFromPath } from '@/lib/workspace-path'
+import { cn } from '@/lib/utils'
 
 export interface GridTerminal {
   sessionKey: string
@@ -20,6 +21,7 @@ export function TerminalGrid({
   view,
   onViewChange,
   terminals,
+  focusedSessionKey,
   recentProjects,
   onCreate,
   onRename,
@@ -29,6 +31,7 @@ export function TerminalGrid({
   view: BoardView
   onViewChange: (view: BoardView) => void
   terminals: GridTerminal[]
+  focusedSessionKey: string | null
   recentProjects: RecentProjectEntry[]
   onCreate: (projectPath: string) => void
   onRename: (sessionKey: string, title: string) => void
@@ -37,6 +40,14 @@ export function TerminalGrid({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const terminalRefs = useRef(new Map<string, HTMLElement>())
+
+  useEffect(() => {
+    if (view !== 'terminals' || !focusedSessionKey) return
+    const target = terminalRefs.current.get(focusedSessionKey)
+    target?.scrollIntoView({ block: 'center' })
+    target?.focus({ preventScroll: true })
+  }, [focusedSessionKey, view])
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -55,7 +66,19 @@ export function TerminalGrid({
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 auto-rows-[minmax(320px,1fr)] gap-4 overflow-y-auto p-4 lg:grid-cols-2">
           {terminals.map((terminal) => (
-            <section key={terminal.sessionKey} className="flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card">
+            <section
+              key={terminal.sessionKey}
+              ref={(node) => {
+                if (node) terminalRefs.current.set(terminal.sessionKey, node)
+                else terminalRefs.current.delete(terminal.sessionKey)
+              }}
+              tabIndex={-1}
+              aria-label={`Terminal：${terminal.title}`}
+              className={cn(
+                'flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-md border bg-card outline-none',
+                focusedSessionKey === terminal.sessionKey ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+              )}
+            >
               <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
                 <input
                   aria-label={`編輯 Terminal 標題：${terminal.title}`}

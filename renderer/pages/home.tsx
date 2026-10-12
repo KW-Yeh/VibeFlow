@@ -134,6 +134,7 @@ export default function HomePage() {
   // persisted, so a restart starts from an empty bar.
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   const [gridTerminals, setGridTerminals] = useState<GridTerminal[]>([])
+  const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
@@ -225,6 +226,7 @@ export default function HomePage() {
 
   const openGridTerminal = (projectPath: string, taskId?: string) => {
     const sessionKey = `terminal_${window.crypto.randomUUID()}`
+    setFocusedGridTerminal(sessionKey)
     setGridTerminals((current) => [...current, {
       sessionKey,
       title: basenameFromPath(projectPath),
@@ -237,6 +239,11 @@ export default function HomePage() {
   const openTaskGridTerminal = (taskId: string) => {
     const task = findTask(board, taskId)
     if (task?.projectPath) openGridTerminal(task.projectPath, taskId)
+  }
+
+  const showGridTerminal = (sessionKey: string) => {
+    setFocusedGridTerminal(sessionKey)
+    setView('terminals')
   }
 
   const handleBoardChange = (next: BoardState) => {
@@ -598,6 +605,8 @@ export default function HomePage() {
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
                   onOpenTaskTerminal={openTaskGridTerminal}
+                  taskTerminals={gridTerminals}
+                  onShowTaskTerminal={showGridTerminal}
                   autoMode={autoMode}
                   workstationPath={workstationPath}
                   progress={progress}
@@ -647,12 +656,16 @@ export default function HomePage() {
                     view={view}
                     onViewChange={setView}
                     terminals={gridTerminals}
+                    focusedSessionKey={focusedGridTerminal}
                     recentProjects={recentProjects}
                     onCreate={(projectPath) => openGridTerminal(projectPath)}
                     onRename={(sessionKey, title) => setGridTerminals((current) => current.map((terminal) =>
                       terminal.sessionKey === sessionKey ? { ...terminal, title } : terminal
                     ))}
-                    onClose={(sessionKey) => setGridTerminals((current) => current.filter((terminal) => terminal.sessionKey !== sessionKey))}
+                    onClose={(sessionKey) => {
+                      setGridTerminals((current) => current.filter((terminal) => terminal.sessionKey !== sessionKey))
+                      setFocusedGridTerminal((current) => current === sessionKey ? null : current)
+                    }}
                     onBrowse={pickProjectFolder}
                   />
                 </div>
