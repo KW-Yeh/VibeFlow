@@ -7,14 +7,18 @@ export interface JevRoute {
   model?: string
   plannerModel?: string
   plan?: string
-  status: 'routed' | 'fallback'
+  /** `routing` is transient: set while the decision is in flight, replaced by the outcome. */
+  status: 'routing' | 'routed' | 'fallback'
+  phase?: JevRoutePhase
   reason?: string
 }
+
+export type JevRoutePhase = 'judging' | 'planning' | 'selecting'
 
 export interface JevRouter {
   /** A missing key can use the catalog's local fallback without waiting for a CLI handshake. */
   enabled?: boolean
-  route(task: Task, models: readonly AgentModel[]): Promise<JevRoute>
+  route(task: Task, models: readonly AgentModel[], onPhase?: (phase: JevRoutePhase) => void): Promise<JevRoute>
 }
 
 type ChoiceAnswer = { type: 'choice'; choice: string }
@@ -82,13 +86,14 @@ export function createJevRouter(opts: {
 
   return {
     get enabled() { return Boolean(getApiKey()) },
-    async route(task, catalog) {
+    async route(task, catalog, onPhase) {
       const agent = task.agentCli === 'codex' ? 'codex' : 'claude'
       const candidates = routeCandidates(agent, catalog)
       if (candidates.length === 0) return { status: 'fallback', reason: '模型清單沒有可用的模型' }
       const expensive = candidates[candidates.length - 1]
       const taskText = buildPrompt(task).slice(0, MAX_TASK_CHARS)
       try {
+        onPhase?.('judging')
         const first = await ask({ task: taskText, agent }, {
           complexity: {
             type: 'choice',
@@ -114,10 +119,12 @@ export function createJevRouter(opts: {
         let plan: string | undefined
         if (first.preparation.choice === 'plan') {
           if (!task.worktreePath) throw new Error('規劃時找不到 worktree')
+          onPhase?.('planning')
           const instruction = `Read the repository and make a concise implementation plan for the following task. Do not edit files. Identify unclear requirements, affected areas, and verification. Return only the plan.\n\n${taskText}`
           plan = (await planner(agent, expensive.id, instruction, task.worktreePath)).trim().slice(0, MAX_PLAN_CHARS)
           if (!plan) throw new Error('規劃模型沒有回傳計畫')
         }
+        onPhase?.('selecting')
         const options = Object.fromEntries(candidates.map((m) => [m.id,
           `${m.label}; relative cost tier ${tier(m, agent) + 1}/3 (${tier(m, agent) === 2 ? 'highest capability' : tier(m, agent) === 0 ? 'lowest cost' : 'balanced'})`]))
         const second = await ask({ task: taskText, complexity: first.complexity.choice, plan }, {

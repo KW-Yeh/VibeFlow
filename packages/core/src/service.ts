@@ -379,19 +379,26 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
-    let route = task.model?.trim() ? undefined : task.jevRoute
+    let route = task.model?.trim() || task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
     if (!task.model?.trim() && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
+        const setRoute = (jevRoute: Task['jevRoute']): void => {
+          updateTask(task.id, { jevRoute })
+          bus.emit('state:changed', getState())
+        }
         pending = (async () => {
+          setRoute({ status: 'routing', phase: 'judging' })
           const candidateModels = (await (router.enabled === false
             ? models.get(taskAgent(task))
             : models.refresh(taskAgent(task)))).models
-          const selected = await router.route(task, candidateModels)
-          updateTask(task.id, { jevRoute: selected })
-          bus.emit('state:changed', getState())
+          const selected = await router.route(task, candidateModels, (phase) => setRoute({ status: 'routing', phase }))
+          setRoute(selected)
           return selected
-        })().finally(() => routing.delete(task.id))
+        })().catch((err) => {
+          setRoute(undefined)
+          throw err
+        }).finally(() => routing.delete(task.id))
         routing.set(task.id, pending)
       }
       route = await pending

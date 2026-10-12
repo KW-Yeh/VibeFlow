@@ -11,6 +11,7 @@ When a card selects only Claude Code or Codex, VibeFlow asks TypeSafe Jev whethe
 - The first Jev request judges complexity and whether planning helps. The second sees the plan, if any, and picks an exact id from the signed-in CLI's model catalog.
 - Only model ids present in the catalog and safe to pass to the CLI can be selected. Catalog order is used to pick the first model in each relative cost tier. These tiers are approximate, not provider prices.
 - The chosen model and optional plan are recorded on the card. The plan is added to the first execution prompt as guidance, not as a replacement for the user's request. A resume reuses the model without making another Jev call.
+- While routing runs, the card's `jevRoute` is `status: 'routing'` with a `phase` (judging → planning, only when a plan is chosen → selecting). The board card and the workspace panel show it with a spinner, and the agent starts only once routing settles. A `routing` record is never used to pick a model, so one left behind by a host crash is ignored at the next launch.
 - If the key is absent or a Jev/planning call fails, the card shows the reason and starts with the CLI's own default model. An explicit model bypasses the fallback mechanism too.
 
 ## Limits

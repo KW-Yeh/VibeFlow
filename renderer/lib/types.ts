@@ -12,6 +12,7 @@ export type {
   NotificationSettings,
   VibeFlowState,
 } from '../../packages/core/src/store'
+export type { JevRoute } from '../../packages/core/src/jev-router'
 export type {
   GitInfo,
   DiffEntry,

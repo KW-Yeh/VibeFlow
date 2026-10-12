@@ -49,6 +49,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
 import { taskArtifactsDir } from '@/lib/claude'
+import { jevRoutingLabel } from '@/lib/jev'
 import {
   retainExistingDiffContents,
   sameDiffEntry,
@@ -405,7 +406,14 @@ function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'tas
         </p>
       )}
 
-      {task.jevRoute && (
+      {task.jevRoute?.status === 'routing' && (
+        <div className="flex items-center gap-2 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground" role="status">
+          <Loader2 className="size-3.5 shrink-0 animate-spin" />
+          Jev 路由中：{jevRoutingLabel(task.jevRoute)}（完成後才會啟動 agent）
+        </div>
+      )}
+
+      {task.jevRoute && task.jevRoute.status !== 'routing' && (
         <div className="rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
           Jev：{task.jevRoute.model ?? 'CLI 預設模型'}
           {task.jevRoute.plannerModel && ` · 先由 ${task.jevRoute.plannerModel} 規劃`}

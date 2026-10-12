@@ -307,6 +307,30 @@ test('a family-only card uses Jev while an explicit model bypasses it', async (t
   assert.match(fixed.sessions.starts[0].command, /--model sonnet /)
 })
 
+test('the card shows each Jev routing phase on the board before the agent starts', async (t) => {
+  let seen
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const router = { async route(task, list, onPhase) {
+    onPhase('planning')
+    await gate
+    onPhase('selecting')
+    return { status: 'routed', model: 'haiku' }
+  } }
+  const { core, sessions, task } = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+  })
+  const read = () => core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id).jevRoute
+  const started = core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  for (let i = 0; i < 50 && read()?.phase !== 'planning'; i++) await new Promise((r) => setTimeout(r, 10))
+  seen = read()
+  assert.deepEqual({ status: seen.status, phase: seen.phase }, { status: 'routing', phase: 'planning' })
+  assert.equal(sessions.starts.length, 0)
+  release()
+  await started
+  assert.equal(read().status, 'routed')
+})
+
 test('updateTask rejects an unknown effort', async (t) => {
   const { core, task } = await coreWithTask(t)
   await assert.rejects(
