@@ -240,8 +240,8 @@ function TaskCard({
           : 'border-border hover:border-input'
       )}
     >
-      {/* Header: project · effort, swapped for the actions menu on hover. */}
-      <div className="group/head flex items-center gap-1.5 text-xs text-muted-foreground">
+      {/* Header: keep the terminal and menu actions in fixed positions. */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Layers className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{projectLabel(task)}</span>
         <IconButton
@@ -258,40 +258,25 @@ function TaskCard({
             complete
           </span>
         ) : (
-          <>
-            {task.effort && (
-              <span
-                className={cn(
-                  'shrink-0 rounded-xs bg-secondary px-1.5 py-0.5 font-medium',
-                  menuOpen ? 'hidden' : 'group-hover/head:hidden'
-                )}
-              >
-                {task.effort}
-              </span>
-            )}
-            <IconButton
-              aria-label={`任務選項：${task.title}`}
-              title="移動、編輯或刪除"
-              onClick={(event) => {
-                event.stopPropagation()
-                if (menuOpen) {
-                  setMenuAnchor(null)
-                  return
-                }
-                // Anchor to the card, not the trigger: the trigger is
-                // hover-revealed, so its rect is empty when it is still hidden.
-                const rect = cardRef.current?.getBoundingClientRect()
-                if (!rect) return
-                setMenuAnchor({ top: rect.top + 32, right: rect.right - 4 })
-              }}
-              className={cn(
-                'size-5 p-0.5',
-                menuOpen ? 'flex' : 'hidden group-hover/head:flex'
-              )}
-            >
-              <MoreHorizontal className="size-3.5" />
-            </IconButton>
-          </>
+          <IconButton
+            aria-label={`任務選項：${task.title}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="移動、編輯或刪除"
+            onClick={(event) => {
+              event.stopPropagation()
+              if (menuOpen) {
+                setMenuAnchor(null)
+                return
+              }
+              const rect = cardRef.current?.getBoundingClientRect()
+              if (!rect) return
+              setMenuAnchor({ top: rect.top + 32, right: rect.right - 4 })
+            }}
+            className="size-5 shrink-0 p-0.5"
+          >
+            <MoreHorizontal className="size-3.5" />
+          </IconButton>
         )}
       </div>
 
