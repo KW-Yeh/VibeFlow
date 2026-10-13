@@ -8,10 +8,13 @@ import {
   getState,
   getStore,
   getStorePath,
+  listTerminals,
   removeTask,
+  removeTerminals,
   resolveNotificationSettings,
   resolveWorkstationPath,
   setBoard,
+  saveTerminal,
   setSettings,
   updateTask,
   type AppSettings,
@@ -113,6 +116,8 @@ export interface StandaloneTerminalPayload {
   /** A card resolves its own project root; otherwise the user selected a folder. */
   taskId?: string
   projectPath?: string
+  /** Pane title; absent keeps the saved one, or names it after the folder. */
+  title?: string
   cols?: number
   rows?: number
 }
@@ -338,12 +343,28 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   async function teardownSession(key: string): Promise<void> {
-    const standalone = standaloneTerminals.has(key)
+    const standalone = isStandaloneKey(key)
     await sessions.kill(key)
-    if (standalone) sessions.discardScrollback?.(key)
+    if (standalone) {
+      sessions.discardScrollback?.(key)
+      removeTerminals([key])
+    }
     standaloneTerminals.delete(key)
     unwatchSubAgents(key)
   }
+
+  function isStandaloneKey(key: string): boolean {
+    return standaloneTerminals.has(key) || listTerminals().some((t) => t.sessionKey === key)
+  }
+
+  // A shell nobody lists is unreachable from every frontend: the page that
+  // opened it is gone. Sessions are started only after their entry is saved.
+  void sessions.list().then(async (keys) => {
+    const known = new Set(listTerminals().map((t) => t.sessionKey))
+    await Promise.all(keys
+      .filter((k) => k.startsWith('terminal_') && !known.has(k))
+      .map((k) => sessions.kill(k)))
+  }).catch(() => {})
 
   /** Tear down every terminal a task has (its own key and any `<id>:<tab>`). */
   async function teardownTask(taskId: string): Promise<void> {
@@ -361,7 +382,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   /** Session keys belong to known tasks or a standalone terminal opened here. */
   function requireSessionKey(sessionKey: unknown): string {
     const key = str(sessionKey, 'sessionKey')
-    if (standaloneTerminals.has(key)) return key
+    if (isStandaloneKey(key)) return key
     requireTask(key.split(':')[0])
     return key
   }
@@ -790,7 +811,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const key = str(p.sessionKey, 'sessionKey')
       if (!/^terminal_[0-9a-f-]{36}$/.test(key)) invalid('invalid standalone terminal key')
       if (Boolean(p.taskId) === Boolean(p.projectPath)) invalid('provide taskId or projectPath')
+      const saved = listTerminals().find((t) => t.sessionKey === key)
+      if (saved && (saved.taskId ? saved.taskId !== p.taskId : saved.projectPath !== p.projectPath)) {
+        invalid('terminal key already belongs to another directory')
+      }
       let cwd: string
+      let projectPath: string
       if (p.taskId) {
         const requested = requireTask(p.taskId)
         const column = columnOf(requested.id)
@@ -798,22 +824,36 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           ? await ensureProvisioned(requested)
           : requested
         cwd = str(column === 'backlog' ? task.projectPath : task.worktreePath ?? task.projectPath, 'directory')
+        projectPath = task.projectPath ?? cwd
       } else {
         cwd = str(p.projectPath, 'projectPath')
+        projectPath = cwd
       }
       if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
         invalid('terminal directory must be an existing absolute directory')
       }
-      const previous = standaloneTerminals.get(key)
-      if (previous && previous !== cwd) invalid('terminal key already belongs to another directory')
-      const result = await sessions.start(key, {
-        cwd,
-        cols: typeof p.cols === 'number' ? p.cols : undefined,
-        rows: typeof p.rows === 'number' ? p.rows : undefined,
-      })
+      const title = (typeof p.title === 'string' ? p.title.trim() : '') || saved?.title || path.basename(projectPath)
+      saveTerminal({ sessionKey: key, title, projectPath, ...(p.taskId ? { taskId: p.taskId } : {}) })
       standaloneTerminals.set(key, cwd)
       if (!p.taskId) recordRecentProject(getStore(), cwd)
-      return result
+      const cols = typeof p.cols === 'number' ? p.cols : undefined
+      const rows = typeof p.rows === 'number' ? p.rows : undefined
+      // Starting a pty again would end the shell a reloaded page wants back.
+      if (sessions.kind === 'pty' && (await sessions.isAlive(key))) {
+        if (cols && rows) sessions.resize(key, cols, rows)
+        return { pid: 0, scrollback: sessions.scrollback(key), attached: true }
+      }
+      return sessions.start(key, { cwd, cols, rows })
+    },
+
+    'terminal:rename': (payload) => {
+      const p = obj<{ sessionKey: unknown; title: unknown }>(payload, 'payload')
+      const key = str(p.sessionKey, 'sessionKey')
+      const saved = listTerminals().find((t) => t.sessionKey === key)
+      if (!saved) invalid('unknown standalone terminal')
+      const title = str(p.title, 'title').trim()
+      if (title && title !== saved.title) saveTerminal({ ...saved, title })
+      return getState()
     },
 
     // Join a session as it is: no restart, for a frontend that attaches
@@ -1053,6 +1093,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'vibeflow:deleteTask': async (taskId) => {
       const task = requireTask(taskId)
       await teardownTask(task.id)
+      await Promise.all(listTerminals()
+        .filter((t) => t.taskId === task.id)
+        .map((t) => teardownSession(t.sessionKey)))
       progress.untrack(task.id)
       cancelChatSend(task.id)
       if (task.workspacePath) {

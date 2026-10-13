@@ -544,11 +544,17 @@ export async function standaloneTermStart(payload: {
   sessionKey: string
   taskId?: string
   projectPath?: string
+  title?: string
   cols?: number
   rows?: number
 }): Promise<StartResult | null> {
   const b = bridge()
   return b ? b.term.startStandalone(payload) : null
+}
+
+export async function standaloneTermRename(sessionKey: string, title: string): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.term.renameStandalone(sessionKey, title) : null
 }
 
 /** Send keystrokes to the session identified by `sessionKey`. */
