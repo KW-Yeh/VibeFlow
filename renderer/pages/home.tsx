@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Head from 'next/head'
 import { AnimatePresence } from 'motion/react'
 
@@ -38,6 +38,8 @@ import {
   persistBoard,
   pickFolder,
   setSettings,
+  standaloneTermRename,
+  termKill,
   updateTask,
 } from '@/lib/api'
 import { boardGithubCards, draftFromItem } from '@/lib/github-display'
@@ -133,7 +135,14 @@ export default function HomePage() {
   // Open terminal tabs, in bar order. Session-only by design — nothing here is
   // persisted, so a restart starts from an empty bar.
   const [tabs, setTabs] = useState<TerminalTab[]>([])
-  const [gridTerminals, setGridTerminals] = useState<GridTerminal[]>([])
+  // The 終端機 page's shells live in core's store; a pane opened here shows
+  // at once and joins the stored list when its start reaches core.
+  const [storedTerminals, setStoredTerminals] = useState<GridTerminal[]>([])
+  const [pendingTerminals, setPendingTerminals] = useState<GridTerminal[]>([])
+  const gridTerminals = useMemo(() => {
+    const stored = new Set(storedTerminals.map((t) => t.sessionKey))
+    return [...storedTerminals, ...pendingTerminals.filter((t) => !stored.has(t.sessionKey))]
+  }, [storedTerminals, pendingTerminals])
   const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
@@ -158,6 +167,7 @@ export default function HomePage() {
         setWorkstationPath(state.settings.workstationPath ?? '')
         setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
         setNotificationSettings(withNotificationDefaults(state.settings.notifications))
+        setStoredTerminals(state.terminals ?? [])
       }
       setLoaded(true)
     })
@@ -179,8 +189,14 @@ export default function HomePage() {
       setWorkstationPath(state.settings.workstationPath ?? '')
       setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
       setNotificationSettings(withNotificationDefaults(state.settings.notifications))
+      setStoredTerminals(state.terminals ?? [])
     })
   }, [])
+
+  useEffect(() => {
+    const stored = new Set(storedTerminals.map((t) => t.sessionKey))
+    setPendingTerminals((prev) => (prev.some((t) => stored.has(t.sessionKey)) ? prev.filter((t) => !stored.has(t.sessionKey)) : prev))
+  }, [storedTerminals])
 
   useEffect(() => {
     return onProgressUpdate(({ taskId, progress: value }) => {
@@ -227,13 +243,29 @@ export default function HomePage() {
   const openGridTerminal = (projectPath: string, taskId?: string) => {
     const sessionKey = `terminal_${window.crypto.randomUUID()}`
     setFocusedGridTerminal(sessionKey)
-    setGridTerminals((current) => [...current, {
+    setPendingTerminals((current) => [...current, {
       sessionKey,
       title: basenameFromPath(projectPath),
       projectPath,
       ...(taskId ? { taskId } : {}),
     }])
     setView('terminals')
+  }
+
+  const renameGridTerminal = (sessionKey: string, title: string) => {
+    const retitle = (list: GridTerminal[]) => list.map((t) => (t.sessionKey === sessionKey ? { ...t, title } : t))
+    setPendingTerminals(retitle)
+    if (!storedTerminals.some((t) => t.sessionKey === sessionKey)) return
+    setStoredTerminals(retitle)
+    void standaloneTermRename(sessionKey, title).catch(() => {})
+  }
+
+  const closeGridTerminal = (sessionKey: string) => {
+    termKill(sessionKey)
+    const without = (list: GridTerminal[]) => list.filter((t) => t.sessionKey !== sessionKey)
+    setStoredTerminals(without)
+    setPendingTerminals(without)
+    setFocusedGridTerminal((current) => (current === sessionKey ? null : current))
   }
 
   const openTaskGridTerminal = (taskId: string) => {
@@ -662,13 +694,8 @@ export default function HomePage() {
                     focusedSessionKey={focusedGridTerminal}
                     recentProjects={recentProjects}
                     onCreate={(projectPath) => openGridTerminal(projectPath)}
-                    onRename={(sessionKey, title) => setGridTerminals((current) => current.map((terminal) =>
-                      terminal.sessionKey === sessionKey ? { ...terminal, title } : terminal
-                    ))}
-                    onClose={(sessionKey) => {
-                      setGridTerminals((current) => current.filter((terminal) => terminal.sessionKey !== sessionKey))
-                      setFocusedGridTerminal((current) => current === sessionKey ? null : current)
-                    }}
+                    onRename={renameGridTerminal}
+                    onClose={closeGridTerminal}
                     onBrowse={pickProjectFolder}
                   />
                 </div>

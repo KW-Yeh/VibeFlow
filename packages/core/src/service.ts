@@ -169,6 +169,8 @@ export class InvalidRequestError extends Error {
   readonly code = 'INVALID_REQUEST'
 }
 
+const STANDALONE_KEY = /^terminal_[0-9a-f-]{36}$/
+
 function invalid(message: string): never {
   throw new InvalidRequestError(message)
 }
@@ -809,7 +811,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'terminal:start': async (payload) => {
       const p = obj<StandaloneTerminalPayload>(payload, 'payload')
       const key = str(p.sessionKey, 'sessionKey')
-      if (!/^terminal_[0-9a-f-]{36}$/.test(key)) invalid('invalid standalone terminal key')
+      if (!STANDALONE_KEY.test(key)) invalid('invalid standalone terminal key')
       if (Boolean(p.taskId) === Boolean(p.projectPath)) invalid('provide taskId or projectPath')
       const saved = listTerminals().find((t) => t.sessionKey === key)
       if (saved && (saved.taskId ? saved.taskId !== p.taskId : saved.projectPath !== p.projectPath)) {
@@ -874,7 +876,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       sessions.resize(requireSessionKey(p.sessionKey), p.cols, p.rows)
     },
 
-    'pty:kill': (sessionKey) => teardownSession(requireSessionKey(sessionKey)),
+    // A pane closed before its listing reached the frontend still names a shell to end.
+    'pty:kill': (sessionKey) => {
+      const key = str(sessionKey, 'sessionKey')
+      return teardownSession(STANDALONE_KEY.test(key) ? key : requireSessionKey(key))
+    },
 
     // History a frontend cannot scroll itself (tmux copy-mode).
     'pty:scrolled': (sessionKey) => sessions.isScrolledBack(requireSessionKey(sessionKey)),

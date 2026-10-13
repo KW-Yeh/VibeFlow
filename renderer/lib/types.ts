@@ -10,6 +10,7 @@ export type {
   BoardState,
   AppSettings,
   NotificationSettings,
+  StandaloneTerminalEntry,
   VibeFlowState,
 } from '../../packages/core/src/store'
 export type { JevRoute } from '../../packages/core/src/jev-router'

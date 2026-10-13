@@ -198,6 +198,14 @@ test('a standalone terminal key cannot be reused for another directory', async (
   await assert.rejects(core.handlers['terminal:start']({ sessionKey, taskId: task.id }), { code: 'INVALID_REQUEST' })
 })
 
+test('closing a standalone terminal core never listed is a no-op, not an error', async (t) => {
+  const { core, sessions } = await coreWithTask(t)
+  const sessionKey = 'terminal_f6f6f6f6-f6f6-f6f6-f6f6-f6f6f6f6f6f6'
+  await core.handlers['pty:kill'](sessionKey)
+  assert.deepEqual(sessions.killed, [sessionKey])
+  await assert.rejects(async () => core.handlers['pty:kill']('nope'), { code: 'INVALID_REQUEST' })
+})
+
 test('deleting a card closes the standalone terminals opened for it', async (t) => {
   const { core, sessions, task } = await coreWithTask(t)
   const sessionKey = 'terminal_f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3'
