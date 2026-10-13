@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
-import { getStore, listTerminals, saveTerminal } from '../packages/core/src/store.ts'
+import { getStore, listTerminals } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId } from '../packages/core/src/launch.ts'
 import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
@@ -213,18 +213,6 @@ test('deleting a card closes the standalone terminals opened for it', async (t) 
   await core.handlers['vibeflow:deleteTask'](task.id)
   assert.ok(sessions.killed.includes(sessionKey))
   assert.equal(listTerminals().some((e) => e.sessionKey === sessionKey), false)
-})
-
-test('a host start ends standalone shells that no frontend lists', async (t) => {
-  const listed = 'terminal_f4f4f4f4-f4f4-f4f4-f4f4-f4f4f4f4f4f4'
-  const orphan = 'terminal_f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5'
-  saveTerminal({ sessionKey: listed, title: 'kept', projectPath: os.tmpdir() })
-  const sessions = fakeSessions()
-  sessions.alive.add(listed).add(orphan).add('task1234')
-  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9' })
-  t.after(() => core.shutdown())
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(sessions.killed, [orphan])
 })
 
 test('resuming a session that is still running re-attaches instead of relaunching', async (t) => {

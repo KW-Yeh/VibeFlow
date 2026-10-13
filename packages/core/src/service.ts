@@ -359,15 +359,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return standaloneTerminals.has(key) || listTerminals().some((t) => t.sessionKey === key)
   }
 
-  // A shell nobody lists is unreachable from every frontend: the page that
-  // opened it is gone. Sessions are started only after their entry is saved.
-  void sessions.list().then(async (keys) => {
-    const known = new Set(listTerminals().map((t) => t.sessionKey))
-    await Promise.all(keys
-      .filter((k) => k.startsWith('terminal_') && !known.has(k))
-      .map((k) => sessions.kill(k)))
-  }).catch(() => {})
-
   /** Tear down every terminal a task has (its own key and any `<id>:<tab>`). */
   async function teardownTask(taskId: string): Promise<void> {
     const keys = new Set([taskId, ...(await sessions.list()).filter((k) => k.startsWith(`${taskId}:`))])

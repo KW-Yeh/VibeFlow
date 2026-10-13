@@ -48,6 +48,16 @@ import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
 import { basenameFromPath } from '@/lib/workspace-path'
+import {
+  readGithubFilters,
+  readInboxTab,
+  readTerminalTabs,
+  readViewUrl,
+  writeGithubFilters,
+  writeInboxTab,
+  writeTerminalTabs,
+  writeViewUrl,
+} from '@/lib/view-persistence'
 import type {
   AgentCliId,
   AvailableUpdate,
@@ -132,8 +142,8 @@ export default function HomePage() {
   // Side menu state
   const [sideMenuCollapsed, setSideMenuCollapsed] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  // Open terminal tabs, in bar order. Session-only by design — nothing here is
-  // persisted, so a restart starts from an empty bar.
+  // Open terminal tabs, in bar order. Kept per browser (view-persistence), so a
+  // reload brings the bar back.
   const [tabs, setTabs] = useState<TerminalTab[]>([])
   // The 終端機 page's shells live in core's store; a pane opened here shows
   // at once and joins the stored list when its start reaches core.
@@ -148,7 +158,7 @@ export default function HomePage() {
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
 
-  // Which view the top pane shows, and what the Issues & PRs view is narrowed to (session only).
+  // Which view the top pane shows, and what the Issues & PRs view is narrowed to.
   const [view, setView] = useState<BoardView>('board')
   const [githubFilters, setGithubFilters] = useState<Record<'issues' | 'prs', GithubFilters>>({
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
@@ -169,6 +179,15 @@ export default function HomePage() {
         setNotificationSettings(withNotificationDefaults(state.settings.notifications))
         setStoredTerminals(state.terminals ?? [])
       }
+      const where = readViewUrl()
+      setView(where.view)
+      setSelectedTaskId(where.taskId)
+      const savedTabs = readTerminalTabs()
+      setTabs(where.taskId && !savedTabs.some((t) => t.taskId === where.taskId)
+        ? [...savedTabs, { taskId: where.taskId, preview: true }]
+        : savedTabs)
+      setInboxTab(readInboxTab())
+      setGithubFilters(readGithubFilters())
       setLoaded(true)
     })
     return () => {
@@ -192,6 +211,12 @@ export default function HomePage() {
       setStoredTerminals(state.terminals ?? [])
     })
   }, [])
+
+  // Written only once restored, so the first render cannot overwrite what a reload should bring back.
+  useEffect(() => { if (loaded) writeViewUrl(view, selectedTaskId) }, [loaded, view, selectedTaskId])
+  useEffect(() => { if (loaded) writeTerminalTabs(tabs) }, [loaded, tabs])
+  useEffect(() => { if (loaded) writeInboxTab(inboxTab) }, [loaded, inboxTab])
+  useEffect(() => { if (loaded) writeGithubFilters(githubFilters) }, [loaded, githubFilters])
 
   useEffect(() => {
     const stored = new Set(storedTerminals.map((t) => t.sessionKey))
