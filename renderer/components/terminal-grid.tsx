@@ -21,6 +21,7 @@ export function TerminalGrid({
   recentProjects,
   onCreate,
   onRename,
+  onStarted,
   onClose,
   onBrowse,
 }: {
@@ -32,6 +33,8 @@ export function TerminalGrid({
   recentProjects: RecentProjectEntry[]
   onCreate: (projectPath: string) => void
   onRename: (sessionKey: string, title: string) => void
+  /** Core has saved this pane: its start returned. */
+  onStarted: (sessionKey: string) => void
   onClose: (sessionKey: string) => void
   onBrowse: () => Promise<string | null>
 }) {
@@ -101,6 +104,7 @@ export function TerminalGrid({
                 <StandaloneTerminal
                   sessionKey={terminal.sessionKey}
                   title={terminal.title}
+                  onStarted={() => onStarted(terminal.sessionKey)}
                   projectPath={terminal.projectPath}
                   displayPath={directory}
                   taskId={terminal.taskId}
