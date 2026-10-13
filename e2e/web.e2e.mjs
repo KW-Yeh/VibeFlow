@@ -567,4 +567,28 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   }
   assert.equal(starts.length, 4)
   assert.equal(starts.at(-1).cwd, projectPath)
+
+  // A reload keeps the view in the URL and re-attaches every pane under its saved key and title.
+  await titles.first().fill('Kept title')
+  await titles.first().press('Enter')
+  for (let attempt = 0; !core.handlers['vibeflow:getState']().terminals.some((e) => e.title === 'Kept title') && attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  const saved = core.handlers['vibeflow:getState']().terminals
+  assert.equal(saved.length, 3)
+  assert.match(page.url(), /[?&]view=terminals/)
+  await page.reload()
+  await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
+  assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
+  assert.equal(await titles.first().inputValue(), 'Kept title')
+  for (let attempt = 0; starts.length < 7 && attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.deepEqual(starts.slice(4).map(({ key }) => key).sort(), saved.map((e) => e.sessionKey).sort())
+  assert.equal(kills.length, 1, 'a reload ends no session')
+
+  await page.getByRole('tab', { name: '工作項目' }).click()
+  await page.reload()
+  await page.getByRole('tab', { name: '工作項目' }).waitFor()
+  assert.equal(await page.getByRole('tab', { name: '工作項目' }).getAttribute('aria-selected'), 'true')
 })

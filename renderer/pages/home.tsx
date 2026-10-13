@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Head from 'next/head'
 import { AnimatePresence } from 'motion/react'
 
@@ -38,6 +38,8 @@ import {
   persistBoard,
   pickFolder,
   setSettings,
+  standaloneTermRename,
+  termKill,
   updateTask,
 } from '@/lib/api'
 import { boardGithubCards, draftFromItem } from '@/lib/github-display'
@@ -46,6 +48,16 @@ import { useGithubInbox, useGithubTaskLinks } from '@/lib/use-github'
 import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
 import { basenameFromPath } from '@/lib/workspace-path'
+import {
+  readGithubFilters,
+  readInboxTab,
+  readTerminalTabs,
+  readViewUrl,
+  writeGithubFilters,
+  writeInboxTab,
+  writeTerminalTabs,
+  writeViewUrl,
+} from '@/lib/view-persistence'
 import type {
   AgentCliId,
   AvailableUpdate,
@@ -130,16 +142,23 @@ export default function HomePage() {
   // Side menu state
   const [sideMenuCollapsed, setSideMenuCollapsed] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  // Open terminal tabs, in bar order. Session-only by design — nothing here is
-  // persisted, so a restart starts from an empty bar.
+  // Open terminal tabs, in bar order. Kept per browser (view-persistence), so a
+  // reload brings the bar back.
   const [tabs, setTabs] = useState<TerminalTab[]>([])
-  const [gridTerminals, setGridTerminals] = useState<GridTerminal[]>([])
+  // The 終端機 page's shells live in core's store; a pane opened here shows
+  // at once and joins the stored list when its start reaches core.
+  const [storedTerminals, setStoredTerminals] = useState<GridTerminal[]>([])
+  const [pendingTerminals, setPendingTerminals] = useState<GridTerminal[]>([])
+  const gridTerminals = useMemo(() => {
+    const stored = new Set(storedTerminals.map((t) => t.sessionKey))
+    return [...storedTerminals, ...pendingTerminals.filter((t) => !stored.has(t.sessionKey))]
+  }, [storedTerminals, pendingTerminals])
   const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
   // Existing-project folder to prefill in the inline new-task form (null = blank form).
   const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
   const [newTaskNonce, setNewTaskNonce] = useState(0)
 
-  // Which view the top pane shows, and what the Issues & PRs view is narrowed to (session only).
+  // Which view the top pane shows, and what the Issues & PRs view is narrowed to.
   const [view, setView] = useState<BoardView>('board')
   const [githubFilters, setGithubFilters] = useState<Record<'issues' | 'prs', GithubFilters>>({
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
@@ -158,7 +177,17 @@ export default function HomePage() {
         setWorkstationPath(state.settings.workstationPath ?? '')
         setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
         setNotificationSettings(withNotificationDefaults(state.settings.notifications))
+        setStoredTerminals(state.terminals ?? [])
       }
+      const where = readViewUrl()
+      setView(where.view)
+      setSelectedTaskId(where.taskId)
+      const savedTabs = readTerminalTabs()
+      setTabs(where.taskId && !savedTabs.some((t) => t.taskId === where.taskId)
+        ? [...savedTabs, { taskId: where.taskId, preview: true }]
+        : savedTabs)
+      setInboxTab(readInboxTab())
+      setGithubFilters(readGithubFilters())
       setLoaded(true)
     })
     return () => {
@@ -179,8 +208,20 @@ export default function HomePage() {
       setWorkstationPath(state.settings.workstationPath ?? '')
       setJiraStoryPointsFields(state.settings.jira?.storyPointsFields ?? [])
       setNotificationSettings(withNotificationDefaults(state.settings.notifications))
+      setStoredTerminals(state.terminals ?? [])
     })
   }, [])
+
+  // Written only once restored, so the first render cannot overwrite what a reload should bring back.
+  useEffect(() => { if (loaded) writeViewUrl(view, selectedTaskId) }, [loaded, view, selectedTaskId])
+  useEffect(() => { if (loaded) writeTerminalTabs(tabs) }, [loaded, tabs])
+  useEffect(() => { if (loaded) writeInboxTab(inboxTab) }, [loaded, inboxTab])
+  useEffect(() => { if (loaded) writeGithubFilters(githubFilters) }, [loaded, githubFilters])
+
+  useEffect(() => {
+    const stored = new Set(storedTerminals.map((t) => t.sessionKey))
+    setPendingTerminals((prev) => (prev.some((t) => stored.has(t.sessionKey)) ? prev.filter((t) => !stored.has(t.sessionKey)) : prev))
+  }, [storedTerminals])
 
   useEffect(() => {
     return onProgressUpdate(({ taskId, progress: value }) => {
@@ -227,13 +268,29 @@ export default function HomePage() {
   const openGridTerminal = (projectPath: string, taskId?: string) => {
     const sessionKey = `terminal_${window.crypto.randomUUID()}`
     setFocusedGridTerminal(sessionKey)
-    setGridTerminals((current) => [...current, {
+    setPendingTerminals((current) => [...current, {
       sessionKey,
       title: basenameFromPath(projectPath),
       projectPath,
       ...(taskId ? { taskId } : {}),
     }])
     setView('terminals')
+  }
+
+  const renameGridTerminal = (sessionKey: string, title: string) => {
+    const retitle = (list: GridTerminal[]) => list.map((t) => (t.sessionKey === sessionKey ? { ...t, title } : t))
+    setPendingTerminals(retitle)
+    if (!storedTerminals.some((t) => t.sessionKey === sessionKey)) return
+    setStoredTerminals(retitle)
+    void standaloneTermRename(sessionKey, title).catch(() => {})
+  }
+
+  const closeGridTerminal = (sessionKey: string) => {
+    termKill(sessionKey)
+    const without = (list: GridTerminal[]) => list.filter((t) => t.sessionKey !== sessionKey)
+    setStoredTerminals(without)
+    setPendingTerminals(without)
+    setFocusedGridTerminal((current) => (current === sessionKey ? null : current))
   }
 
   const openTaskGridTerminal = (taskId: string) => {
@@ -662,13 +719,8 @@ export default function HomePage() {
                     focusedSessionKey={focusedGridTerminal}
                     recentProjects={recentProjects}
                     onCreate={(projectPath) => openGridTerminal(projectPath)}
-                    onRename={(sessionKey, title) => setGridTerminals((current) => current.map((terminal) =>
-                      terminal.sessionKey === sessionKey ? { ...terminal, title } : terminal
-                    ))}
-                    onClose={(sessionKey) => {
-                      setGridTerminals((current) => current.filter((terminal) => terminal.sessionKey !== sessionKey))
-                      setFocusedGridTerminal((current) => current === sessionKey ? null : current)
-                    }}
+                    onRename={renameGridTerminal}
+                    onClose={closeGridTerminal}
                     onBrowse={pickProjectFolder}
                   />
                 </div>

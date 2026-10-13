@@ -4,19 +4,26 @@ import { standaloneTermStart, termInput, termKill, termResize } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/terminal-links'
 
-/** A plain shell owned by the terminal grid, independent of every task run. */
+/**
+ * A plain shell owned by the terminal grid, independent of every task run.
+ * Unmounting only detaches: the grid ends the session when the user closes it.
+ */
 export function StandaloneTerminal({
   sessionKey,
   projectPath,
   displayPath,
   taskId,
+  title,
 }: {
   sessionKey: string
   projectPath: string
   displayPath?: string
   taskId?: string
+  title?: string
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef(title)
+  titleRef.current = title
 
   useEffect(() => {
     let disposed = false
@@ -25,7 +32,6 @@ export function StandaloneTerminal({
     let offExit: (() => void) | undefined
     let observer: ResizeObserver | undefined
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
-    let started = false
 
     void (async () => {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
@@ -88,11 +94,11 @@ export function StandaloneTerminal({
         const result = await standaloneTermStart({
           sessionKey,
           ...(taskId ? { taskId } : { projectPath }),
+          title: titleRef.current,
           cols: instance.cols,
           rows: instance.rows,
         })
         if (!result) throw new Error('未連線到 VibeFlow core')
-        started = true
         if (disposed) {
           termKill(sessionKey)
           return
@@ -124,7 +130,6 @@ export function StandaloneTerminal({
       offExit?.()
       observer?.disconnect()
       clearTimeout(resizeTimer)
-      if (started) termKill(sessionKey)
       term?.dispose()
     }
   }, [sessionKey, projectPath, taskId])

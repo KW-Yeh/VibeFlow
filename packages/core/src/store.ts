@@ -229,6 +229,17 @@ export interface VibeFlowState {
   settings: AppSettings
   /** Project folders offered by the new-task picker, most recent first. */
   recentProjects?: RecentProject[]
+  /** The 終端機 page's shells, in grid order. They outlive a page reload and are shared by every frontend. */
+  terminals?: StandaloneTerminalEntry[]
+}
+
+/** One shell on the 終端機 page. Its cwd is resolved again from `taskId` or `projectPath` at every start. */
+export interface StandaloneTerminalEntry {
+  /** `terminal_<uuid>`, also its session key. */
+  sessionKey: string
+  title: string
+  projectPath: string
+  taskId?: string
 }
 
 const DEFAULT_BOARD: BoardState = {
@@ -283,6 +294,7 @@ function migrateStore(store: JsonStore<VibeFlowState>): void {
   if (!store.has('recentProjects')) {
     store.set('recentProjects', recentProjectsFromBoard(store.get('board')))
   }
+  if (!store.has('terminals')) store.set('terminals', [])
   // Earlier builds kept provider API keys here in plaintext. Model lists now
   // come from the agent CLIs, so nothing reads them and they must not linger.
   const settings = store.get('settings') as (AppSettings & { agentConnections?: unknown }) | undefined
@@ -304,6 +316,28 @@ export function getState(): VibeFlowState {
     // `settings` may be absent in state persisted before this field existed;
     // fall back to defaults so the renderer always receives a value.
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
+    terminals: store.get('terminals') ?? [],
+  }
+}
+
+export function listTerminals(): StandaloneTerminalEntry[] {
+  return getStore().get('terminals') ?? []
+}
+
+/** Replace the entry with the same key in place, or append a new one. */
+export function saveTerminal(entry: StandaloneTerminalEntry): void {
+  const current = listTerminals()
+  const index = current.findIndex((t) => t.sessionKey === entry.sessionKey)
+  getStore().set('terminals', index === -1
+    ? [...current, entry]
+    : current.map((t, i) => (i === index ? entry : t)))
+}
+
+export function removeTerminals(sessionKeys: Iterable<string>): void {
+  const removing = new Set(sessionKeys)
+  const current = listTerminals()
+  if (current.some((t) => removing.has(t.sessionKey))) {
+    getStore().set('terminals', current.filter((t) => !removing.has(t.sessionKey)))
   }
 }
 

@@ -6,16 +6,11 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
-import type { RecentProjectEntry } from '@/lib/types'
+import type { RecentProjectEntry, StandaloneTerminalEntry } from '@/lib/types'
 import { basenameFromPath } from '@/lib/workspace-path'
 import { cn } from '@/lib/utils'
 
-export interface GridTerminal {
-  sessionKey: string
-  title: string
-  projectPath: string
-  taskId?: string
-}
+export type GridTerminal = StandaloneTerminalEntry
 
 export function TerminalGrid({
   view,
@@ -86,13 +81,10 @@ export function TerminalGrid({
                 )}
               >
                 <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-                  <input
-                    aria-label={`編輯 Terminal 標題：${terminal.title}`}
-                    title="點擊編輯標題"
-                    value={terminal.title}
-                    onChange={(event) => onRename(terminal.sessionKey, event.target.value)}
-                    onBlur={() => { if (!terminal.title.trim()) onRename(terminal.sessionKey, basenameFromPath(terminal.projectPath)) }}
-                    className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  <TerminalTitleInput
+                    title={terminal.title}
+                    fallback={basenameFromPath(terminal.projectPath)}
+                    onCommit={(title) => onRename(terminal.sessionKey, title)}
                   />
                   <IconButton
                     aria-label={`關閉 Terminal：${terminal.title}`}
@@ -108,6 +100,7 @@ export function TerminalGrid({
                 </div>
                 <StandaloneTerminal
                   sessionKey={terminal.sessionKey}
+                  title={terminal.title}
                   projectPath={terminal.projectPath}
                   displayPath={directory}
                   taskId={terminal.taskId}
@@ -148,5 +141,37 @@ export function TerminalGrid({
         </DialogShell>
       )}
     </div>
+  )
+}
+
+/** Edits locally and saves once on blur or Enter, so typing does not rewrite the store per key. */
+function TerminalTitleInput({
+  title,
+  fallback,
+  onCommit,
+}: {
+  title: string
+  fallback: string
+  onCommit: (title: string) => void
+}) {
+  const [draft, setDraft] = useState(title)
+  const [editing, setEditing] = useState(false)
+  const value = editing ? draft : title
+  const commit = () => {
+    setEditing(false)
+    const next = draft.trim() || fallback
+    if (next !== title) onCommit(next)
+  }
+  return (
+    <input
+      aria-label={`編輯 Terminal 標題：${title}`}
+      title="點擊編輯標題"
+      value={value}
+      onFocus={() => { setDraft(title); setEditing(true) }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+      className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    />
   )
 }

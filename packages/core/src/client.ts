@@ -338,9 +338,13 @@ export function createBridge(t: BridgeTransport) {
       sessionKey: string
       taskId?: string
       projectPath?: string
+      title?: string
       cols?: number
       rows?: number
     }): Promise<StartResult> => t.invoke('terminal:start', payload),
+    /** Rename a 終端機-page shell; a blank title is ignored. */
+    renameStandalone: (sessionKey: string, title: string): Promise<VibeFlowState> =>
+      t.invoke('terminal:rename', { sessionKey, title }),
     /** Join a running session without restarting it. */
     peek: (sessionKey: string): Promise<{ alive: boolean; scrollback: string | null }> =>
       t.invoke('pty:peek', sessionKey),

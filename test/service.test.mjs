@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
-import { getStore } from '../packages/core/src/store.ts'
+import { getStore, listTerminals } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId } from '../packages/core/src/launch.ts'
 import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
@@ -161,6 +161,58 @@ test('standalone terminals accept an existing absolute folder and reject invalid
   await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'bad', projectPath: task.projectPath }), { code: 'INVALID_REQUEST' })
   await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'terminal_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', projectPath: path.join(task.projectPath, 'missing') }), { code: 'INVALID_REQUEST' })
   await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'terminal_cccccccc-cccc-cccc-cccc-cccccccccccc', taskId: task.id, projectPath: task.projectPath }), { code: 'INVALID_REQUEST' })
+})
+
+test('standalone terminals are listed in the store until closed, and keep their title', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0'
+  await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath })
+  const entry = () => core.handlers['vibeflow:getState']().terminals.find((e) => e.sessionKey === sessionKey)
+  assert.deepEqual(entry(), { sessionKey, title: path.basename(task.projectPath), projectPath: task.projectPath })
+  core.handlers['terminal:rename']({ sessionKey, title: '  build  ' })
+  assert.equal(entry().title, 'build')
+  core.handlers['terminal:rename']({ sessionKey, title: '   ' })
+  assert.equal(entry().title, 'build', 'a blank title is ignored')
+  await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath })
+  assert.equal(entry().title, 'build', 'a restart keeps the saved title')
+  assert.throws(() => core.handlers['terminal:rename']({ sessionKey: 'terminal_missing', title: 'x' }), { code: 'INVALID_REQUEST' })
+  await core.handlers['pty:kill'](sessionKey)
+  assert.equal(entry(), undefined)
+})
+
+test('starting a running standalone pty again re-attaches instead of replacing the shell', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1'
+  await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath })
+  sessions.scrollback = () => 'earlier output'
+  const again = await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath, cols: 90, rows: 30 })
+  assert.equal(sessions.starts.length, 1)
+  assert.equal(again.attached, true)
+  assert.equal(again.scrollback, 'earlier output')
+})
+
+test('a standalone terminal key cannot be reused for another directory', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_f2f2f2f2-f2f2-f2f2-f2f2-f2f2f2f2f2f2'
+  await core.handlers['terminal:start']({ sessionKey, projectPath: task.projectPath })
+  await assert.rejects(core.handlers['terminal:start']({ sessionKey, taskId: task.id }), { code: 'INVALID_REQUEST' })
+})
+
+test('closing a standalone terminal core never listed is a no-op, not an error', async (t) => {
+  const { core, sessions } = await coreWithTask(t)
+  const sessionKey = 'terminal_f6f6f6f6-f6f6-f6f6-f6f6-f6f6f6f6f6f6'
+  await core.handlers['pty:kill'](sessionKey)
+  assert.deepEqual(sessions.killed, [sessionKey])
+  await assert.rejects(async () => core.handlers['pty:kill']('nope'), { code: 'INVALID_REQUEST' })
+})
+
+test('deleting a card closes the standalone terminals opened for it', async (t) => {
+  const { core, sessions, task } = await coreWithTask(t)
+  const sessionKey = 'terminal_f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3'
+  await core.handlers['terminal:start']({ sessionKey, taskId: task.id })
+  await core.handlers['vibeflow:deleteTask'](task.id)
+  assert.ok(sessions.killed.includes(sessionKey))
+  assert.equal(listTerminals().some((e) => e.sessionKey === sessionKey), false)
 })
 
 test('resuming a session that is still running re-attaches instead of relaunching', async (t) => {

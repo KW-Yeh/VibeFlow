@@ -37,6 +37,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 |---|---|
 | [cli-update](features/cli-update/spec.md) | Add `vibeflow update` to install the latest npm release from the CLI |
 | [npm-update-notice](features/npm-update-notice/spec.md) | Check npm every two hours, show a newer-version notice, and display the running version in Settings |
+| [view-persistence](features/view-persistence/spec.md) | A reload keeps the current view, open card and tabs, work-item filters, and the 終端機 page's running shells |
 | [organize-files](features/organize-files/spec.md) | Move the root-level docs into `docs/` and add this index |
 | [builtin-skills](features/builtin-skills/spec.md) | Ship built-in skills (visual-parity, generic pr) in every user's Library |
 | [spec-tab](features/spec-tab/spec.md) | The 決策 tab shows the branch's `spec.md` instead of a separate decision record |
