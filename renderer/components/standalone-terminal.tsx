@@ -129,5 +129,9 @@ export function StandaloneTerminal({
     }
   }, [sessionKey, projectPath, taskId])
 
-  return <div ref={hostRef} className="min-h-0 min-w-0 flex-1 overflow-hidden p-2" aria-label={`終端機：${displayPath ?? projectPath}`} />
+  return (
+    <div className="min-h-0 min-w-0 flex-1 overflow-hidden p-2">
+      <div ref={hostRef} className="h-full w-full overflow-hidden" aria-label={`終端機：${displayPath ?? projectPath}`} />
+    </div>
+  )
 }
