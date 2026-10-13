@@ -14,16 +14,20 @@ export function StandaloneTerminal({
   displayPath,
   taskId,
   title,
+  onStarted,
 }: {
   sessionKey: string
   projectPath: string
   displayPath?: string
   taskId?: string
   title?: string
+  onStarted?: () => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef(title)
   titleRef.current = title
+  const onStartedRef = useRef(onStarted)
+  onStartedRef.current = onStarted
 
   useEffect(() => {
     let disposed = false
@@ -103,6 +107,7 @@ export function StandaloneTerminal({
           termKill(sessionKey)
           return
         }
+        onStartedRef.current?.()
         if (result.scrollback) instance.write(result.scrollback)
         instance.onData((data) => termInput(sessionKey, data))
         instance.focus()

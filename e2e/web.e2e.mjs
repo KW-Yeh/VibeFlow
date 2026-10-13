@@ -575,6 +575,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   const saved = core.handlers['vibeflow:getState']().terminals
+  assert.ok(saved.some((e) => e.title === 'Kept title'), 'the rename reached core')
   assert.equal(saved.length, 3)
   assert.match(page.url(), /[?&]view=terminals/)
   await page.reload()
