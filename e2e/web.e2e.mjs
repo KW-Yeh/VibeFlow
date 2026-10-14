@@ -158,6 +158,13 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   const page = await browser.newPage()
   await page.goto(`${base}/home/?token=${encodeURIComponent(lock.token)}`)
   assert.equal(new URL(page.url()).search, '', 'the token leaves the address bar')
+  const sidebar = page.locator('aside').first()
+  await sidebar.getByRole('img', { name: 'VibeFlow' }).waitFor()
+  assert.equal(await sidebar.evaluate((element) => element.getBoundingClientRect().width), 48)
+  assert.equal(await page.getByRole('button', { name: '展開選單' }).count(), 0)
+  await sidebar.getByRole('button', { name: '工作項目' }).click()
+  assert.equal(await page.getByRole('tab', { name: '工作項目' }).getAttribute('aria-selected'), 'true')
+  await sidebar.getByRole('button', { name: '看板' }).click()
 
   if (canFakeGh) {
     // Models: the host asked the (fake) claude CLI at startup; the picker

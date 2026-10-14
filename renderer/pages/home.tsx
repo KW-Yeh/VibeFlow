@@ -6,7 +6,7 @@ import { KanbanBoard } from '@/components/kanban-board'
 import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { SideMenu, type SideMenuProject } from '@/components/side-menu'
+import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
 import type { BoardView } from '@/components/ui/view-tabs'
 import {
@@ -149,8 +149,6 @@ export default function HomePage() {
   // Remote share state
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
 
-  // Side menu state
-  const [sideMenuCollapsed, setSideMenuCollapsed] = useState(true)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   // Open terminal tabs, in bar order. Kept per browser (view-persistence), so a
   // reload brings the bar back.
@@ -202,10 +200,6 @@ export default function HomePage() {
       active = false
     }
   }, [])
-
-  // The sidebar no longer auto-opens: the board's three columns already list
-  // every task, so an expanded sidebar would repeat them. It stays collapsed to
-  // its icon rail (projects, settings) until opened by hand.
 
   // Refresh board when the CLI (or any external writer) changes the store file.
   useEffect(() => {
@@ -561,34 +555,6 @@ export default function HomePage() {
   useEffect(() => {
     if (loaded) void listRecentProjects().then(setRecentProjects)
   }, [loaded, board.backlog.length])
-  const githubRepos = github.inbox?.status === 'ok' ? github.inbox.repos : null
-  const githubCount = githubRepos
-    ? githubRepos.reduce((sum, r) => sum + r.issues.length + r.prs.length, 0)
-    : null
-  const sideMenuProjects: SideMenuProject[] = Array.from(
-    new Set(allTasks.map((t) => t.projectName).filter((name): name is string => Boolean(name)))
-  )
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => {
-      const repos = githubRepos?.filter((r) => r.projectName === name) ?? []
-      return repos.length
-        ? {
-            name,
-            issues: repos.reduce((sum, r) => sum + r.issues.length, 0),
-            prs: repos.reduce((sum, r) => sum + r.prs.length, 0),
-          }
-        : { name, issues: null, prs: null }
-    })
-
-  // A sidebar project narrows the view to just that project; clicking it again widens it back.
-  const selectGithubProject = (name: string) => {
-    const only = view === 'github' && githubFilters.issues.projects.length === 1 && githubFilters.issues.projects[0] === name
-    const projects = only ? [] : [name]
-    setGithubFilters((previous) => ({ issues: { ...previous.issues, projects }, prs: { ...previous.prs, projects } }))
-    if (currentInboxTab === 'jira') setInboxTab('issues')
-    setView('github')
-  }
-
   const createJiraTask = async (ticket: JiraTicket, projectPath: string): Promise<string> => {
     const draft = draftFromTicket(ticket)
     const result = await createTask({ ...draft, projectPath, baseBranch: null, autoMode })
@@ -621,15 +587,8 @@ export default function HomePage() {
           <>
             <div className="flex h-screen overflow-hidden">
               <SideMenu
-                collapsed={sideMenuCollapsed}
-                onToggleCollapse={() => setSideMenuCollapsed((v) => !v)}
                 view={view}
                 onSelectView={setView}
-                taskCount={allTasks.length}
-                githubCount={githubCount}
-                projects={sideMenuProjects}
-                activeProjects={Array.from(new Set([...githubFilters.issues.projects, ...githubFilters.prs.projects]))}
-                onSelectProject={selectGithubProject}
                 onNewTask={handleOpenNewTask}
                 remoteActive={!!remoteHost.roomCode}
                 onOpenSettings={() => {
