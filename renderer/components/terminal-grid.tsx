@@ -64,7 +64,7 @@ export function TerminalGrid({
           <p className="text-sm">選擇專案或資料夾，即可在該目錄開啟獨立終端機。</p>
         </div>
       ) : (
-        <div className="grid min-h-0 w-full flex-1 auto-rows-[360px] grid-cols-1 content-start gap-4 overflow-y-auto p-4 @min-[728px]:grid-cols-2 @min-[1084px]:grid-cols-3">
+        <div className="terminal-grid-scroll grid min-h-0 w-full flex-1 auto-rows-[480px] grid-cols-1 content-start gap-4 overflow-y-auto p-4 @min-[728px]:grid-cols-2 @min-[1084px]:grid-cols-3">
           {terminals.map((terminal) => {
             const directory = terminal.taskId
               ? taskWorktreePaths[terminal.taskId] ?? terminal.projectPath
@@ -79,7 +79,7 @@ export function TerminalGrid({
                 tabIndex={-1}
                 aria-label={`Terminal：${terminal.title}`}
                 className={cn(
-                  'flex h-[360px] w-full min-w-0 flex-col overflow-hidden rounded-md border bg-card outline-none',
+                  'flex h-[480px] w-full min-w-0 flex-col overflow-hidden rounded-md border bg-card outline-none',
                   focusedSessionKey === terminal.sessionKey ? 'border-primary ring-2 ring-primary/30' : 'border-border'
                 )}
               >

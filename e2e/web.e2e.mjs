@@ -532,8 +532,12 @@ test('Web UI: terminal grid opens the card column directory and selected folders
       return screenBounds.bottom <= hostBounds.bottom + 1 && screenBounds.right <= hostBounds.right + 1
     }), null, { timeout: 5000 })
   const wideBoxes = await Promise.all([0, 1, 2].map((index) => panes.nth(index).boundingBox()))
-  assert.ok(wideBoxes.every((box) => box && box.width > 340 && box.height === 360))
+  assert.ok(wideBoxes.every((box) => box && box.width > 340 && box.height === 480))
   assert.ok(wideBoxes.every((box) => box.y === wideBoxes[0].y))
+  const scrollback = panes.first().locator('.xterm-viewport')
+  assert.equal(await scrollback.evaluate((element) => getComputedStyle(element).scrollbarWidth), 'thin')
+  assert.equal(await scrollback.evaluate((element) => getComputedStyle(element).overflowY), 'scroll')
+  assert.equal(await panes.first().locator('..').evaluate((element) => getComputedStyle(element).scrollbarWidth), 'thin')
   const gridBox = await panes.first().locator('..').boundingBox()
   assert.ok(gridBox && Math.abs(wideBoxes[2].x + wideBoxes[2].width - (gridBox.x + gridBox.width - 16)) < 1)
   await page.setViewportSize({ width: 1600, height: 800 })

@@ -43,6 +43,13 @@
   --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/* Show the terminal page's own scrollbar and each xterm scrollback track. */
+.terminal-grid-scroll,
+.terminal-grid-scroll .xterm-viewport {
+  scrollbar-color: var(--muted-foreground) var(--background);
+  scrollbar-width: thin;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
