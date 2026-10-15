@@ -40,6 +40,8 @@ export function TerminalGrid({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [terminalToCloseKey, setTerminalToCloseKey] = useState<string | null>(null)
+  const terminalToClose = terminals.find((terminal) => terminal.sessionKey === terminalToCloseKey)
   const terminalRefs = useRef(new Map<string, HTMLElement>())
 
   useEffect(() => {
@@ -92,7 +94,7 @@ export function TerminalGrid({
                   <IconButton
                     aria-label={`關閉 Terminal：${terminal.title}`}
                     title="關閉並釋放 Terminal"
-                    onClick={() => onClose(terminal.sessionKey)}
+                    onClick={() => setTerminalToCloseKey(terminal.sessionKey)}
                     className="size-7 shrink-0"
                   >
                     <X className="size-4" />
@@ -139,6 +141,30 @@ export function TerminalGrid({
                 }}
               >
                 開啟 Terminal
+              </Button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {terminalToClose && (
+        <DialogShell title="關閉 Terminal" onClose={() => setTerminalToCloseKey(null)} contentClassName="max-w-md rounded-lg p-5">
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">關閉「{terminalToClose.title}」？</h2>
+            <p className="text-sm text-muted-foreground">
+              關閉 Terminal 會結束這個 session，正在執行的指令也會中止。
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setTerminalToCloseKey(null)}>取消</Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  onClose(terminalToClose.sessionKey)
+                  setTerminalToCloseKey(null)
+                }}
+              >
+                確認關閉
               </Button>
             </div>
           </div>

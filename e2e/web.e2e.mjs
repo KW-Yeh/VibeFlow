@@ -213,6 +213,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   }
   assert.ok(fs.existsSync(path.join(projectPath, 'vf-grid-pwd.txt')), 'the shell wrote in the project root')
   await page.getByRole('button', { name: /關閉 Terminal/ }).click()
+  await page.getByRole('dialog', { name: '關閉 Terminal' }).getByRole('button', { name: '確認關閉' }).click()
   await page.getByRole('tab', { name: '看板' }).click()
 
   // Start: core builds the launch; the fake agent runs in the worktree.
@@ -563,6 +564,14 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Terminal：My shell')
   assert.equal(await page.getByRole('tab', { name: '終端機' }).getAttribute('aria-selected'), 'true')
   await page.getByRole('button', { name: '關閉 Terminal：My shell' }).click()
+  const closeDialog = page.getByRole('dialog', { name: '關閉 Terminal' })
+  await closeDialog.getByText('關閉「My shell」？').waitFor()
+  assert.equal(kills.length, 0, 'opening the warning leaves the session running')
+  await closeDialog.getByRole('button', { name: '取消' }).click()
+  assert.equal(await panes.count(), 3, 'cancel keeps the terminal pane')
+  assert.equal(kills.length, 0, 'cancel leaves the session running')
+  await page.getByRole('button', { name: '關閉 Terminal：My shell' }).click()
+  await closeDialog.getByRole('button', { name: '確認關閉' }).click()
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 2)
   assert.equal(kills.length, 1)
   await page.getByRole('tab', { name: '看板' }).click()
