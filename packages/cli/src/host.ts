@@ -10,6 +10,7 @@ import { createSessionBackend } from '../../core/src/sessions'
 import { startWebServer, type WebServer } from '../../core/src/web-server'
 import { packageName } from './update-command'
 import { checkForUpdate, UPDATE_CHECK_INTERVAL_MS } from './update-check'
+import { openUpdateTerminal } from './update-terminal'
 import type { AvailableUpdate } from '../../core/src/client'
 
 /**
@@ -120,6 +121,10 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
         startedAt: lock.startedAt,
       }),
       'host:updateStatus': () => availableUpdate,
+      'host:openUpdateTerminal': () => {
+        if (!installedPackage || !availableUpdate) throw new Error('目前沒有可從全域 npm 安裝更新的版本。')
+        return openUpdateTerminal()
+      },
     }
     const server = await startWebServer({
       handlers,

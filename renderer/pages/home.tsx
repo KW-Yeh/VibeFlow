@@ -34,6 +34,7 @@ import {
   onProgressNotify,
   onProgressUpdate,
   onUpdateAvailable,
+  openUpdateTerminal,
   onStateChanged,
   persistBoard,
   pickFolder,
@@ -124,6 +125,8 @@ export default function HomePage() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null)
   const [dismissedUpdate, setDismissedUpdate] = useState<string | null>(null)
+  const [updateLaunchError, setUpdateLaunchError] = useState<string | null>(null)
+  const [openingUpdateTerminal, setOpeningUpdateTerminal] = useState(false)
   const [autoMode, setAutoMode] = useState(true)
   // Custom system prompt ('' = only the built-in Artifact instructions).
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -601,8 +604,18 @@ export default function HomePage() {
                   <div role="status" className="flex items-center gap-3 border-b border-border bg-primary/10 px-4 py-2 text-sm">
                     <span className="min-w-0 flex-1">
                       VibeFlow v{availableUpdate.latestVersion} 已發布（目前 v{availableUpdate.currentVersion}）。
-                      全域 npm 安裝可執行 <code className="rounded-xs bg-background px-1 py-0.5">vibeflow update</code>；其他安裝方式請依原方式更新。完成後重新啟動 VibeFlow。
+                      按下更新會開啟系統終端機執行更新指令（Windows：<code>vibeflow update</code>；其他平台：<code>sudo vibeflow update</code>）。完成後重新啟動 VibeFlow。
+                      {updateLaunchError && <span role="alert" className="block text-destructive">{updateLaunchError}</span>}
                     </span>
+                    <button type="button" disabled={openingUpdateTerminal} onClick={() => {
+                      setOpeningUpdateTerminal(true)
+                      setUpdateLaunchError(null)
+                      void openUpdateTerminal().catch((error) => {
+                        setUpdateLaunchError(error instanceof Error ? error.message : '無法開啟更新終端機')
+                      }).finally(() => setOpeningUpdateTerminal(false))
+                    }} className="shrink-0 rounded-sm border border-border bg-background px-3 py-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50">
+                      {openingUpdateTerminal ? '開啟中…' : '更新 VibeFlow'}
+                    </button>
                     <button type="button" aria-label="關閉更新提示" onClick={() => setDismissedUpdate(availableUpdate.latestVersion)}
                       className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
                       <X className="size-4" />

@@ -14,7 +14,7 @@ and commands inside core. The only exceptions are project picking and library
 import, where no task exists yet. The two **drop** rows are gone.
 
 **Status (Electron removed):** the desktop shell is gone, and so are the
-**electron** rows (`app:relaunch`, `remote-update:*`, `update:available`) and
+**electron** rows (`app:relaunch`, `remote-update:*`) and
 both `dialog:*` channels: the Web UI asks for a typed path instead of a native
 picker.
 
@@ -30,6 +30,7 @@ Channels added since the inventory:
 | `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
 | `host:updateStatus` / event `update:available` | Host's latest npm release check, broadcast when a newer version appears or clears |
+| `host:openUpdateTerminal` | Host opens a native terminal with the fixed update command when an npm update is available |
 | `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
 | event `progress:update` | `{ taskId, progress }` on every change to a tracked card's progress |
 | event `progress:notify` | `{ taskId, title, notifications }` stage notifications, already filtered by `settings.notifications` |

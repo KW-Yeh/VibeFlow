@@ -70,6 +70,11 @@ export async function getUpdateStatus(): Promise<AvailableUpdate | null> {
   return b ? b.getUpdateStatus() : null
 }
 
+export async function openUpdateTerminal(): Promise<void> {
+  const b = bridge()
+  if (b) await b.openUpdateTerminal()
+}
+
 export function onUpdateAvailable(callback: (update: AvailableUpdate | null) => void): () => void {
   const b = bridge()
   return b ? b.onUpdateAvailable(callback) : () => {}

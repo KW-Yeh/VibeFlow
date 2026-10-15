@@ -391,15 +391,25 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
         ? JSON.stringify([{ number: 112, title: 'Fix sidebar', url: 'https://github.com/e2e/VibeFlow/issues/112',
           body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
   })
+  let updateLaunches = 0
   const server = await startWebServer({ handlers: {
     ...core.handlers,
     'host:updateStatus': () => ({ currentVersion: '9.9.9', latestVersion: '10.0.0' }),
+    'host:openUpdateTerminal': () => {
+      updateLaunches++
+      if (updateLaunches === 1) throw new Error('找不到可用的終端機')
+    },
   }, bus, staticDir: webDir, token: 'jira-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
   await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
   await page.getByText('VibeFlow v10.0.0 已發布', { exact: false }).waitFor()
+  await page.getByRole('button', { name: '更新 VibeFlow' }).click()
+  await page.getByRole('alert').getByText('找不到可用的終端機').waitFor()
+  await page.getByRole('button', { name: '更新 VibeFlow' }).click()
+  await page.getByRole('alert').getByText('找不到可用的終端機').waitFor({ state: 'hidden' })
+  assert.equal(updateLaunches, 2)
   await page.getByRole('button', { name: '關閉更新提示' }).click()
   assert.equal(await page.getByText('VibeFlow v10.0.0 已發布', { exact: false }).count(), 0)
   bus.emit('update:available', { currentVersion: '9.9.9', latestVersion: '10.1.0' })

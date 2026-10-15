@@ -77,6 +77,7 @@ export function createBridge(t: BridgeTransport) {
   /** Running app version (package.json version baked into the build). */
   getVersion: (): Promise<string> => t.invoke('app:getVersion'),
   getUpdateStatus: (): Promise<AvailableUpdate | null> => t.invoke('host:updateStatus'),
+  openUpdateTerminal: (): Promise<void> => t.invoke('host:openUpdateTerminal'),
   onUpdateAvailable: (callback: (update: AvailableUpdate | null) => void): (() => void) =>
     t.on('update:available', (payload) => callback(payload as AvailableUpdate | null)),
   /**
