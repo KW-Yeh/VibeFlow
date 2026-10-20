@@ -4,6 +4,11 @@
 Black-box script. Run with --help. Do not read this source into an agent
 context window; every mode writes its full result to a report file and prints
 only a compressed summary to stdout.
+
+Inside a VibeFlow task (VIBEFLOW_ARTIFACTS_DIR set), relative output paths
+(--out, --video, a screenshot step's path) are written under
+$VIBEFLOW_ARTIFACTS_DIR/visual-parity/; stdout prints where each file landed.
+Absolute paths are used as given. Outside VibeFlow, outputs land in the cwd.
 """
 import argparse
 import json
@@ -244,6 +249,40 @@ def run_diff(args):
     return 1 if total_diffs else 0
 
 
+ARTIFACTS_SUBDIR = "visual-parity"
+
+
+def output_path(path):
+    """Where an output file the caller named by a relative path is written.
+
+    Inside a VibeFlow task the cwd is the git worktree, so relative outputs go
+    to the task's Artifacts folder instead, where the user sees them and git
+    never does. Absolute paths and runs outside VibeFlow keep the path as given.
+    """
+    root = os.environ.get("VIBEFLOW_ARTIFACTS_DIR")
+    if not root or os.path.isabs(path):
+        return path
+    target = os.path.join(root, ARTIFACTS_SUBDIR, path)
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+    except OSError as e:
+        print(f"  cannot write under {root} ({e}) - writing {path} relative to cwd")
+        return path
+    return target
+
+
+def scratch_dir():
+    """The task's scratch folder for throwaway files, or None for the system temp."""
+    d = os.environ.get("VIBEFLOW_SCRATCH_DIR")
+    if not d:
+        return None
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    return d
+
+
 def save_video(video, out_path):
     """Persist a Playwright video; convert to MP4 when the caller asked for one.
 
@@ -285,7 +324,7 @@ def run_flow(args):
         ctx_opts = {"ignore_https_errors": True}
         if args.video:
             w, h = (int(v) for v in args.video_size.lower().split("x"))
-            tmpdir = tempfile.mkdtemp(prefix="parity-video-")
+            tmpdir = tempfile.mkdtemp(prefix="parity-video-", dir=scratch_dir())
             ctx_opts.update(record_video_dir=tmpdir,
                             record_video_size={"width": w, "height": h},
                             viewport={"width": w, "height": h})
@@ -326,7 +365,7 @@ def run_flow(args):
                         "s => document.activeElement === document.querySelector(s)", step["selector"])
                     assert got, "element is not document.activeElement"
                 elif act == "screenshot":
-                    page.screenshot(path=step["path"], full_page=step.get("full_page", True))
+                    page.screenshot(path=output_path(step["path"]), full_page=step.get("full_page", True))
                 else:
                     raise ValueError(f"unknown action {act!r}")
                 results.append((i, desc, "PASS", ""))
@@ -435,6 +474,10 @@ def main():
     sub.add_parser("selftest", help="verify the matcher/differ still work")
 
     args = ap.parse_args()
+    if getattr(args, "out", None):
+        args.out = output_path(args.out)
+    if getattr(args, "video", None):
+        args.video = output_path(args.video)
     if args.cmd == "diff":
         sys.exit(run_diff(args))
     if args.cmd == "responsive":

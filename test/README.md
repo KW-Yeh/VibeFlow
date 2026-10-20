@@ -38,6 +38,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `agents.test.mjs` | `packages/core/src/agents.ts` | agent registry, default model, default task effort |
 | `effort.test.mjs` | `packages/core/src/effort.ts` | effort levels, per-model allowed levels, lowering an unsupported effort |
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
+| `parity-paths.test.mjs` | `packages/core/builtin-skills/visual-parity/scripts/parity.py` | relative outputs land under `VIBEFLOW_ARTIFACTS_DIR/visual-parity/` inside a task and in the cwd outside one; absolute paths kept; scratch folder for throwaway files. Spawns `python3`/`python` with a stub playwright; skipped when neither is on PATH |
 | `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
 | `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |
 | `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: custom system prompt, artifact environment paths, the `--settings` hooks |
