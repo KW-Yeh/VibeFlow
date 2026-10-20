@@ -78,3 +78,15 @@ gh pr edit <n> --title "<title>" --body-file <file>
 ```
 
 Report the PR URL and the title to the user.
+
+## 6. Screenshots and recordings
+
+Only when the change is visible (UI) or the user asks for evidence; otherwise skip this step.
+
+- Look in `$VIBEFLOW_ARTIFACTS_DIR` first (including its `visual-parity/` folder): screenshots,
+  recordings and reports produced earlier in this task belong there. Use them before taking new ones.
+- Save new screenshots or recordings to `$VIBEFLOW_ARTIFACTS_DIR/pr/`. When that variable is not set
+  (not running in VibeFlow), use your own scratchpad or the system temp directory — never the repository.
+- Upload only through the GitHub web UI (drop the file into the PR description or a comment).
+  Never commit or push images or videos to any branch. `gh` cannot upload attachments: if you cannot
+  drive a browser, give the user the PR URL and the absolute path of each file to drop in.

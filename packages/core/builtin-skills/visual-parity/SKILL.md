@@ -28,6 +28,20 @@ description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改�
   打到登入頁或拒絕頁時比對結果毫無意義——`matched` 異常地少就先檢查這個。
 - 新舊對照要同時起兩份 server（不同 port），各自當 `--ref` 與 `--local`。
 
+## 輸出位置
+
+在 VibeFlow 卡片裡（`$VIBEFLOW_ARTIFACTS_DIR` 有值），cwd 是 git worktree。產出要落在使用者看得到、git 看不到的地方：
+
+| 檔案 | 有 `$VIBEFLOW_ARTIFACTS_DIR` | 沒有（不在 VibeFlow） |
+|---|---|---|
+| 報告、截圖、影片（`--out`、`--video`、`screenshot` 的 `path`） | 寫相對路徑即可，`parity.py` 自動放到 `$VIBEFLOW_ARTIFACTS_DIR/visual-parity/` | 落在 cwd；cwd 是 git repo 時改傳絕對路徑到自己的 scratchpad，不要被 commit |
+| 自己寫的 steps.json、`--map` JSON | `$VIBEFLOW_ARTIFACTS_DIR/visual-parity/` | 自己的 scratchpad |
+| 臨時 Playwright 腳本、log、其他中間檔 | `$VIBEFLOW_SCRATCH_DIR` | 自己的 scratchpad |
+
+- 讀報告、`grep` 報告一律用 stdout 印出的 `report:` / `video:` 路徑，不要用你傳進去的相對路徑。
+- 要寫到別的地方就傳絕對路徑，`parity.py` 原樣使用。
+- 下文範例的輸出都寫相對檔名，同一條指令在 VibeFlow 內外都對。
+
 ## diff — 新舊頁面樣式落差
 
 ```bash
@@ -89,10 +103,13 @@ python <skill-dir>/scripts/parity.py responsive \
 ```
 
 ```bash
-python <skill-dir>/scripts/parity.py flow --steps steps.json --out parity-flow.md
+python <skill-dir>/scripts/parity.py flow --steps "$VIBEFLOW_ARTIFACTS_DIR/visual-parity/steps.json" --out parity-flow.md
 ```
 
+上面的 JSON 先存成 `$VIBEFLOW_ARTIFACTS_DIR/visual-parity/steps.json`；不在 VibeFlow 時存進你的 scratchpad，`--steps` 換成那個路徑。
+
 可用 action：`goto` `click` `fill` `press` `wait` `expect_text` `expect_visible` `expect_focused` `screenshot`。
+`screenshot` 吃 `path`（例如 `{"action":"screenshot","path":"dialog-open.png"}`），路徑規則同「輸出位置」。
 `wait` 吃 `selector`，或改吃 `{"action":"wait","ms":800}` 單純停一段時間——動畫沒有對應的 selector 可等時用這個。
 預設第一個失敗就停（`--keep-going` 可跑完全部）。console error/warning 與失敗的 request 一律蒐集，這類問題不會反映在樣式比對裡。
 `--headed` 可開有頭瀏覽器讓人工旁觀。
@@ -103,7 +120,8 @@ python <skill-dir>/scripts/parity.py flow --steps steps.json --out parity-flow.m
 
 ```bash
 python <skill-dir>/scripts/parity.py flow \
-  --steps steps.json --out parity-flow.md --video parity-flow.mp4
+  --steps "$VIBEFLOW_ARTIFACTS_DIR/visual-parity/steps.json" \
+  --out parity-flow.md --video parity-flow.mp4
 ```
 
 - 副檔名 `.mp4` 會在錄完後用 ffmpeg 轉成 H.264（QuickTime 直接開），中間的 webm 自動刪除。**ffmpeg 不存在時不會失敗**，保留 `.webm` 並在 stdout 提示。副檔名寫 `.webm` 則完全不轉檔。
@@ -112,7 +130,7 @@ python <skill-dir>/scripts/parity.py flow \
 - 影格率是 Playwright screencast 的 **25fps**，判斷「動畫有沒有做對」夠用；要判斷「掉不掉幀」不夠，那種要用 macOS `screencapture -v` 錄 60fps。
 - 影片路徑會同時寫進報告開頭與 stdout。
 
-把 flow 的 JSON 存進專案（例如 `e2e/`），下次改版直接重跑，就是回歸測試。
+使用者要把 flow 留作回歸測試時，才把 JSON 存進專案（例如 `e2e/`），下次改版直接重跑；其餘情況照「輸出位置」放，不進 repo。
 
 ## 維護
 
