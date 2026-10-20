@@ -57,6 +57,10 @@ export interface ProgressNotifyPayload {
 export interface AvailableUpdate {
   currentVersion: string
   latestVersion: string
+  /** Installed on disk, but the host could not restart into it by itself. */
+  installedVersion?: string
+  /** Why the host did not restart, for the manual-restart notice. */
+  restartBlocked?: string
 }
 
 /** `unsupported`: source, npx or local installs, which `vibeflow update` refuses. */

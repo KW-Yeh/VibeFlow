@@ -11,6 +11,7 @@ import { startWebServer, type WebServer } from '../../core/src/web-server'
 import { packageName } from './update-command'
 import { createUpdateMonitor, UPDATE_CHECK_INTERVAL_MS } from './update-check'
 import { openUpdateTerminal } from './update-terminal'
+import { INSTALL_POLL_INTERVAL_MS, watchInstalledVersion } from './self-update'
 
 /**
  * The browser keys site permissions (desktop notifications) by origin, port
@@ -29,12 +30,18 @@ export interface HostOptions {
   cliEntry: string | null
   backend: 'auto' | 'tmux' | 'pty'
   port?: number
+  /** Handed over by the host this one replaces after an update. */
+  token?: string
+  /** Restart into a newer npm install by itself; the caller relaunches on `restartRequested`. */
+  autoRestart?: boolean
 }
 
 export interface RunningHost {
   core: Core
   server: WebServer
   lock: LockInfo
+  /** Resolves with the new version once it is installed and the host may restart into it. */
+  restartRequested: Promise<string>
   stop(): Promise<void>
 }
 
@@ -67,7 +74,7 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
   const lock: LockInfo = {
     pid: process.pid,
     port: 0,
-    token: randomBytes(32).toString('base64url'),
+    token: options.token ?? randomBytes(32).toString('base64url'),
     version: options.version,
     startedAt: Date.now(),
   }
@@ -89,9 +96,10 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
     })
     const core = createCore({ sessions, bus, version: options.version })
     let updateTimer: ReturnType<typeof setInterval> | null = null
+    let installTimer: ReturnType<typeof setInterval> | null = null
+    const packageRoot = options.cliEntry ? path.dirname(path.dirname(options.cliEntry)) : null
     const updates = createUpdateMonitor({
-      packageName: options.sourceRoot || !options.cliEntry
-        ? null : packageName(path.dirname(path.dirname(options.cliEntry))),
+      packageName: options.sourceRoot || !packageRoot ? null : packageName(packageRoot),
       currentVersion: options.version,
       onChange: (update) => bus.emit('update:available', update),
     })
@@ -129,22 +137,45 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
     updateLock(options.userDataDir, lock)
     const stopWatch = core.watchStore()
     core.warmModelCatalog()
-    if (updates.supported) {
+    let requestRestart: (version: string) => void = () => {}
+    const restartRequested = new Promise<string>((resolve) => { requestRestart = resolve })
+    if (updates.supported && options.cliEntry && packageRoot) {
       checkUpdates()
       updateTimer = setInterval(checkUpdates, UPDATE_CHECK_INTERVAL_MS)
+      const installs = watchInstalledVersion({
+        packageRoot,
+        cliEntry: options.cliEntry,
+        currentVersion: options.version,
+        onInstalled: (version) => {
+          if (!options.autoRestart) {
+            updates.markInstalled(version, '終端機介面（TUI）host 不會自動重新啟動')
+            return
+          }
+          // pty sessions end with this process; tmux sessions outlive it.
+          void (sessions.kind === 'pty' ? sessions.list() : Promise.resolve([])).then((running) => {
+            if (running.length > 0) {
+              updates.markInstalled(version, `有 ${running.length} 個執行中的終端機 session，重新啟動會中斷它們；全部結束後會自動重新啟動`)
+            } else {
+              requestRestart(version)
+            }
+          }).catch(() => {})
+        },
+      })
+      installTimer = setInterval(() => void installs.tick(), INSTALL_POLL_INTERVAL_MS)
     }
 
     const stop = () =>
       (stopping ??= (async () => {
         updates.stop()
         if (updateTimer) clearInterval(updateTimer)
+        if (installTimer) clearInterval(installTimer)
         stopWatch()
         core.shutdown()
         await server.close()
         releaseLock(options.userDataDir)
       })())
 
-    return { kind: 'started', host: { core, server, lock, stop } }
+    return { kind: 'started', host: { core, server, lock, restartRequested, stop } }
   } catch (err) {
     releaseLock(options.userDataDir)
     throw err

@@ -11,10 +11,15 @@ export const CONNECTION_EVENT = 'vibeflow:connection'
 export function installWebBridge(): void {
   if (typeof window === 'undefined' || window.vibeflow) return
   const url = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
+  // A host that came back as another version (restarted after an update) serves a new UI.
+  let hostVersion: string | null = null
   const transport = createWsTransport({
     connect: () => new WebSocket(url) as unknown as WebSocketLike,
     // Board changes made while disconnected were pushed to nobody.
     onReconnect: () => {
+      void bridge.getVersion().then((version) => {
+        if (hostVersion && version !== hostVersion) window.location.reload()
+      }).catch(() => {})
       void bridge.getState().then((state) => transport.dispatch('state:changed', state))
       void bridge.getUpdateStatus()
         .then((status) => transport.dispatch('update:available', status))
@@ -25,5 +30,6 @@ export function installWebBridge(): void {
     },
   })
   const bridge = createBridge(transport)
+  void bridge.getVersion().then((version) => { hostVersion = version }).catch(() => {})
   window.vibeflow = bridge
 }

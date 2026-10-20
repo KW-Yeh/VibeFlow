@@ -68,6 +68,17 @@ export function createUpdateMonitor(options: {
       }
       return next ? { status: 'available', ...next } : { status: 'current', currentVersion: options.currentVersion }
     },
+    /** A newer version is on disk but the host must be restarted by hand to run it. */
+    markInstalled(version: string, reason: string) {
+      if (stopped || (available?.installedVersion === version && available.restartBlocked === reason)) return
+      available = {
+        currentVersion: options.currentVersion,
+        latestVersion: available && isNewerVersion(available.latestVersion, version) ? available.latestVersion : version,
+        installedVersion: version,
+        restartBlocked: reason,
+      }
+      options.onChange(available)
+    },
     stop() { stopped = true },
   }
 }

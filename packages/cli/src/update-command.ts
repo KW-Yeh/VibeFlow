@@ -82,6 +82,6 @@ export function runUpdate(options: UpdateOptions): number {
     error(`更新失敗：${result.error?.message ?? `npm 結束碼 ${result.status ?? 'unknown'}`}`)
     return result.status && result.status > 0 ? result.status : 1
   }
-  log('更新完成。若 VibeFlow host 正在執行，請自行重新啟動以載入新版本。')
+  log('更新完成。執行中的 Web UI host 會在數秒內自動重新啟動成新版本；TUI host 或有執行中 session 的 pty host 請自行重新啟動。')
   return 0
 }

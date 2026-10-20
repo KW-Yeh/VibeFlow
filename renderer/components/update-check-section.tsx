@@ -62,7 +62,7 @@ export function UpdateCheckSection({ appVersion }: { appVersion: string | null |
         <div role="status" className="space-y-2 rounded-md border border-border bg-primary/10 p-3 text-sm">
           <p>
             VibeFlow v{result.latestVersion} 已發布（目前 v{result.currentVersion}）。
-            按下更新會開啟系統終端機執行更新指令（Windows：<code>vibeflow update</code>；其他平台：<code>sudo vibeflow update</code>）。完成後重新啟動 VibeFlow。
+            按下更新會開啟系統終端機執行更新指令（Windows：<code>vibeflow update</code>；其他平台：<code>sudo vibeflow update</code>）。安裝完成後 host 會自動重新啟動。
           </p>
           <Button size="sm" disabled={launching} onClick={launch}>
             {launching ? '開啟中…' : '更新 VibeFlow'}

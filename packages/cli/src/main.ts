@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { parseArgs } from 'node:util'
+import { spawn } from 'node:child_process'
 import { liveHost, type LockInfo } from '../../core/src/lock'
 import { createNodePlatform, getPlatform, setPlatform } from '../../core/src/platform'
 import { getState, getStore } from '../../core/src/store'
@@ -15,6 +16,7 @@ import { isWebDir, loginUrl, startHost, type HostOptions, type RunningHost } fro
 import { connectToHost } from './remote'
 import { formatChecks, runDoctor } from './doctor'
 import { runUpdate } from './update-command'
+import { HOST_TOKEN_ENV, relaunchArgs, takeHandedOverToken } from './self-update'
 
 const USAGE = `
 VibeFlow — intent-driven kanban for coding agents
@@ -29,7 +31,7 @@ Usage:
   vibeflow open <path>     Add a project folder to the recent list, then open the Web UI
   vibeflow doctor          Check Node, git, tmux, node-pty and the agent CLIs
                            (--skip agents,web,… leaves checks out, e.g. on CI)
-  vibeflow update          Install the latest global npm release (restart the host afterward)
+  vibeflow update          Install the latest global npm release (a running Web UI host restarts into it)
   vibeflow task …          Create / update cards; add artifacts (vibeflow task --help)
 
 Options:
@@ -104,6 +106,9 @@ function parse(argv: string[]) {
 
 type Values = ReturnType<typeof parse>['values']
 
+/** Read once, before any session can be spawned with it in its environment. */
+const handedOverToken = takeHandedOverToken()
+
 function hostOptions(values: Values, layout: Layout, userDataDir: string, withWeb = true): HostOptions {
   const backend = values.backend ?? 'auto'
   if (!['auto', 'tmux', 'pty'].includes(backend)) throw new Error('--backend must be auto | tmux | pty')
@@ -117,6 +122,7 @@ function hostOptions(values: Values, layout: Layout, userDataDir: string, withWe
     cliEntry: layout.cliEntry,
     backend: backend as HostOptions['backend'],
     port,
+    token: handedOverToken,
   }
 }
 
@@ -126,6 +132,35 @@ async function openBrowser(url: string): Promise<void> {
   } catch {
     // Printed anyway; the user can open it by hand.
   }
+}
+
+/**
+ * Run the newly installed CLI as the host that replaces this one, and stay its
+ * parent so the terminal that started VibeFlow keeps its output and Ctrl+C.
+ */
+async function relaunchHost(host: RunningHost, cliEntry: string, userDataDir: string, version: string): Promise<number> {
+  const port = host.lock.port
+  const token = host.lock.token
+  const backend = host.core.sessions.kind
+  console.log(`\n已安裝 VibeFlow ${version}，正在重新啟動 host…`)
+  await host.stop()
+  const child = spawn(process.execPath, relaunchArgs(cliEntry, { userDataDir, port, backend }), {
+    stdio: 'inherit',
+    env: { ...process.env, [HOST_TOKEN_ENV]: token },
+  })
+  // Ctrl+C and a closed terminal reach the child through the process group;
+  // a kill aimed at this pid alone is passed on.
+  const forward = () => { child.kill('SIGTERM') }
+  process.on('SIGINT', () => {})
+  process.on('SIGHUP', () => {})
+  process.on('SIGTERM', forward)
+  return new Promise((resolve) => {
+    child.once('error', (err) => {
+      console.error(`無法啟動新版 host：${err.message}。請執行 vibeflow 重新啟動。`)
+      resolve(1)
+    })
+    child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)))
+  })
 }
 
 /** Stop the host cleanly on Ctrl+C / kill, then exit. */
@@ -152,7 +187,7 @@ async function cmdWeb(values: Values, layout: Layout, userDataDir: string, pathn
     console.error('找不到 Web UI 的靜態檔。從原始碼執行時請先執行：npm run build:web')
     return 1
   }
-  const started = await startHost(hostOptions(values, layout, userDataDir))
+  const started = await startHost({ ...hostOptions(values, layout, userDataDir), autoRestart: true })
   if (started.kind === 'running') return cmdWeb(values, layout, userDataDir, pathname)
   const { host } = started
   const url = loginUrl(host.lock, pathname)
@@ -163,8 +198,12 @@ async function cmdWeb(values: Values, layout: Layout, userDataDir: string, pathn
   const checks = await runDoctor({ userDataDir, webDir: layout.webDir })
   if (checks.some((c) => c.level === 'fail')) console.log(`\n環境檢查發現問題：\n${formatChecks(checks)}\n`)
   if (!values['no-open']) await openBrowser(url)
-  await stopOnSignals(host)
-  return 0
+  const ended = await Promise.race([
+    stopOnSignals(host).then(() => null),
+    host.restartRequested,
+  ])
+  // restartRequested only resolves for an npm install, which always has a cliEntry.
+  return ended === null || !layout.cliEntry ? 0 : relaunchHost(host, layout.cliEntry, userDataDir, ended)
 }
 
 async function cmdTui(values: Values, layout: Layout, userDataDir: string): Promise<number> {

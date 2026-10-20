@@ -59,3 +59,23 @@ test('the monitor never queries npm outside a global npm install', async () => {
   assert.equal(monitor.supported, false)
   assert.deepEqual(await monitor.refresh(), { status: 'unsupported', currentVersion: '4.11.1' })
 })
+
+test('an installed release the host cannot restart into replaces the notice once per reason', async () => {
+  const emitted = []
+  const monitor = createUpdateMonitor({
+    packageName: '@kw-yeh/vibeflow', currentVersion: '4.11.1',
+    onChange: (update) => emitted.push(update),
+    check: async () => ({ currentVersion: '4.11.1', latestVersion: '4.12.0' }),
+  })
+  await monitor.refresh()
+  monitor.markInstalled('4.12.0', 'tui')
+  monitor.markInstalled('4.12.0', 'tui')
+  assert.deepEqual(monitor.status(), {
+    currentVersion: '4.11.1', latestVersion: '4.12.0', installedVersion: '4.12.0', restartBlocked: 'tui',
+  })
+  assert.equal(emitted.length, 2)
+  await monitor.refresh()
+  assert.equal(monitor.status().installedVersion, '4.12.0', 'the same npm release keeps the installed notice')
+  monitor.markInstalled('4.12.0', '1 session')
+  assert.equal(emitted.at(-1).restartBlocked, '1 session')
+})

@@ -29,7 +29,7 @@ Channels added since the inventory:
 | `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force }` |
 | `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
-| `host:updateStatus` / event `update:available` | Host's latest npm release check, broadcast when a newer version appears or clears |
+| `host:updateStatus` / event `update:available` | Host's latest npm release check, broadcast when a newer version appears or clears. `installedVersion` / `restartBlocked` are set when a newer install is on disk but the host could not restart into it by itself (TUI host, or pty sessions running) |
 | `host:checkUpdate` | Settings dialog's manual npm check: re-queries `latest` now and returns `unsupported` / `current` / `available` (rejects when the registry is unreachable); a change is broadcast as `update:available` too |
 | `host:openUpdateTerminal` | Host opens a native terminal with the fixed update command when an npm update is available |
 | `progress:get` | A running card's progress (todos, token usage, activity) read from its agent transcript; `null` until there is one (`progress-tracker.ts`) |
