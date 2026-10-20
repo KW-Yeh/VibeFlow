@@ -9,9 +9,8 @@ import { createCore, type Core, type CoreHandlers } from '../../core/src/service
 import { createSessionBackend } from '../../core/src/sessions'
 import { startWebServer, type WebServer } from '../../core/src/web-server'
 import { packageName } from './update-command'
-import { checkForUpdate, UPDATE_CHECK_INTERVAL_MS } from './update-check'
+import { createUpdateMonitor, UPDATE_CHECK_INTERVAL_MS } from './update-check'
 import { openUpdateTerminal } from './update-terminal'
-import type { AvailableUpdate } from '../../core/src/client'
 
 /**
  * The browser keys site permissions (desktop notifications) by origin, port
@@ -89,24 +88,15 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
       stateDir: options.userDataDir,
     })
     const core = createCore({ sessions, bus, version: options.version })
-    let availableUpdate: AvailableUpdate | null = null
     let updateTimer: ReturnType<typeof setInterval> | null = null
-    let stopped = false
-    const installedPackage = options.sourceRoot || !options.cliEntry
-      ? null : packageName(path.dirname(path.dirname(options.cliEntry)))
-    const checkUpdates = async () => {
-      if (!installedPackage) return
-      try {
-        const next = await checkForUpdate(installedPackage, options.version)
-        if (stopped) return
-        if (next?.latestVersion !== availableUpdate?.latestVersion) {
-          availableUpdate = next
-          bus.emit('update:available', next)
-        }
-      } catch {
-        // An unavailable registry leaves the last successful result intact.
-      }
-    }
+    const updates = createUpdateMonitor({
+      packageName: options.sourceRoot || !options.cliEntry
+        ? null : packageName(path.dirname(path.dirname(options.cliEntry))),
+      currentVersion: options.version,
+      onChange: (update) => bus.emit('update:available', update),
+    })
+    // An unavailable registry leaves the last successful result intact.
+    const checkUpdates = () => void updates.refresh().catch(() => {})
     let stopping: Promise<void> | null = null
     const handlers: CoreHandlers = {
       ...core.handlers,
@@ -120,9 +110,10 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
         backend: sessions.kind,
         startedAt: lock.startedAt,
       }),
-      'host:updateStatus': () => availableUpdate,
+      'host:updateStatus': () => updates.status(),
+      'host:checkUpdate': () => updates.refresh(),
       'host:openUpdateTerminal': () => {
-        if (!installedPackage || !availableUpdate) throw new Error('目前沒有可從全域 npm 安裝更新的版本。')
+        if (!updates.status()) throw new Error('目前沒有可從全域 npm 安裝更新的版本。')
         return openUpdateTerminal()
       },
     }
@@ -138,14 +129,14 @@ export async function startHost(options: HostOptions): Promise<HostStart> {
     updateLock(options.userDataDir, lock)
     const stopWatch = core.watchStore()
     core.warmModelCatalog()
-    if (installedPackage) {
-      void checkUpdates()
-      updateTimer = setInterval(() => void checkUpdates(), UPDATE_CHECK_INTERVAL_MS)
+    if (updates.supported) {
+      checkUpdates()
+      updateTimer = setInterval(checkUpdates, UPDATE_CHECK_INTERVAL_MS)
     }
 
     const stop = () =>
       (stopping ??= (async () => {
-        stopped = true
+        updates.stop()
         if (updateTimer) clearInterval(updateTimer)
         stopWatch()
         core.shutdown()

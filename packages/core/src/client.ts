@@ -59,6 +59,12 @@ export interface AvailableUpdate {
   latestVersion: string
 }
 
+/** `unsupported`: source, npx or local installs, which `vibeflow update` refuses. */
+export type UpdateCheckResult =
+  | { status: 'unsupported'; currentVersion: string }
+  | { status: 'current'; currentVersion: string }
+  | ({ status: 'available' } & AvailableUpdate)
+
 /** How a frontend reaches core. `invoke` answers; `send` is fire-and-forget. */
 export interface BridgeTransport {
   /** `ws` = browser or a remote TUI, `local` = same process. */
@@ -77,6 +83,7 @@ export function createBridge(t: BridgeTransport) {
   /** Running app version (package.json version baked into the build). */
   getVersion: (): Promise<string> => t.invoke('app:getVersion'),
   getUpdateStatus: (): Promise<AvailableUpdate | null> => t.invoke('host:updateStatus'),
+  checkForUpdate: (): Promise<UpdateCheckResult> => t.invoke('host:checkUpdate'),
   openUpdateTerminal: (): Promise<void> => t.invoke('host:openUpdateTerminal'),
   onUpdateAvailable: (callback: (update: AvailableUpdate | null) => void): (() => void) =>
     t.on('update:available', (payload) => callback(payload as AvailableUpdate | null)),

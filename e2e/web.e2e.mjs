@@ -397,9 +397,17 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
           body: 'Details', createdAt: '2026-10-01T00:00:00Z' }]) : '[]',
   })
   let updateLaunches = 0
+  let updateChecks = 0
   const server = await startWebServer({ handlers: {
     ...core.handlers,
     'host:updateStatus': () => ({ currentVersion: '9.9.9', latestVersion: '10.0.0' }),
+    'host:checkUpdate': () => {
+      updateChecks++
+      if (updateChecks === 1) throw new Error('registry offline')
+      return updateChecks === 2
+        ? { status: 'current', currentVersion: '9.9.9' }
+        : { status: 'available', currentVersion: '9.9.9', latestVersion: '10.1.0' }
+    },
     'host:openUpdateTerminal': () => {
       updateLaunches++
       if (updateLaunches === 1) throw new Error('找不到可用的終端機')
@@ -421,6 +429,17 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.getByText('VibeFlow v10.1.0 已發布', { exact: false }).waitFor()
   await page.getByRole('button', { name: '設定 System Prompt' }).first().click()
   await page.getByText('VibeFlow 版本：v9.9.9').waitFor()
+  const settings = page.getByRole('dialog')
+  await settings.getByRole('button', { name: '檢查更新' }).click()
+  await settings.getByRole('alert').getByText('registry offline', { exact: false }).waitFor()
+  await settings.getByRole('button', { name: '檢查更新' }).click()
+  await settings.getByText('已是最新版本（v9.9.9）').waitFor()
+  await settings.getByRole('button', { name: '檢查更新' }).click()
+  await settings.getByText('VibeFlow v10.1.0 已發布', { exact: false }).waitFor()
+  await settings.getByRole('button', { name: '更新 VibeFlow' }).click()
+  await settings.getByRole('button', { name: '更新 VibeFlow' }).waitFor()
+  assert.equal(updateChecks, 3)
+  assert.equal(updateLaunches, 3)
   await page.getByLabel('Jev API key').fill('e2e-jev-secret')
   await page.getByRole('button', { name: '儲存金鑰' }).click()
   await page.getByText('已設定 Jev API key（本機儲存）').waitFor()

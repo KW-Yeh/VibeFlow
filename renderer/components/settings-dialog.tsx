@@ -17,6 +17,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { LibraryPanel } from '@/components/library-panel'
 import { JiraAuthTerminal } from '@/components/jira-auth-terminal'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
+import { UpdateCheckSection } from '@/components/update-check-section'
 import { NotificationSettingsSection, desktopPermission } from '@/components/notification-settings'
 import { fieldClass } from '@/components/ui/field'
 import {
@@ -559,7 +560,7 @@ export function SettingsDialog({
         <LibraryPanel onEditingChange={setLibraryEditing} />
       ) : (
         <div className="space-y-6">
-          <p className="text-sm text-muted-foreground">VibeFlow 版本：{appVersion === undefined ? '讀取中…' : appVersion ? `v${appVersion}` : '無法取得'}</p>
+          <UpdateCheckSection appVersion={appVersion} />
           <section className="space-y-2">
             <TaskAutoModeToggle value={auto} onChange={setAuto} />
             <p className="text-sm text-muted-foreground">

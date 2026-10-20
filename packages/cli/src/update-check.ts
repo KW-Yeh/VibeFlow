@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { AvailableUpdate } from '../../core/src/client'
+import type { AvailableUpdate, UpdateCheckResult } from '../../core/src/client'
 
 const execFileAsync = promisify(execFile)
 export const UPDATE_CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000
@@ -37,4 +37,37 @@ export async function checkForUpdate(
   const latest = JSON.parse(await query(packageName)) as unknown
   if (typeof latest !== 'string' || !isNewerVersion(latest, currentVersion)) return null
   return { currentVersion, latestVersion: latest }
+}
+
+type UpdateQuery = (packageName: string, currentVersion: string) => Promise<AvailableUpdate | null>
+
+/**
+ * The host's single view of npm releases, shared by the periodic check and the
+ * settings dialog's manual check, so every frontend sees the same answer.
+ */
+export function createUpdateMonitor(options: {
+  /** Null outside a global npm install, where `vibeflow update` cannot apply. */
+  packageName: string | null
+  currentVersion: string
+  onChange: (update: AvailableUpdate | null) => void
+  check?: UpdateQuery
+}) {
+  const check = options.check ?? ((name, version) => checkForUpdate(name, version))
+  let available: AvailableUpdate | null = null
+  let stopped = false
+  return {
+    supported: options.packageName !== null,
+    status: (): AvailableUpdate | null => available,
+    /** Rejects when the registry cannot be reached; the last answer is kept. */
+    async refresh(): Promise<UpdateCheckResult> {
+      if (!options.packageName) return { status: 'unsupported', currentVersion: options.currentVersion }
+      const next = await check(options.packageName, options.currentVersion)
+      if (!stopped && next?.latestVersion !== available?.latestVersion) {
+        available = next
+        options.onChange(next)
+      }
+      return next ? { status: 'available', ...next } : { status: 'current', currentVersion: options.currentVersion }
+    },
+    stop() { stopped = true },
+  }
 }

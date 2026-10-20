@@ -1,5 +1,6 @@
 import type {
   AvailableUpdate,
+  UpdateCheckResult,
   AgentCli,
   AgentCliId,
   AgentEffort,
@@ -68,6 +69,11 @@ export async function getAppVersion(): Promise<string | null> {
 export async function getUpdateStatus(): Promise<AvailableUpdate | null> {
   const b = bridge()
   return b ? b.getUpdateStatus() : null
+}
+
+export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
+  const b = bridge()
+  return b ? b.checkForUpdate() : null
 }
 
 export async function openUpdateTerminal(): Promise<void> {
