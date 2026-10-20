@@ -19,10 +19,10 @@ import {
 const ctx = (over = {}) => ({ recent: [], agents: [], models: {}, workstationPath: '', ...over })
 const repo = (over = {}) => ({ isRepo: true, hasRemote: true, remoteUrl: 'x', currentBranch: 'main', branches: ['dev', 'main'], defaultBase: 'main', ...over })
 
-test('a new card defaults like the Web UI: claude, medium, the board Auto Mode', () => {
+test('a new card defaults like the Web UI: claude, auto effort, the board Auto Mode', () => {
   const s = newFormState(false, [{ id: 'claude' }, { id: 'codex' }])
   assert.equal(s.agentCli, 'claude')
-  assert.equal(s.effort, 'medium')
+  assert.equal(s.effort, 'auto')
   assert.equal(s.autoMode, false)
   assert.equal(newFormState(true, [{ id: 'codex' }]).agentCli, 'codex', 'falls back to the only detected agent')
 })
@@ -104,10 +104,10 @@ const catalog = ctx({
 })
 
 test('effort choices follow the model that will run, the CLI default when none is picked', () => {
-  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-opus-4-6'), ['low', 'medium', 'high', 'max'])
-  assert.deepEqual(effortOptions(catalog, 'claude', ''), ['low', 'medium', 'high', 'xhigh'])
-  assert.deepEqual(effortOptions(catalog, 'claude', 'haiku'), [])
-  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-custom'), ['low', 'medium', 'high', 'xhigh'])
+  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-opus-4-6'), ['auto', 'low', 'medium', 'high', 'max'])
+  assert.deepEqual(effortOptions(catalog, 'claude', ''), ['auto', 'low', 'medium', 'high', 'xhigh'])
+  assert.deepEqual(effortOptions(catalog, 'claude', 'haiku'), ['auto'])
+  assert.deepEqual(effortOptions(catalog, 'claude', 'claude-custom'), ['auto', 'low', 'medium', 'high', 'xhigh'])
 })
 
 test('picking another model lowers an effort it does not accept', () => {

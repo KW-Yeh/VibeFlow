@@ -1,5 +1,7 @@
 # Spec：Agent 模型清單與 effort 改由本機 CLI 取得
 
+> 本文件記錄模型清單功能的原始需求。後續 effort 預設已改為 `auto`，由 Jev 依目前模型選擇；以 [Jev effort routing](../jev-routing/spec.md) 為準。
+
 - 狀態：已確認
 - Ticket：尚無
 - 需求來源：2026-10-07 對話。使用者要求「不設 API key、不用開發者個人憑證」取得可用模型，並指定兩個做法：

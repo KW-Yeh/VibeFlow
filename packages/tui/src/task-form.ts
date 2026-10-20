@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
 import type { AgentCli, AgentCliId, AgentEffort, AgentModel } from '../../core/src/agents'
-import { clampEffort, modelFor, selectableEfforts } from '../../core/src/effort'
+import { clampEffort, isManualEffort, modelFor, selectableEfforts } from '../../core/src/effort'
 import { taskModel } from '../../core/src/launch'
 import type { GitInfo } from '../../core/src/git'
 import type { RecentProjectEntry } from '../../core/src/recent-projects'
@@ -17,6 +17,7 @@ const h = React.createElement
 
 /** Mirrors the Web UI's effort slider (renderer/components/task-effort-slider.tsx). */
 export const EFFORTS: { value: AgentEffort; label: string; description: string }[] = [
+  { value: 'auto', label: '自動', description: 'Jev 依任務與目前模型選擇推理強度。' },
   { value: 'low', label: '快速', description: '適合範圍明確、低風險的小任務。' },
   { value: 'medium', label: '標準', description: '兼顧速度與推理深度，適合一般開發任務。' },
   { value: 'high', label: '深入', description: '適合跨檔案、除錯或需要較多判斷的任務。' },
@@ -24,7 +25,7 @@ export const EFFORTS: { value: AgentEffort; label: string; description: string }
   { value: 'max', label: '最大', description: '最深的推理，適合最困難的問題。' },
   { value: 'ultra', label: '委派', description: '最深推理並自動委派子任務，耗時與用量可能明顯增加。' },
 ]
-const DEFAULT_EFFORT: AgentEffort = 'medium'
+const DEFAULT_EFFORT: AgentEffort = 'auto'
 
 export type FieldId =
   | 'title'
@@ -151,7 +152,7 @@ export function modelOptions(ctx: FormContext, agentCli: AgentCliId, current: st
 
 /** Effort levels the model that will actually run accepts (the agent's default when none is picked). */
 export function effortOptions(ctx: FormContext, agentCli: AgentCliId, model: string): readonly AgentEffort[] {
-  return selectableEfforts(modelFor(ctx.models[agentCli], taskModel({ agentCli, model })))
+  return ['auto', ...selectableEfforts(modelFor(ctx.models[agentCli], taskModel({ agentCli, model })))]
 }
 
 /**
@@ -159,7 +160,7 @@ export function effortOptions(ctx: FormContext, agentCli: AgentCliId, model: str
  * takes no effort leaves the card's choice alone; the launch just omits it.
  */
 export function fitEffort<T extends Pick<FormState, 'agentCli' | 'model' | 'effort'>>(ctx: FormContext, s: T): T {
-  const effort = clampEffort(s.effort, effortOptions(ctx, s.agentCli, s.model)) ?? s.effort
+  const effort = s.effort === 'auto' ? 'auto' : clampEffort(s.effort, effortOptions(ctx, s.agentCli, s.model).filter(isManualEffort)) ?? s.effort
   return effort === s.effort ? s : { ...s, effort }
 }
 
@@ -452,7 +453,6 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         return lines.length > 1 ? `${lines[0]} …（共 ${lines.length} 行）` : lines[0]
       }
       case 'effort': {
-        if (effortOptions(ctx, s.agentCli, s.model).length === 0) return '不適用'
         const e = EFFORTS.find((x) => x.value === s.effort) ?? EFFORTS[0]
         return `‹ ${e.label} · ${e.value} ›`
       }
@@ -493,7 +493,7 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
         : when
     }
     if (field === 'effort') {
-      if (effortOptions(ctx, s.agentCli, s.model).length === 0) return '這個 model 不支援調整推理強度，啟動時不會指定任務複雜度。'
+      if (effortOptions(ctx, s.agentCli, s.model).length === 1) return '這個 model 不支援調整推理強度，啟動時使用模型預設值。'
       const e = EFFORTS.find((x) => x.value === s.effort) ?? EFFORTS[0]
       return `${e.description} Claude Code 與 Codex 會在啟動此任務時套用；可選的級距依 model 而定。`
     }

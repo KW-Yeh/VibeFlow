@@ -380,21 +380,19 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return key
   }
 
-  /**
-   * The card keeps the effort the user picked; what reaches the CLI is what
-   * the model actually running accepts. Unknown models get the card's value.
-   */
-  function launchEffort(task: Task, selectedModel = taskModel(task)): Task['effort'] {
-    const model = models.findModel(taskAgent(task), selectedModel)
-    return model?.efforts ? clampEffort(task.effort, model.efforts) : task.effort
+  /** Resolve auto before launching; never pass the sentinel to an agent CLI. */
+  function launchEffort(task: Task, route?: Task['jevRoute']): Task['effort'] {
+    const effort = task.effort === 'auto' ? route?.effort : task.effort
+    const model = models.findModel(taskAgent(task), taskModel(task))
+    return model?.efforts ? clampEffort(effort, model.efforts) : effort
   }
 
   async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
-    let route = task.model?.trim() || task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
-    if (!task.model?.trim() && !intent.resume && intent.includeTaskPrompt !== false) {
+    let route = task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
+    if (task.effort === 'auto' && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
         const setRoute = (jevRoute: Task['jevRoute']): void => {
@@ -402,11 +400,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           bus.emit('state:changed', getState())
         }
         pending = (async () => {
-          setRoute({ status: 'routing', phase: 'judging' })
+          setRoute({ status: 'routing' })
           const candidateModels = (await (router.enabled === false
             ? models.get(taskAgent(task))
             : models.refresh(taskAgent(task)))).models
-          const selected = await router.route(task, candidateModels, (phase) => setRoute({ status: 'routing', phase }))
+          const selected = await router.route(task, candidateModels)
           setRoute(selected)
           return selected
         })().catch((err) => {
@@ -417,9 +415,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       }
       route = await pending
     }
-    const selectedModel = task.model?.trim() ? taskModel(task) : route?.model
     return buildAgentCommand(
-      { ...task, model: selectedModel, effort: launchEffort(task, selectedModel) },
+      { ...task, model: taskModel(task), effort: launchEffort(task, route) },
       settings.systemPrompt ?? '',
       {
         resume: intent.resume === true,
@@ -427,7 +424,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         library: library ?? undefined,
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
-        preflightPlan: !intent.resume ? route?.plan : undefined,
       },
       task.workspacePath
     )

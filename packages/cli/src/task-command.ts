@@ -30,7 +30,7 @@ task create options:
   --mode <mode>          ${MODES.join(' | ')}  (default: existing; "new" runs git init first)
   --agent <id>           Task agent: ${AGENT_IDS.join(' | ')}  (default: claude)
   --model <id>           Task model (default: the agent's own default)
-  --effort <level>       ${AGENT_EFFORTS.join(' | ')}  (default: medium, same as the UI)
+  --effort <level>       ${AGENT_EFFORTS.join(' | ')}  (default: auto, same as the UI)
   --auto-mode <on|off>   Let the agent act without asking for approval
                          (default: the board-wide setting, same as the UI)
   --attach <path>        Attach a file; repeat the flag for several files

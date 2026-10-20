@@ -27,6 +27,7 @@ import {
 import { listAgentModels } from '@/lib/api'
 import { taskModel } from '@/lib/claude'
 import { clampEffort, modelFor, selectableEfforts } from '@/lib/effort'
+import type { ManualEffort } from '@/lib/types'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -221,13 +222,13 @@ export function useModelEfforts(
   model: string,
   effort: AgentEffort,
   setEffort: (effort: AgentEffort) => void
-): readonly AgentEffort[] {
+): readonly ManualEffort[] {
   const info = modelFor(models, taskModel({ agentCli, model }))
   const levels = selectableEfforts(info)
   useEffect(() => {
     if (models === null) return
     const fitted = clampEffort(effort, levels)
-    if (fitted && fitted !== effort) setEffort(fitted)
+    if (effort !== 'auto' && fitted && fitted !== effort) setEffort(fitted)
   }, [models, levels, effort, setEffort])
   return levels
 }
@@ -329,7 +330,7 @@ export function AgentModelFields({
           }}
           className={F}
         >
-          <option value="">自動選擇（Jev）</option>
+          <option value="">使用 CLI 預設模型</option>
           {modelOptions.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -344,11 +345,6 @@ export function AgentModelFields({
           </p>
         )}
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
-        {!model && !customOpen && (
-          <p className="text-sm text-muted-foreground">
-            只選 Agent CLI 時，Jev 會判斷是否先規劃並選擇執行模型。可到「設定」輸入 Jev API key；未設定或呼叫失敗時使用 CLI 預設模型。
-          </p>
-        )}
         {customOpen && (
           <input
             name={`${title.toLowerCase().replace(/\s+/g, '-')}-custom-model`}

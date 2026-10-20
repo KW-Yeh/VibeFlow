@@ -121,6 +121,11 @@ test('buildAgentCommand — passes effort to both CLIs', () => {
   )
 })
 
+test('buildAgentCommand — never passes auto as a CLI effort', () => {
+  assert.ok(!buildAgentCommand({ ...TASK, effort: 'auto' }).includes('--effort auto'))
+  assert.ok(!buildAgentCommand({ ...CODEX_TASK, effort: 'auto' }).includes('model_reasoning_effort'))
+})
+
 test('buildAgentCommand — a card without a model leaves the choice to the CLI', () => {
   assert.ok(!buildAgentCommand({ ...TASK, model: undefined }).includes('--model'))
   const codex = buildAgentCommand({ ...CODEX_TASK, model: undefined, effort: 'high' })

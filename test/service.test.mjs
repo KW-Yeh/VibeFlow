@@ -331,52 +331,51 @@ test('a launch passes the effort through when the model is unknown', async (t) =
   assert.match(command, /--model claude-custom-1 --effort max /)
 })
 
-test('a family-only card uses Jev while an explicit model bypasses it', async (t) => {
+test('auto effort uses Jev for the selected model and manual effort bypasses it', async (t) => {
   const calls = []
   const router = { async route(task, list) {
     calls.push({ task, list })
-    return { status: 'routed', model: 'haiku', plannerModel: 'opus', plan: 'Inspect the auth flow.' }
+    return { status: 'routed', effort: 'high' }
   } }
   const { core, sessions, task } = await coreWithTask(t, {
     coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+    task: { model: 'sonnet' },
   })
   await core.handlers['pty:start']({ taskId: task.id, launch: {} })
   assert.equal(calls.length, 1)
-  assert.match(sessions.starts[0].command, /--model haiku /)
-  assert.match(sessions.starts[0].command, /Inspect the auth flow/)
+  assert.match(sessions.starts[0].command, /--model sonnet --effort high /)
   const routed = core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id)
-  assert.equal(routed.model, undefined)
-  assert.equal(routed.jevRoute.model, 'haiku')
+  assert.equal(routed.model, 'sonnet')
+  assert.equal(routed.effort, 'auto')
+  assert.equal(routed.jevRoute.effort, 'high')
   await core.handlers['pty:start']({ taskId: task.id, launch: { resume: true }, fresh: true })
   assert.equal(calls.length, 1)
 
   const fixed = await coreWithTask(t, {
     coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
-    task: { model: 'sonnet' },
+    task: { model: 'sonnet', effort: 'medium' },
   })
   await fixed.core.handlers['pty:start']({ taskId: fixed.task.id, launch: {} })
   assert.equal(calls.length, 1)
-  assert.match(fixed.sessions.starts[0].command, /--model sonnet /)
+  assert.match(fixed.sessions.starts[0].command, /--model sonnet --effort medium /)
 })
 
-test('the card shows each Jev routing phase on the board before the agent starts', async (t) => {
+test('the card shows Jev routing before the agent starts', async (t) => {
   let seen
   let release
   const gate = new Promise((resolve) => { release = resolve })
-  const router = { async route(task, list, onPhase) {
-    onPhase('planning')
+  const router = { async route() {
     await gate
-    onPhase('selecting')
-    return { status: 'routed', model: 'haiku' }
+    return { status: 'routed', effort: 'high' }
   } }
   const { core, sessions, task } = await coreWithTask(t, {
     coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
   })
   const read = () => core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id).jevRoute
   const started = core.handlers['pty:start']({ taskId: task.id, launch: {} })
-  for (let i = 0; i < 50 && read()?.phase !== 'planning'; i++) await new Promise((r) => setTimeout(r, 10))
+  for (let i = 0; i < 50 && read()?.status !== 'routing'; i++) await new Promise((r) => setTimeout(r, 10))
   seen = read()
-  assert.deepEqual({ status: seen.status, phase: seen.phase }, { status: 'routing', phase: 'planning' })
+  assert.equal(seen.status, 'routing')
   assert.equal(sessions.starts.length, 0)
   release()
   await started

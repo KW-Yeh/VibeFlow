@@ -670,9 +670,9 @@ export function SettingsDialog({
 
           <section className="space-y-3">
             <div>
-              <h3 className="text-base font-medium">Jev 自動選模</h3>
+              <h3 className="text-base font-medium">Jev 自動選擇 effort</h3>
               <p className="text-sm text-muted-foreground">
-                只選 Agent CLI、不指定模型的卡片會使用 Jev。金鑰只儲存在本機主機資料目錄，不會放入看板狀態或回傳給瀏覽器。
+                任務的 effort 設為 auto 時，Jev 會依目前模型選擇推理強度。金鑰只儲存在本機主機資料目錄，不會放入看板狀態或回傳給瀏覽器。
               </p>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -706,7 +706,7 @@ export function SettingsDialog({
             <div>
               <h3 className="text-base font-medium">CLI 與帳號設定</h3>
               <p className="text-sm text-muted-foreground">
-                Model 清單直接取自已登入的 Agent CLI，不需要 API key；Jev 自動選模使用上方獨立的金鑰。設定 GitHub CLI 以支援本機 GitHub 操作。
+                Model 清單直接取自已登入的 Agent CLI，不需要 API key；Jev 自動選擇 effort 使用上方獨立的金鑰。設定 GitHub CLI 以支援本機 GitHub 操作。
               </p>
             </div>
             <div className="grid gap-2">

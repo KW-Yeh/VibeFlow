@@ -331,17 +331,16 @@ function TaskCard({
 
       {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
 
-      {task.jevRoute?.status === 'routing' && (
+      {task.effort === 'auto' && task.jevRoute?.status === 'routing' && (
         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
           <Loader2 className="size-3 shrink-0 animate-spin" />
           <span className="min-w-0 truncate">Jev：{jevRoutingLabel(task.jevRoute)}</span>
         </p>
       )}
 
-      {task.jevRoute && task.jevRoute.status !== 'routing' && (
+      {task.effort === 'auto' && task.jevRoute && task.jevRoute.status !== 'routing' && (
         <p className="mt-1.5 truncate text-xs text-muted-foreground" title={task.jevRoute.reason}>
-          Jev：{task.jevRoute.model ?? 'CLI 預設模型'}{task.jevRoute.plannerModel ? ` · ${task.jevRoute.plannerModel} 規劃` : ''}
-          {task.jevRoute.status === 'fallback' ? '（備援）' : ''}
+          Jev effort：{task.jevRoute.effort ?? '模型預設值'}
         </p>
       )}
 

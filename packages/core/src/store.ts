@@ -38,11 +38,11 @@ export interface Task {
   pushed?: boolean
   /** Agent CLI used for this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId
-  /** Model id. Absent = Jev routes this run when configured. */
+  /** Model id. Absent = use the agent CLI's default. */
   model?: string
-  /** Effective model and optional planning result for an automatically routed run. */
+  /** Jev's effort decision for an auto-effort run. */
   jevRoute?: JevRoute
-  /** Reasoning depth. Absent = provider/model default. */
+  /** Reasoning depth. `auto` asks Jev; absent = provider/model default for older cards. */
   effort?: AgentEffort
   /**
    * Whether this card's agent may act without asking for approval. Absent =

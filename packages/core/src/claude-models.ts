@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { AgentModel } from './agents'
-import { isAgentEffort } from './effort'
+import { isManualEffort } from './effort'
 import { spawnJsonLines, type OpenJsonLinesChannel } from './json-lines-process'
 
 const CLAUDE_MODELS_TIMEOUT_MS = 15_000
@@ -65,7 +65,7 @@ export function parseClaudeInitialize(message: unknown): AgentModel[] {
     const label = typeof entry.displayName === 'string' && entry.displayName.trim() ? entry.displayName.trim() : id
     const description = typeof entry.description === 'string' && entry.description.trim() ? entry.description.trim() : undefined
     const levels = entry.supportsEffort === true && Array.isArray(entry.supportedEffortLevels)
-      ? entry.supportedEffortLevels.filter(isAgentEffort)
+      ? entry.supportedEffortLevels.filter(isManualEffort)
       : []
     const isDefault = !defaultMarked && defaultResolved !== undefined && entry.resolvedModel === defaultResolved
     if (isDefault) defaultMarked = true

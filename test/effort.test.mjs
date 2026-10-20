@@ -15,7 +15,8 @@ const haiku = { id: 'haiku', label: 'Haiku 4.5', efforts: [] }
 const builtin = { id: 'sonnet', label: 'Sonnet' }
 
 test('levels are ordered shallow → deep and validated', () => {
-  assert.deepEqual(AGENT_EFFORTS, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+  assert.deepEqual(AGENT_EFFORTS, ['auto', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
+  assert.ok(isAgentEffort('auto'))
   assert.ok(isAgentEffort('ultra'))
   assert.ok(!isAgentEffort('minimal'))
   assert.ok(!isAgentEffort(undefined))
@@ -51,4 +52,5 @@ test('clampEffort falls back to the shallowest allowed level when every allowed 
 
 test('clampEffort leaves an unset effort unset', () => {
   assert.equal(clampEffort(undefined, opus.efforts), undefined)
+  assert.equal(clampEffort('auto', opus.efforts), undefined)
 })

@@ -1,19 +1,19 @@
-# Jev routing
+# Jev effort routing
 
 ## Intent
 
-When a card selects only Claude Code or Codex, VibeFlow asks TypeSafe Jev whether the task is complex or unclear enough to warrant a planning pass. If so, the strongest available model in that agent's catalog creates a read-only plan. Jev then selects an execution model from the same agent's available low, middle, and high cost tiers. A card with an explicit model id runs that exact model without Jev or the planning pass.
+Each card chooses its agent and optional model independently of Jev. A card without a model id uses the agent CLI's own default. New cards default to effort `auto`; at launch Jev selects a reasoning effort suitable for the task and the model currently selected for that card. Manual effort choices bypass Jev.
 
 ## Behavior
 
-- The host reads a Jev API key saved through Settings, falling back to `TYPESAFE_API_KEY` in its environment, and sends the card title and description to TypeSafe's `/v1/systemone` endpoint. If planning is selected, the planner CLI also reads the task worktree. The browser never receives the saved key after submission.
-- Settings saves the key in a separate host-only `jev-api-key` file under the selected store directory, mode 0600 on POSIX, rather than in `vibeflow-state.json`. It exposes only configured/source status. Saving or removing the key takes effect without restarting the host.
-- The first Jev request judges complexity and whether planning helps. The second sees the plan, if any, and picks an exact id from the signed-in CLI's model catalog.
-- Only model ids present in the catalog and safe to pass to the CLI can be selected. Catalog order is used to pick the first model in each relative cost tier. These tiers are approximate, not provider prices.
-- The chosen model and optional plan are recorded on the card. The plan is added to the first execution prompt as guidance, not as a replacement for the user's request. A resume reuses the model without making another Jev call.
-- While routing runs, the card's `jevRoute` is `status: 'routing'` with a `phase` (judging → planning, only when a plan is chosen → selecting). The board card and the workspace panel show it with a spinner, and the agent starts only once routing settles. A `routing` record is never used to pick a model, so one left behind by a host crash is ignored at the next launch.
-- If the key is absent or a Jev/planning call fails, the card shows the reason and starts with the CLI's own default model. An explicit model bypasses the fallback mechanism too.
+- The host reads a Jev API key saved through Settings, falling back to `TYPESAFE_API_KEY`. It sends the card prompt, agent, current model, and that model's supported effort levels to TypeSafe's `/v1/systemone` endpoint. The browser never receives the saved key after submission.
+- Settings saves the key in a separate host-only `jev-api-key` file under the selected store directory, mode 0600 on POSIX, rather than in `vibeflow-state.json`.
+- When the model catalog names the current or default model, Jev may choose only levels that model declares. When the catalog lacks effort data, the conservative `low` through `xhigh` levels are offered. Models that declare no effort support skip the request.
+- The chosen effort is recorded on the card as `jevRoute.effort`; `Task.effort` remains `auto`. A resume reuses the decision. A new run asks again.
+- While the request runs, the card shows `jevRoute.status: 'routing'` and starts the agent after the decision settles. A transient routing record left by a host crash is ignored.
+- A missing key, failed request, or unsupported answer records a fallback reason and launches without an effort flag, letting the model use its own default.
+- Explicit effort choices retain the existing per-model clamping behavior and do not call Jev.
 
 ## Limits
 
-Routing happens when the card starts, not on every message in an existing agent session. Provider model names and relative costs can change; the catalog is authoritative for availability, while tier detection is a heuristic. The planner receives at most 12,000 characters of card text and its output is capped at 8,000 characters.
+Jev runs when a task begins, not on every message in an existing agent session. It sees at most 12,000 characters of card prompt. A CLI default model may differ from a cached catalog entry if the user's CLI configuration changes; in that case the CLI remains authoritative and may reject an incompatible effort.

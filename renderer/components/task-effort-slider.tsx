@@ -1,13 +1,14 @@
 import { Gauge } from 'lucide-react'
 
 import { clampEffort } from '@/lib/effort'
-import type { AgentEffort } from '@/lib/types'
+import type { AgentEffort, ManualEffort } from '@/lib/types'
 
 const EFFORT_OPTIONS: ReadonlyArray<{
   value: AgentEffort
   label: string
   description: string
 }> = [
+  { value: 'auto', label: '自動', description: 'Jev 會依任務與目前模型選擇合適的推理強度。' },
   { value: 'low', label: '快速', description: '適合範圍明確、低風險的小任務。' },
   { value: 'medium', label: '標準', description: '兼顧速度與推理深度，適合一般開發任務。' },
   { value: 'high', label: '深入', description: '適合跨檔案、除錯或需要較多判斷的任務。' },
@@ -25,7 +26,7 @@ const EFFORT_OPTIONS: ReadonlyArray<{
  * not import main at runtime, so the value is duplicated on purpose — change
  * both together (test/agents.test.mjs guards the pair).
  */
-export const DEFAULT_TASK_EFFORT: AgentEffort = 'medium'
+export const DEFAULT_TASK_EFFORT: AgentEffort = 'auto'
 
 export function TaskEffortSlider({
   value,
@@ -36,31 +37,11 @@ export function TaskEffortSlider({
   value: AgentEffort
   onChange: (value: AgentEffort) => void
   /** Levels the selected model accepts; empty when it takes no effort. */
-  levels: readonly AgentEffort[]
+  levels: readonly ManualEffort[]
   disabled?: boolean
 }) {
-  const options = EFFORT_OPTIONS.filter((option) => levels.includes(option.value))
-
-  if (options.length === 0) {
-    return (
-      <div className="space-y-2.5 rounded-lg border border-border/50 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex items-center gap-1.5 text-base font-medium">
-            <Gauge className="size-4 text-muted-foreground" />
-            任務複雜度
-          </span>
-          <span className="rounded-full bg-muted px-2.5 py-1 text-sm font-medium text-muted-foreground">
-            不適用
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          這個 model 不支援調整推理強度，啟動時不會指定任務複雜度。
-        </p>
-      </div>
-    )
-  }
-
-  const shown = clampEffort(value, levels) ?? options[0].value
+  const options = EFFORT_OPTIONS.filter((option) => option.value === 'auto' || levels.includes(option.value))
+  const shown = value === 'auto' ? value : clampEffort(value, levels) ?? 'auto'
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.value === shown)
@@ -104,7 +85,7 @@ export function TaskEffortSlider({
         ))}
       </div>
       <p className="text-sm text-muted-foreground">
-        {selected.description} Claude Code 與 Codex 會在啟動此任務時套用；可選的級距依 model 而定。
+        {levels.length === 0 ? '這個 model 不支援調整推理強度，啟動時使用模型預設值。' : selected.description}
       </p>
     </div>
   )

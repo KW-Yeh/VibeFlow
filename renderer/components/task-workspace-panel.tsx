@@ -406,17 +406,16 @@ function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'tas
         </p>
       )}
 
-      {task.jevRoute?.status === 'routing' && (
+      {task.effort === 'auto' && task.jevRoute?.status === 'routing' && (
         <div className="flex items-center gap-2 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground" role="status">
           <Loader2 className="size-3.5 shrink-0 animate-spin" />
-          Jev 路由中：{jevRoutingLabel(task.jevRoute)}（完成後才會啟動 agent）
+          Jev：{jevRoutingLabel(task.jevRoute)}（完成後才會啟動 agent）
         </div>
       )}
 
-      {task.jevRoute && task.jevRoute.status !== 'routing' && (
+      {task.effort === 'auto' && task.jevRoute && task.jevRoute.status !== 'routing' && (
         <div className="rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
-          Jev：{task.jevRoute.model ?? 'CLI 預設模型'}
-          {task.jevRoute.plannerModel && ` · 先由 ${task.jevRoute.plannerModel} 規劃`}
+          Jev effort：{task.jevRoute.effort ?? '模型預設值'}
           {task.jevRoute.reason && <p>自動選擇未完成：{task.jevRoute.reason}</p>}
         </div>
       )}

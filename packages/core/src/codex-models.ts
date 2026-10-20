@@ -1,6 +1,6 @@
 import os from 'os'
 import type { AgentModel } from './agents'
-import { isAgentEffort } from './effort'
+import { isManualEffort } from './effort'
 import { execEnv } from './env'
 import { spawnJsonLines, type OpenJsonLinesChannel } from './json-lines-process'
 
@@ -65,7 +65,7 @@ export function parseCodexModelPage(result: Record<string, unknown>): { models: 
     const efforts = Array.isArray(entry.supportedReasoningEfforts)
       ? entry.supportedReasoningEfforts
           .map((e) => (isRecord(e) ? e.reasoningEffort : undefined))
-          .filter(isAgentEffort)
+          .filter(isManualEffort)
       : undefined
     models.push({
       id,

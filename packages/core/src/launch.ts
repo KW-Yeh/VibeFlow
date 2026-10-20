@@ -275,8 +275,6 @@ function namespaceHash(namespace: string): string {
 
 /** Options controlling how a launch command is built. */
 export interface LaunchOptions {
-  /** Read-only preparation from a separate planning model. */
-  preflightPlan?: string
   /**
    * Include the card title and description as the launch's initial message.
    * Defaults to true. Set false for an interactive agent shell that receives
@@ -345,7 +343,7 @@ function assembleCommand(
       ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
-    const effortFlag = effort ? ` --effort ${effort}` : ''
+    const effortFlag = effort && effort !== 'auto' ? ` --effort ${effort}` : ''
     // Library skills ride in as a session-only plugin; --add-dir is what makes
     // its scripts readable and runnable from inside the worktree.
     const library = opts?.library
@@ -365,7 +363,7 @@ function assembleCommand(
   } else {
     // Codex has no separate system-prompt flag — fold it into the body.
     const combined = [systemPrompt, prompt].filter(Boolean).join('\n\n')
-    const codexEffortFlag = effort
+    const codexEffortFlag = effort && effort !== 'auto'
       ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
       : ''
     // Codex discovers skills only from $CODEX_HOME/skills, so the library is
@@ -462,7 +460,7 @@ export function buildAgentCommand(
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
   const prompt = includeTaskPrompt && !opts?.resume
-    ? [buildPrompt(task), opts?.preflightPlan ? `前置規劃（供參考，請先核對程式碼再執行）：\n${opts.preflightPlan}` : ''].filter(Boolean).join('\n\n')
+    ? buildPrompt(task)
     : ''
   // An agent-only launch is intentionally independent from the task's pinned
   // conversation. Claude creates a fresh interactive session of its own.

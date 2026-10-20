@@ -192,6 +192,9 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     }
     await modelSelect.locator('option', { hasText: 'Fable 5.1' }).waitFor({ state: 'attached' })
     assert.equal(await modelSelect.locator('option[value="default"]').count(), 0)
+    assert.equal(await modelSelect.inputValue(), '', 'the CLI default model is selected independently of Jev')
+    assert.equal(await modelSelect.locator('option[value=""]').textContent(), '使用 CLI 預設模型')
+    assert.equal(await page.locator('input[name="task-effort"]').getAttribute('aria-valuetext'), '自動 (auto)')
     await page.getByRole('button', { name: 'Advanced' }).click()
   }
 
@@ -220,9 +223,11 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.getByRole('button', { name: '開始' }).click()
   await waitForTerminal(page, 'fake-claude ready')
   const routedState = await page.evaluate(() => window.vibeflow.getState())
+  assert.equal(routedState.board.in_progress[0]?.effort, 'auto')
+  assert.equal(routedState.board.in_progress[0]?.model, undefined)
   assert.equal(routedState.board.in_progress[0]?.jevRoute?.status, 'fallback')
   assert.match(routedState.board.in_progress[0]?.jevRoute?.reason ?? '', /TYPESAFE_API_KEY/)
-  await page.getByText('Jev：CLI 預設模型（備援）').first().waitFor()
+  await page.getByText('Jev effort：模型預設值').first().waitFor()
 
   // Both printed URLs and OSC 8 hyperlinks open safely in a new tab.
   await waitForTerminal(page, 'https://example.com/plain-link')

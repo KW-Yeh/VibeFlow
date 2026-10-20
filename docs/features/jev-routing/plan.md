@@ -1,3 +1,5 @@
+> Historical implementation plan. The current behavior is documented in [spec.md](spec.md).
+
 # Implementation and verification
 
 - Add a host-only Jev client using the official `systemone` request and choice-answer contract. Keep the key in the host environment and inject transport/planner functions for tests.

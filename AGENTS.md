@@ -82,7 +82,7 @@ npm run vibeflow -- task create \
   unless you intend to start them from the UI.
 - Every other creation option the new-task dialog offers has a flag:
   `--base-branch`, `--branch`, `--mode existing|new` (`new` runs `git init` first),
-  `--agent` / `--model`, `--effort low|medium|high|xhigh`, and
+  `--agent` / `--model`, `--effort auto|low|medium|high|xhigh|max|ultra`, and
   `--attach <path>` (repeat per file; the CLI reads the bytes and infers the mime).
 - `--branch` is the branch the task runs on. Left out, the name is derived from
   the card (`branch-name.ts`) and quietly de-duplicated when it is created; given
@@ -92,7 +92,7 @@ npm run vibeflow -- task create \
   that already exists **on origin only** is not an error: the branch is fetched
   and checked out so the card continues that work instead of starting a new
   branch off the base. Same field, same rules, in the new-task dialog.
-- `--effort` defaults to `medium`, matching the UI. The default lives in
+- `--effort` defaults to `auto`, matching the UI. The default lives in
   `packages/core/src/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
 - Unknown flags are rejected, so a typo fails loudly instead of being ignored.

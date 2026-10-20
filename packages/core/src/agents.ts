@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { AgentEffort } from './effort'
+import type { AgentEffort, ManualEffort } from './effort'
 import { execEnv } from './env'
 
 export { AGENT_EFFORTS, type AgentEffort } from './effort'
@@ -16,7 +16,7 @@ export type AgentCliId = 'claude' | 'codex'
  * The renderer cannot import main at runtime, so the slider's default is a
  * deliberate duplicate — test/agents.test.mjs asserts the two literals agree.
  */
-export const DEFAULT_TASK_EFFORT: AgentEffort = 'medium'
+export const DEFAULT_TASK_EFFORT: AgentEffort = 'auto'
 
 export interface AgentModel {
   /** Value passed to the CLI's --model flag. */
@@ -29,7 +29,7 @@ export interface AgentModel {
    * Effort levels the CLI says this model accepts. Absent = unknown (the
    * list came from a source without effort data); `[]` = takes no effort.
    */
-  efforts?: AgentEffort[]
+  efforts?: ManualEffort[]
   /** The model the CLI runs when the card picks none. */
   isDefault?: boolean
 }
