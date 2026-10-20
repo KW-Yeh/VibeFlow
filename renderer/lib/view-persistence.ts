@@ -74,7 +74,7 @@ export const writeInboxTab = (tab: InboxTab | null) => write(INBOX_TAB_KEY, tab)
 
 export function readJiraScope(): JiraScope {
   const value = read(JIRA_SCOPE_KEY)
-  return value === 'sprint' || value === 'all' ? value : 'current'
+  return value === 'all' ? value : 'sprint'
 }
 
 export const writeJiraScope = (scope: JiraScope) => write(JIRA_SCOPE_KEY, scope)

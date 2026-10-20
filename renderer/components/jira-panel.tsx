@@ -79,7 +79,6 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
         <span className="shrink-0 text-muted-foreground">抓取範圍</span>
         <select aria-label="Jira 抓取範圍" value={scope} onChange={(event) => onScopeChange(event.target.value as JiraScope)}
           className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
-          <option value="current">目前工作</option>
           <option value="sprint">Active Sprint</option>
           <option value="all">全部指派給我</option>
         </select>

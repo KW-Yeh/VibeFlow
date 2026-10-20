@@ -2,7 +2,7 @@ import { adfToMarkdown } from './jira-adf'
 import { defaultAcliRunner, getJiraAuthStatus, type AcliRunner, type JiraAuthStatus } from './jira-auth'
 
 export interface JiraRef { key: string; url: string; site: string }
-export type JiraScope = 'current' | 'sprint' | 'all'
+export type JiraScope = 'sprint' | 'all'
 export type JiraStatusCategory = 'new' | 'indeterminate' | 'done'
 export interface JiraAttachment { id: string; filename: string; size: number | null; url: string }
 export interface JiraTicket {
@@ -34,19 +34,18 @@ export interface JiraInbox {
 type Raw = Record<string, unknown>
 const asRaw = (v: unknown): Raw => v && typeof v === 'object' && !Array.isArray(v) ? v as Raw : {}
 const nameOf = (v: unknown): string => typeof v === 'string' ? v : String(asRaw(v).name ?? '')
-export const JIRA_INBOX_JQL = 'assignee = currentUser() AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC'
+export const JIRA_INBOX_JQL = 'assignee = currentUser() ORDER BY updated DESC'
 const JIRA_SCOPE_JQL: Record<JiraScope, string> = {
-  current: JIRA_INBOX_JQL,
   sprint: 'assignee = currentUser() AND sprint in openSprints() ORDER BY updated DESC',
-  all: 'assignee = currentUser() ORDER BY updated DESC',
+  all: JIRA_INBOX_JQL,
 }
 export const DEFAULT_POINT_FIELDS = ['customfield_10033', 'customfield_10016']
 export const JIRA_CACHE_TTL_MS = 5 * 60 * 1000
 
-export function buildSearchArgs(scope: JiraScope = 'current'): string[] {
+export function buildSearchArgs(scope: JiraScope = 'sprint'): string[] {
   return ['jira', 'workitem', 'search', '--jql', JIRA_SCOPE_JQL[scope], '--fields',
     'key,summary,status,issuetype,priority,description',
-    '--json', '--paginate', ...(scope === 'all' ? [] : ['--limit', '200'])]
+    '--json', '--paginate']
 }
 
 export function buildViewArgs(key: string, pointFields = DEFAULT_POINT_FIELDS): string[] {
@@ -151,7 +150,7 @@ export function createJiraService(options: {
       const auth = await authStatus()
       if (!auth.installed) return { status: 'acli-missing', fetchedAt: 0, tickets: [] }
       if (!auth.authenticated || !auth.site) return { status: 'unauthenticated', fetchedAt: 0, tickets: [] }
-      const scope = opts.scope ?? 'current'
+      const scope = opts.scope ?? 'sprint'
       const cacheKey = `${auth.site}:${scope}`
       const cached = cache.get(cacheKey)
       if (cached && !opts.force && now() - cached.at < JIRA_CACHE_TTL_MS) return cached.value

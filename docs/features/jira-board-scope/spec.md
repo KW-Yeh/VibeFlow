@@ -11,7 +11,7 @@ Jira 分頁在可用寬度內呈現四個固定欄位，空欄也顯示。使用
 
 1. 欄位順序固定為 To Do、In Progress、To be Released、Done。寬視窗四欄撐滿列表區；窄視窗只在列表區水平捲動。
 2. `To be Released` 精確歸入同名欄；其他狀態依 Jira status category 歸入 To Do、In Progress 或 Done，卡片保留原始狀態標籤。每欄沿用期限與 key 排序。
-3. 抓取範圍提供「目前工作」（原有查詢）、「Active Sprint」（指派給自己且在 active sprint）、「全部指派給我」（不加狀態或 sprint 條件）。切換時重新查詢 Jira；重新整理只更新目前範圍。範圍存在瀏覽器本機。
+3. 抓取範圍提供「Active Sprint」（預設，指派給自己且在 active sprint）與「全部指派給我」（不加狀態或 sprint 條件）。切換時取得對應範圍的結果（可用五分鐘快取）；重新整理只更新目前範圍。範圍存在瀏覽器本機。
 4. 沒有符合範圍的 ticket 時仍呈現四個零筆欄位及空狀態提示。登入、詳情與建卡流程維持原有行為。
 
 ## 驗收

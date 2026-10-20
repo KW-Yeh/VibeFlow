@@ -176,7 +176,7 @@ export default function HomePage() {
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
   })
   const [inboxTab, setInboxTab] = useState<InboxTab | null>(null)
-  const [jiraScope, setJiraScope] = useState<JiraScope>('current')
+  const [jiraScope, setJiraScope] = useState<JiraScope>('sprint')
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
 
   useEffect(() => {
