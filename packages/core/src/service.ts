@@ -578,8 +578,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return status
     },
     'jira:inbox': (payload) => {
-      const p = payload === undefined ? {} : obj<{ force?: unknown }>(payload, 'payload')
-      return jira.inbox({ force: p.force === true })
+      const p = payload === undefined ? {} : obj<{ force?: unknown; scope?: unknown }>(payload, 'payload')
+      if (p.scope !== undefined && p.scope !== 'current' && p.scope !== 'sprint' && p.scope !== 'all') {
+        throw Object.assign(new Error('Invalid Jira scope'), { code: 'INVALID_REQUEST' })
+      }
+      return jira.inbox({ force: p.force === true, scope: p.scope })
     },
 
     'env:detectAgents': () => detectAgents(),

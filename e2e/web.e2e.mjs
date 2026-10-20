@@ -368,6 +368,7 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   t.after(async () => { await cleanup(); await cleanupNewProject(); fs.rmSync(tmp, { recursive: true, force: true }) })
   let folderPicks = 0
   const openedUrls = []
+  const jiraSearches = []
   setPlatform({ ...createNodePlatform({ userDataDir: tmp }),
     pickFolder: async () => ++folderPicks === 2 ? { path: newProjectPath } : { canceled: true },
     openExternal: async (url) => { openedUrls.push(url) },
@@ -388,7 +389,10 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   ]
   const core = createCore({ sessions, bus, version: '9.9.9',
     jiraAuthStatus: async () => ({ installed: true, authenticated: true, site: 'example.atlassian.net', email: 'me@example.com' }),
-    acliRunner: async (args) => JSON.stringify(args[2] === 'search' ? { issues: rows } : rows.find((row) => row.key === args[3])),
+    acliRunner: async (args) => {
+      if (args[2] === 'search') jiraSearches.push(args[args.indexOf('--jql') + 1])
+      return JSON.stringify(args[2] === 'search' ? { issues: rows } : rows.find((row) => row.key === args[3]))
+    },
     githubAuthStatus: async () => ({ installed: true, authenticated: true, login: 'me' }),
     ghRunner: async (args) => args[0] === 'search' && args[1] === 'issues' && args.includes('--assignee')
       ? JSON.stringify([{ repository: { nameWithOwner: 'e2e/VibeFlow' } }])
@@ -456,7 +460,19 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   assert.equal(await page.locator('button[aria-pressed]').count(), 2)
   assert.equal(await page.getByRole('button', { name: /^Status篩選/ }).count(), 0)
   assert.equal(await page.getByRole('region', { name: 'To Do，1 筆' }).count(), 1)
-  assert.equal(await page.getByRole('region', { name: 'Architecture Review，1 筆' }).count(), 1)
+  assert.equal(await page.getByRole('region', { name: 'In Progress，1 筆' }).count(), 1)
+  assert.equal(await page.getByRole('region', { name: 'To be Released，0 筆' }).count(), 1)
+  assert.equal(await page.getByRole('region', { name: 'Done，0 筆' }).count(), 1)
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 800 })
+    const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    assert.ok(pageWidth <= width, `Jira page overflows at ${width}px: ${pageWidth}px`)
+  }
+  await page.getByLabel('Jira 抓取範圍').selectOption('all')
+  for (let attempt = 0; jiraSearches.length < 2 && attempt < 30; attempt++) await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(jiraSearches.at(-1), 'assignee = currentUser() ORDER BY updated DESC')
+  await page.reload()
+  assert.equal(await page.getByLabel('Jira 抓取範圍').inputValue(), 'all')
   await page.getByRole('button', { name: /WR-5729/ }).click()
   await page.getByRole('dialog').waitFor()
   assert.equal(await page.getByRole('link', { name: 'WR-5729' }).getAttribute('href'), 'https://example.atlassian.net/browse/WR-5729')

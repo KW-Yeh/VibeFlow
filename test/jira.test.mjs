@@ -25,6 +25,10 @@ test('Jira search requests CLI-supported fields and view requests detail fields'
   assert.ok(args.includes(JIRA_INBOX_JQL))
   assert.equal(args[args.indexOf('--fields') + 1], 'key,summary,status,issuetype,priority,description')
   assert.deepEqual(args.slice(-4), ['--json', '--paginate', '--limit', '200'])
+  assert.match(buildSearchArgs('sprint').join(' '), /AND sprint in openSprints\(\)/)
+  assert.doesNotMatch(buildSearchArgs('sprint').join(' '), /statusCategory/)
+  assert.equal(buildSearchArgs('all')[buildSearchArgs('all').indexOf('--jql') + 1], 'assignee = currentUser() ORDER BY updated DESC')
+  assert.equal(buildSearchArgs('all').includes('--limit'), false)
   const view = buildViewArgs('WR-5729', ['customfield_12345'])
   assert.deepEqual(view.slice(0, 4), ['jira', 'workitem', 'view', 'WR-5729'])
   assert.match(view[view.indexOf('--fields') + 1], /customfield_12345/)
@@ -82,6 +86,27 @@ test('Jira inbox caches search for five minutes and force refreshes', async () =
   time += 300_001
   await service.inbox()
   assert.equal(calls, 6)
+})
+
+test('Jira scope uses separate cached searches', async () => {
+  const searches = []
+  const service = createJiraService({
+    authStatus: async () => ({ installed: true, authenticated: true, site }),
+    run: async (args) => {
+      if (args[2] === 'search') searches.push(args[args.indexOf('--jql') + 1])
+      return '[]'
+    },
+  })
+  await service.inbox({ scope: 'current' })
+  await service.inbox({ scope: 'sprint' })
+  await service.inbox({ scope: 'all' })
+  await service.inbox({ scope: 'current' })
+  assert.equal(searches.length, 3)
+  assert.match(searches[1], /sprint in openSprints\(\)/)
+  assert.equal(searches[2], 'assignee = currentUser() ORDER BY updated DESC')
+  service.clear()
+  await service.inbox({ scope: 'current' })
+  assert.equal(searches.length, 4)
 })
 
 test('Jira inbox merges individual work item details into search results', async () => {

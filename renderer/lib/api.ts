@@ -26,6 +26,7 @@ import type {
   JiraAuthStatus,
   JiraAuthEvent,
   JiraRef,
+  JiraScope,
   JevKeyStatus,
   GithubTaskLinks,
   LibraryEntry,
@@ -136,7 +137,7 @@ export function onJiraAuthEvent(callback: (event: JiraAuthEvent) => void): () =>
   return b ? b.onJiraAuthEvent(callback) : () => {}
 }
 
-export async function getJiraInbox(opts?: { force?: boolean }): Promise<JiraInbox | null> {
+export async function getJiraInbox(opts?: { force?: boolean; scope?: JiraScope }): Promise<JiraInbox | null> {
   const b = bridge()
   return b ? b.getJiraInbox(opts) : null
 }

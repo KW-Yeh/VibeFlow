@@ -9,14 +9,16 @@ import { openExternal } from '@/lib/api'
 import { jiraStatusColumns } from '@/lib/jira-columns'
 import { JIRA_CATEGORY_CLASS, dueInfo } from '@/lib/jira-display'
 import { cn } from '@/lib/utils'
-import type { JiraInbox, JiraTicket } from '@/lib/types'
+import type { JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
 
 export interface JiraProject { path: string; name: string }
 
-export function JiraPanel({ inbox, loading, error, onRefresh, boardCards, projects, onBrowseProject, onCreate, onOpenTask, onOpenSettings }: {
+export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefresh, boardCards, projects, onBrowseProject, onCreate, onOpenTask, onOpenSettings }: {
   inbox: JiraInbox | null
   loading: boolean
   error: string | null
+  scope: JiraScope
+  onScopeChange: (scope: JiraScope) => void
   onRefresh: () => void
   boardCards: Map<string, string>
   projects: JiraProject[]
@@ -72,7 +74,16 @@ export function JiraPanel({ inbox, loading, error, onRefresh, boardCards, projec
   )
 
   return <div className="flex min-h-0 flex-1 flex-col bg-background">
-    <div className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-5">
+    <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b border-border px-5 py-1">
+      <label className="flex items-center gap-2 text-sm">
+        <span className="shrink-0 text-muted-foreground">抓取範圍</span>
+        <select aria-label="Jira 抓取範圍" value={scope} onChange={(event) => onScopeChange(event.target.value as JiraScope)}
+          className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <option value="current">目前工作</option>
+          <option value="sprint">Active Sprint</option>
+          <option value="all">全部指派給我</option>
+        </select>
+      </label>
       <span className="ml-auto min-w-0 truncate text-sm text-muted-foreground">
         {inbox?.email ?? inbox?.site ?? ''}{inbox?.status === 'ok' ? ` · ${tickets.length} 筆` : ''}
         {inbox?.fetchedAt ? ` · ${new Date(inbox.fetchedAt).toLocaleTimeString()} 更新` : ''}
@@ -86,13 +97,13 @@ export function JiraPanel({ inbox, loading, error, onRefresh, boardCards, projec
       : inbox?.status === 'unauthenticated' ? notice('尚未登入 Atlassian。', true)
       : !inbox ? notice(loading ? '讀取 Jira 中…' : error ?? '無法讀取 Jira ticket')
       : inbox.error && tickets.length === 0 ? notice(inbox.error)
-      : tickets.length === 0 ? notice('目前沒有指派給你的 Jira ticket')
       : <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
-          <div className="flex min-h-full w-max max-w-none items-start gap-3">
+          {tickets.length === 0 && <p className="mb-4 text-sm text-muted-foreground">目前沒有符合抓取範圍的 Jira ticket</p>}
+          <div className="grid min-h-full min-w-[1040px] grid-cols-4 items-start gap-3">
             {columns.map((column) => <section key={column.name} aria-label={`${column.name}，${column.tickets.length} 筆`}
-              className="w-[min(300px,calc(100vw-5.5rem))] shrink-0 rounded-md border border-border bg-muted/20 p-2">
+              className="min-w-0 rounded-md border border-border bg-muted/20 p-2">
               <h3 className="flex min-w-0 items-center gap-2 px-1 py-1 text-sm font-medium">
-                <span className={cn('size-2 shrink-0 rounded-full', column.category === 'new' ? 'bg-muted-foreground' : column.category === 'done' ? 'bg-success' : 'bg-primary')} />
+                <span className={cn('size-2 shrink-0 rounded-full', column.name === 'To Do' ? 'bg-muted-foreground' : column.name === 'Done' ? 'bg-success' : 'bg-primary')} />
                 <span className="min-w-0 truncate" title={column.name}>{column.name}</span>
                 <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">{column.tickets.length}</span>
               </h3>

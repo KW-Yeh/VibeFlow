@@ -50,6 +50,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 
 | [jira-inbox](features/jira-inbox/spec.md) | Atlassian sign-in via `acli jira auth login --web` and a Jira tab of tickets assigned to me; Issues & PRs split into Jira / Issues / PRs tabs with their own filters; the terminal pane is hidden outside the board; item details in a modal; one-click card creation |
 | [work-order-page](features/work-order-page/spec.md) ([plan](features/work-order-page/plan.md)) | Refine the shared work-item view, Jira ticket layout, project selection, links, and attachment access |
+| [jira-board-scope](features/jira-board-scope/spec.md) ([plan](features/jira-board-scope/plan.md)) | Show Jira work items in four full-width columns and filter the Jira fetch scope |
 | [terminal-grid](features/terminal-grid/spec.md) ([plan](features/terminal-grid/plan.md)) | Independent project-folder terminals in a top-level grid, with one-click card actions |
 | [prompt-free-artifacts](features/prompt-free-artifacts/spec.md) ([plan](features/prompt-free-artifacts/plan.md)) | A launch sends only the custom system prompt and the card: no Library skills, prompt snippets or Artifact text; Artifact directories are created in core and files delivered explicitly through the task CLI |
 

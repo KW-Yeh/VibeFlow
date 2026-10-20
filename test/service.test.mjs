@@ -825,6 +825,8 @@ test('jira:inbox uses injected acli and a Jira-sourced card persists its ref', a
   assert.equal(inbox.tickets[0].key, 'WR-5729')
   assert.equal(calls.length, 2)
   assert.match(calls[0].join(' '), /openSprints\(\)/)
+  await core.handlers['jira:inbox']({ scope: 'all' })
+  assert.match(calls[2].join(' '), /assignee = currentUser\(\) ORDER BY updated DESC/)
 
   const jira = { key: 'WR-5729', site: 'example.atlassian.net', url: 'https://example.atlassian.net/browse/WR-5729' }
   const { task } = await core.handlers['vibeflow:createTask']({ title: 'WR-5729 Fix login', projectPath, baseBranch: null, jira })
@@ -832,5 +834,6 @@ test('jira:inbox uses injected acli and a Jira-sourced card persists its ref', a
   assert.deepEqual(getStore().get('board').backlog.find((row) => row.id === task.id).jira, jira)
   await assert.rejects(core.handlers['vibeflow:createTask']({ title: 'Bad', projectPath, baseBranch: null, jira: { ...jira, url: 'https://evil.example' } }), { code: 'INVALID_REQUEST' })
   assert.throws(() => core.handlers['jira:inbox']('force'), { code: 'INVALID_REQUEST' })
+  assert.throws(() => core.handlers['jira:inbox']({ scope: 'project = OTHER' }), { code: 'INVALID_REQUEST' })
   assert.throws(() => core.handlers['vibeflow:setSettings']({ jira: { storyPointsFields: ['bad'] } }), { code: 'INVALID_REQUEST' })
 })

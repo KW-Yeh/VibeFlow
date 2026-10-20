@@ -26,7 +26,7 @@ Channels added since the inventory:
 | `pty:peek` | Join a running session without restarting it (TUI terminal view) |
 | `pty:scrolled` / `pty:scroll-bottom` | Whether a session's own history view (tmux copy-mode) is off the live output, and return it there |
 | `projects:record` | `vibeflow open <path>` while a host runs, since only the host writes the store |
-| `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force }` |
+| `jira:authStatus` / `jira:inbox` | Atlassian CLI login state and assigned Jira tickets; inbox supports `{ force, scope? }`, with scope `current`, `sprint`, or `all` |
 | `settings:startJiraAuthLogin` / `settings:inputJiraAuthLogin` / `settings:cancelJiraAuthLogin` / `settings:logoutJiraAuth` | Interactive browser authentication through acli; `jira-auth:event` broadcasts PTY output and progress |
 | `host:info` / `host:shutdown` | `vibeflow` host only (`packages/cli/src/host.ts`) |
 | `host:updateStatus` / event `update:available` | Host's latest npm release check, broadcast when a newer version appears or clears. `installedVersion` / `restartBlocked` are set when a newer install is on disk but the host could not restart into it by itself (TUI host, or pty sessions running) |

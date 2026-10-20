@@ -1,12 +1,9 @@
-import type { JiraStatusCategory, JiraTicket } from './types'
+import type { JiraTicket } from './types'
 
 export interface JiraStatusColumn {
-  name: string
-  category: JiraStatusCategory
+  name: 'To Do' | 'In Progress' | 'To be Released' | 'Done'
   tickets: JiraTicket[]
 }
-
-const categoryOrder: Record<JiraStatusCategory, number> = { new: 0, indeterminate: 1, done: 2 }
 
 function keyNumber(key: string): number { return Number(key.split('-').at(-1)) || 0 }
 
@@ -16,19 +13,20 @@ function byDueDateAndKey(a: JiraTicket, b: JiraTicket): number {
   return a.dueDate.localeCompare(b.dueDate) || keyNumber(b.key) - keyNumber(a.key)
 }
 
-/** One column per status present in this inbox, with its own due-date order. */
+/** Keep a stable four-column board while preserving each ticket's actual Jira status. */
 export function jiraStatusColumns(tickets: JiraTicket[]): JiraStatusColumn[] {
-  const columns = new Map<string, JiraStatusColumn>()
+  const columns: JiraStatusColumn[] = [
+    { name: 'To Do', tickets: [] },
+    { name: 'In Progress', tickets: [] },
+    { name: 'To be Released', tickets: [] },
+    { name: 'Done', tickets: [] },
+  ]
   for (const ticket of tickets) {
-    const name = ticket.status.name
-    let column = columns.get(name)
-    if (!column) {
-      column = { name, category: ticket.status.category, tickets: [] }
-      columns.set(name, column)
-    }
-    column.tickets.push(ticket)
+    const status = ticket.status.name.toLowerCase()
+    const index = status === 'to be released' ? 2
+      : ticket.status.category === 'done' ? 3
+      : ticket.status.category === 'new' ? 0 : 1
+    columns[index].tickets.push(ticket)
   }
-  return [...columns.values()]
-    .sort((a, b) => categoryOrder[a.category] - categoryOrder[b.category] || a.name.localeCompare(b.name))
-    .map((column) => ({ ...column, tickets: column.tickets.sort(byDueDateAndKey) }))
+  return columns.map((column) => ({ ...column, tickets: column.tickets.sort(byDueDateAndKey) }))
 }

@@ -52,10 +52,12 @@ import { basenameFromPath } from '@/lib/workspace-path'
 import {
   readGithubFilters,
   readInboxTab,
+  readJiraScope,
   readTerminalTabs,
   readViewUrl,
   writeGithubFilters,
   writeInboxTab,
+  writeJiraScope,
   writeTerminalTabs,
   writeViewUrl,
 } from '@/lib/view-persistence'
@@ -67,6 +69,7 @@ import type {
   BoardState,
   GithubItem,
   JiraTicket,
+  JiraScope,
   RecentProjectEntry,
   NotificationSettings,
   ProgressNotification,
@@ -173,6 +176,7 @@ export default function HomePage() {
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
   })
   const [inboxTab, setInboxTab] = useState<InboxTab | null>(null)
+  const [jiraScope, setJiraScope] = useState<JiraScope>('current')
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
 
   useEffect(() => {
@@ -196,6 +200,7 @@ export default function HomePage() {
         ? [...savedTabs, { taskId: where.taskId, preview: true }]
         : savedTabs)
       setInboxTab(readInboxTab())
+      setJiraScope(readJiraScope())
       setGithubFilters(readGithubFilters())
       setLoaded(true)
     })
@@ -221,6 +226,7 @@ export default function HomePage() {
   useEffect(() => { if (loaded) writeViewUrl(view, selectedTaskId) }, [loaded, view, selectedTaskId])
   useEffect(() => { if (loaded) writeTerminalTabs(tabs) }, [loaded, tabs])
   useEffect(() => { if (loaded) writeInboxTab(inboxTab) }, [loaded, inboxTab])
+  useEffect(() => { if (loaded) writeJiraScope(jiraScope) }, [loaded, jiraScope])
   useEffect(() => { if (loaded) writeGithubFilters(githubFilters) }, [loaded, githubFilters])
 
   useEffect(() => {
@@ -545,7 +551,7 @@ export default function HomePage() {
   // the host never registers with the public PeerJS broker. The dialog and the
   // host stay wired up so the feature can be handed back with one prop.
   const github = useGithubInbox(board, loaded)
-  const jira = useJiraInbox(loaded)
+  const jira = useJiraInbox(loaded, jiraScope)
   const taskLinks = useGithubTaskLinks(board, loaded)
   const allTasks = [...board.in_progress, ...board.backlog, ...board.done]
   const githubCards = boardGithubCards(allTasks)
@@ -670,7 +676,7 @@ export default function HomePage() {
                       onViewChange={setView}
                       tab={currentInboxTab}
                       onTabChange={setInboxTab}
-                      jira={jira}
+                      jira={{ ...jira, scope: jiraScope, onScopeChange: setJiraScope }}
                       github={{ ...github, refresh: () => { void github.refresh(); void taskLinks.refresh() } }}
                       githubFilters={githubFilters}
                       onGithubFiltersChange={(kind, filters) => setGithubFilters((previous) => ({ ...previous, [kind]: filters }))}

@@ -2,6 +2,7 @@ import { adfToMarkdown } from './jira-adf'
 import { defaultAcliRunner, getJiraAuthStatus, type AcliRunner, type JiraAuthStatus } from './jira-auth'
 
 export interface JiraRef { key: string; url: string; site: string }
+export type JiraScope = 'current' | 'sprint' | 'all'
 export type JiraStatusCategory = 'new' | 'indeterminate' | 'done'
 export interface JiraAttachment { id: string; filename: string; size: number | null; url: string }
 export interface JiraTicket {
@@ -34,13 +35,18 @@ type Raw = Record<string, unknown>
 const asRaw = (v: unknown): Raw => v && typeof v === 'object' && !Array.isArray(v) ? v as Raw : {}
 const nameOf = (v: unknown): string => typeof v === 'string' ? v : String(asRaw(v).name ?? '')
 export const JIRA_INBOX_JQL = 'assignee = currentUser() AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC'
+const JIRA_SCOPE_JQL: Record<JiraScope, string> = {
+  current: JIRA_INBOX_JQL,
+  sprint: 'assignee = currentUser() AND sprint in openSprints() ORDER BY updated DESC',
+  all: 'assignee = currentUser() ORDER BY updated DESC',
+}
 export const DEFAULT_POINT_FIELDS = ['customfield_10033', 'customfield_10016']
 export const JIRA_CACHE_TTL_MS = 5 * 60 * 1000
 
-export function buildSearchArgs(): string[] {
-  return ['jira', 'workitem', 'search', '--jql', JIRA_INBOX_JQL, '--fields',
+export function buildSearchArgs(scope: JiraScope = 'current'): string[] {
+  return ['jira', 'workitem', 'search', '--jql', JIRA_SCOPE_JQL[scope], '--fields',
     'key,summary,status,issuetype,priority,description',
-    '--json', '--paginate', '--limit', '200']
+    '--json', '--paginate', ...(scope === 'all' ? [] : ['--limit', '200'])]
 }
 
 export function buildViewArgs(key: string, pointFields = DEFAULT_POINT_FIELDS): string[] {
@@ -138,17 +144,20 @@ export function createJiraService(options: {
   const run = options.run ?? defaultAcliRunner
   const authStatus = options.authStatus ?? (() => getJiraAuthStatus(run))
   const now = options.now ?? Date.now
-  let cache: { at: number; site: string; value: Promise<JiraInbox> } | null = null
+  const cache = new Map<string, { at: number; value: Promise<JiraInbox> }>()
   return {
-    clear() { cache = null },
-    async inbox(opts: { force?: boolean } = {}): Promise<JiraInbox> {
+    clear() { cache.clear() },
+    async inbox(opts: { force?: boolean; scope?: JiraScope } = {}): Promise<JiraInbox> {
       const auth = await authStatus()
       if (!auth.installed) return { status: 'acli-missing', fetchedAt: 0, tickets: [] }
       if (!auth.authenticated || !auth.site) return { status: 'unauthenticated', fetchedAt: 0, tickets: [] }
-      if (cache && cache.site === auth.site && !opts.force && now() - cache.at < JIRA_CACHE_TTL_MS) return cache.value
+      const scope = opts.scope ?? 'current'
+      const cacheKey = `${auth.site}:${scope}`
+      const cached = cache.get(cacheKey)
+      if (cached && !opts.force && now() - cached.at < JIRA_CACHE_TTL_MS) return cached.value
       const at = now()
       const pointFields = options.pointFields?.() ?? DEFAULT_POINT_FIELDS
-      const value: Promise<JiraInbox> = run(buildSearchArgs()).then(async (output) => {
+      const value: Promise<JiraInbox> = run(buildSearchArgs(scope)).then(async (output) => {
         const detail = await enrichRows(searchRows(output), run, pointFields)
         return {
           status: 'ok' as const, site: auth.site, email: auth.email, fetchedAt: at,
@@ -159,7 +168,7 @@ export function createJiraService(options: {
         status: 'ok' as const, site: auth.site, email: auth.email, fetchedAt: at, tickets: [],
         error: String((err as { stderr?: string; message?: string }).stderr || (err as Error).message || err),
       }))
-      cache = { at, site: auth.site, value }
+      cache.set(cacheKey, { at, value })
       return value
     },
   }

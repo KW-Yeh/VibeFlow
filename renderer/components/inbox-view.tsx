@@ -3,7 +3,7 @@ import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { GithubView } from '@/components/github-view'
 import { JiraPanel, type JiraProject } from '@/components/jira-panel'
 import type { GithubFilters } from '@/lib/github-filter'
-import type { GithubInbox, GithubItem, JiraInbox, JiraTicket } from '@/lib/types'
+import type { GithubInbox, GithubItem, JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export type InboxTab = 'jira' | 'issues' | 'prs'
@@ -16,7 +16,7 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   onViewChange: (view: BoardView) => void
   tab: InboxTab
   onTabChange: (tab: InboxTab) => void
-  jira: { inbox: JiraInbox | null; loading: boolean; error: string | null; refresh: () => void }
+  jira: { inbox: JiraInbox | null; loading: boolean; error: string | null; refresh: () => void; scope: JiraScope; onScopeChange: (scope: JiraScope) => void }
   github: { inbox: GithubInbox | null; loading: boolean; error: string | null; refresh: () => void }
   githubFilters: Record<'issues' | 'prs', GithubFilters>
   onGithubFiltersChange: (kind: 'issues' | 'prs', filters: GithubFilters) => void
