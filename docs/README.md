@@ -53,6 +53,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [jira-board-scope](features/jira-board-scope/spec.md) ([plan](features/jira-board-scope/plan.md)) | Show Jira work items in four full-width columns and filter the Jira fetch scope |
 | [terminal-grid](features/terminal-grid/spec.md) ([plan](features/terminal-grid/plan.md)) | Independent project-folder terminals in a top-level grid, with one-click card actions |
 | [prompt-free-artifacts](features/prompt-free-artifacts/spec.md) ([plan](features/prompt-free-artifacts/plan.md)) | A launch sends only the custom system prompt and the card: no Library skills, prompt snippets or Artifact text; Artifact directories are created in core and files delivered explicitly through the task CLI |
+| [skill-artifact-outputs](features/skill-artifact-outputs/spec.md) ([plan](features/skill-artifact-outputs/plan.md)) | Built-in `visual-parity` and `pr` skills write screenshots, reports and recordings to `VIBEFLOW_ARTIFACTS_DIR` (scratch to `VIBEFLOW_SCRATCH_DIR`) instead of the worktree or the agent's scratchpad |
 
 ## Adding a document
 
