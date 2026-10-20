@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildAgentCommand,
-  buildArtifactPrompt,
   executorSessionId,
   PROGRESS_EVENTS_DIR,
   resolveSystemPrompt,
@@ -30,16 +29,6 @@ test('resolveSystemPrompt — blank custom prompt stays blank', () => {
   assert.equal(resolveSystemPrompt(null), '')
 })
 
-test('buildArtifactPrompt — names the task artifact and scratch paths', () => {
-  const prompt = buildArtifactPrompt('/workspace/project/vf-abc123.artifacts')
-  assert.match(prompt, /本次 session 全程適用/)
-  assert.match(prompt, /\/workspace\/project\/vf-abc123\.artifacts\//)
-  assert.match(prompt, /vf-abc123\.artifacts\/scratch\//)
-  assert.ok(!prompt.includes('progress'))
-  assert.ok(!prompt.includes('PLAN.md'))
-  assert.ok(!prompt.includes('Agent Memory'))
-})
-
 test('buildAgentCommand — no longer asks for a decision record', () => {
   // The 決策 tab shows the branch's spec.md now; a record nobody reads is waste.
   const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
@@ -47,36 +36,32 @@ test('buildAgentCommand — no longer asks for a decision record', () => {
   assert.ok(!cmd.includes('決策書'))
 })
 
-test('buildAgentCommand — Claude receives Artifact context as a system prompt', () => {
+test('buildAgentCommand — Claude receives only card content without a custom system prompt', () => {
   const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
   assert.ok(cmd.startsWith('claude '))
-  assert.ok(cmd.includes('--append-system-prompt'))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('--append-system-prompt'))
+  assert.ok(!cmd.includes('Artifact 設定'))
   assert.ok(cmd.includes('任務標題：修復登入流程'))
   assert.ok(!cmd.includes('進度追蹤'))
   assert.ok(!cmd.includes('PLAN.md'))
 })
 
-test('buildAgentCommand — Claude system prompt orders built-in, library, then custom', () => {
-  const cmd = buildAgentCommand(TASK, 'CUSTOM_MARKER', {
-    library: {
-      promptText: 'LIBRARY_MARKER',
-      pluginDir: '/tmp/plugin',
-      libraryDir: '/tmp/library',
-      codexHome: '/tmp/codex-home',
-      scripts: [],
-    },
-  }, '/workspace/project')
-  assert.ok(cmd.indexOf('Artifact 設定') < cmd.indexOf('LIBRARY_MARKER'))
-  assert.ok(cmd.indexOf('LIBRARY_MARKER') < cmd.indexOf('CUSTOM_MARKER'))
+test('buildAgentCommand — sends only the custom system prompt and the card, no Library', () => {
+  const claude = buildAgentCommand(TASK, 'CUSTOM_MARKER', undefined, '/workspace/project')
+  assert.ok(claude.includes(`--append-system-prompt 'CUSTOM_MARKER'`))
+  assert.ok(claude.includes('任務標題：修復登入流程'))
+  assert.ok(!claude.includes('--plugin-dir'))
+  const codex = buildAgentCommand(CODEX_TASK, 'CUSTOM_MARKER', undefined, '/workspace/project')
+  assert.ok(codex.startsWith('codex '))
+  assert.ok(!codex.includes('CODEX_HOME'))
+  assert.ok(codex.includes('CUSTOM_MARKER'))
 })
 
-test('buildAgentCommand — Codex folds Artifact context into its initial prompt', () => {
+test('buildAgentCommand — Codex receives only card content without a custom prompt', () => {
   const cmd = buildAgentCommand(CODEX_TASK, '', undefined, '/workspace/project')
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '))
   assert.ok(!cmd.includes('--append-system-prompt'))
-  assert.ok(cmd.includes('Artifact 設定'))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('Artifact 設定'))
   assert.ok(cmd.includes('任務標題：修復登入流程'))
 })
 
@@ -90,14 +75,14 @@ test('buildAgentCommand — agent-only Claude launch omits card content and pinn
   assert.ok(cmd.startsWith('claude '))
   assert.ok(cmd.includes('--append-system-prompt'))
   assert.ok(cmd.includes('CUSTOM_MARKER'))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('Artifact 設定'))
   assert.ok(!cmd.includes('--session-id'))
   assert.ok(!cmd.includes('任務標題'))
   assert.ok(!cmd.includes('修復登入流程'))
   assert.ok(!cmd.includes('使用者無法登入'))
 })
 
-test('buildAgentCommand — agent-only Codex launch includes settings and Artifact but no card content', () => {
+test('buildAgentCommand — agent-only Codex launch includes settings but no card content', () => {
   const cmd = buildAgentCommand(
     CODEX_TASK,
     'CUSTOM_MARKER',
@@ -106,7 +91,7 @@ test('buildAgentCommand — agent-only Codex launch includes settings and Artifa
   )
   assert.ok(cmd.startsWith('codex --model gpt-5.5 '))
   assert.ok(cmd.includes('CUSTOM_MARKER'))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('Artifact 設定'))
   assert.ok(!cmd.includes('任務標題'))
   assert.ok(!cmd.includes('修復登入流程'))
   assert.ok(!cmd.includes('使用者無法登入'))
@@ -159,7 +144,7 @@ test('buildAgentCommand — unknown agent falls back to Claude', () => {
   assert.ok(!cmd.includes('--model gemini'))
 })
 
-test('buildAgentCommand — restart uses a fresh pinned session and retains Artifact context', () => {
+test('buildAgentCommand — restart uses a fresh pinned session', () => {
   const runId = '11111111-1111-4111-8111-111111111111'
   const cmd = buildAgentCommand(
     { ...TASK, runId },
@@ -168,13 +153,13 @@ test('buildAgentCommand — restart uses a fresh pinned session and retains Arti
     '/workspace/project'
   )
   assert.ok(cmd.includes(`--session-id ${executorSessionId(TASK.id, runId)}`))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('Artifact 設定'))
 })
 
-test('buildAgentCommand — Claude resume re-injects Artifact context without a new message', () => {
+test('buildAgentCommand — Claude resume adds no new message or system prompt', () => {
   const cmd = buildAgentCommand(TASK, '', { resume: true }, '/workspace/project')
-  assert.ok(cmd.includes('--append-system-prompt'))
-  assert.ok(cmd.includes('/workspace/project/vf-abc123.artifacts/'))
+  assert.ok(!cmd.includes('--append-system-prompt'))
+  assert.ok(!cmd.includes('Artifact 設定'))
   assert.ok(!cmd.includes('請接續這個任務'))
   assert.ok(!cmd.includes('任務標題'))
   assert.ok(!cmd.includes('修復登入流程'))
@@ -217,6 +202,8 @@ test('buildAgentCommand — board access is exported into the launch shell', () 
   assert.ok(cmd.includes(`VIBEFLOW_CLI='${BOARD_CLI.cliPath}'`))
   assert.ok(cmd.includes(`VIBEFLOW_CLI_LOADER='${BOARD_CLI.loaderPath}'`))
   assert.ok(cmd.includes(`VIBEFLOW_AUTO_MODE='1'`))
+  assert.ok(cmd.includes(`VIBEFLOW_ARTIFACTS_DIR='/workspace/project/vf-abc123.artifacts'`))
+  assert.ok(cmd.includes(`VIBEFLOW_SCRATCH_DIR='/workspace/project/vf-abc123.artifacts/scratch'`))
   assert.ok(cmd.includes(`; claude `), 'the agent command still follows the exports')
 })
 

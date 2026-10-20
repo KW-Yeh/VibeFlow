@@ -4,6 +4,7 @@
 - Ticket：尚無
 - 需求來源：使用者要求「內建的 pr 與 visual-parity skill 出現在設定的 Library 上，方便用戶自己調整」
 - 更新日期：2026-10-03
+- 後續變更（2026-10-20）：Library 不再於啟動任務時投遞，內建 skill 只保存在 Library 供編輯，見 [prompt-free-artifacts](../prompt-free-artifacts/spec.md)。
 - 確認紀錄：2026-10-03 對話中確認——隨 npm 出貨給所有用戶；pr 改寫成通用版再出貨；
   用戶沒改過的內建項目隨版本自動更新，改過的保留並提示；設計整體確認。
 

@@ -35,8 +35,6 @@ export type {
 export type {
   LibraryEntry,
   LibraryKind,
-  LibraryLaunchInfo,
-  LibraryScript,
 } from '../../packages/core/src/library'
 export type { AgentCli, AgentCliId, AgentEffort, AgentModel } from '../../packages/core/src/agents'
 export type { ManualEffort } from '../../packages/core/src/effort'

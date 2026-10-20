@@ -387,7 +387,7 @@ export function SettingsDialog({
         jiraPage ? '登入 Atlassian 以讀取指派給你的 Jira ticket。' : githubPage
           ? '使用 GitHub CLI 的網頁授權流程登入 github.com。'
           : libraryPage
-          ? 'VibeFlow 自有的 skill / prompt / script，啟動任務時投遞給 Claude 與 Codex。'
+          ? '管理 VibeFlow 的 skills、文字片段與腳本；啟動任務時都不會自動載入。'
           : '調整 system prompt 與 agent 帳號連線。'
       }
       saving={saving || githubBusy}
@@ -650,7 +650,7 @@ export function SettingsDialog({
               className={cn(fieldClass, 'resize-y font-mono text-sm leading-5')}
             />
             <p className="text-sm text-muted-foreground">
-              啟動 Agent 時會以此 prompt 作為 system prompt；留空則只帶入任務專屬的 Artifact 設定。
+              啟動 Agent 時會以此 prompt 作為 system prompt；留空則不附加 system prompt。
             </p>
           </section>
 
@@ -658,8 +658,8 @@ export function SettingsDialog({
             <div>
               <h3 className="text-base font-medium">Library</h3>
               <p className="text-sm text-muted-foreground">
-                VibeFlow 自有的 skill / prompt / script。啟用的項目會在啟動任務時自動投遞給
-                Claude 與 Codex，不必依賴本機的 ~/.claude 或 ~/.codex 佈局。
+                保存可重複使用的 skills、文字片段與腳本。啟動任務時不會載入或加入 prompt，
+                agent 只會收到 system prompt 與任務內容。
               </p>
             </div>
             <Button variant="secondary" size="sm" onClick={() => setLibraryPage(true)}>

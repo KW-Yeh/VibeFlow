@@ -30,7 +30,7 @@ Usage:
   vibeflow doctor          Check Node, git, tmux, node-pty and the agent CLIs
                            (--skip agents,web,… leaves checks out, e.g. on CI)
   vibeflow update          Install the latest global npm release (restart the host afterward)
-  vibeflow task …          Create / update cards (vibeflow task --help)
+  vibeflow task …          Create / update cards; add artifacts (vibeflow task --help)
 
 Options:
   --profile dev|prod       Store profile (dev = the "(development)" store npm run dev uses)

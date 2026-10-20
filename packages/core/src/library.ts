@@ -1,14 +1,12 @@
 import { createHash } from 'crypto'
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 import { getPlatform } from './platform'
 
 /**
- * VibeFlow's own store of reusable skills / prompts / scripts, so a task's
- * instructions do not depend on how the machine happens to lay out
- * `~/.claude`, `~/.codex` and `~/.agents` — and so both agent CLIs receive the
- * same set. Lives under `<userData>/library/`.
+ * VibeFlow's own store of reusable skills, prompt snippets and scripts. Nothing
+ * here reaches an agent launch: the prompt carries only the user's system
+ * prompt and the card. Lives under `<userData>/library/`.
  */
 export const LIBRARY_DIR = 'library'
 
@@ -71,9 +69,7 @@ export interface LibraryPaths {
   skills: string
   prompts: string
   scripts: string
-  /** Generated claude plugin, passed to `--plugin-dir`. */
-  plugin: string
-  /** Generated CODEX_HOME, whose `skills/` is codex's only discovery root. */
+  /** CODEX_HOME earlier launches used; still read for those runs' rollouts. */
   codexHome: string
 }
 
@@ -83,7 +79,6 @@ export function libraryPaths(root: string): LibraryPaths {
     skills: path.join(root, KIND_DIR.skill),
     prompts: path.join(root, KIND_DIR.prompt),
     scripts: path.join(root, KIND_DIR.script),
-    plugin: path.join(root, 'plugin'),
     codexHome: path.join(root, 'codex-home'),
   }
 }
@@ -106,9 +101,8 @@ function truncateUtf8(value: string, maxBytes: number): string {
 }
 
 /**
- * A name safe to use as a single path segment. Skill names also have to survive
- * being a directory name inside a generated plugin and a CODEX_HOME, so the
- * same filter applies to every kind.
+ * A name safe to use as a single path segment; the same filter applies to
+ * every kind.
  */
 export function safeLibraryName(name: string): string {
   const basename = name.replace(/\\/g, '/').split('/').pop() ?? ''
@@ -263,8 +257,7 @@ function builtinStatus(
  * hand cannot leave a phantom entry in the UI.
  *
  * Built-in status is computed only when `builtinDir` is passed (null = this
- * install ships nothing): it hashes every built-in, which the launch path —
- * plugin dir, CODEX_HOME, prompt assembly — has no use for.
+ * install ships nothing), since it hashes every built-in.
  */
 export function listLibrary(root: string, builtinDir?: string | null): LibraryEntry[] {
   const index = readIndex(root)
@@ -459,16 +452,6 @@ function requireEntry(root: string, kind: LibraryKind, name: string): LibraryEnt
   return found
 }
 
-/** Skills the user's own codex install discovers, so codex can be given parity. */
-export function userCodexSkillsDir(home = os.homedir()): string {
-  return path.join(home, '.codex', 'skills')
-}
-
-/** Skills committed to the project, discovered by claude and mirrored to codex. */
-export function projectSkillsDir(worktreePath: string): string {
-  return path.join(worktreePath, '.claude', 'skills')
-}
-
 /** Directory names holding a SKILL.md, or [] when the directory is absent. */
 export function skillNamesIn(dir: string): string[] {
   try {
@@ -481,227 +464,4 @@ export function skillNamesIn(dir: string): string[] {
   } catch {
     return []
   }
-}
-
-/** Rebuilt from `skills/` on every launch, so it is never hand-edited. */
-const PLUGIN_MANIFEST_DIR = '.claude-plugin'
-
-/**
- * Regenerate the claude plugin that `--plugin-dir` loads. Only the plugin's own
- * `skills/` tree is replaced: claude discovers the project's and the user's
- * skills by itself, so the plugin carries the library and nothing else.
- */
-export function buildPluginDir(root: string): { pluginDir: string; skills: string[] } {
-  const paths = libraryPaths(root)
-  const enabled = listLibrary(root).filter((e) => e.kind === 'skill' && e.enabled)
-
-  fs.rmSync(path.join(paths.plugin, 'skills'), { recursive: true, force: true })
-  fs.mkdirSync(path.join(paths.plugin, PLUGIN_MANIFEST_DIR), { recursive: true })
-  fs.mkdirSync(path.join(paths.plugin, 'skills'), { recursive: true })
-  fs.writeFileSync(
-    path.join(paths.plugin, PLUGIN_MANIFEST_DIR, 'plugin.json'),
-    `${JSON.stringify(
-      {
-        name: 'vibeflow-library',
-        version: '1.0.0',
-        description: 'Skills delivered by VibeFlow for this task.',
-      },
-      null,
-      2
-    )}\n`
-  )
-  for (const entry of enabled) {
-    fs.cpSync(entry.path, path.join(paths.plugin, 'skills', entry.name), {
-      recursive: true,
-      dereference: true,
-    })
-  }
-  return { pluginDir: paths.plugin, skills: enabled.map((e) => e.name) }
-}
-
-/**
- * Point `linkPath` at `target`: a symlink where the OS allows one, else the
- * closest thing that works. Windows refuses symlinks without Developer Mode
- * (EPERM), and skipping them there would leave codex logged out and without
- * the project's and user's skills. Neither fallback needs privilege: a
- * directory becomes a junction (the `'junction'` type is ignored off Windows),
- * a file a hard link on the same volume. The last resort is a copy — a
- * snapshot, which is enough since every launch rebuilds this home.
- */
-function linkOrSkip(target: string, linkPath: string): boolean {
-  if (!fs.existsSync(target)) return false
-  const source = path.resolve(target) // junctions only take absolute targets
-  const attempts = fs.statSync(source).isDirectory()
-    ? [
-        () => fs.symlinkSync(source, linkPath, 'junction'),
-        () => fs.cpSync(source, linkPath, { recursive: true, dereference: true }),
-      ]
-    : [
-        () => fs.symlinkSync(source, linkPath),
-        () => fs.linkSync(source, linkPath),
-        () => fs.copyFileSync(source, linkPath),
-      ]
-  for (const attempt of attempts) {
-    try {
-      fs.rmSync(linkPath, { recursive: true, force: true })
-      attempt()
-      return true
-    } catch {
-      // fall through to the next, less faithful, way of linking
-    }
-  }
-  return false
-}
-
-export interface CodexHomeResult {
-  codexHome: string
-  /** Skill names actually exposed, by the source that won. */
-  project: string[]
-  user: string[]
-  library: string[]
-  /** Names dropped because a higher-priority source already claimed them. */
-  shadowed: { name: string; keptFrom: 'project' | 'user'; dropped: 'user' | 'library' }[]
-}
-
-/**
- * Regenerate the CODEX_HOME whose `skills/` is codex's only discovery root, so
- * codex ends up with the same skills claude discovers on its own: the project's
- * `.claude/skills`, the user's `~/.codex/skills`, and the library.
- *
- * Only `skills/` is rebuilt. `auth.json` and `config.toml` are linked back to
- * the real codex home — the first keeps the user logged in, the second keeps
- * their MCP servers, and dropping either silently degrades every codex task.
- * Everything else codex writes here (sessions, history) is left alone so
- * `codex resume` still finds prior work.
- *
- * On a name collision the closer source wins: project over user over library.
- */
-export function buildCodexHome(
-  root: string,
-  worktreePath?: string,
-  userCodexHome = path.join(os.homedir(), '.codex')
-): CodexHomeResult {
-  const paths = libraryPaths(root)
-  const skillsDir = path.join(paths.codexHome, 'skills')
-  fs.rmSync(skillsDir, { recursive: true, force: true })
-  fs.mkdirSync(skillsDir, { recursive: true })
-
-  for (const file of ['auth.json', 'config.toml']) {
-    linkOrSkip(path.join(userCodexHome, file), path.join(paths.codexHome, file))
-  }
-
-  const result: CodexHomeResult = {
-    codexHome: paths.codexHome,
-    project: [],
-    user: [],
-    library: [],
-    shadowed: [],
-  }
-  const claimed = new Map<string, 'project' | 'user'>()
-
-  const projectDir = worktreePath ? projectSkillsDir(worktreePath) : undefined
-  if (projectDir) {
-    for (const name of skillNamesIn(projectDir)) {
-      if (linkOrSkip(path.join(projectDir, name), path.join(skillsDir, name))) {
-        result.project.push(name)
-        claimed.set(name, 'project')
-      }
-    }
-  }
-
-  const userDir = path.join(userCodexHome, 'skills')
-  for (const name of skillNamesIn(userDir)) {
-    const owner = claimed.get(name)
-    if (owner) {
-      result.shadowed.push({ name, keptFrom: owner, dropped: 'user' })
-      continue
-    }
-    if (linkOrSkip(path.join(userDir, name), path.join(skillsDir, name))) {
-      result.user.push(name)
-      claimed.set(name, 'user')
-    }
-  }
-
-  for (const entry of listLibrary(root)) {
-    if (entry.kind !== 'skill' || !entry.enabled) continue
-    const owner = claimed.get(entry.name)
-    if (owner) {
-      result.shadowed.push({ name: entry.name, keptFrom: owner, dropped: 'library' })
-      continue
-    }
-    fs.cpSync(entry.path, path.join(skillsDir, entry.name), {
-      recursive: true,
-      dereference: true,
-    })
-    result.library.push(entry.name)
-  }
-
-  return result
-}
-
-export interface LibraryScript {
-  name: string
-  path: string
-  description?: string
-}
-
-export interface LibraryLaunchInfo {
-  /** Passed to claude's `--plugin-dir`. */
-  pluginDir: string
-  /** Exported as CODEX_HOME for codex launches. */
-  codexHome: string
-  /** Granted to claude via `--add-dir` so scripts here are readable/runnable. */
-  libraryDir: string
-  scripts: LibraryScript[]
-  /** Enabled prompt bodies, joined — folded into the launch's system prompt. */
-  promptText: string
-}
-
-/**
- * Everything a launch needs from the library, with both delivery trees rebuilt
- * so an entry enabled a moment ago is present. Returns null when nothing is
- * enabled, letting callers skip every library flag entirely.
- */
-export function libraryLaunchInfoAt(
-  root: string,
-  worktreePath?: string,
-  userCodexHome?: string
-): LibraryLaunchInfo | null {
-  const entries = listLibrary(root).filter((e) => e.enabled)
-  if (entries.length === 0) return null
-
-  const { pluginDir } = buildPluginDir(root)
-  const { codexHome } = buildCodexHome(root, worktreePath, userCodexHome)
-
-  const scripts = entries
-    .filter((e) => e.kind === 'script')
-    .map((e) => ({ name: e.name, path: e.path, description: e.description }))
-
-  const promptBodies = entries
-    .filter((e) => e.kind === 'prompt')
-    .map((e) => readEntryContent(root, 'prompt', e.name).trim())
-    .filter(Boolean)
-
-  const lines = [...promptBodies]
-  if (scripts.length > 0) {
-    lines.push(
-      '可用的工具腳本（需要時自行執行，不需要就別跑）：',
-      ...scripts.map((s) => `- ${s.path}${s.description ? ` — ${s.description}` : ''}`)
-    )
-  }
-
-  return {
-    pluginDir,
-    codexHome,
-    libraryDir: root,
-    scripts,
-    promptText: lines.join('\n\n'),
-  }
-}
-
-/** `libraryLaunchInfoAt` against the running app's library root. */
-export async function libraryLaunchInfo(
-  worktreePath?: string
-): Promise<LibraryLaunchInfo | null> {
-  return libraryLaunchInfoAt(await libraryRoot(), worktreePath)
 }

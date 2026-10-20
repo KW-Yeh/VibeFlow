@@ -1,13 +1,15 @@
 import { parseArgs } from 'node:util'
 import { createTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
+import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
+import { findTask } from '../../core/src/store'
 import type { ColumnId } from '../../core/src/store'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update']
+const SUBCOMMANDS = ['create', 'update', 'artifact']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
 
@@ -17,6 +19,7 @@ VibeFlow task commands
 Usage:
   vibeflow task create [options]
   vibeflow task update [options]
+  vibeflow task artifact add --file <path> [options]
 
 task create options:
   --project <path>       Target project directory (required)
@@ -48,6 +51,12 @@ task update options:
 
   At least one of --title / --prompt / --status is required. Branch, worktree
   and project path are provisioned on disk and cannot be changed here.
+
+task artifact add options:
+  --file <path>         Copy a file into the card's user-facing Artifacts folder
+  --task <id>           Card ID (defaults to VIBEFLOW_TASK_ID in a task shell)
+  --store-path <dir>    Store directory (defaults to VIBEFLOW_STORE_DIR in a task shell)
+  --profile <name>      dev | prod — when no store path is given
 
 Notes:
   A card created with --status in_progress does NOT start running by itself.
@@ -128,6 +137,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         effort:        { type: 'string' },
         'auto-mode':   { type: 'string' },
         attach:        { type: 'string', multiple: true },
+        file:          { type: 'string' },
         'store-path':  { type: 'string' },
         profile:       { type: 'string' },
         help:          { type: 'boolean', short: 'h' },
@@ -140,14 +150,26 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   }
 
   const { values, positionals } = parsed
-  const [sub] = positionals
+  const [sub, action] = positionals
   if (values.help || !sub) return null
 
-  const storePath = resolveStorePath(values['store-path'], values.profile)
+  const storePath = resolveStorePath(
+    values['store-path'] ?? (sub === 'artifact' ? process.env.VIBEFLOW_STORE_DIR : undefined),
+    values.profile
+  )
   setPlatform(createNodePlatform({ userDataDir: storePath }))
 
   if (!SUBCOMMANDS.includes(sub)) {
     fail('UNKNOWN_COMMAND', `Unknown command: "task ${sub}". Use: ${SUBCOMMANDS.map((s) => `task ${s}`).join(' | ')}`)
+  }
+
+  if (sub === 'artifact') {
+    if (action !== 'add') fail('UNKNOWN_COMMAND', 'Use: task artifact add --file <path>')
+    const taskId = values.task ?? process.env.VIBEFLOW_TASK_ID
+    if (!taskId || !values.file) fail('MISSING_ARGUMENT', 'task artifact add needs --file and --task (or VIBEFLOW_TASK_ID)')
+    const task = findTask(taskId)
+    if (!task) fail('TASK_NOT_FOUND', `Task not found: ${taskId}`)
+    return { taskId, path: addTaskArtifact(task, values.file) }
   }
 
   if (sub === 'update') {

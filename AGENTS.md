@@ -135,6 +135,25 @@ npm run vibeflow -- task update \
 - A running app picks the change up on its own — `main.ts` watches the store file's
   directory and pushes fresh state to the renderer.
 
+### CLI artifact delivery
+
+From a running task shell, use `vibeflow task artifact add --file <path>` to copy a
+chosen report, screenshot or recording into that card's Artifacts tab. The task
+ID and store directory default to `VIBEFLOW_TASK_ID` and `VIBEFLOW_STORE_DIR`;
+outside a task shell, pass `--task <id>` and `--store-path <dir>`. Existing names
+are preserved by choosing a numbered filename. Core creates the Artifact root
+and `scratch/` at launch; agents receive their paths through the environment,
+not an injected prompt.
+
+### What a launch sends
+
+A launch's prompt is exactly the user's custom system prompt (Settings) plus the
+card's title and description — nothing else. The Library (`library.ts`) is storage
+only: no Library skill, prompt snippet or script is loaded or injected
+(`buildAgentCommand` adds no `--plugin-dir` and no `CODEX_HOME`). Skills the agent
+CLIs discover on their own (`~/.claude/skills`, the project's `.claude/skills`,
+`~/.codex/skills`) are the user's own setup and are untouched.
+
 ### Launch environment
 
 Every launch exports the running card's identity into its shell, so an agent can
@@ -149,6 +168,7 @@ put more cards on the board it is itself running on (see `boardEnvPrefix` in
 | `VIBEFLOW_STORE_DIR` | store dir of the **running** app — pass it as `--store-path` instead of guessing `--profile` |
 | `VIBEFLOW_CLI` / `VIBEFLOW_CLI_LOADER` | From source: `scripts/vibeflow.mjs` and the loader it needs (a `file://` URL — `node --import` rejects a bare Windows `C:/…` path). From the npm build: the bundled `dist/vibeflow.mjs`, with **no** loader. |
 | `VIBEFLOW_AUTO_MODE` | `1` / `0` |
+| `VIBEFLOW_ARTIFACTS_DIR` / `VIBEFLOW_SCRATCH_DIR` | Prepared directories for user-facing evidence and temporary working files |
 
 `VIBEFLOW_CLI` being absent is the signal that the board is read-only for the agent;
 anything that writes cards must degrade instead of emitting a command that cannot run.
@@ -310,7 +330,8 @@ docs/                      everything that is not code (index: docs/README.md)
 - **Progress and usage come from the agent's own transcript**, never from the model
   (`progress.ts`, `progress-tracker.ts`; spec: `docs/features/task-progress/`). Claude:
   `~/.claude/projects/<cwd→dashes>/*.jsonl` (+ `<session>/subagents/`); Codex: rollouts
-  under `~/.codex/sessions` and the library's `codex-home/sessions`, matched by `cwd`.
+  under `~/.codex/sessions` and the library's `codex-home/sessions` (runs launched before
+  Library delivery was removed), matched by `cwd`.
   Neither format is a public API — reducers read few fields, skip the rest, and
   `test/fixtures/progress/` pins the shapes. Claude launches add passive hooks that drop
   events into `<worktree>/.vibeflow-events/` (excluded from git and diffs like
@@ -400,9 +421,6 @@ the Web UI is driven in a browser against a real host.
   and open the printed URL. Use a throwaway `--store-path`, never your real store.
   The URL must keep its `?token=…` — that is also what to pass to the built-in
   `visual-parity` skill (`--ref` / `--local`); without it every page is the refusal page.
-- **Built-in `pr` vs this repo's `pr`**: the Library ships a generic `pr` skill, and this
-  repo commits its own `.claude/skills/pr` (Jira/eBug conventions). Claude sees both with
-  the same triggers, so disable the built-in `pr` in your Library when working on VibeFlow.
   Renderer changes need `npm run build:web` before the host serves them — there is
   no hot-reload dev server.
 - Stop a `vibeflow` host with `vibeflow shutdown` (same `--store-path` / `--profile`).

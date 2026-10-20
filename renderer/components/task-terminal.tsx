@@ -53,7 +53,7 @@ interface TaskTerminalProps {
    * Resolves false when the user backs out before anything was touched.
    */
   onReturnToBacklog?: () => Promise<boolean>
-  /** Start a fresh agent with settings + Artifact context, without card content. */
+  /** Start a fresh agent with settings, without card content. */
   onLaunchAgent?: () => Promise<void>
   /**
    * Called on real user interaction (keystrokes, file drop, return) so the
@@ -573,7 +573,7 @@ export function TaskTerminal({
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void launchAgentOnly()}
                 disabled={!cwd || isLaunchingAgent || isReturningToBacklog}
-                title="只帶入 Agent 設定與 Artifact 資訊，不傳入任務內容"
+                title="只帶入 Agent 設定，不傳入任務內容"
               >
                 <Bot className={cn('size-3', isLaunchingAgent && 'animate-pulse')} />
                 {isLaunchingAgent ? '啟動中…' : '啟動 Agent'}

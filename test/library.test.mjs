@@ -6,15 +6,12 @@ import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import {
   annotate,
-  buildCodexHome,
-  buildPluginDir,
   createEntry,
   deleteEntry,
   ensureLibrary,
   hashSkillDir,
   entryPath,
   importEntry,
-  libraryLaunchInfoAt,
   libraryPaths,
   listLibrary,
   readEntryContent,
@@ -247,175 +244,6 @@ test('skillNamesIn — lists only directories holding a SKILL.md', async () => {
 
   assert.deepEqual(skillNamesIn(dir), ['alpha', 'beta'])
   assert.deepEqual(skillNamesIn(path.join(dir, 'missing')), [], 'absent dir is empty, not an error')
-})
-
-// --- delivery layer ---
-
-test('buildPluginDir — carries only enabled library skills, with a manifest', async () => {
-  const root = await tmpDir()
-  createEntry(root, 'skill', 'on-a', SKILL_MD)
-  createEntry(root, 'skill', 'on-b', SKILL_MD)
-  createEntry(root, 'skill', 'off', SKILL_MD)
-  setEntryEnabled(root, 'skill', 'off', false)
-
-  const { pluginDir, skills } = buildPluginDir(root)
-  assert.deepEqual(skills, ['on-a', 'on-b'])
-
-  const manifest = JSON.parse(
-    fsSync.readFileSync(path.join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8')
-  )
-  assert.equal(manifest.name, 'vibeflow-library')
-  assert.ok(fsSync.existsSync(path.join(pluginDir, 'skills', 'on-a', 'SKILL.md')))
-  assert.ok(!fsSync.existsSync(path.join(pluginDir, 'skills', 'off')))
-})
-
-test('buildPluginDir — a disabled skill disappears on the next rebuild', async () => {
-  const root = await tmpDir()
-  createEntry(root, 'skill', 'temp', SKILL_MD)
-  buildPluginDir(root)
-  setEntryEnabled(root, 'skill', 'temp', false)
-  const { pluginDir, skills } = buildPluginDir(root)
-  assert.deepEqual(skills, [])
-  assert.ok(!fsSync.existsSync(path.join(pluginDir, 'skills', 'temp')))
-})
-
-async function makeFakeCodexHome() {
-  const home = await tmpDir('vf-codexhome-')
-  await fs.writeFile(path.join(home, 'auth.json'), '{"token":"x"}')
-  await fs.writeFile(path.join(home, 'config.toml'), '[mcp_servers.x]\n')
-  await fs.mkdir(path.join(home, 'skills'), { recursive: true })
-  await fs.mkdir(path.join(home, 'sessions'), { recursive: true })
-  return home
-}
-
-test('buildCodexHome — unions project, user and library skills', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  await makeSkillDir(path.join(userHome, 'skills'), 'user-only')
-
-  const worktree = await tmpDir('vf-worktree-')
-  await makeSkillDir(path.join(worktree, '.claude', 'skills'), 'project-only')
-
-  createEntry(root, 'skill', 'library-only', SKILL_MD)
-
-  const res = buildCodexHome(root, worktree, userHome)
-  assert.deepEqual(res.project, ['project-only'])
-  assert.deepEqual(res.user, ['user-only'])
-  assert.deepEqual(res.library, ['library-only'])
-
-  const skillsDir = path.join(res.codexHome, 'skills')
-  for (const name of ['project-only', 'user-only', 'library-only']) {
-    assert.ok(
-      fsSync.existsSync(path.join(skillsDir, name, 'SKILL.md')),
-      `${name} must be discoverable by codex`
-    )
-  }
-})
-
-test('buildCodexHome — links auth and config back, since dropping either breaks codex', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  const res = buildCodexHome(root, undefined, userHome)
-
-  // A symlink (macOS/Linux) or a hard link (Windows without Developer Mode):
-  // either way a write to the real file must show through the link.
-  for (const file of ['auth.json', 'config.toml']) {
-    const link = path.join(res.codexHome, file)
-    await fs.appendFile(path.join(userHome, file), '\n# refreshed')
-    assert.equal(
-      await fs.readFile(link, 'utf8'),
-      await fs.readFile(path.join(userHome, file), 'utf8'),
-      `${file} must track the real codex home`
-    )
-  }
-})
-
-test('buildCodexHome — relinking over an existing home still reaches the real files', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  buildCodexHome(root, undefined, userHome)
-  const res = buildCodexHome(root, undefined, userHome)
-
-  assert.equal(
-    await fs.readFile(path.join(res.codexHome, 'auth.json'), 'utf8'),
-    '{"token":"x"}'
-  )
-})
-
-test('buildCodexHome — closer source wins and the shadowed one is reported', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  const worktree = await tmpDir('vf-worktree-')
-
-  // Same name in all three sources, each with a distinguishable description.
-  await makeSkillDir(
-    path.join(worktree, '.claude', 'skills'),
-    'clash',
-    '---\nname: clash\ndescription: from-project\n---\n'
-  )
-  await makeSkillDir(
-    path.join(userHome, 'skills'),
-    'clash',
-    '---\nname: clash\ndescription: from-user\n---\n'
-  )
-  createEntry(root, 'skill', 'clash', '---\nname: clash\ndescription: from-library\n---\n')
-
-  const res = buildCodexHome(root, worktree, userHome)
-  assert.deepEqual(res.project, ['clash'])
-  assert.deepEqual(res.user, [])
-  assert.deepEqual(res.library, [])
-  assert.equal(
-    readSkillDescription(path.join(res.codexHome, 'skills', 'clash', 'SKILL.md')),
-    'from-project'
-  )
-  assert.deepEqual(
-    res.shadowed.map((s) => `${s.dropped}<${s.keptFrom}`).sort(),
-    ['library<project', 'user<project']
-  )
-})
-
-test('buildCodexHome — rebuilding skills does not wipe what codex writes there', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  const first = buildCodexHome(root, undefined, userHome)
-  const marker = path.join(first.codexHome, 'sessions', 'keep.jsonl')
-  await fs.mkdir(path.dirname(marker), { recursive: true })
-  await fs.writeFile(marker, 'prior session')
-
-  buildCodexHome(root, undefined, userHome)
-  assert.ok(fsSync.existsSync(marker), 'codex resume must still find prior sessions')
-})
-
-test('libraryLaunchInfoAt — null when nothing is enabled, so callers add no flags', async () => {
-  const root = await tmpDir()
-  assert.equal(libraryLaunchInfoAt(root), null)
-
-  createEntry(root, 'skill', 'only', SKILL_MD)
-  setEntryEnabled(root, 'skill', 'only', false)
-  assert.equal(libraryLaunchInfoAt(root), null, 'all-disabled counts as nothing enabled')
-})
-
-test('libraryLaunchInfoAt — folds prompts and scripts into promptText', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  createEntry(root, 'prompt', 'house-rules.md', '一律用繁體中文回報。', 'house rules')
-  createEntry(root, 'script', 'check.sh', '#!/bin/sh\n', 'runs the checks')
-
-  const info = libraryLaunchInfoAt(root, undefined, userHome)
-  assert.ok(info)
-  assert.match(info.promptText, /一律用繁體中文回報。/)
-  assert.match(info.promptText, /可用的工具腳本/)
-  assert.match(info.promptText, /check\.sh — runs the checks/)
-  assert.deepEqual(info.scripts.map((s) => s.name), ['check.sh'])
-  assert.equal(info.libraryDir, root)
-})
-
-test('libraryLaunchInfoAt — omits the script section when there are no scripts', async () => {
-  const root = await tmpDir()
-  const userHome = await makeFakeCodexHome()
-  createEntry(root, 'prompt', 'p.md', 'just a prompt')
-  const info = libraryLaunchInfoAt(root, undefined, userHome)
-  assert.ok(!info.promptText.includes('可用的工具腳本'))
 })
 
 // --- built-in status ---

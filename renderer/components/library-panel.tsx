@@ -23,7 +23,6 @@ import {
   pickLibrarySource,
   readLibraryEntry,
   restoreBuiltinSkill,
-  setLibraryEntryEnabled,
   updateLibraryEntry,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -33,17 +32,17 @@ const KINDS: { id: LibraryKind; label: string; hint: string }[] = [
   {
     id: 'skill',
     label: 'Skills',
-    hint: '兩個 agent 都會載入。import 需選擇含 SKILL.md 的目錄。',
+    hint: '儲存可重複使用的 skill；啟動任務時不會自動載入。import 需選擇含 SKILL.md 的目錄。',
   },
   {
     id: 'prompt',
     label: 'Prompts',
-    hint: '啟用的內容會併入啟動時的 system prompt，排在 Settings 的 System Prompt 之前。',
+    hint: '儲存可重複使用的文字片段；啟動任務時不會自動加入 prompt。',
   },
   {
     id: 'script',
     label: 'Scripts',
-    hint: '路徑與用途會寫進 prompt，由 agent 自行決定要不要執行。',
+    hint: '儲存可重複使用的腳本；啟動任務時不會把清單寫進 prompt。',
   },
 ]
 
@@ -271,7 +270,7 @@ export function LibraryPanel({
                   <input
                     value={draft.description}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                    placeholder="用途說明（scripts 會寫進 prompt 給 agent 判斷）"
+                    placeholder="用途說明"
                     className={cn(fieldClass, 'text-sm')}
                   />
                 )}
@@ -309,17 +308,6 @@ export function LibraryPanel({
                     key={entry.key}
                     className="flex items-start gap-3 rounded-md border border-border/60 px-3 py-2.5"
                   >
-                    <input
-                      type="checkbox"
-                      checked={entry.enabled}
-                      onChange={(e) =>
-                        void run(`toggle:${entry.key}`, () =>
-                          setLibraryEntryEnabled(entry.kind, entry.name, e.target.checked)
-                        )
-                      }
-                      aria-label={`啟用 ${entry.name}`}
-                      className="mt-1 size-4 shrink-0 rounded-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    />
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-2 font-mono text-sm">
                         <span className="truncate">{entry.name}</span>

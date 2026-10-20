@@ -128,7 +128,7 @@ export default function HomePage() {
   const [updateLaunchError, setUpdateLaunchError] = useState<string | null>(null)
   const [openingUpdateTerminal, setOpeningUpdateTerminal] = useState(false)
   const [autoMode, setAutoMode] = useState(true)
-  // Custom system prompt ('' = only the built-in Artifact instructions).
+  // Custom system prompt ('' = no additional system prompt).
   const [systemPrompt, setSystemPrompt] = useState('')
   // Global workstation path ('' = the ~/Desktop default is in effect).
   const [workstationPath, setWorkstationPath] = useState('')

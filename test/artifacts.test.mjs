@@ -5,6 +5,8 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import {
   agentArtifactsPath,
+  addTaskArtifact,
+  ensureTaskArtifactDirs,
   listArtifacts,
   readArtifact,
   deleteArtifacts,
@@ -31,6 +33,31 @@ test('agentArtifactsPath — composes <baseDir>/<worktree-name>.artifacts', () =
     agentArtifactsPath('/ws/proj', '/ws/proj/feature-x'),
     path.join('/ws/proj', `feature-x${ARTIFACTS_DIR_SUFFIX}`)
   )
+})
+
+test('task artifacts — launch creates directories and explicit add preserves existing files', async () => {
+  const root = await tmpDir()
+  try {
+    const worktreePath = path.join(root, 'vf-task')
+    const workspacePath = path.join(root, 'workspace')
+    await fs.mkdir(worktreePath)
+    const task = { worktreePath, workspacePath }
+    const dir = ensureTaskArtifactDirs(task)
+    assert.equal(dir, agentArtifactsPath(workspacePath, worktreePath))
+    assert.equal((await fs.stat(path.join(dir, SCRATCH_DIR_NAME))).isDirectory(), true)
+
+    const source = path.join(root, 'report.md')
+    await fs.writeFile(source, 'first')
+    const first = addTaskArtifact(task, source)
+    await fs.writeFile(source, 'second')
+    const second = addTaskArtifact(task, source)
+    assert.equal(await fs.readFile(first, 'utf8'), 'first')
+    assert.equal(await fs.readFile(second, 'utf8'), 'second')
+    assert.notEqual(first, second)
+    assert.deepEqual(listArtifacts(dir).map((item) => item.name).sort(), ['report-1.md', 'report.md'])
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
 })
 
 // --- listArtifacts ---

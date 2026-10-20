@@ -7,12 +7,11 @@
  */
 import type { AgentCliId } from './agents'
 import type { BoardCliLaunchInfo } from './board-cli'
-import type { LibraryLaunchInfo } from './library'
 import type { Task } from './store'
 
 /**
- * Temporary-artifact directory suffix. The agent writes screenshots, reports and
- * logs to `<workspacePath>/<worktree-dir>.artifacts/` (see agentFilePaths) —
+ * Temporary-artifact directory suffix. User-facing files are copied to
+ * `<workspacePath>/<worktree-dir>.artifacts/` —
  * outside the worktree so git never sees it — falling back to this bare,
  * cwd-relative name only when paths are unknown. Must match
  * ARTIFACTS_DIR_SUFFIX in artifacts.ts (duplicated: see the note at the top).
@@ -48,8 +47,7 @@ function agentArtifactsDir(
 }
 
 /**
- * The task's temporary-artifact directory, for display in the UI (the empty
- * Artifacts state tells the user where the agent is expected to write). Null
+ * The task's temporary-artifact directory, for display in the UI. Null
  * when the workspace or worktree path is unknown.
  */
 export function taskArtifactsDir(
@@ -57,25 +55,6 @@ export function taskArtifactsDir(
   workspacePath: string | undefined
 ): string | null {
   return agentArtifactsDir(worktreePath, workspacePath)
-}
-
-/**
- * Session-level instructions for task artifacts. Claude receives this through
- * `--append-system-prompt`; Codex has no equivalent flag, so assembleCommand
- * folds it into the first prompt. Either way the agent sees the absolute path
- * at session start without relying on progress files or PLAN.md.
- */
-export function buildArtifactPrompt(
-  artifactsDir: string = ARTIFACTS_FALLBACK_DIR
-): string {
-  return [
-    'Artifact 設定（本次 session 全程適用）：',
-    `1. 本任務的 Artifact 資料夾是 ${artifactsDir}/；需要保存給使用者的驗證證據或報告時，請寫入此資料夾（不存在請建立）。`,
-    `2. 使用者會在 VibeFlow 的 Artifacts 分頁檢視根目錄內容；只放你會主動請使用者過目的檔案。`,
-    `3. 你自己的工作暫存（一次性 script、log、中間輸出、debug 檔）放在 ${artifactsDir}/${SCRATCH_DIR_NAME}/。`,
-    `4. 若工具先輸出到 /tmp、/private/tmp、$TMPDIR 或 ~/Downloads，請把最終要呈現的檔案複製到 ${artifactsDir}/ 並確認存在。`,
-    '5. Artifact 資料夾位於 worktree 之外；不要把其中內容加入 git commit，也不要把最終交付物只留在這裡。',
-  ].join('\n')
 }
 
 /** The Claude permission mode that lets the agent act without asking. */
@@ -113,10 +92,13 @@ function toShellPath(p: string): string {
  * shell `if` statement, which that prefix form cannot carry.
  */
 function boardEnvPrefix(
-  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch'>,
-  opts?: LaunchOptions
+  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch' | 'worktreePath'>,
+  opts?: LaunchOptions,
+  workspacePath?: string
 ): string {
   const board = opts?.boardCli
+  const artifactsDir = agentArtifactsDir(task.worktreePath, workspacePath)
+    ?? (task.worktreePath ? `${toShellPath(task.worktreePath)}/${ARTIFACTS_FALLBACK_DIR}` : undefined)
   if (!board) return ''
   const entries: Array<[string, string | undefined]> = [
     ['VIBEFLOW_TASK_ID', task.id],
@@ -127,6 +109,8 @@ function boardEnvPrefix(
     ['VIBEFLOW_CLI', board?.cliPath],
     ['VIBEFLOW_CLI_LOADER', board?.loaderPath],
     ['VIBEFLOW_AUTO_MODE', opts?.autoMode ? '1' : '0'],
+    ['VIBEFLOW_ARTIFACTS_DIR', artifactsDir],
+    ['VIBEFLOW_SCRATCH_DIR', artifactsDir ? `${artifactsDir}/${SCRATCH_DIR_NAME}` : undefined],
   ]
   const exports = entries
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
@@ -278,7 +262,7 @@ export interface LaunchOptions {
   /**
    * Include the card title and description as the launch's initial message.
    * Defaults to true. Set false for an interactive agent shell that receives
-   * only launch settings and Artifact context.
+   * only launch settings.
    */
   includeTaskPrompt?: boolean
   /**
@@ -288,13 +272,6 @@ export interface LaunchOptions {
    * have run in the same worktree.
    */
   resume?: boolean
-  /**
-   * VibeFlow's own skill / prompt / script library for this launch. Claude
-   * loads it as a session-only plugin; Codex gets a CODEX_HOME whose `skills/`
-   * VibeFlow assembled, since Codex discovers skills only from there. Absent →
-   * nothing is enabled and no library flag is added.
-   */
-  library?: LibraryLaunchInfo
   /**
    * Store dir + CLI paths the agent needs to create sub-cards and rewrite its
    * own card. Absent → no VIBEFLOW_CLI is exported and the board stays
@@ -344,14 +321,7 @@ function assembleCommand(
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const effortFlag = effort && effort !== 'auto' ? ` --effort ${effort}` : ''
-    // Library skills ride in as a session-only plugin; --add-dir is what makes
-    // its scripts readable and runnable from inside the worktree.
-    const library = opts?.library
-    const libraryFlags = library
-      ? ` --plugin-dir ${shellQuote(toShellPath(library.pluginDir))}` +
-        ` --add-dir ${shellQuote(toShellPath(library.libraryDir))}`
-      : ''
-    const flags = `--chrome${claudePermissionFlag(opts?.autoMode)}${modelFlag}${effortFlag}${settings}${addDir}${libraryFlags}`
+    const flags = `--chrome${claudePermissionFlag(opts?.autoMode)}${modelFlag}${effortFlag}${settings}${addDir}`
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
@@ -366,11 +336,6 @@ function assembleCommand(
     const codexEffortFlag = effort && effort !== 'auto'
       ? `-c ${shellQuote(`model_reasoning_effort="${effort}"`)} `
       : ''
-    // Codex discovers skills only from $CODEX_HOME/skills, so the library is
-    // delivered by pointing the launch at the home VibeFlow assembled.
-    const codexHome = opts?.library
-      ? `CODEX_HOME=${shellQuote(toShellPath(opts.library.codexHome))} `
-      : ''
     // Auto Mode ON → bypass approvals so Codex runs unattended; OFF → default
     // interactive mode (waits for the user to approve each step).
     const args = [
@@ -379,7 +344,7 @@ function assembleCommand(
       model ? `--model ${model}` : '',
       combined ? shellQuote(combined) : '',
     ].filter(Boolean)
-    cmd = `${codexHome}${['codex', ...args].join(' ')}\r`
+    cmd = `${['codex', ...args].join(' ')}\r`
   }
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
@@ -421,11 +386,8 @@ export function taskModel(task: Pick<Task, 'agentCli' | 'model'>): string | unde
 /**
  * Build the launch command for a task's single agent session.
  *
- * Codex has no separate system-prompt flag, so the effective
- * system prompt and task prompt are folded into one CLI argument.
- *
- * Claude receives Artifact instructions as a session system prompt. Codex has
- * no separate system-prompt flag, so they are folded into its initial message.
+ * Codex has no separate system-prompt flag, so the custom system prompt and
+ * task prompt are folded into one CLI argument.
  */
 export function buildAgentCommand(
   task: Pick<
@@ -448,14 +410,7 @@ export function buildAgentCommand(
 ): string {
   const agent = taskAgent(task)
   const model = taskModel(task)
-  const artifactsDir = agentArtifactsDir(task.worktreePath, workspacePath)
-    ?? ARTIFACTS_FALLBACK_DIR
-  const builtInPrompt = buildArtifactPrompt(artifactsDir)
-  const libraryPrompt = opts?.library?.promptText?.trim()
-  const customPrompt = resolveSystemPrompt(systemPrompt)
-  const sys = [builtInPrompt, libraryPrompt, customPrompt]
-    .filter(Boolean)
-    .join('\n\n')
+  const sys = resolveSystemPrompt(systemPrompt)
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
@@ -468,7 +423,7 @@ export function buildAgentCommand(
     ? executorSessionId(task.id, task.runId)
     : undefined
   return (
-    boardEnvPrefix(task, opts) +
+    boardEnvPrefix(task, opts, workspacePath) +
     assembleCommand(
       agent,
       sys,

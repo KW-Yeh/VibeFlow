@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import type { Task } from './store'
 
 /**
  * Suffix of a task's temporary-artifact directory. It lives in the task's
@@ -11,7 +12,7 @@ import path from 'path'
 export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 
 /**
- * Subdirectory the agent is told to keep its own working files in (one-off
+ * Subdirectory reserved for an agent's own working files (one-off
  * scripts, logs, intermediate output) as opposed to the screenshots and reports
  * it produces for the user. It stays inside the artifacts dir so cleanup is
  * unchanged, but every entry below it is flagged, which lets the listing budget
@@ -21,7 +22,7 @@ export const ARTIFACTS_DIR_SUFFIX = '.artifacts'
 export const SCRATCH_DIR_NAME = 'scratch'
 
 /**
- * Bare, cwd-relative artifacts directory the agent is given when the workspace
+ * Bare, cwd-relative artifacts directory used when the workspace
  * path is unknown (see renderer/lib/claude.ts ARTIFACTS_FALLBACK_DIR — keep both
  * in sync). Unlike the normal path this one lands inside the worktree, so it is
  * excluded from git (see ensureLocalExclude).
@@ -111,6 +112,36 @@ const SNIFF_BYTES = 8 * 1024
  */
 export function agentArtifactsPath(baseDir: string, worktreePath: string): string {
   return path.join(baseDir, `${path.basename(worktreePath)}${ARTIFACTS_DIR_SUFFIX}`)
+}
+
+/** Prepare the two directories exposed to a task's agent at launch. */
+export function ensureTaskArtifactDirs(task: Pick<Task, 'worktreePath' | 'workspacePath'>): string {
+  if (!task.worktreePath) throw new Error('任務尚未建立 worktree')
+  const dir = task.workspacePath
+    ? agentArtifactsPath(task.workspacePath, task.worktreePath)
+    : path.join(task.worktreePath, ARTIFACTS_FALLBACK_DIR)
+  fs.mkdirSync(path.join(dir, SCRATCH_DIR_NAME), { recursive: true })
+  return dir
+}
+
+/** Copy a deliberate user-facing file into the task's Artifacts root. */
+export function addTaskArtifact(task: Pick<Task, 'worktreePath' | 'workspacePath'>, filePath: string): string {
+  const source = path.resolve(filePath)
+  const stat = fs.lstatSync(source)
+  if (!stat.isFile()) throw new Error('Artifact 來源必須是一般檔案')
+  const dir = ensureTaskArtifactDirs(task)
+  if (path.dirname(source) === dir) return source
+  const { name, ext } = path.parse(source)
+  for (let index = 0; index < 1000; index += 1) {
+    const destination = path.join(dir, index === 0 ? `${name}${ext}` : `${name}-${index}${ext}`)
+    try {
+      fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL)
+      return destination
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+  }
+  throw new Error('Artifact 資料夾有太多同名檔案')
 }
 
 /**

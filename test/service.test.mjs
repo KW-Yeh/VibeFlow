@@ -10,6 +10,7 @@ import { createNodePlatform, setPlatform } from '../packages/core/src/platform.t
 import { getStore, listTerminals } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId } from '../packages/core/src/launch.ts'
+import { agentArtifactsPath } from '../packages/core/src/artifacts.ts'
 import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
 import { exists, git, makeRepo, writeFile } from './support/repo.mjs'
 
@@ -97,6 +98,11 @@ test('an agent launch is built by core from the task, not sent by the frontend',
   assert.equal(start.key, task.id)
   assert.ok(launched.worktreePath, 'the launch provisioned the worktree')
   assert.equal(start.cwd, launched.worktreePath)
+  const artifactsDir = agentArtifactsPath(launched.workspacePath, launched.worktreePath)
+  assert.equal(await exists(path.join(artifactsDir, 'scratch')), true)
+  assert.ok(start.command.includes(`VIBEFLOW_ARTIFACTS_DIR='${artifactsDir}'`))
+  assert.ok(start.command.includes(`VIBEFLOW_SCRATCH_DIR='${artifactsDir}/scratch'`))
+  assert.ok(!start.command.includes('Artifact 設定'))
   assert.match(start.command, /^export VIBEFLOW_TASK_ID=/)
   assert.match(start.command, /claude --session-id [0-9a-f-]{36} /)
   assert.ok(!start.command.includes('rm -rf'))

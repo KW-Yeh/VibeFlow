@@ -63,7 +63,7 @@ import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
 import { decisionsKey, deleteDecisions } from './decisions'
 import { readBranchSpecs, readWorktreeSpecs } from './specs'
-import { agentArtifactsPath, deleteArtifacts, listArtifacts, readArtifact } from './artifacts'
+import { agentArtifactsPath, deleteArtifacts, ensureTaskArtifactDirs, listArtifacts, readArtifact } from './artifacts'
 import { resetSubAgents, unwatchAllSubAgents, unwatchSubAgents, watchSubAgents } from './subagents'
 import { cancelAllChatSends, cancelChatSend, startChatSend } from './chat-session'
 import { clearConversation, clearMessages, loadConversation } from './chat-store'
@@ -72,7 +72,6 @@ import {
   createEntry as createLibraryEntry,
   deleteEntry as deleteLibraryEntry,
   importEntry as importLibraryEntry,
-  libraryLaunchInfo,
   libraryPaths,
   libraryRoot,
   listLibrary,
@@ -95,7 +94,7 @@ import type { PickFolderResult } from './folder-dialog'
 export interface LaunchIntent {
   /** Resume the task's pinned conversation instead of starting it over. */
   resume?: boolean
-  /** False starts the agent with settings + Artifact context only, without the card text. */
+  /** False starts the agent with settings only, without the card text. */
   includeTaskPrompt?: boolean
 }
 
@@ -277,7 +276,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const standaloneTerminals = new Map<string, string>()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
-  // user's, or the one the library assembles. Resolved once, in the background.
+  // user's, or the one the library assembled for runs started before launches
+  // stopped delivering Library skills. Resolved once, in the background.
   let libraryCodexHome: string | null = null
   void libraryRoot()
     .then((root) => { libraryCodexHome = libraryPaths(root).codexHome })
@@ -389,7 +389,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
   async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
     const settings = getSettings()
-    const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
     let route = task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
     if (task.effort === 'auto' && !intent.resume && intent.includeTaskPrompt !== false) {
@@ -421,7 +420,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       {
         resume: intent.resume === true,
         includeTaskPrompt: intent.includeTaskPrompt !== false,
-        library: library ?? undefined,
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
       },
@@ -774,6 +772,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           command = (await launchCommand(task, intent)).replace(/\r$/, '')
         }
       }
+      if (p.launch) ensureTaskArtifactDirs(task)
       const result = await sessions.start(key, {
         cwd,
         command,

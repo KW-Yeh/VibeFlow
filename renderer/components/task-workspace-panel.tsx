@@ -780,7 +780,7 @@ function ArtifactsContent({
         <div className="space-y-2 py-8 text-center">
           <p className="text-sm text-muted-foreground">還沒有暫存產物。</p>
           <p className="text-xs leading-5 text-muted-foreground/80">
-            Agent 會把驗證截圖、錄影與報告寫進上方資料夾，工作暫存放其下的 <code className="rounded-xs bg-muted/40 px-1 py-0.5 font-mono">scratch/</code>
+            驗證截圖、錄影與報告可放在上方資料夾，工作暫存可放在其下的 <code className="rounded-xs bg-muted/40 px-1 py-0.5 font-mono">scratch/</code>
             ，完成任務時會一併清除。
           </p>
         </div>
