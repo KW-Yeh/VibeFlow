@@ -34,7 +34,7 @@ function resolve(target, env) {
   delete childEnv.VIBEFLOW_ARTIFACTS_DIR
   delete childEnv.VIBEFLOW_SCRATCH_DIR
   Object.assign(childEnv, env)
-  const run = spawnSync(python, ['-I', '-c', probe, parity, target], { env: childEnv, encoding: 'utf8' })
+  const run = spawnSync(python, ['-I', '-B', '-c', probe, parity, target], { env: childEnv, encoding: 'utf8' })
   assert.equal(run.status, 0, run.stderr)
   const lines = run.stdout.trim().split('\n')
   return { ...JSON.parse(lines.at(-1)), log: lines.slice(0, -1).join('\n') }

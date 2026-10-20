@@ -5,6 +5,7 @@
 - Spec 確認依據：2026-10-20 版，使用者以「送出」放行
 - 更新日期：2026-10-20
 - 確認紀錄：2026-10-20 使用者要求直接往下做，不再另外確認 Plan
+- 實作狀態：已完成（2026-10-20）
 
 ## 現有程式碼調查
 
@@ -74,4 +75,27 @@
 
 ## 實作與驗證紀錄
 
-（實作後填寫）
+2026-10-20 實作完成，所有檢查都在本卡片（VibeFlow task shell，兩個 env 由 launch 注入）實際執行。
+
+| 檢查 | 結果 |
+| --- | --- |
+| AC-1：照 SKILL.md 範例跑 `diff` 與 `flow --video parity-flow.mp4`（steps 含 `screenshot`），cwd 為本 worktree | `parity-diff.md`、`parity-flow.md`、`parity-flow.mp4`、`shot.png`、`steps.json` 全部在 `$VIBEFLOW_ARTIFACTS_DIR/visual-parity/`；stdout 印絕對路徑；scratch 跑前跑後內容相同；`git status --porcelain` 為空 |
+| 錄影暫存目錄 | 錄影期間在 `$VIBEFLOW_SCRATCH_DIR` 看到 `parity-video-*`，跑完被刪除 |
+| AC-3：有 env 時 `--out` / `--video` 傳絕對路徑 | 寫到指定位置 |
+| AC-2：unset 兩個 env，在拋棄式 git repo 用改動前的同一組指令跑新舊兩版 | exit code（diff 1、flow 0）、stdout、產出檔案清單、兩份報告內容逐字相同 |
+| AC-4：`node scripts/run-tests.mjs ./test/parity-paths.test.mjs` | 6/6 pass |
+| AC-4：`python3 .../parity.py selftest` | `selftest OK` |
+| AC-7：`npx tsc --noEmit -p tsconfig.json` | clean |
+| AC-7：`npm test` | 460/460 pass，0 skipped |
+| AC-6：`npm run build:npm` 後 `diff -r packages/core/builtin-skills dist-npm/dist/builtin-skills` | 相同 |
+| AC-6：`npm pack ./dist-npm` 裝進臨時 prefix、`vibeflow doctor --skip agents` | 一切正常；安裝後的 `dist/builtin-skills` 與原始檔相同 |
+
+實作中的調整：
+
+- 沒有 env 時 `report:` / `video:` 照舊印傳入的字串（不轉絕對路徑），讓 AC-2 的 stdout 完全不變；Spec 已同步修正。
+- 測試以 `python -I -B` 載入 `parity.py`，避免在出貨的 skill 目錄寫出 `__pycache__`（它本來就被 gitignore、打包 filter、Library hash 排除，只是不該產生）。
+
+未驗證：
+
+- Windows 上的實跑（CI 的 Windows runner 會跑 `parity-paths.test.mjs`，但沒跑 Playwright 實錄）。
+- 沒有 UI 改動，不做像素比對；也沒有驗收影片需要附在 PR。
