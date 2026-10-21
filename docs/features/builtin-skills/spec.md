@@ -52,13 +52,13 @@
 
 ### 驗收條件
 
-- [ ] OUT-1：在 VibeFlow 卡片 shell 依新版範例跑 `diff`、`responsive` 及含 screenshot、`--video` 的 `flow`；報告、截圖、影片及新 steps 都位於 Artifact 子目錄，logs 與中間檔位於選定 scratch。執行前後 `git status --porcelain` 一致，最終提交後 worktree 乾淨。
-- [ ] OUT-2：unset 兩個變數後重跑，確認原有命令成功，輸出路徑與原版一致；另涵蓋空值、只設單一變數及含空白路徑。
-- [ ] OUT-3：既有 `--out`、`--video`、`--steps` 與 screenshot path 的明確路徑相容性有檢查；缺少 ffmpeg 時仍保留可播放 `.webm`。
-- [ ] OUT-4：pr 指示完整涵蓋 Artifact 取檔、新截圖儲存及 GitHub 網頁上傳；不將截圖／影片納入 commit。
-- [ ] OUT-5：Plan 記錄「只改 SKILL.md」與「script 讀 env」的相容性取捨；若改 script，新增對應測試並通過 `parity.py selftest` 與專案適用 DoD。
+- [x] OUT-1：在 VibeFlow 卡片 shell 依新版範例跑 `diff`、`responsive` 及含 screenshot、`--video` 的 `flow`；報告、截圖、影片及新 steps 都位於 Artifact 子目錄，logs 與中間檔位於選定 scratch。執行前後 `git status --porcelain` 一致，最終提交後 worktree 乾淨。
+- [x] OUT-2：unset 兩個變數後重跑，確認原有命令成功，輸出路徑與原版一致；另涵蓋空值、只設單一變數及含空白路徑。
+- [x] OUT-3：既有 `--out`、`--video`、`--steps` 與 screenshot path 的明確路徑相容性有檢查；缺少 ffmpeg 時仍保留可播放 `.webm`。
+- [x] OUT-4：pr 指示完整涵蓋 Artifact 取檔、新截圖儲存及 GitHub 網頁上傳；不將截圖／影片納入 commit。
+- [x] OUT-5：Plan 記錄「只改 SKILL.md」與「script 讀 env」的相容性取捨；若改 script，新增對應測試並通過 `parity.py selftest` 與專案適用 DoD。
 - [ ] OUT-6：`npm run build:npm` 產出的 `dist-npm/dist/builtin-skills` 及實際 npm tarball 包含新版內容，與來源一致；將 tarball 安裝至暫存 prefix 並執行 `vibeflow doctor`，記錄結果。
-- [ ] OUT-7：完成真實瀏覽器驗收並保存影片；如後續範圍包含 UI 外觀變更，另做像素級比對。目前沒有 UI 外觀修改，樣式屬性報告不能宣稱為像素級比對。
+- [x] OUT-7：完成真實瀏覽器驗收並保存影片；如後續範圍包含 UI 外觀變更，另做像素級比對。目前沒有 UI 外觀修改，樣式屬性報告不能宣稱為像素級比對。
 - [ ] OUT-8：每個工作項目驗證通過才標 completed，完成即 commit；Draft PR 僅描述實際完成內容，有影片時另有已上傳影片的 comment。
 
 ### 限制、依賴與待確認事項

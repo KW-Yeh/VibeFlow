@@ -12,8 +12,8 @@
 | O2b | 確認本次實作 Plan | completed | 2026-10-21 使用者回覆「yes」確認上一輪提供的 Plan；確認紀錄與 git diff --check 通過 |
 | O3 | 修正 visual-parity 輸出指示與可執行範例 | completed | 10 次環境矩陣執行通過（5 情境各重跑兩次）、JSON 絕對路徑及空白路徑通過；library-builtins 21/21；diff check 通過；script 未改 |
 | O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | completed | Artifact 取檔、新截圖、scratch、缺變數 fallback、網頁上傳、影片 comment 及禁止 commit 規則檢查通過；library-builtins 21/21；diff check 通過 |
-| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | in_progress | 開始 typecheck、完整測試與真實瀏覽器驗收 |
-| O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | pending | 待打包檔比對及安裝後 doctor 結果 |
+| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | completed | core typecheck、npm test 454/454、Python selftest、7 項 runtime 檢查皆通過；錄影中間檔觀測位於 scratch 並已清除；前後 git status 皆乾淨；host 已 shutdown |
+| O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | in_progress | 開始打包檔比對及暫存安裝後 doctor |
 | O7 | 整理結果、建立 Draft PR，有驗收影片時另加上傳影片的 comment | pending | 待前項通過、PR URL 及實際影片連結；無影片時略過影片 comment |
 
 實作與驗證結果逐項記錄於本節；以下原計畫的預期結果不代表本次驗證已通過。
@@ -106,7 +106,11 @@ visual-parity 的範例採用以下約定：
 - O3 實測：直接從 SKILL.md 擷取 Bash 初始化與 JSON 產生範例，於隔離目錄執行。兩 env 都有、只有 Artifact、只有 scratch、兩者 unset、兩者空值各跑兩次；10/10 通過，涵蓋不存在的目錄、空白路徑、證據重跑隔離與 JSON screenshot 絕對路徑。紀錄：`$VIBEFLOW_ARTIFACTS_DIR/scratch/builtin-output-validation/directory-matrix.json`。
 - O3 回歸：`node scripts/run-tests.mjs ./test/library-builtins.test.mjs`，21 pass、0 fail、0 skip；`git diff --check` 通過。
 - O4 實測：逐項核對證據來源、截圖儲存、scratch／unset／空值 fallback、明確路徑優先、GitHub 網頁上傳、影片獨立 comment、無影片略過與禁止 commit 規則；既有 library-builtins 再跑 21 pass、0 fail、0 skip；diff check 通過。
-- 尚未執行：Python selftest、typecheck、npm test、runtime、打包、doctor、Draft PR 與影片上傳。未預先填寫任何通過結果。
+- O5：`npx tsc --noEmit -p tsconfig.json` 通過；`npm test` 454 pass、0 fail、0 skip；Python selftest 通過（另以 scratch TMPDIR 執行亦通過）。完整測試紀錄位於 `scratch/builtin-output-validation/npm-test.log`。
+- O5 runtime：以獨立 store 與假 agent CLI 啟動真實 VibeFlow host，保留 token URL；diff、responsive（375/768/1440）、8-step flow（開設定、assertion、兩張截圖、MP4）通過，console／network 錯誤為 0。觀測到錄影 `parity-video-*` 位於 `PARITY_SCRATCH`，執行後已清除。以 ffprobe 確認 MP4 為 H.264；缺 ffmpeg 時仍產生可讀 WebM，報告回報實際路徑。
+- O5 相容性：以 `git show 05e7917:.../parity.py` 取得原工具，確認其 bytes 與目前工具相同；在 unset 兩個 VibeFlow env 的隔離 cwd 分別執行原版與現版 flow＋video，5 個輸出檔名一致、Markdown 報告 bytes 相同，維持相對路徑行為。
+- O5 證據：`$VIBEFLOW_ARTIFACTS_DIR/visual-parity/run-z6ks6X/` 保存 reports、steps.json、settings.png、parity-flow.png、parity-flow.mp4 及 without-ffmpeg/ 的最終 WebM；驗證摘要在 `scratch/builtin-output-validation/runtime-results.json`。實際執行前後 `git status --porcelain` 皆空；拋棄式 host 已用同 store 的 CLI shutdown 停止。未改 renderer／UI 外觀，像素比對不適用。
+- 尚未執行：打包、doctor、Draft PR 與影片上傳。未預先填寫任何通過結果。
 
 ---
 
