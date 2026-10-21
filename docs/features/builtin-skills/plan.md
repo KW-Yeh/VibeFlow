@@ -2,28 +2,28 @@
 
 ## 2026-10-21：預設輸出至 Artifact 的修正流程
 
-本節追蹤本次修正；原實作計畫保留為歷史。本次 Spec 已於 2026-10-21 確認，以下實作 Plan 待確認。
+本節追蹤本次修正；原實作計畫保留為歷史。本次 Spec 與以下實作 Plan 已於 2026-10-21 確認。
 環境未提供 `TaskCreate`／`TaskUpdate`／`update_plan`，以此表替代；最多一項 `in_progress`，驗證通過才標記 `completed`，每項完成各自 commit。發現新工作時先新增列。2026-10-21 將原 O2 拆成「完成規劃」與「確認規劃」，避免文件已寫好卻把尚未取得的確認標成完成。
 
 | ID | 步驟 | 狀態 | 完成依據 |
 | --- | --- | --- | --- |
 | O1 | 調查兩個 built-in skill、輸出路徑及打包流程，更新既有 Spec | completed | 已讀取兩個 SKILL.md、parity.py、build-npm.mjs 與既有測試；8 項驗收條件、7 項步驟及文件連結檢查通過，git diff --check 通過 |
 | O2 | 記錄 Spec 確認，完成方案比較並更新既有 Plan | completed | Spec 確認、方案比較、8 項驗收對應、8 項步驟、文件連結及驗證命令檢查通過；git diff --check 通過 |
-| O2b | 確認本次實作 Plan | in_progress | 等待使用者明確確認以下方案；尚未開始實作 |
-| O3 | 修正 visual-parity 輸出指示與可執行範例 | pending | 待方案確認、範例路徑驗證及既有 library-builtins 測試；本方案不改 script |
+| O2b | 確認本次實作 Plan | completed | 2026-10-21 使用者回覆「yes」確認上一輪提供的 Plan；確認紀錄與 git diff --check 通過 |
+| O3 | 修正 visual-parity 輸出指示與可執行範例 | in_progress | Plan 已確認，開始修改及驗證範例；本方案不改 script |
 | O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | pending | 待對應內容檢查與回歸測試 |
 | O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | pending | 待實際輸出、git status、測試與 runtime 紀錄 |
 | O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | pending | 待打包檔比對及安裝後 doctor 結果 |
 | O7 | 整理結果、建立 Draft PR，有驗收影片時另加上傳影片的 comment | pending | 待前項通過、PR URL 及實際影片連結；無影片時略過影片 comment |
 
-本次尚未開始功能實作、runtime 驗收或打包。以下原計畫的預期結果不代表本次驗證已通過。
+實作與驗證結果逐項記錄於本節；以下原計畫的預期結果不代表本次驗證已通過。
 
 ### 本次 Plan 狀態與依據
 
-- 狀態：待確認。
+- 狀態：已確認。
 - 對應 Spec：[2026-10-21 輸出位置修正](spec.md#2026-10-21-修正default-built-in-skill-outputs-to-vibeflow_artifacts_dir)。
 - Spec 確認依據：2026-10-21 使用者回覆「yes，可以使用 update_plan 製作待辦清單」。
-- Plan 確認紀錄：尚未確認。
+- Plan 確認紀錄：2026-10-21 使用者回覆「yes」，確認上一輪提供的 Plan，授權依此實作；每階段 commit 與最終 Draft PR 按原任務指示執行。
 - 本次只改 skill 指示與既有文件，不修改 Python、core、CLI、renderer、打包程式或 npm 依賴。
 
 ### 現有程式碼調查
@@ -101,7 +101,7 @@ visual-parity 的範例採用以下約定：
 
 ### 待確認事項與實作紀錄
 
-- 請確認此「只改兩個 SKILL.md，保留 parity.py 路徑語意」的 Plan；尚未開始實作。
+- 已確認「只改兩個 SKILL.md，保留 parity.py 路徑語意」的 Plan，依上方追蹤表執行。
 - 已完成：Spec 確認、程式碼與環境前置調查、方案比較及上述驗證規劃。
 - 尚未執行：skill 範例環境矩陣、library-builtins 測試、Python selftest、typecheck、npm test、runtime、打包、doctor、Draft PR 與影片上傳。未預先填寫任何通過結果。
 
