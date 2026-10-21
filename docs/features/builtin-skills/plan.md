@@ -11,8 +11,8 @@
 | O2 | 記錄 Spec 確認，完成方案比較並更新既有 Plan | completed | Spec 確認、方案比較、8 項驗收對應、8 項步驟、文件連結及驗證命令檢查通過；git diff --check 通過 |
 | O2b | 確認本次實作 Plan | completed | 2026-10-21 使用者回覆「yes」確認上一輪提供的 Plan；確認紀錄與 git diff --check 通過 |
 | O3 | 修正 visual-parity 輸出指示與可執行範例 | completed | 10 次環境矩陣執行通過（5 情境各重跑兩次）、JSON 絕對路徑及空白路徑通過；library-builtins 21/21；diff check 通過；script 未改 |
-| O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | in_progress | 開始補上 Artifact 取檔、fallback、網頁上傳及禁止 commit 規則 |
-| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | pending | 待實際輸出、git status、測試與 runtime 紀錄 |
+| O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | completed | Artifact 取檔、新截圖、scratch、缺變數 fallback、網頁上傳、影片 comment 及禁止 commit 規則檢查通過；library-builtins 21/21；diff check 通過 |
+| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | in_progress | 開始 typecheck、完整測試與真實瀏覽器驗收 |
 | O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | pending | 待打包檔比對及安裝後 doctor 結果 |
 | O7 | 整理結果、建立 Draft PR，有驗收影片時另加上傳影片的 comment | pending | 待前項通過、PR URL 及實際影片連結；無影片時略過影片 comment |
 
@@ -105,7 +105,8 @@ visual-parity 的範例採用以下約定：
 - 已完成：Spec 確認、程式碼與環境前置調查、方案比較及上述驗證規劃。
 - O3 實測：直接從 SKILL.md 擷取 Bash 初始化與 JSON 產生範例，於隔離目錄執行。兩 env 都有、只有 Artifact、只有 scratch、兩者 unset、兩者空值各跑兩次；10/10 通過，涵蓋不存在的目錄、空白路徑、證據重跑隔離與 JSON screenshot 絕對路徑。紀錄：`$VIBEFLOW_ARTIFACTS_DIR/scratch/builtin-output-validation/directory-matrix.json`。
 - O3 回歸：`node scripts/run-tests.mjs ./test/library-builtins.test.mjs`，21 pass、0 fail、0 skip；`git diff --check` 通過。
-- 尚未執行：pr 規則驗證、Python selftest、typecheck、npm test、runtime、打包、doctor、Draft PR 與影片上傳。未預先填寫任何通過結果。
+- O4 實測：逐項核對證據來源、截圖儲存、scratch／unset／空值 fallback、明確路徑優先、GitHub 網頁上傳、影片獨立 comment、無影片略過與禁止 commit 規則；既有 library-builtins 再跑 21 pass、0 fail、0 skip；diff check 通過。
+- 尚未執行：Python selftest、typecheck、npm test、runtime、打包、doctor、Draft PR 與影片上傳。未預先填寫任何通過結果。
 
 ---
 
