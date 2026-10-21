@@ -1,12 +1,75 @@
 # Spec：Library 內建 skill
 
-- 狀態：已實作
+- 狀態：原功能已實作；2026-10-21 輸出位置修正待確認
 - Ticket：尚無
 - 需求來源：使用者要求「內建的 pr 與 visual-parity skill 出現在設定的 Library 上，方便用戶自己調整」
-- 更新日期：2026-10-03
+- 更新日期：2026-10-21
 - 後續變更（2026-10-20）：Library 不再於啟動任務時投遞，內建 skill 只保存在 Library 供編輯，見 [prompt-free-artifacts](../prompt-free-artifacts/spec.md)。
 - 確認紀錄：2026-10-03 對話中確認——隨 npm 出貨給所有用戶；pr 改寫成通用版再出貨；
   用戶沒改過的內建項目隨版本自動更新，改過的保留並提示；設計整體確認。
+
+## 2026-10-21 修正：Default built-in skill outputs to VIBEFLOW_ARTIFACTS_DIR
+
+- 狀態：待確認。
+- Ticket：尚無；需求來源為本次使用者提供的任務標題與描述。
+- 確認紀錄：尚未確認；2026-10-03 的確認只涵蓋原功能。
+- 文件歸屬：這是既有 built-in skill 的修正，沿用本目錄的 Spec／Plan。
+
+### 問題與目標
+
+2026-10-20 的 feature-css 卡片將截圖、像素比對圖、影片及 Playwright 腳本存入 agent 的暫存目錄，需由使用者手動搬移。Core 已準備並 export `VIBEFLOW_ARTIFACTS_DIR` 與 `VIBEFLOW_SCRATCH_DIR`，但兩個出貨 skill 尚未指引 agent 使用。
+
+修正目標：agent 遵循出貨 skill 進行驗收及準備 PR 證據時，預設將可交付檔案留在卡片 Artifact 中，暫存檔留在 scratch，避免證據遺失或進入程式碼提交。
+
+### 現況與本次範圍
+
+- 修改來源僅限 `packages/core/builtin-skills/visual-parity/`、`packages/core/builtin-skills/pr/`，以及必要的既有文件、測試。
+- `visual-parity` 的報告與影片範例目前使用 cwd 相對路徑；`screenshot` action 直接使用 JSON 的 `path`；錄影中間檔目前由系統暫存目錄配置。
+- 現有 `diff`／`responsive` 比對 DOM 與 computed styles，產出 Markdown 報告，沒有產生像素 diff 圖的功能。本次只規範另行產生像素圖時的儲存位置，不新增圖像比對引擎。
+- 現有通用 `pr` 尚未包含證據上傳段落；本次補上從 Artifact 選檔、新截圖存入 Artifact，以及透過 GitHub 網頁上傳的規則。
+- Library 自 2026-10-20 起僅供儲存與編輯，不自動投遞給 agent。本次改善新版 skill 被使用時的行為，不保證每次 launch 自動載入它。
+
+### 行為
+
+| 情境 | 預期行為 |
+| --- | --- |
+| 有 `VIBEFLOW_ARTIFACTS_DIR` | 驗收截圖、像素 diff 圖（若產生）、最終影片、報告及臨時撰寫的 `steps.json` 預設放在其下的本次驗收子目錄；重跑使用可辨識的獨立目錄，保留既有證據 |
+| 有 `VIBEFLOW_SCRATCH_DIR` | 額外 log、Playwright 臨時腳本及錄影／轉檔中間檔使用其下的本次執行目錄；最終報告仍可包含 console／network 摘要 |
+| 有 Artifact root、無 scratch 變數 | 以 `<Artifact root>/scratch` 作為暫存位置；不得僅因缺少 scratch 變數失敗 |
+| 無 Artifact root、僅有 scratch 變數 | 可交付檔案維持既有位置或 agent scratchpad；暫存檔使用指定 scratch，不要求兩個變數同時存在 |
+| 兩個變數皆 unset 或空值 | 直接執行原有 CLI 的輸出位置與行為不變；skill 可使用原有 cwd 相對路徑或 agent scratchpad，不能因缺變數失敗 |
+| 路徑含空白、目錄尚未存在 | skill 範例正確引用並建立目錄；`steps.json` 的 screenshot 路徑須是實際路徑，不依賴 JSON 自動展開 shell 變數 |
+| 使用者指定輸出位置、已有回歸 steps 檔案 | 保留明確指定路徑的優先權與既有 steps 的可用性；既有受版本控管的測試不自動搬移，新產生的驗收 steps 預設放 Artifact |
+| ffmpeg 不存在或轉檔失敗 | 維持既有 `.webm` fallback；實際影片仍在選定的證據目錄，報告與 stdout 回報實際路徑 |
+| pr 準備截圖或影片 | 優先從 `VIBEFLOW_ARTIFACTS_DIR` 內選擇本次變更的證據；新截圖存入該目錄下的子目錄；變數缺少時沿用既有證據位置或 scratchpad |
+| pr 上傳證據 | 截圖及驗收影片透過 GitHub 網頁上傳，不 commit 進 repo；本任務建立 Draft PR 後，如有驗收影片則另加 comment 上傳實際影片，無影片就略過 |
+
+### 不包含
+
+- 不修改 launch 的 `--append-system-prompt` 或其他內建提示，不新增 Stop hook，不讀取或同步 Claude Code 內部 scratchpad。
+- 不更名環境變數，不恢復 Library 自動投遞，不修改 Library 同步／使用者自訂內容保護機制。
+- 不更動 Web UI 外觀、handler table 或 transport，不新增 npm 依賴，不將證據或建置產物 commit 進 repo。
+
+### 驗收條件
+
+- [ ] OUT-1：在 VibeFlow 卡片 shell 依新版範例跑 `diff`、`responsive` 及含 screenshot、`--video` 的 `flow`；報告、截圖、影片及新 steps 都位於 Artifact 子目錄，logs 與中間檔位於選定 scratch。執行前後 `git status --porcelain` 一致，最終提交後 worktree 乾淨。
+- [ ] OUT-2：unset 兩個變數後重跑，確認原有命令成功，輸出路徑與原版一致；另涵蓋空值、只設單一變數及含空白路徑。
+- [ ] OUT-3：既有 `--out`、`--video`、`--steps` 與 screenshot path 的明確路徑相容性有檢查；缺少 ffmpeg 時仍保留可播放 `.webm`。
+- [ ] OUT-4：pr 指示完整涵蓋 Artifact 取檔、新截圖儲存及 GitHub 網頁上傳；不將截圖／影片納入 commit。
+- [ ] OUT-5：Plan 記錄「只改 SKILL.md」與「script 讀 env」的相容性取捨；若改 script，新增對應測試並通過 `parity.py selftest` 與專案適用 DoD。
+- [ ] OUT-6：`npm run build:npm` 產出的 `dist-npm/dist/builtin-skills` 及實際 npm tarball 包含新版內容，與來源一致；將 tarball 安裝至暫存 prefix 並執行 `vibeflow doctor`，記錄結果。
+- [ ] OUT-7：完成真實瀏覽器驗收並保存影片；如後續範圍包含 UI 外觀變更，另做像素級比對。目前沒有 UI 外觀修改，樣式屬性報告不能宣稱為像素級比對。
+- [ ] OUT-8：每個工作項目驗證通過才標 completed，完成即 commit；Draft PR 僅描述實際完成內容，有影片時另有已上傳影片的 comment。
+
+### 限制、依賴與待確認事項
+
+- 瀏覽器驗收依賴 Python、Playwright 及 Chromium；`.mp4` 依賴 ffmpeg，但缺少 ffmpeg 不應使 flow 失敗。安裝所需工具前先揭露缺口，不預先宣稱驗收成功。
+- 出貨 skill 由既有 `scripts/build-npm.mjs` 複製，既有 Library 的使用者修改保留規則不變。
+- 本次 Spec 需使用者確認；實作方案將在確認後補入既有 Plan，再依 `feature-spec-plan` 流程確認後實作。
+
+---
+
+以下保留原功能的需求與驗收紀錄；與本次範圍不同的舊投遞描述以 [prompt-free-artifacts](../prompt-free-artifacts/spec.md) 為準。
 
 ## 問題與目標
 

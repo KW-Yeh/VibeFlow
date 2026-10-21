@@ -1,5 +1,24 @@
 # Library 內建 skill Implementation Plan
 
+## 2026-10-21：預設輸出至 Artifact 的修正流程
+
+本節先追蹤本次修正的工作狀態；原實作計畫保留為歷史。新的實作方案須在本次 Spec 確認後補入。
+環境未提供 `TaskCreate`／`TaskUpdate`，以此表替代；最多一項 `in_progress`，驗證通過才標記 `completed`，每項完成各自 commit。發現新工作時先新增列。
+
+| ID | 步驟 | 狀態 | 完成依據 |
+| --- | --- | --- | --- |
+| O1 | 調查兩個 built-in skill、輸出路徑及打包流程，更新既有 Spec | completed | 已讀取兩個 SKILL.md、parity.py、build-npm.mjs 與既有測試；8 項驗收條件、7 項步驟及文件連結檢查通過，git diff --check 通過 |
+| O2 | 確認本次 Spec，更新既有 Plan 並確認方案 | in_progress | 等待使用者確認 Spec；尚未建立本次實作方案或標記確認 |
+| O3 | 修正 visual-parity 預設輸出指示，必要時調整 script 並加測試 | pending | 待方案確認、對應測試及 selftest |
+| O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | pending | 待對應內容檢查與回歸測試 |
+| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | pending | 待實際輸出、git status、測試與 runtime 紀錄 |
+| O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | pending | 待打包檔比對及安裝後 doctor 結果 |
+| O7 | 整理結果、建立 Draft PR，有驗收影片時另加上傳影片的 comment | pending | 待前項通過、PR URL 及實際影片連結；無影片時略過影片 comment |
+
+本次尚未開始功能實作、runtime 驗收或打包。以下原計畫的預期結果不代表本次驗證已通過。
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** VibeFlow 隨 npm 出貨內建 skill（`visual-parity`、通用版 `pr`），自動放進每個用戶的 Library，可編輯、停用、刪除、還原，未修改的隨版本自動更新。
