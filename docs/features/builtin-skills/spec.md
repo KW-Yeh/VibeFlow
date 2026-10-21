@@ -1,6 +1,6 @@
 # Spec：Library 內建 skill
 
-- 狀態：原功能已實作；2026-10-21 輸出位置修正 Spec／Plan 已確認，實作中
+- 狀態：原功能已實作；2026-10-21 輸出位置修正實作與驗收完成，PR 證據待完成
 - Ticket：尚無
 - 需求來源：使用者要求「內建的 pr 與 visual-parity skill 出現在設定的 Library 上，方便用戶自己調整」
 - 更新日期：2026-10-21
@@ -57,7 +57,7 @@
 - [x] OUT-3：既有 `--out`、`--video`、`--steps` 與 screenshot path 的明確路徑相容性有檢查；缺少 ffmpeg 時仍保留可播放 `.webm`。
 - [x] OUT-4：pr 指示完整涵蓋 Artifact 取檔、新截圖儲存及 GitHub 網頁上傳；不將截圖／影片納入 commit。
 - [x] OUT-5：Plan 記錄「只改 SKILL.md」與「script 讀 env」的相容性取捨；若改 script，新增對應測試並通過 `parity.py selftest` 與專案適用 DoD。
-- [ ] OUT-6：`npm run build:npm` 產出的 `dist-npm/dist/builtin-skills` 及實際 npm tarball 包含新版內容，與來源一致；將 tarball 安裝至暫存 prefix 並執行 `vibeflow doctor`，記錄結果。
+- [x] OUT-6：`npm run build:npm` 產出的 `dist-npm/dist/builtin-skills` 及實際 npm tarball 包含新版內容，與來源一致；將 tarball 安裝至暫存 prefix 並執行 `vibeflow doctor`，記錄結果。
 - [x] OUT-7：完成真實瀏覽器驗收並保存影片；如後續範圍包含 UI 外觀變更，另做像素級比對。目前沒有 UI 外觀修改，樣式屬性報告不能宣稱為像素級比對。
 - [ ] OUT-8：每個工作項目驗證通過才標 completed，完成即 commit；Draft PR 僅描述實際完成內容，有影片時另有已上傳影片的 comment。
 
