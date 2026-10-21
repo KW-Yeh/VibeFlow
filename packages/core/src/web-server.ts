@@ -21,6 +21,10 @@ import type { CoreHandlers } from './service'
  *     the browser has open cannot connect (cross-site WebSocket hijacking).
  *  4. `Host` must name this server on loopback, which defeats DNS rebinding.
  *  5. The lock file that hands the token to the TUI is 0600 (lock.ts).
+ *
+ * The one exception is PUBLIC_FILES: what a browser needs to install the board
+ * as the VibeFlow app. The installer fetches them without our cookie, and they
+ * say nothing about the user's board.
  */
 export interface WebServerOptions {
   handlers: CoreHandlers
@@ -43,6 +47,7 @@ export interface WebServer {
 
 export const TOKEN_COOKIE = 'vf_token'
 const WS_PATH = '/ws'
+const PUBLIC_FILES = new Set(['/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/logo.svg'])
 /** Attachments travel base64 in one message. */
 const MAX_PAYLOAD = 256 * 1024 * 1024
 
@@ -52,6 +57,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
@@ -150,7 +156,7 @@ export async function startWebServer(options: WebServerOptions): Promise<WebServ
       })
       return
     }
-    if (!sameToken(parseCookies(req.headers.cookie)[TOKEN_COOKIE], token)) {
+    if (!PUBLIC_FILES.has(url.pathname) && !sameToken(parseCookies(req.headers.cookie)[TOKEN_COOKIE], token)) {
       send(res, 401, 'VibeFlow: open this page with the `vibeflow` command, which adds a one-time token.')
       return
     }

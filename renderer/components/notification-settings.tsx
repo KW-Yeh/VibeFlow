@@ -122,7 +122,7 @@ export function NotificationSettingsSection({
         <Row label="等待輸入" hint="Agent 停下來等你回覆或允許權限" checked={value.waitingInput} disabled={off} onChange={(waitingInput) => set({ waitingInput })} />
         <Row
           label="桌面通知"
-          hint={desktopBlocked ? '瀏覽器已封鎖通知，請在瀏覽器的網站設定中允許。' : '頁面不在前景時也會跳出系統通知'}
+          hint={desktopBlocked ? '瀏覽器已封鎖通知，請在瀏覽器的網站設定中允許。' : '頁面不在前景時也會跳出系統通知。從瀏覽器網址列「安裝 VibeFlow」後，通知會以 VibeFlow App 顯示，不帶網址。'}
           checked={value.desktop && !desktopBlocked}
           disabled={off}
           onChange={async (desktop) => {

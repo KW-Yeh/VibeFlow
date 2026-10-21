@@ -99,6 +99,17 @@ test('pages need the token; the token turns into an HttpOnly SameSite=Strict coo
   assert.equal(page.headers['x-frame-options'], 'DENY')
 })
 
+test('only the app-install files are served without the cookie', async (t) => {
+  const { port, webDir } = await serve(t)
+  await fs.writeFile(path.join(webDir, 'manifest.webmanifest'), '{"name":"VibeFlow"}')
+  await fs.writeFile(path.join(webDir, 'other.json'), '{}')
+  const manifest = await request(port, '/manifest.webmanifest')
+  assert.equal(manifest.status, 200)
+  assert.match(manifest.headers['content-type'], /^application\/manifest\+json/)
+  assert.equal((await request(port, '/other.json')).status, 401)
+  assert.equal((await request(port, '/manifest.webmanifest', { Host: `attacker.example:${port}` })).status, 403)
+})
+
 test('a foreign Host header is refused (DNS rebinding)', async (t) => {
   const { port } = await serve(t)
   assert.equal((await request(port, '/home/', { Host: `attacker.example:${port}`, Cookie: cookie })).status, 403)
