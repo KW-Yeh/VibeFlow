@@ -1,6 +1,6 @@
 # Spec：Library 內建 skill
 
-- 狀態：原功能已實作；2026-10-21 輸出位置修正待確認
+- 狀態：原功能已實作；2026-10-21 輸出位置修正 Spec 已確認，Plan 待確認
 - Ticket：尚無
 - 需求來源：使用者要求「內建的 pr 與 visual-parity skill 出現在設定的 Library 上，方便用戶自己調整」
 - 更新日期：2026-10-21
@@ -10,9 +10,9 @@
 
 ## 2026-10-21 修正：Default built-in skill outputs to VIBEFLOW_ARTIFACTS_DIR
 
-- 狀態：待確認。
+- 狀態：已確認。
 - Ticket：尚無；需求來源為本次使用者提供的任務標題與描述。
-- 確認紀錄：尚未確認；2026-10-03 的確認只涵蓋原功能。
+- 確認紀錄：2026-10-21 使用者回覆「yes，可以使用 update_plan 製作待辦清單」，確認上一輪提供的本次 Spec，並允許改用 update_plan 追蹤步驟；不代表尚未呈現的實作 Plan 已確認。
 - 文件歸屬：這是既有 built-in skill 的修正，沿用本目錄的 Spec／Plan。
 
 ### 問題與目標
@@ -65,7 +65,7 @@
 
 - 瀏覽器驗收依賴 Python、Playwright 及 Chromium；`.mp4` 依賴 ffmpeg，但缺少 ffmpeg 不應使 flow 失敗。安裝所需工具前先揭露缺口，不預先宣稱驗收成功。
 - 出貨 skill 由既有 `scripts/build-npm.mjs` 複製，既有 Library 的使用者修改保留規則不變。
-- 本次 Spec 需使用者確認；實作方案將在確認後補入既有 Plan，再依 `feature-spec-plan` 流程確認後實作。
+- 本次 Spec 已確認；實作方案見既有 [Plan](plan.md) 的本次修正章節，依 `feature-spec-plan` 流程確認 Plan 後實作。
 
 ---
 
