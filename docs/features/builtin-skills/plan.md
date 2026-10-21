@@ -14,7 +14,8 @@
 | O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | completed | Artifact 取檔、新截圖、scratch、缺變數 fallback、網頁上傳、影片 comment 及禁止 commit 規則檢查通過；library-builtins 21/21；diff check 通過 |
 | O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | completed | core typecheck、npm test 454/454、Python selftest、7 項 runtime 檢查皆通過；錄影中間檔觀測位於 scratch 並已清除；前後 git status 皆乾淨；host 已 shutdown |
 | O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | completed | build:npm、npm pack 成功；3 個 skill 檔案在 source／dist-npm／tarball bytes 一致且未夾帶證據；暫存 prefix 安裝成功，doctor 7/7 全正常 |
-| O7 | 整理結果、建立 Draft PR，有驗收影片時另加上傳影片的 comment | in_progress | 前項皆通過，開始整理 PR 與實際影片附件 |
+| O7 | 整理結果、建立 Draft PR | completed | Draft PR #115 已建立並 self-assign，base main；變更與測試結果已寫入 PR，確認 draft 與 head branch 正確 |
+| O8 | 在獨立 comment 上傳驗收影片 | in_progress | 新增：影片選擇器已操作，但 Chrome 擴充功能未開啟 Allow access to file URLs；等待使用者設定後重試，comment 未送出，不標完成 |
 
 實作與驗證結果逐項記錄於本節；以下原計畫的預期結果不代表本次驗證已通過。
 
@@ -66,7 +67,7 @@ visual-parity 的範例採用以下約定：
 
 ### 實作順序與 commit
 
-依追蹤表 O2 → O2b → O3 → O4 → O5 → O6 → O7 執行，完成後立即更新狀態並 commit，再開始下一項。O2b 取得確認後更新確認紀錄並 commit，才進入 O3。驗證失敗時維持該項進行中，若需額外修復工作先新增項目。
+依追蹤表 O2 → O2b → O3 → O4 → O5 → O6 → O7 → O8 執行，完成後立即更新狀態並 commit，再開始下一項。O2b 取得確認後更新確認紀錄並 commit，才進入 O3。驗證失敗時維持該項進行中，若需額外修復工作先新增項目。實際遇到影片上傳的 Chrome 權限缺口後，將 O7 拆成已完成的 PR 建立與新增的 O8 上傳工作。
 
 - O3：修改 visual-parity 指示，執行目錄初始化／JSON 範例的環境矩陣與既有 library-builtins 測試後 commit。
 - O4：修改 pr 指示，檢查來源、fallback、上傳與禁止 commit 規則，重跑 library-builtins 測試後 commit。
@@ -112,7 +113,8 @@ visual-parity 的範例採用以下約定：
 - O5 證據：`$VIBEFLOW_ARTIFACTS_DIR/visual-parity/run-z6ks6X/` 保存 reports、steps.json、settings.png、parity-flow.png、parity-flow.mp4 及 without-ffmpeg/ 的最終 WebM；驗證摘要在 `scratch/builtin-output-validation/runtime-results.json`。實際執行前後 `git status --porcelain` 皆空；拋棄式 host 已用同 store 的 CLI shutdown 停止。未改 renderer／UI 外觀，像素比對不適用。
 - O6：`npm run build:npm`、`npm pack ./dist-npm --pack-destination <scratch>` 成功。`pr/SKILL.md`、`visual-parity/SKILL.md`、`visual-parity/scripts/parity.py` 在來源、dist-npm、實際 tarball bytes 完全一致；出貨 skill 未夾帶 png、mp4、webm 或 log。
 - O6 安裝：將 tarball 安裝至 Artifact scratch 下的獨立 npm prefix，使用安裝後 CLI 與拋棄式 store 執行 doctor，exit 0；Node、Git、tmux、node-pty、agent CLI、Web UI、資料目錄 7 項全正常。結果保存在 `scratch/builtin-output-validation/packaging-results.json`、`doctor.log`。
-- 待完成：Draft PR 與影片上傳。
+- O7：[Draft PR #115](https://github.com/KW-Yeh/VibeFlow/pull/115) 已建立、self-assign；base `main`，head `fix/default-built-in-skill-outputs-to`。標題、內容與實測結果已完成，未將證據檔 commit。
+- O8 未完成：已在 GitHub 網頁準備獨立影片 comment 並透過 file chooser 選取 `visual-parity/run-z6ks6X/parity-flow.mp4`，但 Chrome ChatGPT 擴充功能未允許 file URL，`setFiles` 被拒絕。Browser 的 `chrome-file-upload-troubleshooting` 要求使用者開啟 `chrome://extensions` → ChatGPT → Details → Allow access to file URLs；未自行修改這項存取權限，未送出無附件 comment。影片仍在 Artifact，畫面已保存為同目錄 `pr-upload-pending.jpg`，待使用者設定後重試。說明：[Chrome extension file uploads](https://developers.openai.com/codex/app/chrome-extension#upload-files)。
 
 ---
 
