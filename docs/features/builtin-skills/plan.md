@@ -1,5 +1,123 @@
 # Library 內建 skill Implementation Plan
 
+## 2026-10-21：預設輸出至 Artifact 的修正流程
+
+本節追蹤本次修正；原實作計畫保留為歷史。本次 Spec 與以下實作 Plan 已於 2026-10-21 確認。
+環境未提供 `TaskCreate`／`TaskUpdate`／`update_plan`，以此表替代；最多一項 `in_progress`，驗證通過才標記 `completed`，每項完成各自 commit。發現新工作時先新增列。2026-10-21 將原 O2 拆成「完成規劃」與「確認規劃」，避免文件已寫好卻把尚未取得的確認標成完成。
+
+| ID | 步驟 | 狀態 | 完成依據 |
+| --- | --- | --- | --- |
+| O1 | 調查兩個 built-in skill、輸出路徑及打包流程，更新既有 Spec | completed | 已讀取兩個 SKILL.md、parity.py、build-npm.mjs 與既有測試；8 項驗收條件、7 項步驟及文件連結檢查通過，git diff --check 通過 |
+| O2 | 記錄 Spec 確認，完成方案比較並更新既有 Plan | completed | Spec 確認、方案比較、8 項驗收對應、8 項步驟、文件連結及驗證命令檢查通過；git diff --check 通過 |
+| O2b | 確認本次實作 Plan | completed | 2026-10-21 使用者回覆「yes」確認上一輪提供的 Plan；確認紀錄與 git diff --check 通過 |
+| O3 | 修正 visual-parity 輸出指示與可執行範例 | completed | 10 次環境矩陣執行通過（5 情境各重跑兩次）、JSON 絕對路徑及空白路徑通過；library-builtins 21/21；diff check 通過；script 未改 |
+| O4 | 修正通用 pr 的證據來源、儲存與 GitHub 網頁上傳規則 | completed | Artifact 取檔、新截圖、scratch、缺變數 fallback、網頁上傳、影片 comment 及禁止 commit 規則檢查通過；library-builtins 21/21；diff check 通過 |
+| O5 | 驗收有／無環境變數、影片及適用的像素比對，完成 DoD | completed | core typecheck、npm test 454/454、Python selftest、7 項 runtime 檢查皆通過；錄影中間檔觀測位於 scratch 並已清除；前後 git status 皆乾淨；host 已 shutdown |
+| O6 | 驗證 dist-npm 與 tarball 內容，暫存安裝並執行 doctor | completed | build:npm、npm pack 成功；3 個 skill 檔案在 source／dist-npm／tarball bytes 一致且未夾帶證據；暫存 prefix 安裝成功，doctor 7/7 全正常 |
+| O7 | 整理結果、建立 Draft PR | completed | Draft PR #115 已建立並 self-assign，base main；變更與測試結果已寫入 PR，確認 draft 與 head branch 正確 |
+| O8 | 在獨立 comment 上傳驗收影片 | in_progress | 新增：影片選擇器已操作，但 Chrome 擴充功能未開啟 Allow access to file URLs；等待使用者設定後重試，comment 未送出，不標完成 |
+
+實作與驗證結果逐項記錄於本節；以下原計畫的預期結果不代表本次驗證已通過。
+
+### 本次 Plan 狀態與依據
+
+- 狀態：已確認。
+- 對應 Spec：[2026-10-21 輸出位置修正](spec.md#2026-10-21-修正default-built-in-skill-outputs-to-vibeflow_artifacts_dir)。
+- Spec 確認依據：2026-10-21 使用者回覆「yes，可以使用 update_plan 製作待辦清單」。
+- Plan 確認紀錄：2026-10-21 使用者回覆「yes」，確認上一輪提供的 Plan，授權依此實作；每階段 commit 與最終 Draft PR 按原任務指示執行。
+- 本次只改 skill 指示與既有文件，不修改 Python、core、CLI、renderer、打包程式或 npm 依賴。
+
+### 現有程式碼調查
+
+| 檔案 | 實際行為與可重用之處 |
+| --- | --- |
+| `packages/core/builtin-skills/visual-parity/SKILL.md` | diff／responsive／flow 範例皆輸出 cwd 相對路徑，沒有目錄初始化；結尾建議將新 flow JSON 存入 repo，需改成 Artifact 預設，保留使用者明確選擇版本控管回歸測試的能力 |
+| `packages/core/builtin-skills/visual-parity/scripts/parity.py` | `--out` 有既有預設值；`--steps` 是輸入路徑；screenshot 直接讀 JSON path，JSON 不會展開 shell 變數；錄影使用 `tempfile.mkdtemp`，可透過該 process 的 `TMPDIR` 指定暫存 root；已有 ffmpeg／webm fallback，無須修改 |
+| `packages/core/builtin-skills/pr/SKILL.md` | 已有 gh Draft PR 流程，尚無截圖／影片規則；只補證據來源、儲存位置及 GitHub 網頁上傳，不改分支與 push 規則 |
+| `test/library-builtins.test.mjs` | 既有檢查涵蓋 skill frontmatter、通用性、LF、script 存在及 pr 分支規則；修改後跑原測試，不增加只比對新文句的測試 |
+| `scripts/build-npm.mjs` | 遞迴複製出貨來源到 `dist-npm/dist/builtin-skills`，只排除 `__pycache__`；既有流程能帶入新版 Markdown，無須改程式 |
+| `docs/features/prompt-free-artifacts/spec.md` | Artifact／scratch 由 runtime 準備，Library 不投遞；本次不擴張 launch 或 Library 行為 |
+
+### 方案與取捨
+
+| 方案 | 優點 | 相容性與限制 | 決定 |
+| --- | --- | --- | --- |
+| 只改 SKILL.md：初始化目錄、傳入絕對輸出路徑，單次 process 設定 TMPDIR | 直接涵蓋遵循 skill 的 agent；steps、像素圖、獨立 Playwright 腳本及 pr 證據都能使用相同規則；script 介面不變 | 未遵循 skill、直接呼叫 script 的使用者仍沿用原路徑；指示需要明確覆蓋每個範例，且須實跑驗證 | 採用 |
+| script 自己讀 env 決定預設 `--out` 與暫存位置 | 可讓省略 `--out` 的直接呼叫自動選 Artifact | 只改 argparse 預設值仍無法涵蓋明確相對 `--out`／`--video`、JSON screenshot 及 agent 建立的 steps；若全部重定向，會改既有明確路徑語意，需擴大測試與介面規格 | 本次不採用 |
+
+問題發生在 agent 選擇輸出位置。以 skill 統一這個選擇就能滿足本次範圍；不為強制所有 script 呼叫改動路徑契約。若實作發現指示方案不能通過已確認驗收，將揭露原因並重新確認受影響方案，不直接擴張 script 行為。
+
+### 預計修改與執行細節
+
+| 檔案 | 修改內容 | 對應驗收 |
+| --- | --- | --- |
+| `packages/core/builtin-skills/visual-parity/SKILL.md` | 增加前置輸出目錄初始化與檔案分類；改寫所有 CLI、screenshot、steps、錄影與回歸重跑範例 | OUT-1、OUT-2、OUT-3、OUT-5、OUT-7 |
+| `packages/core/builtin-skills/pr/SKILL.md` | 新增證據來源、截圖位置、無 env fallback、GitHub 網頁上傳與禁止 commit 規則 | OUT-4、OUT-8 |
+| `docs/features/builtin-skills/spec.md`、`plan.md`、`docs/README.md` | 維護本次確認、進度、實測與打包結果 | OUT-5、OUT-6、OUT-8 |
+
+visual-parity 的範例採用以下約定：
+
+1. 有 Artifact root 時，先建立 `<root>/visual-parity/`，以安全的唯一目錄建立方式配置本次執行目錄，存入 `PARITY_OUT`。無 Artifact root 時用目前 cwd，維持舊範例檔名。預設不覆蓋之前的驗收證據。
+2. 暫存 root 依序採用 `VIBEFLOW_SCRATCH_DIR`、`<Artifact root>/scratch`、原系統暫存目錄；在其下配置本次獨立目錄並存入 `PARITY_SCRATCH`。空值視為未設定，不把變數寫回 VIBEFLOW 的原變數。
+3. 範例維持原本 Bash 語法與 Python／python3 提醒；路徑全部引用，無 env 時仍可直接執行。說明 PowerShell 使用者依同一目錄優先順序設定並傳入實際路徑，不將 Bash 語法宣稱為 PowerShell 語法。
+4. diff／responsive 明確給 `--out "$PARITY_OUT/<原檔名>"`。flow 明確給同目錄的 `--steps`、`--out`、`--video`；Python process 使用 `TMPDIR="$PARITY_SCRATCH"` 前綴，讓 Playwright 錄影中間檔走既有 tempfile 機制。這個設定只作用於該次 process。
+5. 提供可執行的 steps 寫入範例，以 Python JSON serializer 將實際 screenshot 絕對路徑寫入 JSON；不可將未展開的 `$PARITY_OUT` 寫成 JSON 字串。截圖、像素圖（若另行產生）、最終 webm／mp4、Markdown 報告與新 steps 都放同一證據目錄。
+6. 額外 console／network log、一次性的 Playwright 腳本及其他中間檔放 scratch；使用者刻意保存的程式碼回歸測試仍可留在原 repo，不自動搬移既有檔案。不更動既有明確路徑的解讀。
+7. pr 先依本次變更從 Artifact 子目錄挑選實際檔案；新截圖亦放 Artifact 下的獨立子目錄。沒有 env 時使用既有證據路徑或 agent scratchpad。截圖與影片以 GitHub 網頁上傳；有驗收影片的本任務 Draft PR 另加影片 comment，不以 repo 內檔案或本機路徑代替上傳。
+
+### 實作順序與 commit
+
+依追蹤表 O2 → O2b → O3 → O4 → O5 → O6 → O7 → O8 執行，完成後立即更新狀態並 commit，再開始下一項。O2b 取得確認後更新確認紀錄並 commit，才進入 O3。驗證失敗時維持該項進行中，若需額外修復工作先新增項目。實際遇到影片上傳的 Chrome 權限缺口後，將 O7 拆成已完成的 PR 建立與新增的 O8 上傳工作。
+
+- O3：修改 visual-parity 指示，執行目錄初始化／JSON 範例的環境矩陣與既有 library-builtins 測試後 commit。
+- O4：修改 pr 指示，檢查來源、fallback、上傳與禁止 commit 規則，重跑 library-builtins 測試後 commit。
+- O5：跑完整測試及 runtime 驗收，保存輸出清單、影片路徑與 git status 證據；實際結果寫回本 Plan 後 commit。
+- O6：打包、比對、安裝與 doctor；結果寫回 Plan，清理本次建置產物後 commit。
+- O7：確認前項全數通過，按專案 pr skill 建 Draft PR；影片透過 GitHub 網頁上傳至獨立 comment。紀錄最終證據，不將影片、截圖或 tarball 納入 commit。
+
+### 驗證計畫
+
+| 檢查 | 命令或操作、通過標準 | 對應驗收 |
+| --- | --- | --- |
+| 目錄範例矩陣 | 將即將修改的 SKILL.md 範例原樣執行於隔離目錄：兩 env 都有、兩者 unset、兩者空值、各只設一個；涵蓋空白路徑、目錄不存在與連續重跑。檢查實際路徑、有效 JSON、證據不互相覆寫及零意外 repo 輸出 | OUT-1、OUT-2、OUT-3 |
+| 既有 skill 測試 | `node scripts/run-tests.mjs ./test/library-builtins.test.mjs`；原測試通過，保留 LF 與通用性 | OUT-4、OUT-5 |
+| Python 自檢 | `python3 packages/core/builtin-skills/visual-parity/scripts/parity.py selftest`；不修改 script，仍驗證原工具可用 | OUT-3、OUT-5 |
+| Core typecheck 與完整測試 | `npx tsc --noEmit -p tsconfig.json`、`npm test`；全部通過，skip 不視為已驗收 | 工程品質 |
+| 真實瀏覽器驗收 | 以拋棄式 `--store-path` 啟動 VibeFlow host，使用保留 token 的 URL；按新版範例跑 diff、responsive 及含 screenshot、點擊、assertion、`--video` 的 flow。比對前後 git status，檢查 scratch 中間檔及最終影片可讀 | OUT-1、OUT-7 |
+| 無 env 相容性 | 使用同一受測頁面，在隔離 cwd unset 兩變數，跑原版 `git show 05e7917:packages/core/builtin-skills/visual-parity/scripts/parity.py` 的暫存副本與目前 script 的同等命令；報告／影片／screenshot 仍依原指定相對路徑落在 cwd | OUT-2、OUT-3 |
+| ffmpeg fallback | 針對單一 Python process 限制 ffmpeg 發現能力，仍能啟動瀏覽器並完成錄影；核對實際 webm、報告連結與可播放性，保留 Python／Node／瀏覽器必要執行路徑 | OUT-3 |
+| 像素比對適用性 | 本方案沒有 renderer 或外觀修改，無新舊 UI 像素驗收項；保存驗收截圖。若後續新增 UI 外觀修改，先補工作項目，對相同 viewport 做像素級比對；不以 computed-style 報告替代 | OUT-7 |
+| Web 建置與 E2E 適用性 | 本次無 renderer、transport、handler table 變更，因此不要求額外 UI flow E2E；npm 打包需要 Web export，缺少時先 `npm run build:web -- --webpack`。若實作擴及 UI flow，補兩組 typecheck、Web build 與 `npm run test:e2e` | 專案 DoD |
+| npm 出貨內容 | `npm run build:npm`，將 `npm pack ./dist-npm --pack-destination <scratch>` 的 tarball 解到暫存目錄；逐檔比對兩個 SKILL.md 與 parity.py 在來源、dist-npm、tarball 的 bytes，確認新版標記且無證據檔混入 | OUT-6 |
+| 暫存安裝 | `npm install --prefix <scratch/install> <tarball>`，以該 prefix 的 `node_modules/.bin/vibeflow` 搭配拋棄式 `--store-path` 執行 `doctor`；保留結果及任何環境限制，不修改專案依賴、不 publish | OUT-6 |
+| PR 與最終清理 | 檢查 branch diff 與乾淨 git status，移除本次生成的 `app`／`renderer/.next`；依來源挑選影片上傳 GitHub comment，確認取得 GitHub 影片連結 | OUT-4、OUT-8 |
+
+### 風險、依賴與現況
+
+- 前置檢查已確認 Node v24.18.0、Python 3.13.7、Python Playwright、ffmpeg、node_modules 與既有 Web build 存在；Chromium cache 存在不代表 launch 已成功，仍須 runtime 驗收。
+- `TMPDIR` 對 Python 標準 tempfile 生效；Playwright 自身可能另有內部暫存，此方案規範並驗證本工具可控制的錄影與 agent 工作檔，不宣稱能控制瀏覽器所有內部暫存。
+- Bash 與 PowerShell 的引用語法不同；文件需明示，不新增 shell 依賴或假設 JSON 能展開環境變數。
+- 證據上傳可能受 GitHub 登入或瀏覽器工具能力限制；若無法完成，O7 保持未完成並揭露具體阻礙，不能將本機影片路徑當作已上傳。
+- 暫存 prefix 安裝會下載已存在的 runtime 依賴，符合打包 DoD；不新增專案 npm 依賴、不執行 publish。
+
+### 待確認事項與實作紀錄
+
+- 已確認「只改兩個 SKILL.md，保留 parity.py 路徑語意」的 Plan，依上方追蹤表執行。
+- 已完成：Spec 確認、程式碼與環境前置調查、方案比較及上述驗證規劃。
+- O3 實測：直接從 SKILL.md 擷取 Bash 初始化與 JSON 產生範例，於隔離目錄執行。兩 env 都有、只有 Artifact、只有 scratch、兩者 unset、兩者空值各跑兩次；10/10 通過，涵蓋不存在的目錄、空白路徑、證據重跑隔離與 JSON screenshot 絕對路徑。紀錄：`$VIBEFLOW_ARTIFACTS_DIR/scratch/builtin-output-validation/directory-matrix.json`。
+- O3 回歸：`node scripts/run-tests.mjs ./test/library-builtins.test.mjs`，21 pass、0 fail、0 skip；`git diff --check` 通過。
+- O4 實測：逐項核對證據來源、截圖儲存、scratch／unset／空值 fallback、明確路徑優先、GitHub 網頁上傳、影片獨立 comment、無影片略過與禁止 commit 規則；既有 library-builtins 再跑 21 pass、0 fail、0 skip；diff check 通過。
+- O5：`npx tsc --noEmit -p tsconfig.json` 通過；`npm test` 454 pass、0 fail、0 skip；Python selftest 通過（另以 scratch TMPDIR 執行亦通過）。完整測試紀錄位於 `scratch/builtin-output-validation/npm-test.log`。
+- O5 runtime：以獨立 store 與假 agent CLI 啟動真實 VibeFlow host，保留 token URL；diff、responsive（375/768/1440）、8-step flow（開設定、assertion、兩張截圖、MP4）通過，console／network 錯誤為 0。觀測到錄影 `parity-video-*` 位於 `PARITY_SCRATCH`，執行後已清除。以 ffprobe 確認 MP4 為 H.264；缺 ffmpeg 時仍產生可讀 WebM，報告回報實際路徑。
+- O5 相容性：以 `git show 05e7917:.../parity.py` 取得原工具，確認其 bytes 與目前工具相同；在 unset 兩個 VibeFlow env 的隔離 cwd 分別執行原版與現版 flow＋video，5 個輸出檔名一致、Markdown 報告 bytes 相同，維持相對路徑行為。
+- O5 證據：`$VIBEFLOW_ARTIFACTS_DIR/visual-parity/run-z6ks6X/` 保存 reports、steps.json、settings.png、parity-flow.png、parity-flow.mp4 及 without-ffmpeg/ 的最終 WebM；驗證摘要在 `scratch/builtin-output-validation/runtime-results.json`。實際執行前後 `git status --porcelain` 皆空；拋棄式 host 已用同 store 的 CLI shutdown 停止。未改 renderer／UI 外觀，像素比對不適用。
+- O6：`npm run build:npm`、`npm pack ./dist-npm --pack-destination <scratch>` 成功。`pr/SKILL.md`、`visual-parity/SKILL.md`、`visual-parity/scripts/parity.py` 在來源、dist-npm、實際 tarball bytes 完全一致；出貨 skill 未夾帶 png、mp4、webm 或 log。
+- O6 安裝：將 tarball 安裝至 Artifact scratch 下的獨立 npm prefix，使用安裝後 CLI 與拋棄式 store 執行 doctor，exit 0；Node、Git、tmux、node-pty、agent CLI、Web UI、資料目錄 7 項全正常。結果保存在 `scratch/builtin-output-validation/packaging-results.json`、`doctor.log`。
+- O7：[Draft PR #115](https://github.com/KW-Yeh/VibeFlow/pull/115) 已建立、self-assign；base `main`，head `fix/default-built-in-skill-outputs-to`。標題、內容與實測結果已完成，未將證據檔 commit。
+- O8 未完成：已在 GitHub 網頁準備獨立影片 comment 並透過 file chooser 選取 `visual-parity/run-z6ks6X/parity-flow.mp4`，但 Chrome ChatGPT 擴充功能未允許 file URL，`setFiles` 被拒絕。Browser 的 `chrome-file-upload-troubleshooting` 要求使用者開啟 `chrome://extensions` → ChatGPT → Details → Allow access to file URLs；未自行修改這項存取權限，未送出無附件 comment。影片仍在 Artifact，畫面已保存為同目錄 `pr-upload-pending.jpg`，待使用者設定後重試。說明：[Chrome extension file uploads](https://developers.openai.com/codex/app/chrome-extension#upload-files)。
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** VibeFlow 隨 npm 出貨內建 skill（`visual-parity`、通用版 `pr`），自動放進每個用戶的 Library，可編輯、停用、刪除、還原，未修改的隨版本自動更新。

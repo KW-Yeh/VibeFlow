@@ -68,9 +68,31 @@ Add `scope` only when one area clearly owns the change.
 Issue link: if the argument or the branch name carries an issue reference (`#123`, `ABC-123`),
 put it in **Why** (`Closes #123` for a GitHub issue in this repo).
 
-## 5. Create or update
+## 5. Screenshots and acceptance videos
 
-Write the body to a temp file, then:
+- When `VIBEFLOW_ARTIFACTS_DIR` is set and nonempty, look there first for this change's screenshots
+  and acceptance videos, including subdirectories such as `visual-parity/run-*`. Select files that
+  actually show this branch's behavior; do not attach unrelated or stale evidence.
+- Save new screenshots in a new subdirectory of `VIBEFLOW_ARTIFACTS_DIR` (for example
+  `pr/<unique-run>/`). Create it first, quote paths containing spaces, and preserve earlier evidence.
+  Keep final acceptance videos there too; recordings from visual-parity may remain in its run directory.
+- Put temporary browser scripts, extra logs, PR body files and recording intermediates in
+  `VIBEFLOW_SCRATCH_DIR`. If it is unset or empty but the Artifact root exists, use its `scratch/`
+  subdirectory. If neither is available, use the agent's scratchpad or the system temp directory.
+- When the Artifact variable is unset or empty (outside VibeFlow), use an existing evidence location
+  or the agent's scratchpad for new captures. Missing variables must not block the PR workflow;
+  an explicit user-specified path takes priority.
+- **Upload screenshots and videos through the GitHub web UI only. Never commit them to the repo.**
+  Create or update the PR with `gh` as below, then use GitHub's attachment control in its description
+  or a comment. For an acceptance video, add a separate comment and upload the actual video there.
+  Wait for the upload to finish and confirm the resulting GitHub attachment link before submitting.
+  A local filesystem path is not an uploaded attachment. If no acceptance video exists, skip the
+  video comment. If the browser cannot upload or is not signed in, report that limitation and keep
+  the file in Artifacts; do not substitute a repository commit or claim the upload succeeded.
+
+## 6. Create or update
+
+Write the body to a unique temp file in the scratch location above, then:
 
 ```bash
 gh pr create --draft --base <base> --title "<title>" --body-file <file>
