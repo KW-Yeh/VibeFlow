@@ -311,3 +311,13 @@ test('buildAgentCommand — no worktree, no hooks; Codex gets none either', () =
   // Overriding notify would replace the user's own Codex notify program.
   assert.ok(!codex.includes('notify'))
 })
+
+test('buildAgentCommand — Claude launches turn on the todo tools card progress reads', () => {
+  for (const task of [TASK, { ...TASK, worktreePath: undefined }]) {
+    const settings = claudeSettings(buildAgentCommand(task))
+    assert.equal(settings.env.CLAUDE_CODE_ENABLE_TODO_TOOLS, '1')
+  }
+  const resumed = buildAgentCommand(TASK, undefined, { resume: true })
+  assert.equal(resumed.match(/CLAUDE_CODE_ENABLE_TODO_TOOLS/g)?.length, 2, 'both resume branches')
+  assert.ok(!buildAgentCommand(CODEX_TASK).includes('CLAUDE_CODE_ENABLE_TODO_TOOLS'))
+})

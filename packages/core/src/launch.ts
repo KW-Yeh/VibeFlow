@@ -193,7 +193,12 @@ const TODO_TOOLS = 'TodoWrite|TaskCreate|TaskUpdate'
  * can never block a Stop.
  */
 function buildClaudeSettings(worktreePath?: string): string {
-  const settings: Record<string, unknown> = { theme: 'dark' }
+  // Card progress is read from the todo tools, which Claude Code withholds from
+  // newer models unless this undocumented switch is on (checked in 2.1.305).
+  const settings: Record<string, unknown> = {
+    theme: 'dark',
+    env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+  }
   if (worktreePath) {
     const dir = `${toShellPath(worktreePath)}/${SUBAGENTS_DIR}`
     const command = `mkdir -p "${dir}" && cat > "${dir}/$(date +%s)-$$-$RANDOM.json"`
