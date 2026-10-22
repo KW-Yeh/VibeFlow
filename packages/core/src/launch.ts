@@ -330,7 +330,8 @@ function assembleCommand(
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
-    const promptArg = prompt ? ` ${shellQuote(prompt)}` : ''
+    // `--add-dir` is variadic: without `--` the prompt is taken as another directory.
+    const promptArg = prompt ? ` -- ${shellQuote(prompt)}` : ''
     const tail = `${flags}${sysFlag}${promptArg}`
     cmd = (sessionId && opts?.resume)
       ? claudeResumeOrFresh(sessionId, worktreePath, tail)

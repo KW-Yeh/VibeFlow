@@ -46,6 +46,11 @@ test('buildAgentCommand — Claude receives only card content without a custom s
   assert.ok(!cmd.includes('PLAN.md'))
 })
 
+test('buildAgentCommand — the card prompt is not swallowed by the variadic --add-dir', () => {
+  const cmd = buildAgentCommand(TASK, '', undefined, '/workspace/project')
+  assert.match(cmd, /--add-dir '\/workspace\/project' -- '任務標題：修復登入流程/)
+})
+
 test('buildAgentCommand — sends only the custom system prompt and the card, no Library', () => {
   const claude = buildAgentCommand(TASK, 'CUSTOM_MARKER', undefined, '/workspace/project')
   assert.ok(claude.includes(`--append-system-prompt 'CUSTOM_MARKER'`))
