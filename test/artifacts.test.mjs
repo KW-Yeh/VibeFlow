@@ -20,6 +20,21 @@ async function tmpDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'vf-artifacts-'))
 }
 
+// A file symlink on Windows needs Developer Mode or an elevated shell (a
+// junction only links directories). Without either the test is skipped and
+// its target removed; macOS and Linux always create the link.
+async function symlinkFileOrSkip(t, target, at) {
+  try {
+    await fs.symlink(target, at, 'file')
+    return true
+  } catch (err) {
+    if (process.platform !== 'win32' || err.code !== 'EPERM') throw err
+    await fs.rm(target, { force: true })
+    t.skip('file symlinks need Developer Mode or elevation on Windows')
+    return false
+  }
+}
+
 /** A tiny but structurally valid PNG (1x1, transparent). */
 const PNG_BYTES = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYGD4DwABBAEAX+I4bwAAAABJRU5ErkJggg==',
@@ -208,13 +223,13 @@ test('listArtifacts — scratch files sort after user-facing ones regardless of 
   }
 })
 
-test('listArtifacts — skips symlinks', async () => {
+test('listArtifacts — skips symlinks', async (t) => {
   const dir = await tmpDir()
   try {
     const outside = path.join(dir, '..', `outside-${path.basename(dir)}.txt`)
     await fs.writeFile(outside, 'secret', 'utf8')
     await fs.mkdir(path.join(dir, 'inner'), { recursive: true })
-    await fs.symlink(outside, path.join(dir, 'inner', 'link.txt'))
+    if (!(await symlinkFileOrSkip(t, outside, path.join(dir, 'inner', 'link.txt')))) return
 
     assert.deepEqual(listArtifacts(dir), [])
     await fs.rm(outside, { force: true })
@@ -379,12 +394,12 @@ test('readArtifact — refuses to escape the artifacts directory', async () => {
   }
 })
 
-test('readArtifact — refuses a symlink pointing outside the directory', async () => {
+test('readArtifact — refuses a symlink pointing outside the directory', async (t) => {
   const dir = await tmpDir()
   try {
     const outside = path.join(dir, '..', `linked-${path.basename(dir)}.txt`)
     await fs.writeFile(outside, 'secret', 'utf8')
-    await fs.symlink(outside, path.join(dir, 'link.txt'))
+    if (!(await symlinkFileOrSkip(t, outside, path.join(dir, 'link.txt')))) return
 
     assert.equal(readArtifact(dir, 'link.txt'), null)
     await fs.rm(outside, { force: true })

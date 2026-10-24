@@ -12,6 +12,14 @@ export interface AgentPrintOptions {
 }
 
 /**
+ * cmd.exe splits an unquoted `C:\Program Files\…` at the space. A bare name
+ * like `claude` has none and is left as is so PATHEXT lookup still applies.
+ */
+export function quoteWindowsBin(bin: string): string {
+  return /\s/.test(bin) && !bin.startsWith('"') ? `"${bin}"` : bin
+}
+
+/**
  * Run an agent CLI headlessly and resolve with its stdout.
  *
  * The prompt goes in on stdin rather than as an argument. On Windows an
@@ -38,7 +46,7 @@ export function runAgentPrint(
     // cmd.exe gets one pre-joined command line: handing spawn args alongside
     // `shell` concatenates them unescaped anyway, and Node deprecates it.
     const proc = process.platform === 'win32'
-      ? spawn([bin, ...args].join(' '), { ...spawnOpts, shell: true })
+      ? spawn([quoteWindowsBin(bin), ...args].join(' '), { ...spawnOpts, shell: true })
       : spawn(bin, args, spawnOpts)
 
     let stdout = ''

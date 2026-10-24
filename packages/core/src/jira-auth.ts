@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { execEnv } from './env'
+import { execEnv, resolvePtyFile } from './env'
 import * as nodePty from 'node-pty'
 
 const pexec = promisify(execFile)
@@ -85,8 +85,9 @@ export function startJiraLogin(onEvent: (event: JiraAuthEvent) => void, run: Acl
   onEvent({ type: 'starting' })
   let process: nodePty.IPty
   try {
-    process = nodePty.spawn('acli', ['jira', 'auth', 'login', '--web'], {
-      name: 'xterm-256color', cwd: processCwd(), env: { ...execEnv(), TERM: 'xterm-256color' }, cols: 100, rows: 24,
+    const env = { ...execEnv(), TERM: 'xterm-256color' }
+    process = nodePty.spawn(resolvePtyFile('acli', env), ['jira', 'auth', 'login', '--web'], {
+      name: 'xterm-256color', cwd: processCwd(), env, cols: 100, rows: 24,
     })
   } catch (err) {
     onEvent({ type: 'error', error: String((err as Error).message ?? err) })

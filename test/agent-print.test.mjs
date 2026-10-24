@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { runAgentPrint } from '../packages/core/src/agent-print.ts'
+import { quoteWindowsBin, runAgentPrint } from '../packages/core/src/agent-print.ts'
 
 const isWindows = process.platform === 'win32'
 
@@ -60,4 +60,10 @@ test('runAgentPrint — a failing CLI rejects with its exit code and stderr', as
 test('runAgentPrint — a missing CLI rejects instead of hanging', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-agent-'))
   await assert.rejects(runAgentPrint('vf-no-such-agent-cli', ['-p'], 'hi', { cwd: dir }))
+})
+
+test('quoteWindowsBin quotes a path with spaces and leaves bare names alone', () => {
+  assert.equal(quoteWindowsBin('claude'), 'claude')
+  assert.equal(quoteWindowsBin('C:\\Program Files\\nodejs\\node.exe'), '"C:\\Program Files\\nodejs\\node.exe"')
+  assert.equal(quoteWindowsBin('"C:\\Program Files\\app.exe"'), '"C:\\Program Files\\app.exe"')
 })

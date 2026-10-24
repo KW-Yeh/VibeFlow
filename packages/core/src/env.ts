@@ -1,3 +1,4 @@
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -92,4 +93,24 @@ export function execEnv(): NodeJS.ProcessEnv {
   // buildEnv() copies all of process.env, so NODE_ENV is present at runtime;
   // the index-signature type just doesn't prove it to the stricter ProcessEnv.
   return { ...buildEnv() } as NodeJS.ProcessEnv
+}
+
+/**
+ * node-pty on Windows looks a relative file up in the host's own Path by its
+ * exact name — no `.exe` appended, and not the augmented `execEnv()` Path — so
+ * a bare `acli` or `gh` is "File not found". Resolve it to a full path there; other
+ * platforms keep the bare name.
+ */
+export function resolvePtyFile(bin: string, env: NodeJS.ProcessEnv = execEnv()): string {
+  if (process.platform !== 'win32' || path.isAbsolute(bin)) return bin
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path')
+  const dirs = (pathKey ? env[pathKey] ?? '' : '').split(path.delimiter).filter(Boolean)
+  const names = path.extname(bin) ? [bin] : [`${bin}.exe`, `${bin}.com`]
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = path.join(dir, name)
+      if (fs.existsSync(candidate)) return candidate
+    }
+  }
+  return bin
 }

@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import * as nodePty from 'node-pty'
-import { execEnv } from './env'
+import { execEnv, resolvePtyFile } from './env'
 
 const pexec = promisify(execFile)
 const GITHUB_HOST = 'github.com'
@@ -149,7 +149,7 @@ export function startGitHubCliLogin(
   let proc: nodePty.IPty
   try {
     proc = nodePty.spawn(
-      'gh',
+      resolvePtyFile('gh'),
       ['auth', 'login', '--hostname', GITHUB_HOST, '--git-protocol', 'https'],
       {
         name: 'xterm-256color',

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { quoteWindowsBin } from './agent-print'
 import { execEnv } from './env'
 
 /**
@@ -38,7 +39,7 @@ export function spawnJsonLines(
 ): JsonLinesChannel {
   const spawnOpts = { cwd: opts.cwd, env: opts.env ?? execEnv(), windowsHide: true }
   const proc = process.platform === 'win32'
-    ? spawn([bin, ...args].join(' '), { ...spawnOpts, shell: true })
+    ? spawn([quoteWindowsBin(bin), ...args].join(' '), { ...spawnOpts, shell: true })
     : spawn(bin, args, spawnOpts)
 
   const inbox: unknown[] = []

@@ -1,7 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildSearchArgs, buildViewArgs, createJiraService, isJiraRef, JIRA_INBOX_JQL, toTicket } from '../packages/core/src/jira.ts'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { resolvePtyFile } from '../packages/core/src/env.ts'
 import { hasSingleSitePrompt, parseAuthStatus } from '../packages/core/src/jira-auth.ts'
+
+// node-pty on Windows will not add `.exe` to a bare name, so the login PTY
+// needs the full path; elsewhere the bare name goes through unchanged.
+test('resolvePtyFile — finds acli.exe on Windows, keeps the bare name elsewhere', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-pty-file-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  fs.writeFileSync(path.join(dir, 'acli.exe'), '')
+  const env = { Path: dir }
+  if (process.platform === 'win32') {
+    assert.equal(resolvePtyFile('acli', env), path.join(dir, 'acli.exe'))
+    assert.equal(resolvePtyFile('not-installed', env), 'not-installed')
+  } else {
+    assert.equal(resolvePtyFile('acli', env), 'acli')
+  }
+})
 
 const site = 'example.atlassian.net'
 const raw = {
