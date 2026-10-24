@@ -1,7 +1,8 @@
-import { execFile } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { AvailableUpdate, UpdateCheckResult } from '../../core/src/client'
 
+const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
 export const UPDATE_CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000
 
@@ -28,9 +29,12 @@ export async function checkForUpdate(
   packageName: string,
   currentVersion: string,
   query: (name: string) => Promise<string> = async (name) => {
-    const { stdout } = await execFileAsync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
-      ['view', `${name}@latest`, 'version', '--json'],
-      { timeout: 10_000, windowsHide: true, shell: process.platform === 'win32' })
+    const args = ['view', `${name}@latest`, 'version', '--json']
+    const opts = { timeout: 10_000, windowsHide: true }
+    // cmd.exe gets one pre-joined line; args alongside `shell` is DEP0190.
+    const { stdout } = process.platform === 'win32'
+      ? await execAsync(['npm.cmd', ...args].join(' '), opts)
+      : await execFileAsync('npm', args, opts)
     return stdout
   }
 ): Promise<AvailableUpdate | null> {

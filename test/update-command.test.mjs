@@ -43,7 +43,7 @@ test('global npm installation updates the package containing the CLI', (t) => {
   assert.equal(result.code, 0)
   assert.deepEqual(result.calls, [
     { args: ['root', '-g'], inherit: false },
-    { args: ['install', '-g', '@example/renamed-vibeflow@latest'], inherit: true },
+    { args: ['install', '-g', '@example/renamed-vibeflow@latest', '--prefer-online'], inherit: true },
   ])
   assert.match(result.logs.at(-1), /重新啟動/)
 })

@@ -19,14 +19,17 @@ export interface UpdateOptions {
 }
 
 function npmRunner(args: string[], inherit: boolean): NpmResult {
-  // Windows distributes npm as a .cmd shim; Node needs a shell to launch it.
-  const windows = process.platform === 'win32'
-  return spawnSync(windows ? 'npm.cmd' : 'npm', args, {
-    encoding: 'utf8',
-    stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'inherit'],
+  const spawnOpts = {
+    encoding: 'utf8' as const,
+    stdio: inherit ? 'inherit' as const : ['ignore' as const, 'pipe' as const, 'inherit' as const],
     windowsHide: true,
-    shell: windows,
-  })
+  }
+  // Windows distributes npm as a .cmd shim; Node needs a shell to launch it.
+  // cmd.exe gets one pre-joined line (args are fixed tokens and a validated
+  // package name): passing args alongside `shell` is deprecated (DEP0190).
+  return process.platform === 'win32'
+    ? spawnSync(['npm.cmd', ...args].join(' '), { ...spawnOpts, shell: true })
+    : spawnSync('npm', args, spawnOpts)
 }
 
 export function packageName(packageRoot: string): string | null {
@@ -77,7 +80,9 @@ export function runUpdate(options: UpdateOptions): number {
   }
 
   log(`正在更新 ${name} 至 npm latest…`)
-  const result = runNpm(['install', '-g', `${name}@latest`], true)
+  // Right after a release npm's cached metadata (or a lagging registry edge)
+  // can name the new `latest` without listing it yet (ETARGET); revalidate.
+  const result = runNpm(['install', '-g', `${name}@latest`, '--prefer-online'], true)
   if (result.error || result.status !== 0) {
     error(`更新失敗：${result.error?.message ?? `npm 結束碼 ${result.status ?? 'unknown'}`}`)
     return result.status && result.status > 0 ? result.status : 1
