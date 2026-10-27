@@ -288,7 +288,9 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     await page.getByText('Seed card').first().waitFor()
     await page.getByRole('tab', { name: '工作項目' }).first().click()
     await page.getByRole('tab', { name: /^Issues/ }).last().click()
-    await page.getByRole('button', { name: /^專案篩選/ }).waitFor()
+    await page.getByRole('region', { name: 'e2e/clcom-frontend' }).waitFor()
+    await page.getByRole('region', { name: 'e2e/VibeFlow' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /^專案篩選/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /^Assignee篩選/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /^發起人篩選/ }).count(), 0)
     // clcom-frontend has no board card; global search still discovers it.

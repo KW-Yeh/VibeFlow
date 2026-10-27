@@ -81,8 +81,8 @@ export const writeJiraScope = (scope: JiraScope) => write(JIRA_SCOPE_KEY, scope)
 
 function readFilters(value: unknown): GithubFilters {
   const v = (value ?? {}) as Partial<Record<keyof GithubFilters, unknown>>
+  // Older saves also carry `projects`; that filter became the per-repo columns, so it is dropped.
   return {
-    projects: isStrings(v.projects) ? v.projects : EMPTY_GITHUB_FILTERS.projects,
     assignees: isStrings(v.assignees) ? v.assignees : EMPTY_GITHUB_FILTERS.assignees,
     authors: isStrings(v.authors) ? v.authors : EMPTY_GITHUB_FILTERS.authors,
   }

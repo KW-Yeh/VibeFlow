@@ -5,7 +5,6 @@ import {
   GitPullRequest,
   GitPullRequestDraft,
   Loader2,
-  Layers,
   Plus,
   RefreshCw,
   SquareArrowOutUpRight,
@@ -37,10 +36,12 @@ import {
   EMPTY_GITHUB_FILTERS,
   githubEntries,
   githubFilterOptions,
+  githubRepoColumns,
   hasGithubFilters,
   UNASSIGNED,
   type GithubEntry,
   type GithubFilters,
+  type GithubRepoColumn,
 } from '@/lib/github-filter'
 import { cn } from '@/lib/utils'
 import type { GithubInbox, GithubItem, GithubUser } from '@/lib/types'
@@ -347,47 +348,39 @@ function Notice({ children, action }: { children: ReactNode; action?: ReactNode 
   )
 }
 
-function Column<T extends GithubItem>({
-  label,
-  entries,
-  empty,
+function RepoColumn({
+  column,
   selectedKey,
   boardCards,
   now,
   onSelect,
 }: {
-  label: string
-  entries: GithubEntry<T>[]
-  empty: string
+  column: GithubRepoColumn
   selectedKey: string | null
   boardCards: Map<string, string>
   now: number
   onSelect: (key: string) => void
 }) {
   return (
-    <section className="flex min-h-0 flex-col gap-2">
-      <div className="flex shrink-0 items-center gap-2 px-1">
-        <h2 className={SECTION_LABEL}>{label}</h2>
-        <span className="text-xs tabular-nums text-muted-foreground/80">{entries.length}</span>
+    <section aria-label={column.repo} className="flex min-h-0 w-[320px] shrink-0 flex-col gap-2">
+      <div className="flex shrink-0 items-center gap-2 px-1" title={column.repo}>
+        <h2 className={cn(SECTION_LABEL, 'min-w-0 truncate')}>{column.projectName.split('/').pop()}</h2>
+        <span className="text-xs tabular-nums text-muted-foreground/80">{column.entries.length}</span>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] content-start gap-3 overflow-y-auto rounded-md p-1">
-        {entries.length === 0 ? (
-          <p className="px-2 py-1 text-sm text-muted-foreground/60">{empty}</p>
-        ) : (
-          entries.map((entry) => {
-            const key = githubItemKey(entry.item)
-            return (
-              <GithubCard
-                key={key}
-                entry={entry}
-                selected={key === selectedKey}
-                onBoard={boardCards.has(key)}
-                now={now}
-                onSelect={() => onSelect(key)}
-              />
-            )
-          })
-        )}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-md p-1">
+        {column.entries.map((entry) => {
+          const key = githubItemKey(entry.item)
+          return (
+            <GithubCard
+              key={key}
+              entry={entry}
+              selected={key === selectedKey}
+              onBoard={boardCards.has(key)}
+              now={now}
+              onSelect={() => onSelect(key)}
+            />
+          )
+        })}
       </div>
     </section>
   )
@@ -421,12 +414,15 @@ export function GithubView({
   const filtered = hasGithubFilters(filters)
   const issues = githubEntries(repos, 'issues', filters)
   const prs = githubEntries(repos, 'prs', filters)
-  const failed = repos.filter(
-    (r) => r.error && (filters.projects.length === 0 || filters.projects.includes(r.projectName))
-  )
-  const selected =
-    [...(sourceKind === 'prs' ? [] : issues), ...(sourceKind === 'issues' ? [] : prs)]
-      .find((entry) => githubItemKey(entry.item) === selectedKey) ?? null
+  const failed = repos.filter((r) => r.error)
+  const shown: GithubEntry[] = sourceKind === 'issues' ? issues : sourceKind === 'prs' ? prs : [...issues, ...prs]
+  const columns = githubRepoColumns(shown)
+  const empty = filtered
+    ? '沒有符合篩選條件的項目'
+    : sourceKind === 'prs'
+      ? '沒有指派給你、你建立、請你 review 或你 review 過的 open PR'
+      : sourceKind === 'issues' ? '沒有指派給你或你建立的 open Issue' : '目前沒有與你相關的 open Issue 或 PR'
+  const selected = shown.find((entry) => githubItemKey(entry.item) === selectedKey) ?? null
   // Once the selected item is filtered out, clearing the filter must not reopen its drawer.
   const selectionHidden = inbox?.status === 'ok' && selectedKey !== null && selected === null
   useEffect(() => {
@@ -473,28 +469,22 @@ export function GithubView({
             ))}
           </div>
         )}
-        <div className="min-h-0 flex-1">
-          {sourceKind !== 'prs' && <Column
-            label="Issues"
-            entries={issues}
-            empty={filtered ? '沒有符合篩選條件的 Issue' : '沒有指派給你或你建立的 open Issue'}
-            selectedKey={selectedKey}
-            boardCards={boardCards}
-            now={now}
-            onSelect={setSelectedKey}
-          />}
-          {sourceKind !== 'issues' && <Column
-            label="Pull Requests"
-            entries={prs}
-            empty={
-              filtered ? '沒有符合篩選條件的 PR' : '沒有指派給你、你建立、請你 review 或你 review 過的 open PR'
-            }
-            selectedKey={selectedKey}
-            boardCards={boardCards}
-            now={now}
-            onSelect={setSelectedKey}
-          />}
-        </div>
+        {columns.length === 0 ? (
+          <p className="px-1 text-sm text-muted-foreground/60">{empty}</p>
+        ) : (
+          <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
+            {columns.map((column) => (
+              <RepoColumn
+                key={column.repo}
+                column={column}
+                selectedKey={selectedKey}
+                boardCards={boardCards}
+                now={now}
+                onSelect={setSelectedKey}
+              />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -511,14 +501,6 @@ export function GithubView({
     >
       <div className={cn('flex shrink-0 items-center gap-3 border-b border-border px-5', embedded ? 'h-11' : 'h-12')}>
         {!embedded && <><ViewTabs value={view} onChange={onViewChange} /><span className="h-4 w-px bg-border" /></>}
-        <GithubFilterMenu
-          name="專案"
-          allLabel="所有專案"
-          icon={Layers}
-          options={options.projects}
-          value={filters.projects}
-          onChange={setFilter('projects')}
-        />
         {sourceKind !== 'issues' && <GithubFilterMenu
           name="Assignee"
           allLabel="所有 Assignee"

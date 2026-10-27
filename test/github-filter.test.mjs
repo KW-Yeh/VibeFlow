@@ -6,6 +6,7 @@ import {
   UNASSIGNED,
   githubEntries,
   githubFilterOptions,
+  githubRepoColumns,
   hasGithubFilters,
   matchesGithubFilters,
   toggleValue,
@@ -30,7 +31,9 @@ function item(kind, number, { author = 'me', assignees = [] } = {}) {
 }
 
 function repo(projectName, { issues = [], prs = [] } = {}) {
-  return { repo: `acme/${projectName}`, projectName, projectPath: `/p/${projectName}`, issues, prs }
+  const name = `acme/${projectName}`
+  const own = (items) => items.map((i) => ({ ...i, repo: name }))
+  return { repo: name, projectName, projectPath: `/p/${projectName}`, issues: own(issues), prs: own(prs) }
 }
 
 const filters = (over = {}) => ({ ...EMPTY_GITHUB_FILTERS, ...over })
@@ -71,11 +74,10 @@ test('values ticked in one filter are OR-ed', () => {
     'VibeFlow#108',
     'VibeFlow#90',
   ])
-  assert.equal(githubEntries(REPOS, 'issues', filters({ projects: ['VibeFlow', 'clcom-frontend'] })).length, 5)
 })
 
 test('filters are AND-ed with each other', () => {
-  const shown = githubEntries(REPOS, 'issues', filters({ projects: ['VibeFlow'], authors: ['amy', 'me'], assignees: ['ben'] }))
+  const shown = githubEntries(REPOS, 'issues', filters({ authors: ['amy', 'me'], assignees: ['ben'] }))
   assert.deepEqual(numbers(shown), ['VibeFlow#112'])
 })
 
@@ -99,17 +101,27 @@ test('an author filter never matches an item without an author', () => {
 
 test('options are the values in the data, sorted and de-duplicated, with UNASSIGNED first', () => {
   assert.deepEqual(githubFilterOptions(REPOS, EMPTY_GITHUB_FILTERS), {
-    projects: ['clcom-frontend', 'VibeFlow'],
     assignees: [UNASSIGNED, 'ben', 'me'],
     authors: ['amy', 'ben', 'me'],
   })
 })
 
 test('a ticked value missing from the data stays an option so it can be unticked', () => {
-  const options = githubFilterOptions(REPOS, filters({ projects: ['Gone'], assignees: [UNASSIGNED, 'zed'], authors: ['old'] }))
-  assert.ok(options.projects.includes('Gone'))
+  const options = githubFilterOptions(REPOS, filters({ assignees: [UNASSIGNED, 'zed'], authors: ['old'] }))
   assert.deepEqual(options.assignees, [UNASSIGNED, 'ben', 'me', 'zed'])
   assert.ok(options.authors.includes('old'))
+})
+
+test('repo columns keep the entry order and leave out repos with nothing shown', () => {
+  const columns = githubRepoColumns(githubEntries(REPOS, 'issues', filters({ authors: ['ben'] })))
+  assert.deepEqual(
+    columns.map((c) => [c.repo, c.projectName, numbers(c.entries)]),
+    [
+      ['acme/clcom-frontend', 'clcom-frontend', ['clcom-frontend#431']],
+      ['acme/VibeFlow', 'VibeFlow', ['VibeFlow#90']],
+    ]
+  )
+  assert.deepEqual(githubRepoColumns(githubEntries(REPOS, 'prs', filters({ authors: ['amy'] }))).map((c) => c.repo), ['acme/VibeFlow'])
 })
 
 test('hasGithubFilters and toggleValue', () => {

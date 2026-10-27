@@ -2,12 +2,11 @@ import type { GithubIssue, GithubItem, GithubPr, GithubRepoInbox } from './types
 
 /** Values ticked in each filter; an empty list leaves that filter open. */
 export interface GithubFilters {
-  projects: string[]
   assignees: string[]
   authors: string[]
 }
 
-export const EMPTY_GITHUB_FILTERS: GithubFilters = { projects: [], assignees: [], authors: [] }
+export const EMPTY_GITHUB_FILTERS: GithubFilters = { assignees: [], authors: [] }
 
 /** The "nobody assigned" choice. GitHub logins are alphanumerics and hyphens, so `:` never collides. */
 export const UNASSIGNED = ':unassigned'
@@ -19,13 +18,12 @@ export interface GithubEntry<T extends GithubItem = GithubItem> {
 }
 
 export interface GithubFilterOptions {
-  projects: string[]
   assignees: string[]
   authors: string[]
 }
 
 export function hasGithubFilters(filters: GithubFilters): boolean {
-  return filters.projects.length > 0 || filters.assignees.length > 0 || filters.authors.length > 0
+  return filters.assignees.length > 0 || filters.authors.length > 0
 }
 
 export function toggleValue(list: string[], value: string): string[] {
@@ -42,10 +40,6 @@ function choices(seen: Iterable<string>, ticked: string[]): string[] {
 export function githubFilterOptions(repos: GithubRepoInbox[], filters: GithubFilters, kind?: 'issues' | 'prs'): GithubFilterOptions {
   const items: GithubItem[] = repos.flatMap((r) => kind ? r[kind] : [...r.issues, ...r.prs])
   return {
-    projects: choices(
-      repos.map((r) => r.projectName),
-      filters.projects
-    ),
     assignees: [
       UNASSIGNED,
       ...choices(
@@ -62,9 +56,8 @@ export function githubFilterOptions(repos: GithubRepoInbox[], filters: GithubFil
 
 /** OR within a filter, AND across filters. */
 export function matchesGithubFilters(entry: GithubEntry, filters: GithubFilters): boolean {
-  const { item, projectName } = entry
-  const { projects, assignees, authors } = filters
-  if (projects.length && !projects.includes(projectName)) return false
+  const { item } = entry
+  const { assignees, authors } = filters
   if (assignees.length) {
     const hit =
       item.assignees.length === 0
@@ -95,4 +88,21 @@ export function githubEntries(
     })
     .filter((entry) => matchesGithubFilters(entry, filters))
     .sort(compareByProjectThenNumber)
+}
+
+export interface GithubRepoColumn<T extends GithubItem = GithubItem> {
+  repo: string
+  projectName: string
+  entries: GithubEntry<T>[]
+}
+
+/** One column per repo that still has entries, in the order `githubEntries` sorted them. */
+export function githubRepoColumns<T extends GithubItem>(entries: GithubEntry<T>[]): GithubRepoColumn<T>[] {
+  const columns = new Map<string, GithubRepoColumn<T>>()
+  for (const entry of entries) {
+    const column = columns.get(entry.item.repo)
+    if (column) column.entries.push(entry)
+    else columns.set(entry.item.repo, { repo: entry.item.repo, projectName: entry.projectName, entries: [entry] })
+  }
+  return [...columns.values()]
 }
