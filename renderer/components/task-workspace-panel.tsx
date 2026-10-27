@@ -218,6 +218,8 @@ interface TaskWorkspacePanelProps {
   onDelete: (taskId: string) => void
   /** Real user interaction with this workspace — pins its preview tab. */
   onInteract?: () => void
+  /** This workspace is the one on screen (its tab is selected). */
+  active?: boolean
 }
 
 function InfoSection({
@@ -1366,6 +1368,7 @@ export function TaskWorkspacePanel({
   onEdit,
   onDelete,
   onInteract,
+  active = true,
 }: TaskWorkspacePanelProps) {
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -1676,6 +1679,7 @@ export function TaskWorkspacePanel({
               column === 'in_progress' ? () => onLaunchAgent(task) : undefined
             }
             onInteract={onInteract}
+            active={active}
           />
         </div>
 

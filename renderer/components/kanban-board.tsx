@@ -479,6 +479,7 @@ export function KanbanBoard({
                     <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
+                      active={isSelected}
                       progress={progress[entry.task.id] ?? null}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}

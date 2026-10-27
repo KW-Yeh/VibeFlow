@@ -60,6 +60,12 @@ interface TaskTerminalProps {
    * host can pin a preview tab. Read through a ref — see `onInteractRef`.
    */
   onInteract?: () => void
+  /**
+   * The workspace holding this terminal is the one on screen. While active,
+   * the terminal takes keyboard focus when it is shown and when the window
+   * regains focus, so the user can type without clicking into it first.
+   */
+  active?: boolean
 }
 
 function writeProvisionNotice(term: XTerm, notice: string | null | undefined) {
@@ -82,6 +88,7 @@ export function TaskTerminal({
   onReturnToBacklog,
   onLaunchAgent,
   onInteract,
+  active = true,
 }: TaskTerminalProps) {
   // Effective session key: use the prop when provided, else fall back to taskId.
   const sessionKey = sessionKeyProp ?? taskId
@@ -120,6 +127,32 @@ export function TaskTerminal({
   // a new callback identity.
   const onInteractRef = useRef(onInteract)
   onInteractRef.current = onInteract
+  const activeRef = useRef(active)
+  activeRef.current = active
+
+  useEffect(() => {
+    if (active) termRef.current?.focus()
+  }, [active])
+
+  // Returning to the window should land in the terminal, but not pull the
+  // caret out of a field or dialog the user was typing in before they left.
+  useEffect(() => {
+    const onWindowFocus = () => {
+      if (!activeRef.current) return
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      const focused = document.activeElement
+      if (
+        focused instanceof HTMLElement &&
+        !containerRef.current?.contains(focused) &&
+        focused.closest('input, textarea, select, [contenteditable="true"]')
+      ) {
+        return
+      }
+      termRef.current?.focus()
+    }
+    window.addEventListener('focus', onWindowFocus)
+    return () => window.removeEventListener('focus', onWindowFocus)
+  }, [])
 
   // Core runs the launch command AS the login shell's argument (`zsh -lic <cmd>`)
   // rather than typing it into the interactive line editor: the command is often
@@ -308,6 +341,7 @@ export function TaskTerminal({
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       if (disposed || termRef.current !== term) return
       fitToVisibleViewport()
+      if (activeRef.current) term.focus()
 
       const api = typeof window !== 'undefined' ? window.vibeflow : undefined
       if (!api) {
