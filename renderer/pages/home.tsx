@@ -389,6 +389,16 @@ export default function HomePage() {
     )
   }
 
+  const reorderTabs = (taskIds: string[]) => {
+    setTabs((prev) => {
+      const rank = new Map(taskIds.map((id, index) => [id, index]))
+      // Tabs the bar does not show keep their place behind the visible ones.
+      return [...prev].sort(
+        (a, b) => (rank.get(a.taskId) ?? Infinity) - (rank.get(b.taskId) ?? Infinity)
+      )
+    })
+  }
+
   // Closing is purely a bar operation: the TaskWorkspacePanel stays mounted
   // (see kanban-board's `mounted` set), so a running agent's PTY is untouched
   // and reopening the tab shows the full scrollback.
@@ -647,6 +657,7 @@ export default function HomePage() {
                       onSelect={openTab}
                       onPin={pinTab}
                       onClose={(taskId) => closeTabs([taskId])}
+                      onReorder={reorderTabs}
                     />
                   }
                   onSelectTask={openTab}
