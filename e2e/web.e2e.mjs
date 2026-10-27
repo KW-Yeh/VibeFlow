@@ -260,6 +260,15 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.getByRole('tab', { name: 'Git diff' }).click()
   await page.getByText('fake-agent-output.txt').first().waitFor({ timeout: 20_000 })
 
+  // Inspector: fold it into the rail, reopen Git diff as a drawer, pin it back.
+  const asideSplitter = page.getByRole('separator', { name: '調整終端機與側邊面板的寬度' })
+  await page.getByRole('button', { name: '收合側欄' }).click()
+  await asideSplitter.waitFor({ state: 'detached' })
+  await page.getByRole('tab', { name: /Git diff/ }).click()
+  await page.getByText('fake-agent-output.txt').first().waitFor()
+  await page.getByRole('button', { name: '固定側欄' }).click()
+  await asideSplitter.waitFor()
+
   // Approve over the same bridge the UI uses: commit + push to origin.
   const state = await page.evaluate(() => window.vibeflow.getState())
   const task = state.board.in_progress[0]

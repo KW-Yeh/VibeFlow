@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
 import { Button } from '@/components/ui/button'
@@ -66,6 +67,13 @@ interface TaskTerminalProps {
    * regains focus, so the user can type without clicking into it first.
    */
   active?: boolean
+  /**
+   * Turns the header into the workspace's single toolbar: `toolbarStart`
+   * replaces the cwd label, `toolbarEnd` follows the terminal's own actions,
+   * and the terminal drops its card frame to sit flush in its pane.
+   */
+  toolbarStart?: ReactNode
+  toolbarEnd?: ReactNode
 }
 
 function writeProvisionNotice(term: XTerm, notice: string | null | undefined) {
@@ -89,7 +97,10 @@ export function TaskTerminal({
   onLaunchAgent,
   onInteract,
   active = true,
+  toolbarStart,
+  toolbarEnd,
 }: TaskTerminalProps) {
+  const flush = toolbarStart !== undefined || toolbarEnd !== undefined
   // Effective session key: use the prop when provided, else fall back to taskId.
   const sessionKey = sessionKeyProp ?? taskId
 
@@ -569,14 +580,24 @@ export function TaskTerminal({
         void handleFileDrop(event.dataTransfer.files)
       }}
       className={cn(
-        'flex min-h-36 w-full flex-1 flex-col overflow-hidden rounded-md border border-border bg-card transition-colors',
-        isDraggingFile && 'border-primary bg-primary/5'
+        'flex min-h-36 w-full flex-1 flex-col overflow-hidden transition-colors',
+        flush ? 'bg-background' : 'rounded-md border border-border bg-card',
+        isDraggingFile && (flush ? 'bg-primary/5 ring-1 ring-inset ring-primary' : 'border-primary bg-primary/5')
       )}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/50 px-2 py-1">
-        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-          {cwd ?? '(no cwd)'}
-        </span>
+      <div
+        className={cn(
+          'flex shrink-0 items-center border-b border-border',
+          flush ? 'h-10 gap-2 px-3' : 'justify-between bg-muted/50 px-2 py-1'
+        )}
+      >
+        {flush ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">{toolbarStart}</div>
+        ) : (
+          <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+            {cwd ?? '(no cwd)'}
+          </span>
+        )}
         {isAttaching ? (
           <span className="shrink-0 px-2 text-xs text-muted-foreground">
             附加檔案中…
@@ -615,6 +636,7 @@ export function TaskTerminal({
             )}
           </div>
         )}
+        {toolbarEnd}
       </div>
       <div className="relative min-h-0 w-full flex-1 overflow-hidden bg-background p-1">
         {/* Keep visual padding outside the element FitAddon measures. Padding

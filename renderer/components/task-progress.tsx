@@ -102,6 +102,35 @@ export function TaskProgressBadge({
   )
 }
 
+/** Steps done and whether the agent is waiting — sized for a toolbar. */
+export function TaskProgressChip({ progress }: { progress?: TaskProgress | null }) {
+  const counts = todoCounts(progress?.todos ?? null)
+  const waiting = progress?.activity.state === 'waiting'
+  if (!counts && !waiting) return null
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {counts && (
+        <>
+          <ProgressBar done={counts.done} total={counts.total} className="w-10" />
+          <span className="tabular-nums">
+            {counts.done}/{counts.total}
+          </span>
+        </>
+      )}
+      {waiting && (
+        <span className="flex items-center gap-1 rounded-xs bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+          {progress?.activity.waitingFor === 'permission' ? (
+            <Hand className="size-2.5" />
+          ) : (
+            <MessageCircleQuestion className="size-2.5" />
+          )}
+          {progress?.activity.waitingFor === 'permission' ? '等待權限' : '等待輸入'}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function TodoIcon({ status }: { status: TodoItem['status'] }) {
   if (status === 'completed') return <CircleCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
   if (status === 'in_progress') return <CircleDot className="mt-0.5 size-3.5 shrink-0 text-foreground" />

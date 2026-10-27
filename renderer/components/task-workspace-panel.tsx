@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { AnimatePresence } from 'motion/react'
@@ -30,11 +31,14 @@ import {
   GitCompare,
   GitPullRequest,
   Image as ImageIcon,
+  Info,
   Layers,
   Loader2,
   Maximize2,
   RefreshCw,
+  PanelRightClose,
   Pencil,
+  Pin,
   Play,
   Trash2,
   X,
@@ -42,7 +46,7 @@ import {
 
 import { MarkdownContent } from '@/components/markdown-content'
 import { TaskTerminal } from '@/components/task-terminal'
-import { TaskProgressDetail } from '@/components/task-progress'
+import { TaskProgressChip, TaskProgressDetail } from '@/components/task-progress'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
@@ -147,7 +151,7 @@ const MAX_DIFF_FILES = 80
  * without re-rendering every mounted task panel — and so all of them stay in
  * sync, since they read the same variable.
  *
- * The grid clamps it against the window in CSS (`min(var(...), 100% - …)`)
+ * The layout clamps it against the window in CSS (`max-w-[calc(100% - …)]`)
  * rather than in JS, so a window too narrow for the chosen width only borrows
  * it back — widening the window restores what the user picked.
  */
@@ -156,8 +160,71 @@ const ASIDE_WIDTH_VAR = '--vf-workspace-aside'
 /** Below these the terminal is too narrow to read and the aside's tabs wrap. */
 const MIN_TERMINAL_WIDTH = 320
 const MIN_ASIDE_WIDTH = 336
-/** Must match the splitter's `w-2.5`, which is the grid's `auto` column. */
+/** Must match the splitter's `w-2.5`. */
 const SPLITTER_WIDTH = 10
+/** Must match the inspector rail's `w-11`. */
+const RAIL_WIDTH = 44
+
+const TAB_ICON: Record<TaskTab, typeof Info> = {
+  task: Info,
+  spec: FileText,
+  artifacts: ImageIcon,
+  diff: FileDiff,
+}
+
+/**
+ * Whether a running task's side views sit docked beside the terminal or fold
+ * into the icon rail, opening as a drawer on demand. Shared by every mounted
+ * panel and kept across reloads; docked is the default so the layout people
+ * had before the rail existed is what they keep until they fold it.
+ */
+type InspectorMode = 'docked' | 'rail'
+
+const INSPECTOR_STORAGE_KEY = 'vibeflow:workspace-inspector'
+const inspectorListeners = new Set<() => void>()
+let inspectorMode: InspectorMode | null = null
+
+function getInspectorMode(): InspectorMode {
+  if (inspectorMode === null) {
+    inspectorMode =
+      window.localStorage.getItem(INSPECTOR_STORAGE_KEY) === 'rail' ? 'rail' : 'docked'
+  }
+  return inspectorMode
+}
+
+function setInspectorMode(next: InspectorMode) {
+  inspectorMode = next
+  window.localStorage.setItem(INSPECTOR_STORAGE_KEY, next)
+  for (const listener of inspectorListeners) listener()
+}
+
+function subscribeInspectorMode(listener: () => void) {
+  inspectorListeners.add(listener)
+  return () => {
+    inspectorListeners.delete(listener)
+  }
+}
+
+function useInspectorMode(): InspectorMode {
+  return useSyncExternalStore(subscribeInspectorMode, getInspectorMode, () => 'docked')
+}
+
+/** Below Tailwind's `lg` a docked inspector leaves the terminal too narrow to read. */
+const DOCKABLE_QUERY = '(min-width: 1024px)'
+
+function subscribeDockable(listener: () => void) {
+  const query = window.matchMedia(DOCKABLE_QUERY)
+  query.addEventListener('change', listener)
+  return () => query.removeEventListener('change', listener)
+}
+
+function useDockable(): boolean {
+  return useSyncExternalStore(
+    subscribeDockable,
+    () => window.matchMedia(DOCKABLE_QUERY).matches,
+    () => true
+  )
+}
 
 let asideWidthRestored = false
 
@@ -1469,6 +1536,9 @@ export function TaskWorkspacePanel({
   const activeTab =
     activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : defaultTab
 
+  const tabBadge = (tab: TaskTab) =>
+    tab === 'artifacts' ? shotCount : tab === 'diff' ? diff.entries.length : 0
+
   const tabStrip = (
     <div
       role="tablist"
@@ -1476,8 +1546,7 @@ export function TaskWorkspacePanel({
       className="flex min-w-0 rounded-md border border-border/70 p-0.5"
     >
       {tabs.map((tab) => {
-        const badge =
-          tab === 'artifacts' ? shotCount : tab === 'diff' ? diff.entries.length : 0
+        const badge = tabBadge(tab)
         return (
           <button
             key={tab}
@@ -1504,9 +1573,148 @@ export function TaskWorkspacePanel({
     </div>
   )
 
+  const activeContent =
+    activeTab === 'task' ? (
+      <TaskInfo task={task} column={column} progress={progress} />
+    ) : activeTab === 'spec' ? (
+      <SpecContent specs={specs} />
+    ) : activeTab === 'artifacts' ? (
+      <ArtifactsContent taskId={task.id} artifacts={artifacts} artifactsDir={artifactsDir} />
+    ) : (
+      <DiffContent taskId={task.id} diff={diff} />
+    )
+
+  const activePanel = (
+    <div role="tabpanel" id={tabPanelId} aria-labelledby={tabId(activeTab)} className="h-full">
+      {activeContent}
+    </div>
+  )
+
+  // ── Inspector: docked beside the terminal, or a rail that opens a drawer ──
+  const inspectorMode = useInspectorMode()
+  const dockable = useDockable()
+  const docked = dockable && inspectorMode === 'docked'
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const inspectorShown = docked || drawerOpen
+
+  // In the rail, the shown tab's icon closes what it opened, so one control
+  // both reveals and dismisses a view.
+  const selectRailTab = (tab: TaskTab) => {
+    onInteract?.()
+    if (inspectorShown && tab === activeTab) {
+      if (docked) setInspectorMode('rail')
+      else setDrawerOpen(false)
+      return
+    }
+    setActiveTaskTab(tab)
+    if (!docked) setDrawerOpen(true)
+  }
+
+  const pinInspector = () => {
+    setDrawerOpen(false)
+    setInspectorMode('docked')
+  }
+
+  const inspector = (
+    <InfoSection
+      title={TAB_LABEL[activeTab]}
+      count={tabBadge(activeTab)}
+      actions={
+        <div className="flex shrink-0 items-center gap-1">
+          {activeTab === 'diff' && <DiffActions diff={diff} />}
+          {docked ? (
+            <IconButton
+              aria-label="收合側欄"
+              title="收合成圖示列，讓終端機佔滿寬度"
+              className="p-1"
+              onClick={() => setInspectorMode('rail')}
+            >
+              <PanelRightClose className="size-3.5" />
+            </IconButton>
+          ) : (
+            <>
+              {dockable && (
+                <IconButton
+                  aria-label="固定側欄"
+                  title="固定在終端機旁"
+                  className="p-1"
+                  onClick={pinInspector}
+                >
+                  <Pin className="size-3.5" />
+                </IconButton>
+              )}
+              <IconButton
+                aria-label="關閉側欄"
+                className="p-1"
+                onClick={() => setDrawerOpen(false)}
+              >
+                <X className="size-3.5" />
+              </IconButton>
+            </>
+          )}
+        </div>
+      }
+    >
+      {activePanel}
+    </InfoSection>
+  )
+
+  const rail = (
+    <div
+      role="tablist"
+      aria-label="任務檢視"
+      aria-orientation="vertical"
+      className="flex w-11 shrink-0 flex-col items-center gap-1 border-l border-border bg-card/40 py-1.5"
+    >
+      {tabs.map((tab) => {
+        const Icon = TAB_ICON[tab]
+        const badge = tabBadge(tab)
+        const shown = inspectorShown && activeTab === tab
+        return (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={tabId(tab)}
+            aria-selected={shown}
+            aria-controls={tabPanelId}
+            aria-label={badge > 0 ? `${TAB_LABEL[tab]}（${badge}）` : TAB_LABEL[tab]}
+            title={TAB_LABEL[tab]}
+            onClick={() => selectRailTab(tab)}
+            className={cn(
+              'relative flex size-8 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              shown
+                ? 'bg-primary/15 text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            )}
+          >
+            <Icon className="size-4" />
+            {badge > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-semibold tabular-nums text-primary-foreground"
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  const [pathCopy, setPathCopy] = useState<'idle' | 'copied' | 'error'>('idle')
+  const copyPath = () => {
+    if (!cwd) return
+    navigator.clipboard
+      .writeText(cwd)
+      .then(() => setPathCopy('copied'))
+      .catch(() => setPathCopy('error'))
+      .finally(() => window.setTimeout(() => setPathCopy('idle'), 1600))
+  }
+
   // ── Terminal / aside splitter ─────────────────────────────────────────────
-  // Only live in the lg+ two-column layout; below that the two panes stack and
-  // the splitter is display:none, so it is not a grid item at all.
+  // Only rendered while the inspector is docked.
   const splitAreaRef = useRef<HTMLElement>(null)
   const asideRef = useRef<HTMLElement>(null)
   const dragOriginRef = useRef<{ x: number; width: number } | null>(null)
@@ -1516,7 +1724,9 @@ export function TaskWorkspacePanel({
   const clampAsideWidth = (next: number) => {
     const available = splitAreaRef.current?.clientWidth ?? 0
     const max =
-      available > 0 ? available - MIN_TERMINAL_WIDTH - SPLITTER_WIDTH : next
+      available > 0
+        ? available - MIN_TERMINAL_WIDTH - SPLITTER_WIDTH - RAIL_WIDTH
+        : next
     return Math.max(
       MIN_ASIDE_WIDTH,
       Math.min(next, Math.max(MIN_ASIDE_WIDTH, max))
@@ -1556,6 +1766,163 @@ export function TaskWorkspacePanel({
     applyAsideWidth(width + delta, true)
   }
 
+  const deleteControl = confirmDelete ? (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => setConfirmDelete(false)}
+        className="rounded-md px-1.5 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        取消
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete(task.id)}
+        className="rounded-md px-1.5 py-1 text-sm text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        確認刪除
+      </button>
+    </div>
+  ) : (
+    <IconButton
+      aria-label="刪除任務"
+      title="刪除任務（清理 worktree）"
+      tone="danger"
+      onClick={() => setConfirmDelete(true)}
+    >
+      <Trash2 className="size-4" />
+    </IconButton>
+  )
+
+  // A running task has no header: its title is the tab above, and its
+  // actions share one toolbar with the terminal they act on.
+  if (column === 'in_progress') {
+    return (
+      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
+        <main ref={splitAreaRef} className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              onPointerDown={() => setDrawerOpen(false)}
+            >
+              <TaskTerminal
+                taskId={task.id}
+                cwd={cwd}
+                launchCommand={launchCommand}
+                launchNonce={launchNonce}
+                provisionNotice={provisionNotice}
+                readOnly={false}
+                onReturnToBacklog={() => onReturnToBacklog(task)}
+                onLaunchAgent={() => onLaunchAgent(task)}
+                onInteract={onInteract}
+                active={active}
+                toolbarStart={
+                  <>
+                    <span
+                      className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                      title={task.branch}
+                    >
+                      <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{task.branch}</span>
+                    </span>
+                    {task.baseBranch && (
+                      <span
+                        className="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
+                        title={`基準分支：${task.baseBranch}`}
+                      >
+                        ← {task.baseBranch}
+                      </span>
+                    )}
+                    <IconButton
+                      aria-label={
+                        pathCopy === 'copied'
+                          ? '已複製 worktree 路徑'
+                          : pathCopy === 'error'
+                            ? '複製 worktree 路徑失敗'
+                            : '複製 worktree 路徑'
+                      }
+                      title={cwd ?? undefined}
+                      className="p-1"
+                      disabled={!cwd}
+                      onClick={copyPath}
+                    >
+                      {pathCopy === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </IconButton>
+                    <TaskProgressChip progress={progress} />
+                  </>
+                }
+                toolbarEnd={
+                  <>
+                    <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+                    <Button
+                      size="sm"
+                      className="h-7 shrink-0 px-2.5 text-xs"
+                      onClick={() => {
+                        onInteract?.()
+                        onComplete(task)
+                      }}
+                      title="標記完成後會清理 PTY 與 worktree"
+                    >
+                      <Check className="size-3.5" />
+                      完成
+                    </Button>
+                    {deleteControl}
+                  </>
+                }
+              />
+            </div>
+            {!docked && drawerOpen && (
+              <aside
+                aria-label={TAB_LABEL[activeTab]}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && !isModalOpen()) setDrawerOpen(false)
+                }}
+                className="absolute bottom-0 right-0 top-10 z-20 flex w-[min(var(--vf-workspace-aside,24rem),calc(100%-2rem))] flex-col border-l border-border bg-card shadow-xl xl:w-[min(var(--vf-workspace-aside,27rem),calc(100%-2rem))]"
+              >
+                {inspector}
+              </aside>
+            )}
+          </div>
+
+          {docked && (
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="調整終端機與側邊面板的寬度"
+                tabIndex={0}
+                onPointerDown={onSplitterDown}
+                onPointerMove={onSplitterMove}
+                onPointerUp={onSplitterUp}
+                onPointerCancel={onSplitterUp}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault()
+                    nudgeSplitter(24)
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault()
+                    nudgeSplitter(-24)
+                  }
+                }}
+                className="flex w-2.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <span className="h-12 w-0.5 rounded-full bg-input" />
+              </div>
+              <aside
+                ref={asideRef}
+                className="flex min-h-0 w-[var(--vf-workspace-aside,24rem)] min-w-0 max-w-[calc(100%-23.375rem)] shrink-0 flex-col bg-card/40 xl:w-[var(--vf-workspace-aside,27rem)]"
+              >
+                {inspector}
+              </aside>
+            </>
+          )}
+
+          {rail}
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
@@ -1572,21 +1939,6 @@ export function TaskWorkspacePanel({
             開始
           </Button>
         )}
-        {column === 'in_progress' && (
-          <>
-            <Button
-              size="sm"
-              onClick={() => {
-                onInteract?.()
-                onComplete(task)
-              }}
-              title="標記完成後會清理 PTY 與 worktree"
-            >
-              <Check className="size-3.5" />
-              完成
-            </Button>
-          </>
-        )}
         {column === 'backlog' && (
           <IconButton
             aria-label="編輯任務"
@@ -1599,149 +1951,18 @@ export function TaskWorkspacePanel({
             <Pencil className="size-4" />
           </IconButton>
         )}
-        {confirmDelete ? (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded-md px-1.5 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              className="rounded-md px-1.5 py-1 text-sm text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              確認刪除
-            </button>
-          </div>
-        ) : (
-          <IconButton
-            aria-label="刪除任務"
-            title="刪除任務（清理 worktree）"
-            tone="danger"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 className="size-4" />
-          </IconButton>
-        )}
+        {deleteControl}
       </header>
 
-      {column === 'backlog' ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
+        {column === 'backlog' ? (
           <InfoSection title={TAB_LABEL.task}>
-            <TaskInfo
-              task={task}
-              column={column}
-              progress={progress}
-            />
+            <TaskInfo task={task} column={column} progress={progress} />
           </InfoSection>
-        </main>
-      ) : column === 'done' ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
-          <InfoSection heading={tabStrip}>
-            <div
-              role="tabpanel"
-              id={tabPanelId}
-              aria-labelledby={tabId(activeTab)}
-              className="h-full"
-            >
-              {activeTab === 'task' ? (
-                <TaskInfo
-                  task={task}
-                  column={column}
-                  progress={progress}
-                />
-              ) : (
-                <SpecContent specs={specs} />
-              )}
-            </div>
-          </InfoSection>
-        </main>
-      ) : (
-      <main
-        ref={splitAreaRef}
-        className="grid min-h-0 flex-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,45%)] overflow-hidden lg:grid-cols-[minmax(20rem,1fr)_auto_minmax(21rem,min(var(--vf-workspace-aside,24rem),100%_-_20.625rem))] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_auto_minmax(21rem,min(var(--vf-workspace-aside,27rem),100%_-_20.625rem))]"
-      >
-        <div className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/30 p-3 lg:border-b-0">
-          <TaskTerminal
-            taskId={task.id}
-            cwd={cwd}
-            launchCommand={launchCommand}
-            launchNonce={launchNonce}
-            provisionNotice={provisionNotice}
-            readOnly={false}
-            onReturnToBacklog={
-              column === 'in_progress' ? () => onReturnToBacklog(task) : undefined
-            }
-            onLaunchAgent={
-              column === 'in_progress' ? () => onLaunchAgent(task) : undefined
-            }
-            onInteract={onInteract}
-            active={active}
-          />
-        </div>
-
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="調整終端機與側邊面板的寬度"
-          tabIndex={0}
-          onPointerDown={onSplitterDown}
-          onPointerMove={onSplitterMove}
-          onPointerUp={onSplitterUp}
-          onPointerCancel={onSplitterUp}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') {
-              event.preventDefault()
-              nudgeSplitter(24)
-            } else if (event.key === 'ArrowRight') {
-              event.preventDefault()
-              nudgeSplitter(-24)
-            }
-          }}
-          className="hidden w-2.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:flex"
-        >
-          <span className="h-12 w-0.5 rounded-full bg-input" />
-        </div>
-
-        <aside ref={asideRef} className="flex min-h-0 min-w-0 flex-col bg-card/40">
-          <InfoSection
-            heading={tabStrip}
-            actions={activeTab === 'diff' ? <DiffActions diff={diff} /> : undefined}
-          >
-            {/* h-full gives the panel a definite height so a tab that fills its
-                space can resolve a percentage height; taller tabs still
-                overflow into the section's own scroll container. */}
-            <div
-              role="tabpanel"
-              id={tabPanelId}
-              aria-labelledby={tabId(activeTab)}
-              className="h-full"
-            >
-              {activeTab === 'task' ? (
-                <TaskInfo
-                  task={task}
-                  column={column}
-                  progress={progress}
-                />
-              ) : activeTab === 'spec' ? (
-                <SpecContent specs={specs} />
-              ) : activeTab === 'artifacts' ? (
-                <ArtifactsContent
-                  taskId={task.id}
-                  artifacts={artifacts}
-                  artifactsDir={artifactsDir}
-                />
-              ) : (
-                <DiffContent taskId={task.id} diff={diff} />
-              )}
-            </div>
-          </InfoSection>
-        </aside>
+        ) : (
+          <InfoSection heading={tabStrip}>{activePanel}</InfoSection>
+        )}
       </main>
-      )}
     </div>
   )
 }
