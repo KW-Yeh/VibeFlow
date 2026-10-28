@@ -112,7 +112,7 @@ export interface PtyStartPayload {
 
 export interface StandaloneTerminalPayload {
   sessionKey: string
-  /** A card resolves its own project root; otherwise the user selected a folder. */
+  /** A card resolves its own project root; otherwise the user selected a folder, or neither for the home directory. */
   taskId?: string
   projectPath?: string
   /** Pane title; absent keeps the saved one, or names it after the folder. */
@@ -801,13 +801,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const p = obj<StandaloneTerminalPayload>(payload, 'payload')
       const key = str(p.sessionKey, 'sessionKey')
       if (!STANDALONE_KEY.test(key)) invalid('invalid standalone terminal key')
-      if (Boolean(p.taskId) === Boolean(p.projectPath)) invalid('provide taskId or projectPath')
+      if (p.taskId && p.projectPath) invalid('provide taskId or projectPath, not both')
       const saved = listTerminals().find((t) => t.sessionKey === key)
       if (saved && (saved.taskId ? saved.taskId !== p.taskId : saved.projectPath !== p.projectPath)) {
         invalid('terminal key already belongs to another directory')
       }
       let cwd: string
-      let projectPath: string
+      let projectPath: string | undefined
       if (p.taskId) {
         const requested = requireTask(p.taskId)
         const column = columnOf(requested.id)
@@ -816,17 +816,24 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           : requested
         cwd = str(column === 'backlog' ? task.projectPath : task.worktreePath ?? task.projectPath, 'directory')
         projectPath = task.projectPath ?? cwd
-      } else {
+      } else if (p.projectPath) {
         cwd = str(p.projectPath, 'projectPath')
         projectPath = cwd
+      } else {
+        cwd = os.homedir()
       }
       if (!path.isAbsolute(cwd) || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
         invalid('terminal directory must be an existing absolute directory')
       }
-      const title = (typeof p.title === 'string' ? p.title.trim() : '') || saved?.title || path.basename(projectPath)
-      saveTerminal({ sessionKey: key, title, projectPath, ...(p.taskId ? { taskId: p.taskId } : {}) })
+      const title = (typeof p.title === 'string' ? p.title.trim() : '') || saved?.title || (projectPath ? path.basename(projectPath) : '~')
+      saveTerminal({
+        sessionKey: key,
+        title,
+        ...(projectPath ? { projectPath } : {}),
+        ...(p.taskId ? { taskId: p.taskId } : {}),
+      })
       standaloneTerminals.set(key, cwd)
-      if (!p.taskId) recordRecentProject(getStore(), cwd)
+      if (!p.taskId && projectPath) recordRecentProject(getStore(), cwd)
       const cols = typeof p.cols === 'number' ? p.cols : undefined
       const rows = typeof p.rows === 'number' ? p.rows : undefined
       // Starting a pty again would end the shell a reloaded page wants back.

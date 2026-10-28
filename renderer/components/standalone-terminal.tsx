@@ -17,7 +17,8 @@ export function StandaloneTerminal({
   onStarted,
 }: {
   sessionKey: string
-  projectPath: string
+  /** Absent with no taskId = the home directory. */
+  projectPath?: string
   displayPath?: string
   taskId?: string
   title?: string
@@ -97,7 +98,7 @@ export function StandaloneTerminal({
       try {
         const result = await standaloneTermStart({
           sessionKey,
-          ...(taskId ? { taskId } : { projectPath }),
+          ...(taskId ? { taskId } : projectPath ? { projectPath } : {}),
           title: titleRef.current,
           cols: instance.cols,
           rows: instance.rows,
@@ -141,7 +142,7 @@ export function StandaloneTerminal({
 
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-hidden p-2">
-      <div ref={hostRef} className="h-full w-full overflow-hidden" aria-label={`終端機：${displayPath ?? projectPath}`} />
+      <div ref={hostRef} className="h-full w-full overflow-hidden" aria-label={`終端機：${displayPath ?? projectPath ?? '~'}`} />
     </div>
   )
 }

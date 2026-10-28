@@ -271,14 +271,14 @@ export default function HomePage() {
 
   const pickProjectFolder = () => pickFolder('選擇專案資料夾')
 
-  const openGridTerminal = (projectPath: string, taskId?: string) => {
+  const openGridTerminal = (projectPath?: string, taskId?: string) => {
     const sessionKey = `terminal_${window.crypto.randomUUID()}`
     setFocusedGridTerminal(sessionKey)
     setGridTerminals((current) => [...current, {
       pending: true,
       sessionKey,
-      title: basenameFromPath(projectPath),
-      projectPath,
+      title: projectPath ? basenameFromPath(projectPath) : '~',
+      ...(projectPath ? { projectPath } : {}),
       ...(taskId ? { taskId } : {}),
     }])
     setView('terminals')

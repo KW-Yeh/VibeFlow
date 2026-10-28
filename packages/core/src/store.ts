@@ -238,7 +238,8 @@ export interface StandaloneTerminalEntry {
   /** `terminal_<uuid>`, also its session key. */
   sessionKey: string
   title: string
-  projectPath: string
+  /** Absent = no project: the shell opens in the home directory, like a default terminal. */
+  projectPath?: string
   taskId?: string
 }
 

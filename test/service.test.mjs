@@ -170,6 +170,17 @@ test('standalone terminals accept an existing absolute folder and reject invalid
   await assert.rejects(core.handlers['terminal:start']({ sessionKey: 'terminal_cccccccc-cccc-cccc-cccc-cccccccccccc', taskId: task.id, projectPath: task.projectPath }), { code: 'INVALID_REQUEST' })
 })
 
+test('a standalone terminal without a task or folder opens in the home directory', async (t) => {
+  const { core, sessions } = await coreWithTask(t)
+  const sessionKey = 'terminal_f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3'
+  const recentBefore = getStore().get('recentProjects')
+  await core.handlers['terminal:start']({ sessionKey })
+  assert.equal(sessions.starts[0].cwd, os.homedir())
+  const state = core.handlers['vibeflow:getState']()
+  assert.deepEqual(state.terminals.find((e) => e.sessionKey === sessionKey), { sessionKey, title: '~' })
+  assert.deepEqual(getStore().get('recentProjects'), recentBefore, 'the home directory is not a recent project')
+})
+
 test('standalone terminals are listed in the store until closed, and keep their title', async (t) => {
   const { core, task } = await coreWithTask(t)
   const sessionKey = 'terminal_f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0'

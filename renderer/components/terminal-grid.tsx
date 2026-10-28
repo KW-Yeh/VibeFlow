@@ -31,7 +31,8 @@ export function TerminalGrid({
   taskWorktreePaths: Record<string, string>
   focusedSessionKey: string | null
   recentProjects: RecentProjectEntry[]
-  onCreate: (projectPath: string) => void
+  /** No folder = a shell in the home directory. */
+  onCreate: (projectPath?: string) => void
   onRename: (sessionKey: string, title: string) => void
   /** Core has saved this pane: its start returned. */
   onStarted: (sessionKey: string) => void
@@ -63,14 +64,14 @@ export function TerminalGrid({
       {terminals.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
           <p>尚未開啟 Terminal</p>
-          <p className="text-sm">選擇專案或資料夾，即可在該目錄開啟獨立終端機。</p>
+          <p className="text-sm">選擇專案或資料夾，即可在該目錄開啟獨立終端機；不選則在家目錄開啟。</p>
         </div>
       ) : (
         <div className="terminal-grid-scroll grid min-h-0 w-full flex-1 auto-rows-[480px] grid-cols-1 content-start gap-4 overflow-y-auto p-4 @min-[728px]:grid-cols-2 @min-[1084px]:grid-cols-3">
           {terminals.map((terminal) => {
             const directory = terminal.taskId
               ? taskWorktreePaths[terminal.taskId] ?? terminal.projectPath
-              : terminal.projectPath
+              : terminal.projectPath ?? '~'
             return (
               <section
                 key={terminal.sessionKey}
@@ -88,7 +89,7 @@ export function TerminalGrid({
                 <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
                   <TerminalTitleInput
                     title={terminal.title}
-                    fallback={basenameFromPath(terminal.projectPath)}
+                    fallback={terminal.projectPath ? basenameFromPath(terminal.projectPath) : '~'}
                     onCommit={(title) => onRename(terminal.sessionKey, title)}
                   />
                   <IconButton
@@ -128,8 +129,19 @@ export function TerminalGrid({
               onSelect={setSelectedPath}
               onBrowse={() => { void onBrowse().then((path) => { if (path) setSelectedPath(path) }) }}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setPickerOpen(false)}>取消</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onCreate()
+                  setSelectedPath(null)
+                  setPickerOpen(false)
+                }}
+              >
+                不選專案（家目錄）
+              </Button>
               <Button
                 size="sm"
                 disabled={!selectedPath || isProjectMissing(recentProjects, selectedPath)}
