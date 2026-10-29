@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { readTerminalFile } from './terminal-files'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -274,6 +275,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
   const routing = new Map<string, Promise<Task['jevRoute']>>()
   const standaloneTerminals = new Map<string, string>()
+  const terminalDirectories = new Map<string, string>()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
   // user's, or the one the library assembled for runs started before launches
@@ -352,6 +354,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       removeTerminals([key])
     }
     standaloneTerminals.delete(key)
+    terminalDirectories.delete(key)
     unwatchSubAgents(key)
   }
 
@@ -378,6 +381,22 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     if (isStandaloneKey(key)) return key
     requireTask(key.split(':')[0])
     return key
+  }
+
+  function terminalDirectory(sessionKey: unknown): string {
+    const key = requireSessionKey(sessionKey)
+    const known = standaloneTerminals.get(key) ?? terminalDirectories.get(key)
+    if (known) return known
+    if (isStandaloneKey(key)) {
+      const saved = listTerminals().find((item) => item.sessionKey === key)
+      if (saved?.taskId) {
+        const task = requireTask(saved.taskId)
+        return str(task.worktreePath ?? task.projectPath, 'directory')
+      }
+      return saved?.projectPath ?? os.homedir()
+    }
+    const task = requireTask(key.split(':')[0])
+    return str(task.worktreePath ?? task.projectPath, 'directory')
   }
 
   /** Resolve auto before launching; never pass the sentinel to an agent CLI. */
@@ -785,6 +804,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         // Session ended (natural exit included), so stop its watcher.
         onExit: () => unwatchSubAgents(key),
       })
+      terminalDirectories.set(key, cwd)
       watchSubAgents(key, cwd, (subAgents) => {
         bus.emit('subagents:update', { taskId: task.id, subAgents })
       })
@@ -842,6 +862,23 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         return { pid: 0, scrollback: sessions.scrollback(key), attached: true }
       }
       return sessions.start(key, { cwd, cols, rows })
+    },
+
+    'terminal:readFile': async (payload) => {
+      const p = obj<{ sessionKey: unknown; path: unknown }>(payload, 'payload')
+      return readTerminalFile(terminalDirectory(p.sessionKey), str(p.path, 'path'))
+    },
+
+    'terminal:openFile': async (payload) => {
+      const p = obj<{ sessionKey: unknown; path: unknown }>(payload, 'payload')
+      const file = await readTerminalFile(terminalDirectory(p.sessionKey), str(p.path, 'path'), true)
+      if (!file.ok) return { ok: false, message: file.message }
+      try {
+        const message = await getPlatform().openPath(file.path)
+        return message ? { ok: false, message } : { ok: true }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : '無法開啟檔案。' }
+      }
     },
 
     'terminal:rename': (payload) => {

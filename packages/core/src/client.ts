@@ -1,3 +1,4 @@
+import type { TerminalFileResult, TerminalFileOpenResult } from './terminal-files'
 /*
  * The frontend API, the same for every transport. The browser builds it on a
  * WebSocket, and the TUI on an in-process call or a WebSocket. Frontends import this module at runtime, so it imports types only.
@@ -333,6 +334,10 @@ export function createBridge(t: BridgeTransport) {
 
   // Interactive terminal bridge (Phase 3).
   term: {
+    readFile: (sessionKey: string, path: string): Promise<TerminalFileResult> =>
+      t.invoke('terminal:readFile', { sessionKey, path }),
+    openFile: (sessionKey: string, path: string): Promise<TerminalFileOpenResult> =>
+      t.invoke('terminal:openFile', { sessionKey, path }),
     /**
      * Start a terminal for a task: its agent when `launch` is given, else an
      * interactive shell. Core resolves the cwd and builds the command.

@@ -82,3 +82,4 @@ export type {
   AgentModelList,
   AgentModelSource,
 } from '../../packages/core/src/agent-models'
+export type { TerminalFileResult, TerminalFileOpenResult } from '../../packages/core/src/terminal-files'

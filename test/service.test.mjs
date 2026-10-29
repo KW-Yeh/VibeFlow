@@ -90,7 +90,7 @@ test('terminal file handlers resolve session directories and only open on reques
   setPlatform({ ...createNodePlatform({ userDataDir: storeDir }), openPath: async (target) => { opened.push(target); return '' } })
   t.after(() => setPlatform(createNodePlatform({ userDataDir: storeDir })))
   await fs.writeFile(path.join(task.projectPath, 'preview.txt'), 'terminal preview')
-  const key = 'standalone:file-preview'
+  const key = 'terminal_01234567-89ab-4cde-8012-3456789abcde'
   await core.handlers['terminal:start']({ sessionKey: key, taskId: task.id })
   const request = { sessionKey: key, path: './preview.txt' }
   assert.equal((await core.handlers['terminal:readFile'](request)).text, 'terminal preview')

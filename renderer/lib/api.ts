@@ -631,3 +631,13 @@ export function onTermExit(
   const b = bridge()
   return b ? b.term.onExit(callback) : () => {}
 }
+
+export async function readTerminalFile(sessionKey: string, path: string) {
+  const b = bridge()
+  return b ? b.term.readFile(sessionKey, path) : null
+}
+
+export async function openTerminalFile(sessionKey: string, path: string) {
+  const b = bridge()
+  return b ? b.term.openFile(sessionKey, path) : null
+}
