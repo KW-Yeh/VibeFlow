@@ -89,6 +89,20 @@ async function waitForTerminal(page, needle, timeout = 30_000) {
   )
 }
 
+/** Hover targets are only stable once the terminal's debounced refit after a viewport change has landed. */
+async function waitForTerminalLayout(page) {
+  await page.evaluate(() => new Promise((resolve) => {
+    let last = ''
+    let since = performance.now()
+    const tick = () => {
+      const size = [...document.querySelectorAll('.xterm-screen')].map((el) => `${el.clientWidth}x${el.clientHeight}`).join()
+      if (size !== last) { last = size; since = performance.now() }
+      if (performance.now() - since > 500) resolve(); else requestAnimationFrame(tick)
+    }
+    tick()
+  }))
+}
+
 async function clickTerminalFile(page, label, target = label) {
   const row = page.locator('.xterm-rows:visible').getByText(label, { exact: false }).first()
   const box = await row.boundingBox()
@@ -286,6 +300,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.keyboard.press('Escape')
   await fileDialog.waitFor({ state: 'detached' })
   await page.setViewportSize({ width: 1280, height: 800 })
+  await waitForTerminalLayout(page)
   await clickTerminalFile(page, '"./preview notes.md"', './preview notes.md')
   await fileDialog.getByRole('heading', { name: 'Terminal preview' }).waitFor()
   assert.equal(await page.evaluate(() => window.previewUnsafe), undefined)
