@@ -31,6 +31,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 
 | Suite | Target | What it checks |
 |---|---|---|
+| `terminal-files.test.mjs` | core `terminal-files.ts`, renderer `terminal-file-links.ts` | terminal path candidates, safe local resolution, bounded previews and error handling |
 | `agent-models.test.mjs` | `packages/core/src/agent-models.ts`, `claude-models.ts`, `codex-models.ts`, `json-lines-process.ts` | model catalog: Claude `initialize` and codex app-server handshakes against `fixtures/agent-models/`, account fields dropped, fallbacks, child-process timeout/exit, in-memory cache |
 | `jev-router.test.mjs` | `packages/core/src/jev-router.ts` | current-model effort selection, supported-level validation, credential and model-default fallback |
 | `jev-credentials.test.mjs` | `packages/core/src/jev-credentials.ts` | host-only key file under a macOS-style data path, environment fallback, permissions and validation |

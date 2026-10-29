@@ -84,6 +84,30 @@ async function coreWithTask(t, { coreOptions = {}, task: taskInput = {} } = {}) 
   return { core, sessions, bus, task }
 }
 
+test('terminal file handlers resolve session directories and only open on request', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  const opened = []
+  setPlatform({ ...createNodePlatform({ userDataDir: storeDir }), openPath: async (target) => { opened.push(target); return '' } })
+  t.after(() => setPlatform(createNodePlatform({ userDataDir: storeDir })))
+  await fs.writeFile(path.join(task.projectPath, 'preview.txt'), 'terminal preview')
+  const key = 'standalone:file-preview'
+  await core.handlers['terminal:start']({ sessionKey: key, taskId: task.id })
+  const request = { sessionKey: key, path: './preview.txt' }
+  assert.equal((await core.handlers['terminal:readFile'](request)).text, 'terminal preview')
+  assert.deepEqual(opened, [])
+  assert.deepEqual(await core.handlers['terminal:openFile'](request), { ok: true })
+  assert.deepEqual(opened, [path.join(task.projectPath, 'preview.txt')])
+  assert.equal((await core.handlers['terminal:openFile']({ ...request, path: '.' })).ok, false)
+  assert.equal(opened.length, 1)
+  await assert.rejects(async () => core.handlers['terminal:readFile']({ ...request, sessionKey: 'standalone:missing' }))
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const running = core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id)
+  await fs.writeFile(path.join(running.worktreePath, 'preview.txt'), 'worktree preview')
+  assert.equal((await core.handlers['terminal:readFile']({ sessionKey: task.id, path: './preview.txt' })).text, 'worktree preview')
+  setPlatform({ ...createNodePlatform({ userDataDir: storeDir }), openPath: async () => 'OS refused' })
+  assert.deepEqual(await core.handlers['terminal:openFile'](request), { ok: false, message: 'OS refused' })
+})
+
 test('an agent launch is built by core from the task, not sent by the frontend', async (t) => {
   const { core, sessions, task } = await coreWithTask(t)
   await core.handlers['pty:start']({
