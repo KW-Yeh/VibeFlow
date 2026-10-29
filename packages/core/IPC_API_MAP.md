@@ -173,8 +173,9 @@ WebSocket connections behind `EventBus` implement it.
 | Channel | Input | Result |
 |---|---|---|
 | `terminal:readFile` | `{ sessionKey, path }` | `TerminalFileResult`: bounded image/text preview, binary reason, or typed file error |
+| `terminal:existingFiles` | `{ sessionKey, paths }` | `string[]`: the candidates (first 128) that resolve to an existing regular file; stat only, no read. Lets link detection accept paths that span spaces or agent-inserted line breaks |
 | `terminal:openFile` | `{ sessionKey, path }` | `TerminalFileOpenResult`: explicit host OS open, success or error message |
 
-Both require a known session. Core resolves relative paths from its launch directory;
+All three require a known session. Core resolves relative paths from its launch directory;
 local absolute paths and `file:` URLs are accepted. Special files and remote URLs
 are rejected. Files are read only after a user clicks; OS opening is a separate action.

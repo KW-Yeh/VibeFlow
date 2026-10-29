@@ -34,6 +34,20 @@ export function resolveTerminalFile(cwd: string, input: string): string {
   return path.resolve(cwd, target)
 }
 
+export const MAX_FILE_CANDIDATES = 128
+
+/** Which of the given candidates name an existing regular file; for link detection, never reads content. */
+export async function existingTerminalFiles(cwd: string, inputs: string[]): Promise<string[]> {
+  const found = await Promise.all(inputs.slice(0, MAX_FILE_CANDIDATES).map(async (input) => {
+    try {
+      return (await fs.stat(resolveTerminalFile(cwd, input))).isFile()
+    } catch {
+      return false
+    }
+  }))
+  return inputs.filter((_, i) => found[i])
+}
+
 /** Inspect an opened descriptor, so special files are never read and reads stay bounded. */
 export async function readTerminalFile(cwd: string, input: string, metadataOnly = false): Promise<TerminalFileResult> {
   let target: string

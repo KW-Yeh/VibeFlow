@@ -95,6 +95,9 @@ test('terminal file handlers resolve session directories and only open on reques
   const request = { sessionKey: key, path: './preview.txt' }
   assert.equal((await core.handlers['terminal:readFile'](request)).text, 'terminal preview')
   assert.deepEqual(opened, [])
+  assert.deepEqual(await core.handlers['terminal:existingFiles']({ sessionKey: key, paths: ['./preview.txt', './nope.txt'] }), ['./preview.txt'])
+  await assert.rejects(async () => core.handlers['terminal:existingFiles']({ sessionKey: key, paths: './preview.txt' }))
+  await assert.rejects(async () => core.handlers['terminal:existingFiles']({ sessionKey: 'standalone:missing', paths: [] }))
   assert.deepEqual(await core.handlers['terminal:openFile'](request), { ok: true })
   assert.deepEqual(opened, [path.join(task.projectPath, 'preview.txt')])
   assert.equal((await core.handlers['terminal:openFile']({ ...request, path: '.' })).ok, false)

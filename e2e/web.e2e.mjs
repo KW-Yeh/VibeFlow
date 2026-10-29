@@ -45,7 +45,13 @@ echo '"./preview notes.md"'
 echo './preview-missing.txt'
 echo './preview-report.pdf'
 echo './preview-long-directory/another-long-directory/and-one-more-long-directory/preview-wrapped-image.png'
-while read -r line; do echo "got:$line"; done
+while read -r line; do
+  if [ "$line" = "spanning-paths" ]; then
+    echo './preview shots/agent shot.png is ready'
+    printf './preview-hard-wrap/agent-wra\\n  pped.png done\\n'
+  fi
+  echo "got:$line"
+done
 `
 
 async function launchBrowser() {
@@ -321,6 +327,23 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.keyboard.type('hello-e2e')
   await page.keyboard.press('Enter')
   await waitForTerminal(page, 'got:hello-e2e')
+  // Unquoted spaces and agent-inserted line breaks link once the joined file exists.
+  await page.keyboard.type('spanning-paths')
+  await page.keyboard.press('Enter')
+  await waitForTerminal(page, 'got:spanning-paths')
+  for (const file of ['preview shots/agent shot.png', 'preview-hard-wrap/agent-wrapped.png']) {
+    fs.mkdirSync(path.dirname(path.join(previewTask.worktreePath, file)), { recursive: true })
+    fs.writeFileSync(path.join(previewTask.worktreePath, file), PREVIEW_PNG)
+  }
+  for (const [label, target] of [
+    ['./preview shots/agent', './preview shots/agent shot.png'],
+    ['./preview-hard-wrap/agent-wra', './preview-hard-wrap/agent-wrapped.png'],
+    ['pped.png done', './preview-hard-wrap/agent-wrapped.png'],
+  ]) {
+    await clickTerminalFile(page, label, target)
+    await fileDialog.locator('img').waitFor()
+    await page.keyboard.press('Escape')
+  }
 
   // Diff: the file the agent wrote shows up.
   await page.getByRole('tab', { name: 'Git diff' }).click()

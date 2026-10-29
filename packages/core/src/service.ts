@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { readTerminalFile } from './terminal-files'
+import { existingTerminalFiles, readTerminalFile } from './terminal-files'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -867,6 +867,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'terminal:readFile': async (payload) => {
       const p = obj<{ sessionKey: unknown; path: unknown }>(payload, 'payload')
       return readTerminalFile(terminalDirectory(p.sessionKey), str(p.path, 'path'))
+    },
+
+    'terminal:existingFiles': async (payload) => {
+      const p = obj<{ sessionKey: unknown; paths: unknown }>(payload, 'payload')
+      if (!Array.isArray(p.paths)) invalid('paths must be an array')
+      return existingTerminalFiles(terminalDirectory(p.sessionKey), p.paths.map((value) => str(value, 'path')))
     },
 
     'terminal:openFile': async (payload) => {

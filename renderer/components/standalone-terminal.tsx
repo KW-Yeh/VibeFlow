@@ -63,7 +63,7 @@ export function StandaloneTerminal({
       term = instance
       const fit = new FitAddon()
       instance.loadAddon(fit)
-      registerTerminalFiles(instance, setPreviewPath)
+      registerTerminalFiles(instance, sessionKey, setPreviewPath)
       instance.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri, setPreviewPath), {
         hover: (_event, uri) => showTerminalLink(instance, uri),
         leave: () => hideTerminalLink(instance),

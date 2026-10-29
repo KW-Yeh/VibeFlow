@@ -336,6 +336,8 @@ export function createBridge(t: BridgeTransport) {
   term: {
     readFile: (sessionKey: string, path: string): Promise<TerminalFileResult> =>
       t.invoke('terminal:readFile', { sessionKey, path }),
+    existingFiles: (sessionKey: string, paths: string[]): Promise<string[]> =>
+      t.invoke('terminal:existingFiles', { sessionKey, paths }),
     openFile: (sessionKey: string, path: string): Promise<TerminalFileOpenResult> =>
       t.invoke('terminal:openFile', { sessionKey, path }),
     /**

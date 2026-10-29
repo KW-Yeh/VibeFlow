@@ -330,7 +330,7 @@ export function TaskTerminal({
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
-      registerTerminalFiles(term, setPreviewPath)
+      registerTerminalFiles(term, sessionKey, setPreviewPath)
       term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri, setPreviewPath), {
         hover: (_event, uri) => showTerminalLink(term, uri),
         leave: () => hideTerminalLink(term),

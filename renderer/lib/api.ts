@@ -637,6 +637,11 @@ export async function readTerminalFile(sessionKey: string, path: string) {
   return b ? b.term.readFile(sessionKey, path) : null
 }
 
+export async function existingTerminalFiles(sessionKey: string, paths: string[]) {
+  const b = bridge()
+  return b ? b.term.existingFiles(sessionKey, paths) : null
+}
+
 export async function openTerminalFile(sessionKey: string, path: string) {
   const b = bridge()
   return b ? b.term.openFile(sessionKey, path) : null

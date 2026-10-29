@@ -8,6 +8,7 @@ Status: implemented and verified on 2026-10-29. The user approved implementation
 
 R1. 任務 terminal 與獨立 terminal 都能點擊本機檔案路徑，包含絕對路徑、`~/`、`./`、`../`、有副檔名的裸檔名與本機 `file:` 連結。
 R2. 引號中的空白路徑可開啟，常見行號／欄號後綴不會被當成檔名；相對路徑以 terminal 的啟動目錄解析。
+R2a. 未加引號但含空白的路徑，以及 agent 自行換行（硬換行加縮排，xterm 不標記為 wrapped）而斷開的路徑可開啟；這類候選有歧義，只在 core 確認拼接後的檔案存在時才成為連結。
 R3. 圖片以可縮放的對話框顯示；文字以唯讀內容顯示，Markdown 沿用既有安全 renderer。
 R4. 不支援或超過預覽上限的格式顯示說明與「用系統程式開啟」按鈕，只有使用者點擊該按鈕才啟動系統程式。
 R5. 檔案不存在、不可讀或不是一般檔案時顯示可理解的錯誤；預覽讀取有大小上限，文字截斷需有提示。
@@ -108,6 +109,7 @@ UI 的請求非同步執行。對話框擁有 loading／內容／錯誤狀態，
 
 - A1 ← R1：單元測試覆蓋所有指定路徑形狀；互動驗收在任務 terminal 與獨立 terminal 各點擊圖片路徑，確認 dialog 顯示該圖片。
 - A2 ← R2：測試引號空白、行欄後綴、相對位置與非路徑負例；互動驗收包含 xterm 換行折返的長路徑。
+- A2a ← R2a：單元測試覆蓋未加引號空白、單字中途硬換行、空白處換行、後續文字不被吞入、web URL 排除與重疊取最長；core 測試 `terminal:existingFiles` 只接受一般檔案與已知 session；E2E 在真實 PTY 點擊空白路徑與硬換行路徑的兩列，皆開啟同一圖片。
 - A3 ← R3：互動驗收縮放圖片、開啟文字及 Markdown，斷言內容與對應 fixture 一致且未插入可執行 HTML。
 - A4 ← R4：不支援格式與超大圖片顯示替代操作；fake platform 斷言只有明確 open 呼叫才執行 openPath，並覆蓋 OS 失敗。
 - A5 ← R5：core 測試遺失檔案、資料夾、特殊檔案、無效 session、不可讀取與超大文字，確認錯誤或截斷；UI 顯示對應訊息。
@@ -135,3 +137,12 @@ UI 的請求非同步執行。對話框擁有 loading／內容／錯誤狀態，
 - Native OS application launch was verified through a fake PlatformServices implementation, including OS errors; no external desktop application was launched in the browser checks. Preview binary fallback was exercised in the browser.
 
 Relative paths deliberately continue to use the launch directory, including after shell `cd`. No shell integration or new dependencies were added. Changes are committed locally on main; nothing was pushed.
+
+## Follow-up: spanning paths (2026-10-29)
+
+Agent output (Claude Code's Ink renderer) inserts its own newlines and indentation when a line exceeds the width, so xterm's `isWrapped` join does not see one line; unquoted spaces also split tokens. The link provider now reads the hovered logical line plus 3 neighbours on each side, generates candidates that cross single spaces and line breaks (both "no separator" and "space" variants, up to 3 breaks and 12 words), and asks core which exist through `terminal:existingFiles` (stat only, at most 128 candidates, session-scoped like the other two channels). The longest existing candidate wins over overlapping shorter matches; with no spanning candidate the provider answers synchronously as before.
+
+- `npx tsc --noEmit -p tsconfig.json` and `npx tsc --noEmit -p renderer/tsconfig.json`: passed.
+- `npm test`: 467 passed.
+- `npm run build:web`: passed.
+- `npm run test:e2e`: 3 passed, including clicks on an unquoted spaced path and on both rows of a hard-wrapped path.
