@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react'
+import dynamic from 'next/dynamic'
+import { useEffect, useRef, useState } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 import { standaloneTermStart, termInput, termKill, termResize } from '@/lib/api'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
-import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/terminal-links'
+import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
+
+const TerminalFilePreview = dynamic(() => import('@/components/terminal-file-preview').then((m) => m.TerminalFilePreview), { ssr: false })
 
 /**
  * A plain shell owned by the terminal grid, independent of every task run.
@@ -24,6 +27,7 @@ export function StandaloneTerminal({
   title?: string
   onStarted?: () => void
 }) {
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef(title)
   titleRef.current = title
@@ -51,7 +55,7 @@ export function StandaloneTerminal({
         cursorBlink: true,
         theme: { background: '#191919', foreground: '#e6e6e6', cursor: '#4c9bf5' },
         linkHandler: {
-          activate: (_event, uri) => openTerminalLink(uri),
+          activate: (_event, uri) => openTerminalLink(uri, setPreviewPath),
           hover: (_event, uri) => showTerminalLink(instance, uri),
           leave: () => hideTerminalLink(instance),
         },
@@ -59,7 +63,8 @@ export function StandaloneTerminal({
       term = instance
       const fit = new FitAddon()
       instance.loadAddon(fit)
-      instance.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri), {
+      registerTerminalFiles(instance, setPreviewPath)
+      instance.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri, setPreviewPath), {
         hover: (_event, uri) => showTerminalLink(instance, uri),
         leave: () => hideTerminalLink(instance),
       }))
@@ -143,6 +148,7 @@ export function StandaloneTerminal({
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-hidden p-2">
       <div ref={hostRef} className="h-full w-full overflow-hidden" aria-label={`終端機：${displayPath ?? projectPath ?? '~'}`} />
+      {previewPath !== null && <TerminalFilePreview key={previewPath} sessionKey={sessionKey} path={previewPath} onClose={() => setPreviewPath(null)} />}
     </div>
   )
 }

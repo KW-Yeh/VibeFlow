@@ -22,7 +22,7 @@ test('file resolution uses launch cwd, home, and rejects remote URLs and NUL', (
   assert.equal(resolveTerminalFile(cwd, './image.png'), path.join(cwd, 'image.png'))
   assert.equal(resolveTerminalFile(cwd, '~/notes.md'), path.join(os.homedir(), 'notes.md'))
   assert.equal(resolveTerminalFile(cwd, pathToFileURL(path.join(cwd, 'a b.png')).href), path.join(cwd, 'a b.png'))
-  for (const value of ['file://remote/share/a.png', 'https://example.com/a.png', '\0bad', '']) {
+  for (const value of ['file://remote/share/a.png', 'https://example.com/a.png', 'file:///tmp/a%00b', '\0bad', '']) {
     assert.throws(() => resolveTerminalFile(cwd, value))
   }
 })
@@ -49,4 +49,13 @@ test('previews cap reads, classify binary and images, and report missing/non-fil
   assert.equal((await readTerminalFile(cwd, 'missing')).error, 'not_found')
   assert.equal((await readTerminalFile(cwd, '.')).error, 'not_file')
   assert.equal((await readTerminalFile(cwd, 'file://remote/a')).error, 'invalid_path')
+  if (process.platform !== 'win32') {
+    assert.equal((await readTerminalFile(cwd, os.devNull)).error, 'not_file')
+    if (process.getuid() !== 0) {
+      const locked = path.join(cwd, 'locked.txt')
+      await fs.writeFile(locked, 'private', { mode: 0o000 })
+      assert.equal((await readTerminalFile(cwd, locked)).error, 'unreadable')
+      await fs.chmod(locked, 0o600)
+    }
+  }
 })

@@ -1,10 +1,10 @@
 # Terminal file preview
 
-Status: interaction confirmed; implementation approval pending.
+Status: implemented and verified on 2026-10-29.
 
 Users should be able to inspect files mentioned by an agent or shell without copying the path into another application or first publishing the file as a task artifact.
 
-The proposed interaction is to click a local file path in either a task terminal or an independent terminal. Images open in a zoomable dialog; text and Markdown open in a read-only dialog. Unsupported formats offer an explicit action to open the file with the host's default application.
+The interaction is to click a local file path in either a task terminal or an independent terminal. Images open in a zoomable dialog; text and Markdown open in a read-only dialog. Unsupported formats offer an explicit action to open the file with the host's default application.
 
 Support absolute paths, home-relative paths, explicit relative paths, and local `file:` links. Relative paths resolve from the terminal's launch directory. Bare filenames with recognized extensions are also candidates; nonexistent candidates display a readable error. Quoted paths can contain spaces. Line and column suffixes identify a file, without becoming part of its name. HTTP and HTTPS links retain their existing behavior.
 

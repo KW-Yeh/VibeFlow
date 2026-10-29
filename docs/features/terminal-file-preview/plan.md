@@ -1,6 +1,6 @@
 # Terminal file preview plan
 
-Status: proposed. No production changes authorized by this plan yet. Work will happen on `main`, as explicitly requested by the user.
+Status: implemented and verified on 2026-10-29. The user approved implementation and explicitly requested work on `main`.
 
 ## 需求
 
@@ -101,7 +101,7 @@ UI 的請求非同步執行。對話框擁有 loading／內容／錯誤狀態，
 1. **方案與適用性**：採用 xterm 連結偵測加共用預覽對話框，因為輸出路徑是既有 terminal 到檔案的直接入口。需要在 shell 執行指令就自動彈出檔案，或期待 terminal 直接顯示圖片協定時，此方案不適用。
 2. **落點**：連結偵測在 renderer helper，預覽在共用 component，有限讀檔在 core helper；所有橋接變更同步更新 IPC_API_MAP。既有 Artifacts 預覽可參考，但本功能不搬動 Artifact 儲存資料。
 3. **可證偽風險預測**：若路徑偵測過寬，最先出現的是一般輸出被誤標為連結；若過窄，則帶空白或換行折返的路徑無法點擊。用負例與 xterm 實際折行案例提早辨識。相對路徑在 `cd` 後可能指錯檔案，因此本版明確顯示解析路徑並以啟動目錄為準。
-4. **決策點**：使用者已確認 VibeFlow 內預覽；無未決互動選項。完整計畫仍待實作批准。
+4. **決策點**：使用者已確認 VibeFlow 內預覽；無未決互動選項。使用者已明確批准開始實作。
 5. **證據標記**：現有 URL helper 僅接受 HTTP／HTTPS（`renderer/lib/terminal-links.ts:3`）；Artifact 預覽為現有可沿用互動（`renderer/components/task-workspace-panel.tsx:670`）；standalone 啟動目錄由 core 決定並保留（`packages/core/src/service.ts:800`）。新連結偵測的匹配率尚未驗證，需由驗收確認。
 
 ## 驗收清單
@@ -119,4 +119,19 @@ UI 的請求非同步執行。對話框擁有 loading／內容／錯誤狀態，
 - S1：加入有限讀檔與明確系統開啟的 core／bridge 契約，以及必要測試與 API 文件（A4、A5）。
 - S2：任務與獨立 terminal 共用路徑偵測和預覽，完成互動與回歸驗收（A1、A2、A3、A6、A7）。
 
-每階段通過對應驗收後 commit；不 push。實作前需先批准本計畫。
+每階段通過對應驗收後 commit；不 push。
+
+
+## Verification results
+
+- `npx tsc --noEmit -p tsconfig.json`: passed.
+- `npx tsc --noEmit -p renderer/tsconfig.json`: passed.
+- `npm test`: 465 passed, no failures or skips.
+- `node scripts/run-tests.mjs ./test/terminal-files.test.mjs ./test/service.test.mjs`: 53 passed. Additional permission and special-file cases passed in the focused terminal-files suite.
+- `npm run build:web`: passed.
+- `npm run test:e2e`: 3 passed against real HTTP/WebSocket hosts, including a real PTY with a fake agent. Covered task and standalone previews, quoted filenames, a wrapped path, Markdown HTML safety, missing files, unsupported formats, image zoom, unchanged web links, and continued terminal input.
+- Live screenshots at 375 / 768 / 1440 were individually inspected after dialog entrance settled. No dialog overlap, clipping, text truncation, or horizontal overflow was observed. The dialog mounts through a portal to avoid terminal ancestor layout affecting its position; a narrow react-dom type declaration supplies the existing runtime API without adding a dependency.
+- `visual-parity flow`: 6/6 steps passed, recording the click → image preview → close path. Evidence filenames: `a1-terminal-image-preview.mp4`, `a1-terminal-image-preview.png`, and `a7-terminal-file-preview-{375,768,1440}.png`. Evidence stays outside the repository.
+- Native OS application launch was verified through a fake PlatformServices implementation, including OS errors; no external desktop application was launched in the browser checks. Preview binary fallback was exercised in the browser.
+
+Relative paths deliberately continue to use the launch directory, including after shell `cd`. No shell integration or new dependencies were added. Changes are committed locally on main; nothing was pushed.

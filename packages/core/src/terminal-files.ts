@@ -30,6 +30,7 @@ export function resolveTerminalFile(cwd: string, input: string): string {
     throw new Error('只支援本機檔案路徑。')
   }
   if (target.startsWith('~/') || target.startsWith('~\\')) target = path.join(os.homedir(), target.slice(2))
+  if (target.includes('\0')) throw new Error('檔案路徑無效。')
   return path.resolve(cwd, target)
 }
 

@@ -1,3 +1,4 @@
+import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
@@ -14,9 +15,11 @@ import {
 } from '@/lib/api'
 import type { LaunchIntent } from '@/lib/types'
 import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
-import { hideTerminalLink, openTerminalLink, showTerminalLink } from '@/lib/terminal-links'
+import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
 import { ArrowDown, Bot, Undo2 } from 'lucide-react'
+
+const TerminalFilePreview = dynamic(() => import('@/components/terminal-file-preview').then((m) => m.TerminalFilePreview), { ssr: false })
 
 const RESIZE_SETTLE_MS = 100
 const SCROLL_CHECK_MS = 150
@@ -104,6 +107,7 @@ export function TaskTerminal({
   // Effective session key: use the prop when provided, else fall back to taskId.
   const sessionKey = sessionKeyProp ?? taskId
 
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const dragDepthRef = useRef(0)
@@ -291,7 +295,7 @@ export function TaskTerminal({
         cursorBlink: true,
         disableStdin: readOnlyRef.current,
         linkHandler: {
-          activate: (_event, uri) => openTerminalLink(uri),
+          activate: (_event, uri) => openTerminalLink(uri, setPreviewPath),
           hover: (_event, uri) => showTerminalLink(term, uri),
           leave: () => hideTerminalLink(term),
         },
@@ -326,7 +330,8 @@ export function TaskTerminal({
       })
       const fit = new FitAddon()
       term.loadAddon(fit)
-      term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri), {
+      registerTerminalFiles(term, setPreviewPath)
+      term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri, setPreviewPath), {
         hover: (_event, uri) => showTerminalLink(term, uri),
         leave: () => hideTerminalLink(term),
       }))
@@ -655,6 +660,7 @@ export function TaskTerminal({
           </Button>
         )}
       </div>
+      {previewPath !== null && <TerminalFilePreview key={previewPath} sessionKey={sessionKey} path={previewPath} onClose={() => setPreviewPath(null)} />}
     </div>
   )
 }
