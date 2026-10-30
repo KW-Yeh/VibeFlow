@@ -90,6 +90,22 @@ export interface Task {
   github?: GithubRef
   /** The Jira ticket this card was created from. */
   jira?: JiraRef
+  /**
+   * `master` = an orchestrator card: no repo, no branch; it runs its agent in a
+   * plain folder and puts other cards on the board. Absent = an ordinary card.
+   * A master keeps its folder in `worktreePath` so everything that follows a
+   * running agent (terminal, transcripts, artifacts) works unchanged, which is
+   * why every git operation must ask `isMasterTask` first.
+   */
+  role?: 'master'
+  /** The master card this card was dispatched by. At most one; never set on a master. */
+  masterId?: string
+  /** A master's chosen folder. Absent = `<workspacePath>/work`, owned and deleted with the card. */
+  workDir?: string
+}
+
+export function isMasterTask(task: Pick<Task, 'role'>): boolean {
+  return task.role === 'master'
 }
 
 /**
@@ -408,7 +424,10 @@ export function updateTask(taskId: string, patch: Partial<Task>): void {
 export function removeTask(taskId: string): void {
   const board = getStore().get('board')
   ;(Object.keys(board) as ColumnId[]).forEach((col) => {
-    board[col] = board[col].filter((t) => t.id !== taskId)
+    board[col] = board[col]
+      .filter((t) => t.id !== taskId)
+      // A dispatched card outlives its master; it just stops belonging to one.
+      .map((t) => (t.masterId === taskId ? { ...t, masterId: undefined } : t))
   })
   getStore().set('board', board)
 }

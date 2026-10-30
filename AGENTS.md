@@ -124,16 +124,45 @@ npm run vibeflow -- task update \
   --profile dev
 ```
 
-- `--task` is required, plus at least one of `--title` / `--prompt` / `--status`.
+- `--task` is required, plus at least one of `--title` / `--prompt` / `--status` / `--master`.
 - `--prompt` with an empty string clears the description; omitting it leaves the
   description untouched. A blank `--title` is ignored rather than blanking the card.
 - Only text and column are editable. Branch, worktree and project path are
   provisioned on disk, so `updateTaskFromInput` refuses to touch them — a card must
   not be able to claim a different worktree without re-provisioning.
 - `--status` moves the card to the head of the target column. It does **not**
-  launch anything: auto-launch only fires when a card is moved in the app.
+  launch anything — use `task start` for that.
+- `--master <id>` puts the card under a master card; `--master none` takes it out.
 - A running app picks the change up on its own — `main.ts` watches the store file's
   directory and pushes fresh state to the renderer.
+
+### Master cards and starting cards from the CLI
+
+A **master** card (`Task.role === 'master'`, spec: `docs/features/master-cards/`)
+belongs to no repo. It orchestrates: its agent dispatches other cards, starts
+them and follows them through the board CLI. A card dispatched by one carries
+`masterId`; a card has at most one master and masters do not nest.
+
+```sh
+npm run vibeflow -- task create --role master --title "…" --prompt "…" [--work-dir <dir>]
+npm run vibeflow -- task create --project <repo> --title "…" --prompt "…" --master <masterId>
+npm run vibeflow -- task start --task <id>          # Backlog → In Progress + agent starts
+npm run vibeflow -- task list [--master <id>]       # column, running, todos x/y, activity, PR
+npm run vibeflow -- task show --task <id>
+```
+
+- A master keeps its folder in `worktreePath` (default `<storeDir>/masters/<id>/work`,
+  created at first start; `--work-dir` picks any existing folder, git or not), so
+  terminal, transcripts, progress and artifacts need no special case. **Every git
+  operation must check `isMasterTask` first** (`gitWorktree()` in `service.ts`).
+- Deleting a master removes only `<storeDir>/masters/<id>` and clears `masterId` on
+  its cards; a `--work-dir` folder is never deleted.
+- `start` / `list` / `show` talk to the running host (lock file → WebSocket),
+  because only the host owns agent sessions and live progress; without one they
+  fail with `HOST_NOT_RUNNING`. In a task shell the store defaults to
+  `VIBEFLOW_STORE_DIR`.
+- `vibeflow:startTask` does what dragging a card into In Progress does, headlessly.
+  A frontend that later opens the card re-attaches to the running session.
 
 ### CLI artifact delivery
 
@@ -148,7 +177,9 @@ not an injected prompt.
 ### What a launch sends
 
 A launch's prompt is exactly the user's custom system prompt (Settings) plus the
-card's title and description — nothing else. The Library (`library.ts`) is storage
+card's title and description — nothing else. The single exception is a master
+card, whose system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to
+dispatch, start and follow cards with the board CLI, following its auto mode. The Library (`library.ts`) is storage
 only: no Library skill, prompt snippet or script is loaded or injected
 (`buildAgentCommand` adds no `--plugin-dir` and no `CODEX_HOME`). Skills the agent
 CLIs discover on their own (`~/.claude/skills`, the project's `.claude/skills`,

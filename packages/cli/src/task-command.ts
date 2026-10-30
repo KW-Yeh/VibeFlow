@@ -5,11 +5,14 @@ import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/atta
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
 import { findTask } from '../../core/src/store'
+import { liveHost } from '../../core/src/lock'
+import { connectToHost } from './remote'
 import type { ColumnId } from '../../core/src/store'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'artifact']
+const ROLES = ['slave', 'master']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
 
@@ -19,10 +22,18 @@ VibeFlow task commands
 Usage:
   vibeflow task create [options]
   vibeflow task update [options]
+  vibeflow task start --task <id> [options]
+  vibeflow task list [--master <id>] [options]
+  vibeflow task show --task <id> [options]
   vibeflow task artifact add --file <path> [options]
 
 task create options:
-  --project <path>       Target project directory (required)
+  --role <role>          ${ROLES.join(' | ')}  (default: slave). A master has no project:
+                         it runs in its own folder and dispatches other cards.
+  --project <path>       Target project directory (required for a slave)
+  --work-dir <path>      Master only: run in this existing folder (git or not)
+                         instead of one VibeFlow creates
+  --master <id>          Dispatch the new card under this master card
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
@@ -46,11 +57,19 @@ task update options:
   --title <text>         New card title
   --prompt <text>        New card description (empty string clears it)
   --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
+  --master <id|none>     Put the card under a master, or "none" to take it out
   --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
 
-  At least one of --title / --prompt / --status is required. Branch, worktree
-  and project path are provisioned on disk and cannot be changed here.
+  At least one of --title / --prompt / --status / --master is required. Branch,
+  worktree and project path are provisioned on disk and cannot be changed here.
+
+task start / list / show (need the running VibeFlow host):
+  start --task <id>      Move a Backlog card to In Progress and start its agent,
+                         the same as dragging it in the app
+  list [--master <id>]   Every card, or one master's cards, with column, whether
+                         its agent is running, todo progress, activity and PR
+  show --task <id>       The same summary for one card
 
 task artifact add options:
   --file <path>         Copy a file into the card's user-facing Artifacts folder
@@ -60,7 +79,7 @@ task artifact add options:
 
 Notes:
   A card created with --status in_progress does NOT start running by itself.
-  Every launch is started by hand from the app.
+  Use "task start" on a Backlog card, or start it from the app.
 
 Examples:
   vibeflow task create \\
@@ -125,6 +144,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       args: argv,
       options: {
         project:       { type: 'string' },
+        role:          { type: 'string' },
+        'work-dir':    { type: 'string' },
+        master:        { type: 'string' },
         title:         { type: 'string' },
         prompt:        { type: 'string' },
         task:          { type: 'string' },
@@ -154,7 +176,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (values.help || !sub) return null
 
   const storePath = resolveStorePath(
-    values['store-path'] ?? (sub === 'artifact' ? process.env.VIBEFLOW_STORE_DIR : undefined),
+    values['store-path'] ?? (sub === 'artifact' || HOST_COMMANDS.includes(sub) ? process.env.VIBEFLOW_STORE_DIR : undefined),
     values.profile
   )
   setPlatform(createNodePlatform({ userDataDir: storePath }))
@@ -172,17 +194,20 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     return { taskId, path: addTaskArtifact(task, values.file) }
   }
 
+  if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath)
+
   if (sub === 'update') {
     if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
     requireOneOf('--status', values.status, STATUSES)
-    if (values.title === undefined && values.prompt === undefined && values.status === undefined) {
-      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status')
+    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined) {
+      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master')
     }
     const { task, storePath: resolvedPath } = updateTaskFromInput({
       taskId: values.task,
       title: values.title,
       description: values.prompt,
       status: values.status as ColumnId | undefined,
+      masterId: values.master === undefined ? undefined : values.master === 'none' ? null : values.master,
       storePath,
     })
     return {
@@ -193,12 +218,19 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         description: task.description,
         branch: task.branch,
         worktreePath: task.worktreePath ?? null,
+        masterId: task.masterId ?? null,
       },
     }
   }
 
+  requireOneOf('--role', values.role, ROLES)
+  const master = values.role === 'master'
+  if (!master && values['work-dir'] !== undefined) fail('INVALID_ARGUMENT', '--work-dir is only for --role master')
+  if (master && (values.project || values['base-branch'] || values.branch || values.mode)) {
+    fail('INVALID_ARGUMENT', 'A master card has no project: drop --project / --base-branch / --branch / --mode')
+  }
   const missing = []
-  if (!values.project) missing.push('--project')
+  if (!master && !values.project) missing.push('--project')
   if (!values.title) missing.push('--title')
   if (!values.prompt) missing.push('--prompt')
   if (missing.length) fail('MISSING_ARGUMENT', `Missing required arguments: ${missing.join(', ')}`)
@@ -217,7 +249,10 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   }
 
   const { task, storePath: resolvedPath } = await createTaskFromInput({
-    projectPath: values.project!,
+    projectPath: values.project,
+    role: master ? 'master' : undefined,
+    workDir: values['work-dir'],
+    masterId: values.master,
     title: values.title!,
     description: values.prompt,
     status: (values.status ?? 'backlog') as ColumnId,
@@ -236,7 +271,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     task: {
       id: task.id,
       title: task.title,
-      projectPath: task.projectPath,
+      role: task.role ?? 'slave',
+      masterId: task.masterId ?? null,
+      projectPath: task.projectPath ?? null,
       branch: task.branch,
       worktreePath: task.worktreePath ?? null,
       baseBranch: task.baseBranch,
@@ -245,5 +282,38 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       effort: task.effort,
       autoMode: task.autoMode,
     },
+  }
+}
+
+const HOST_COMMANDS = ['start', 'list', 'show']
+
+/**
+ * Starting a card runs its agent, and only the host owns sessions; summaries
+ * need the host's live progress. So these go to the running host instead of
+ * writing the store — and fail rather than half-work without one.
+ */
+async function hostCommand(
+  sub: string,
+  values: { task?: string; master?: string },
+  storePath: string
+): Promise<Record<string, unknown>> {
+  if (sub !== 'list' && !values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
+  const lock = liveHost(storePath)
+  if (!lock) fail('HOST_NOT_RUNNING', `No VibeFlow host is running for ${storePath}. Start it with \`vibeflow\` first.`)
+  const remote = connectToHost(lock)
+  try {
+    if (sub === 'start') {
+      const { task } = await remote.api.startTask(values.task!)
+      return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null } }
+    }
+    if (sub === 'show') {
+      const [task] = await remote.api.taskSummaries({ taskId: values.task })
+      return { task }
+    }
+    return { tasks: await remote.api.taskSummaries(values.master ? { masterId: values.master } : undefined) }
+  } catch (err) {
+    fail('HOST_ERROR', (err as Error).message)
+  } finally {
+    remote.close()
   }
 }

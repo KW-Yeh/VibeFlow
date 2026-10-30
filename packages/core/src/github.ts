@@ -321,6 +321,7 @@ function linkFromRef(ref: GithubRef, state: GithubPrState): GithubLink {
 
 /** A card past Backlog has (or had) a real branch; an unstarted one only has a name that may collide. */
 function hasRealBranch(task: Task): boolean {
+  if (task.role === 'master') return false
   return Boolean(task.provisionedAt || task.worktreePath || task.outcome)
 }
 

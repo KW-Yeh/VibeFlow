@@ -226,6 +226,47 @@ export function resolveSystemPrompt(custom?: string | null): string {
   return custom && custom.trim() ? custom : ''
 }
 
+/**
+ * What a master card's agent is told on top of the user's system prompt: it
+ * orchestrates other cards through the board CLI instead of writing code. The
+ * one launch that adds text of VibeFlow's own, because a master is useless
+ * without knowing the CLI that makes it one.
+ */
+export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean }): string {
+  const lines = [
+    '你是 VibeFlow 的 Master agent，不屬於任何 repo，工作目錄只是你的筆記區。',
+    '你的工作是把使用者的任務拆解、派給 slave 卡片執行、追蹤到完成，而不是自己改程式碼。',
+    '',
+  ]
+  if (!opts.canWrite) {
+    lines.push(
+      '這次啟動無法使用 board CLI（找不到 VIBEFLOW_CLI），你不能建立或啟動卡片。',
+      '請把拆解結果整理成卡片清單（標題、專案路徑、prompt、先後順序）交給使用者手動建立。'
+    )
+    return lines.join('\n')
+  }
+  lines.push(
+    '先定義這個 shell 函式，之後所有指令都用它，並且一律帶上 --store-path "$VIBEFLOW_STORE_DIR"：',
+    '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
+    '',
+    '1. 判斷：一張卡做得完就只建一張；涉及多個 repo 或可平行的獨立工作才拆成多張。每張只動一個 repo，各自能獨立驗收。',
+    '2. 派工：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容>',
+    '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——slave 看不到你的對話。',
+    '   需要時可加 --agent / --model / --effort / --base-branch。',
+  )
+  lines.push(
+    opts.autoMode
+      ? '3. 啟動：沒有前置依賴的卡直接 VF task start --store-path "$VIBEFLOW_STORE_DIR" --task <id>；有依賴的先留在 Backlog，前置卡完成後再啟動。'
+      : '3. 啟動：不要自己啟動卡片。列出你建了哪些卡、建議的啟動順序，等使用者在 VibeFlow 按開始。'
+  )
+  lines.push(
+    '4. 監聽：VF task list --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" 會回傳每張卡的欄位、是否在跑、todo 進度、活動狀態與 PR。',
+    '   定期查看；卡在等待權限、有 launchError、或長時間沒有活動時，告訴使用者並提出處理方式。',
+    '5. 你不會把卡片移到 Done、不會合併 PR。全部 slave 完成後，整理每張的結果與 PR 連結，交給使用者做最後確認。'
+  )
+  return lines.join('\n')
+}
+
 /** Build the initial prompt fed to the agent from a card's title + description. */
 export function buildPrompt(
   task: Pick<Task, 'title' | 'description'>
@@ -409,6 +450,7 @@ export function buildAgentCommand(
     | 'projectPath'
     | 'branch'
     | 'baseBranch'
+    | 'role'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -416,7 +458,12 @@ export function buildAgentCommand(
 ): string {
   const agent = taskAgent(task)
   const model = taskModel(task)
-  const sys = resolveSystemPrompt(systemPrompt)
+  const custom = resolveSystemPrompt(systemPrompt)
+  const sys = task.role === 'master'
+    ? [custom, masterSystemPrompt({ canWrite: Boolean(opts?.boardCli?.cliPath), autoMode: opts?.autoMode === true })]
+        .filter(Boolean)
+        .join('\n\n')
+    : custom
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.

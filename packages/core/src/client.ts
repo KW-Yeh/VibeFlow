@@ -39,7 +39,7 @@ import type {
 import type { GithubInbox, GithubRef, GithubTaskLinks } from './github'
 import type { JiraInbox, JiraRef, JiraScope } from './jira'
 import type { JiraAuthEvent, JiraAuthStatus } from './jira-auth'
-import type { LaunchIntent } from './service'
+import type { LaunchIntent, TaskSummary } from './service'
 import type { JevKeyStatus } from './jev-credentials'
 import type { StartResult } from './session-backend'
 
@@ -152,8 +152,12 @@ export function createBridge(t: BridgeTransport) {
   createTask: (payload: {
     title: string
     description?: string
-    projectPath: string
-    baseBranch: string | null
+    /** Required unless `role` is master. */
+    projectPath?: string
+    baseBranch?: string | null
+    role?: 'master'
+    workDir?: string
+    masterId?: string
     branch?: string
     mode?: 'existing' | 'new'
     agentCli?: AgentCliId
@@ -176,8 +180,16 @@ export function createBridge(t: BridgeTransport) {
     projectPath?: string
     baseBranch?: string | null
     branch?: string
+    /** null leaves its master; absent keeps it. */
+    masterId?: string | null
   }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:updateTask', payload),
+  /** Move a Backlog card to In Progress and start its agent on the host. */
+  startTask: (taskId: string): Promise<{ state: VibeFlowState; task: Task }> =>
+    t.invoke('vibeflow:startTask', taskId),
+  /** Cards as a master sees them; filter by master or a single card. */
+  taskSummaries: (filter?: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> =>
+    t.invoke('task:summaries', filter),
   /** Clear prior execution state and prepare a fresh run of this task. */
   resetTaskRun: (
     taskId: string

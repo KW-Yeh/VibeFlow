@@ -62,8 +62,10 @@ are.
 |---|---|---|---|---|
 | `vibeflow:getState` | core | `getState()` | | Board + settings in one read; the plan's `listTasks()` + `getSettings()` |
 | `vibeflow:setBoard` | core | `setBoard(board)` | | The renderer replaces the whole board to reorder and move. `moveTask(id, to)` alone cannot express a position in the column. Keep it or add `moveTask(id, to, index)` |
-| `vibeflow:createTask` | core | `createTask(input)` | projectPath | The user picks the project path. Valid input, but validate it with a schema |
-| `vibeflow:updateTask` | core | `updateTask(id, patch)` | | Backlog cards only. `projectPath` / `baseBranch` / `branch` are stored, not provisioned; a clean worktree is given up |
+| `vibeflow:createTask` | core | `createTask(input)` | projectPath, workDir | The user picks the project path. Valid input, but validate it with a schema. `role: 'master'` takes no project; `workDir` (master only) must be an existing absolute folder; `masterId` must name a master |
+| `vibeflow:updateTask` | core | `updateTask(id, patch)` | | Backlog cards only. `projectPath` / `baseBranch` / `branch` are stored, not provisioned; a clean worktree is given up. `masterId` (id or null) moves the card under / out of a master |
+| `vibeflow:startTask` | core | `startTask(id)` | | Backlog → In Progress and the agent starts on the host, with no frontend involved (`task start`, master dispatch) |
+| `task:summaries` | core | `taskSummaries({ masterId?, taskId? })` | | Column, running session, todo x/y, activity, PR and outcome per card (`task list` / `task show`) |
 | `vibeflow:removeTask` | core | `removeTask(id)` | | |
 | `vibeflow:resetTaskRun` | core | `resetTaskRun(id)` | | "Return to Backlog" wipes the run |
 | `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |

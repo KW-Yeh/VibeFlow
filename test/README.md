@@ -66,6 +66,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
+| `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
 | `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, exit status, kill vs. detach |

@@ -4,6 +4,7 @@ import fs from 'fs/promises'
 import {
   getStore,
   getStoreAtPath,
+  isMasterTask,
   resolveWorkstationPath,
   type ColumnId,
   type Task,
@@ -24,7 +25,14 @@ import type { GithubRef } from './github'
 import type { JiraRef } from './jira'
 
 export interface CreateTaskInput {
-  projectPath: string
+  /** Required for an ordinary card; a master has no project. */
+  projectPath?: string
+  /** `master` creates an orchestrator card — see Task.role. */
+  role?: 'master'
+  /** A master's own folder (any existing directory, git or not). Absent = one VibeFlow owns. */
+  workDir?: string
+  /** The master card dispatching this one. */
+  masterId?: string
   title: string
   description?: string
   status?: ColumnId
@@ -55,8 +63,34 @@ export interface CreateTaskResult {
   storePath: string
 }
 
+/** Where a store keeps its master cards' folders. */
+export function mastersRoot(storeFile: string): string {
+  return path.join(path.dirname(storeFile), 'masters')
+}
+
+function taskError(message: string, code: string): Error {
+  return Object.assign(new Error(message), { code })
+}
+
+/** A master must exist and be a master; a master cannot itself be dispatched. */
+export function assertMasterRef(board: Record<ColumnId, Task[]>, masterId: string, taskId?: string): void {
+  const master = (Object.values(board) as Task[][]).flat().find((t) => t.id === masterId)
+  if (!master) throw taskError(`找不到 master 卡片：${masterId}`, 'MASTER_NOT_FOUND')
+  if (!isMasterTask(master)) throw taskError(`卡片 ${masterId} 不是 master`, 'NOT_A_MASTER')
+  if (taskId && masterId === taskId) throw taskError('卡片不能指定自己為 master', 'NOT_A_MASTER')
+}
+
+async function assertDirectory(dir: string): Promise<void> {
+  const stat = await fs.stat(dir).catch(() => null)
+  if (!path.isAbsolute(dir) || !stat?.isDirectory()) {
+    throw taskError(`找不到資料夾：${dir}`, 'WORK_DIR_NOT_FOUND')
+  }
+}
+
 export async function createTaskFromInput(input: CreateTaskInput): Promise<CreateTaskResult> {
-  const { projectPath } = input
+  if (input.role === 'master') return createMasterTask(input)
+  const projectPath = input.projectPath
+  if (!projectPath) throw taskError('尚未選擇專案資料夾', 'PROJECT_NOT_FOUND')
 
   try {
     await fs.access(projectPath)
@@ -77,6 +111,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   const explicitBranch = input.branch?.trim() || null
 
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
+  if (input.masterId) assertMasterRef(store.get('board'), input.masterId)
 
   // The task's workspace folder is `<workstationRoot>/<projectName>` under the
   // global workstation (settings.workstationPath, default ~/Desktop). The
@@ -138,6 +173,7 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
     model: input.model || undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
+    ...(input.masterId ? { masterId: input.masterId } : {}),
     ...(input.github ? { github: input.github } : {}),
     ...(input.jira ? { jira: input.jira } : {}),
   }
@@ -157,6 +193,59 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
   return { task, storePath: store.path }
 }
 
+/**
+ * A master is a card without a repo: no git checks, no branch name, no
+ * worktree. It gets a folder of its own under the store unless the user named
+ * one, and that folder is only created when the card first runs.
+ */
+async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResult> {
+  if (input.masterId) throw taskError('master 卡片不能再隸屬其他 master', 'NOT_A_MASTER')
+  const workDir = input.workDir?.trim() || undefined
+  if (workDir) await assertDirectory(workDir)
+  const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
+  const taskId = randomUUID().slice(0, 8)
+  const workspacePath = path.join(mastersRoot(store.path), taskId)
+
+  const draft: Task = {
+    id: taskId,
+    title: input.title.trim() || `Master ${taskId}`,
+    branch: '',
+    role: 'master',
+    workspacePath,
+    ...(workDir ? { workDir } : {}),
+  }
+  const col: ColumnId = input.status ?? 'backlog'
+  const provisioned = col === 'backlog' ? null : await provisionTaskWorktree(draft)
+  const attachments = provisioned?.worktreePath
+    ? writeAttachments(provisioned.worktreePath, input.attachments ?? [])
+    : writeAttachmentsTo(taskAttachmentStagingPath(workspacePath, taskId), input.attachments ?? [])
+  const attachmentLines = attachments.map((attachment) => `[附件: ${attachment.path}]`)
+  const baseDescription = input.description?.trim()
+  const description = attachmentLines.length
+    ? [baseDescription, attachmentLines.join('\n')].filter(Boolean).join('\n\n')
+    : baseDescription || undefined
+
+  const task: Task = {
+    ...draft,
+    ...provisioned,
+    description,
+    createdAt: Date.now(),
+    agentCli: input.agentCli ?? 'claude',
+    model: input.model || undefined,
+    effort: input.effort ?? DEFAULT_TASK_EFFORT,
+    autoMode: input.autoMode,
+  }
+
+  try {
+    const board = store.get('board')
+    board[col] = [task, ...board[col]]
+    store.set('board', board)
+  } catch (err) {
+    throw taskError(`Store 寫入失敗：${(err as Error).message}`, 'STORE_WRITE_FAILED')
+  }
+  return { task, storePath: store.path }
+}
+
 export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBranch' | 'pushed' | 'provisionedAt'
 >
 
@@ -167,6 +256,13 @@ export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBran
  * de-duplicated.
  */
 export async function provisionTaskWorktree(task: Task): Promise<ProvisionedFields> {
+  if (isMasterTask(task)) {
+    if (!task.workspacePath) throw taskError('master 卡片沒有工作資料夾', 'WORKTREE_CREATE_FAILED')
+    const worktreePath = task.workDir ?? path.join(task.workspacePath, 'work')
+    await fs.mkdir(worktreePath, { recursive: true })
+    await fs.mkdir(task.workspacePath, { recursive: true })
+    return { branch: '', worktreePath, provisionedAt: Date.now() }
+  }
   if (!task.projectPath || !task.workspacePath) {
     throw Object.assign(new Error('任務沒有專案資料夾，無法建立 worktree'), {
       code: 'WORKTREE_CREATE_FAILED',
@@ -206,6 +302,8 @@ export interface UpdateTaskInput {
   /** Empty string clears the description; absent leaves it untouched. */
   description?: string
   status?: ColumnId
+  /** A master's id to dispatch the card under; null removes it from its master. */
+  masterId?: string | null
   /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
@@ -233,6 +331,10 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
   }
 
   const current = board[from].find((t) => t.id === input.taskId) as Task
+  if (input.masterId) {
+    if (isMasterTask(current)) throw taskError('master 卡片不能再隸屬其他 master', 'NOT_A_MASTER')
+    assertMasterRef(board, input.masterId, current.id)
+  }
   const title = input.title?.trim()
   const description = input.description?.trim()
   const task: Task = {
@@ -241,6 +343,7 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
     ...(input.description !== undefined
       ? { description: description || undefined }
       : {}),
+    ...(input.masterId !== undefined ? { masterId: input.masterId || undefined } : {}),
   }
 
   const to = input.status ?? from

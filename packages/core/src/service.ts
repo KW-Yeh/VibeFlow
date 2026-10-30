@@ -9,6 +9,7 @@ import {
   getState,
   getStore,
   getStorePath,
+  isMasterTask,
   listTerminals,
   removeTask,
   removeTerminals,
@@ -59,7 +60,7 @@ import {
   resetWorktreeToBase,
   syncBaseBranch,
 } from './git'
-import { createTaskFromInput, provisionTaskWorktree } from './tasks'
+import { assertMasterRef, createTaskFromInput, provisionTaskWorktree } from './tasks'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
 import { decisionsKey, deleteDecisions } from './decisions'
@@ -85,7 +86,7 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
-import type { ProgressNotification, TaskProgress, TokenUsage } from './progress'
+import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
 import { getPlatform } from './platform'
@@ -125,8 +126,14 @@ export interface StandaloneTerminalPayload {
 export interface CreateTaskPayload {
   title: string
   description?: string
-  projectPath: string
-  baseBranch: string | null
+  /** Required unless `role` is master. */
+  projectPath?: string
+  baseBranch?: string | null
+  role?: 'master'
+  /** A master's own folder; absent = one VibeFlow owns. */
+  workDir?: string
+  /** Dispatch the new card under this master. */
+  masterId?: string
   /** User-chosen branch name; blank/absent = derive one from the card. */
   branch?: string
   mode?: 'existing' | 'new'
@@ -151,6 +158,27 @@ export interface UpdateTaskPayload {
   baseBranch?: string | null
   /** New branch name; blank/absent keeps the current one. */
   branch?: string
+  /** Master to belong to; null leaves its master; absent keeps it. */
+  masterId?: string | null
+}
+
+/** One card as a master (or the CLI) sees it: where it is and how it is doing. */
+export interface TaskSummary {
+  id: string
+  title: string
+  column: ColumnId
+  role?: 'master'
+  masterId?: string
+  projectName?: string
+  branch?: string
+  /** Its agent session is alive right now. */
+  running: boolean
+  launchedAt?: number
+  launchError?: string
+  todos?: { done: number; total: number; current?: string }
+  activity?: Activity
+  pr?: { number: number; url: string; state: string }
+  outcome?: { commits: number; files: number; additions: number; deletions: number }
 }
 
 export interface ChatSendPayload {
@@ -304,6 +332,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       bus.emit('progress:notify', { taskId, title: task.title, notifications })
     },
   })
+
+  /** The card's git worktree; a master's folder is not one, so git must never run there. */
+  function gitWorktree(task: Task): string | undefined {
+    return isMasterTask(task) ? undefined : task.worktreePath
+  }
 
   /** What the tracker follows for a card; null when it has no worktree to run in. */
   function progressTarget(task: Task): ProgressTarget | null {
@@ -523,6 +556,96 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     pointFields: () => getSettings().jira?.storyPointsFields?.length ? getSettings().jira!.storyPointsFields! : DEFAULT_POINT_FIELDS,
   })
 
+  async function startTaskSession(requested: Task, key: string, p: PtyStartPayload) {
+    // Only a launch provisions; a shell asked for meanwhile waits for it. A
+    // shell must never fall back to the project checkout — work done there
+    // would land on whatever branch the project has out.
+    const pending = provisioning.get(requested.id)
+    const task = p.launch ? await ensureProvisioned(requested) : pending ? await pending : requested
+    const cwd = task.worktreePath
+    if (!cwd) throw new Error('任務尚未開始執行，還沒有 worktree')
+    let command: string | undefined
+    let fresh = p.fresh === true
+    if (p.launch) {
+      const intent = obj<LaunchIntent>(p.launch, 'launch')
+      // An agent that is still running (tmux kept it through a restart) is
+      // re-attached, not restarted with --resume on top of itself.
+      if (intent.resume && (await sessions.isAlive(key))) {
+        fresh = false
+      } else {
+        command = (await launchCommand(task, intent)).replace(/\r$/, '')
+      }
+    }
+    if (p.launch) ensureTaskArtifactDirs(task)
+    const result = await sessions.start(key, {
+      cwd,
+      command,
+      fresh,
+      cols: typeof p.cols === 'number' ? p.cols : undefined,
+      rows: typeof p.rows === 'number' ? p.rows : undefined,
+      // Session ended (natural exit included), so stop its watcher.
+      onExit: () => unwatchSubAgents(key),
+    })
+    terminalDirectories.set(key, cwd)
+    watchSubAgents(key, cwd, (subAgents) => {
+      bus.emit('subagents:update', { taskId: task.id, subAgents })
+    })
+    // Only the card's own launch decides what run is being followed; a
+    // shell tab must not retarget it.
+    if (p.launch) {
+      const current = findTask(task.id)
+      if (current) trackProgress(current)
+    }
+    return result
+  }
+
+  async function summarizeTasks(filter: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> {
+    const board = getState().board
+    const alive = new Set(await sessions.list())
+    const summaries: TaskSummary[] = []
+    for (const column of COLUMNS) {
+      for (const task of board[column]) {
+        if (filter.taskId && task.id !== filter.taskId) continue
+        if (filter.masterId && task.masterId !== filter.masterId) continue
+        if (column === 'in_progress' && !progress.isTracking(task.id)) trackProgress(task)
+        const snapshot = progress.isTracking(task.id) ? progress.snapshot(task.id) : null
+        const todos = snapshot?.todos
+        const current = todos?.find((t) => t.status === 'in_progress')
+        const pr = task.outcome?.pr
+        summaries.push({
+          id: task.id,
+          title: task.title,
+          column,
+          ...(task.role ? { role: task.role } : {}),
+          ...(task.masterId ? { masterId: task.masterId } : {}),
+          ...(task.projectName ? { projectName: task.projectName } : {}),
+          ...(task.branch ? { branch: task.branch } : {}),
+          running: alive.has(task.id),
+          ...(task.launchedAt ? { launchedAt: task.launchedAt } : {}),
+          ...(task.launchError ? { launchError: task.launchError } : {}),
+          ...(todos ? {
+            todos: {
+              done: todos.filter((t) => t.status === 'completed').length,
+              total: todos.length,
+              ...(current ? { current: current.activeForm ?? current.content } : {}),
+            },
+          } : {}),
+          ...(snapshot ? { activity: snapshot.activity } : {}),
+          ...(pr ? { pr: { number: pr.number, url: pr.url, state: pr.state } } : {}),
+          ...(task.outcome ? {
+            outcome: {
+              commits: task.outcome.commits.length,
+              files: task.outcome.files.length,
+              additions: task.outcome.additions,
+              deletions: task.outcome.deletions,
+            },
+          } : {}),
+        })
+      }
+    }
+    return summaries
+  }
+
   const handlers: CoreHandlers = {
     'vibeflow:getState': () => getState(),
 
@@ -633,8 +756,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
     'vibeflow:createTask': async (payload) => {
       const p = obj<CreateTaskPayload>(payload, 'payload')
-      if (!p.projectPath) throw new Error('尚未選擇專案資料夾')
-      str(p.projectPath, 'projectPath')
+      if (p.role !== undefined && p.role !== 'master') invalid('unknown role')
+      if (p.role !== 'master') {
+        if (!p.projectPath) throw new Error('尚未選擇專案資料夾')
+        str(p.projectPath, 'projectPath')
+      }
+      if (p.workDir !== undefined) str(p.workDir, 'workDir')
+      if (p.masterId !== undefined) str(p.masterId, 'masterId')
       str(p.title ?? '', 'title')
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       if (p.agentCli !== undefined && !AGENT_IDS.includes(p.agentCli)) invalid('unknown agent')
@@ -642,6 +770,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.jira !== undefined && !isJiraRef(p.jira)) invalid('jira must be a Jira ticket ref')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
+        role: p.role,
+        workDir: p.workDir,
+        masterId: p.masterId,
         title: p.title,
         description: p.description,
         baseBranch: p.baseBranch,
@@ -671,6 +802,20 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     // were new. Launching again is the caller's decision.
     'vibeflow:resetTaskRun': async (taskId) => {
       const task = requireTask(taskId)
+      if (isMasterTask(task) && task.worktreePath) {
+        // A master's folder is not under version control: only the run's
+        // by-products are discarded, never files the user keeps there.
+        await teardownTask(task.id)
+        if (task.workspacePath) deleteArtifacts(task.workspacePath, task.worktreePath)
+        resetSubAgents(task.worktreePath)
+        const usage = usageThroughCurrentRun(task)
+        progress.untrack(task.id)
+        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...(usage ? { usage } : {}) })
+        const reset = findTask(task.id)
+        if (!reset) throw new Error('找不到要重置的任務')
+        bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
+        return { state: getState(), task: reset }
+      }
       if (!task.worktreePath) {
         // Never provisioned: no code, artifacts or sub-agents to discard.
         await teardownTask(task.id)
@@ -710,8 +855,16 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         throw new Error('只有 Backlog 的任務可以編輯')
       }
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
+      let masterPatch: Partial<Task> = {}
+      if (p.masterId !== undefined) {
+        if (p.masterId !== null) {
+          if (isMasterTask(existing)) invalid('a master cannot belong to another master')
+          assertMasterRef(getState().board, str(p.masterId, 'masterId'), existing.id)
+        }
+        masterPatch = { masterId: p.masterId || undefined }
+      }
       let gitPatch: Partial<Task> = {}
-      const nextProject = p.projectPath || existing.projectPath
+      const nextProject = isMasterTask(existing) ? undefined : p.projectPath || existing.projectPath
       const nextBranch = p.branch === undefined ? '' : str(p.branch, 'branch').trim()
       const projectChanged = Boolean(p.projectPath && p.projectPath !== existing.projectPath)
       const baseChanged = p.baseBranch != null && p.baseBranch !== (existing.baseBranch ?? null)
@@ -763,6 +916,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         jevRoute: undefined,
         effort: p.effort,
         autoMode: p.autoMode,
+        ...masterPatch,
         ...gitPatch,
       })
       return getState()
@@ -774,47 +928,37 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'pty:start': async (payload) => {
       const p = obj<PtyStartPayload>(payload, 'payload')
       const requested = requireTask(p.taskId)
-      const key = sessionKeyFor(requested.id, p.sessionKey)
-      // Only a launch provisions; a shell asked for meanwhile waits for it. A
-      // shell must never fall back to the project checkout — work done there
-      // would land on whatever branch the project has out.
-      const pending = provisioning.get(requested.id)
-      const task = p.launch ? await ensureProvisioned(requested) : pending ? await pending : requested
-      const cwd = task.worktreePath
-      if (!cwd) throw new Error('任務尚未開始執行，還沒有 worktree')
-      let command: string | undefined
-      let fresh = p.fresh === true
-      if (p.launch) {
-        const intent = obj<LaunchIntent>(p.launch, 'launch')
-        // An agent that is still running (tmux kept it through a restart) is
-        // re-attached, not restarted with --resume on top of itself.
-        if (intent.resume && (await sessions.isAlive(key))) {
-          fresh = false
-        } else {
-          command = (await launchCommand(task, intent)).replace(/\r$/, '')
-        }
-      }
-      if (p.launch) ensureTaskArtifactDirs(task)
-      const result = await sessions.start(key, {
-        cwd,
-        command,
-        fresh,
-        cols: typeof p.cols === 'number' ? p.cols : undefined,
-        rows: typeof p.rows === 'number' ? p.rows : undefined,
-        // Session ended (natural exit included), so stop its watcher.
-        onExit: () => unwatchSubAgents(key),
+      return startTaskSession(requested, sessionKeyFor(requested.id, p.sessionKey), p)
+    },
+
+    // What dragging a card into In Progress does, without a frontend: the card
+    // moves, provisions and starts its agent here, so whoever opens it later
+    // attaches to a run that is already going. This is how a master starts the
+    // cards it dispatched.
+    'vibeflow:startTask': async (taskId) => {
+      const task = requireTask(taskId)
+      const column = columnOf(task.id)
+      if (column !== 'backlog') throw new Error(`只有 Backlog 的卡片可以啟動（目前在 ${column}）`)
+      const board = getState().board
+      const started = { ...task, launchedAt: Date.now(), launchError: undefined }
+      setBoard({
+        backlog: board.backlog.filter((t) => t.id !== task.id),
+        in_progress: [started, ...board.in_progress],
+        done: board.done,
       })
-      terminalDirectories.set(key, cwd)
-      watchSubAgents(key, cwd, (subAgents) => {
-        bus.emit('subagents:update', { taskId: task.id, subAgents })
+      bus.emit('state:changed', getState())
+      await startTaskSession(started, task.id, { taskId: task.id, launch: {} })
+      return { state: getState(), task: findTask(task.id) ?? started }
+    },
+
+    // Every card on the board, or one master's cards, as the CLI and a master's
+    // agent read them.
+    'task:summaries': (payload) => {
+      const p = payload === undefined ? {} : obj<{ masterId?: unknown; taskId?: unknown }>(payload, 'payload')
+      return summarizeTasks({
+        masterId: p.masterId === undefined ? undefined : requireTask(p.masterId).id,
+        taskId: p.taskId === undefined ? undefined : requireTask(p.taskId).id,
       })
-      // Only the card's own launch decides what run is being followed; a
-      // shell tab must not retarget it.
-      if (p.launch) {
-        const current = findTask(task.id)
-        if (current) trackProgress(current)
-      }
-      return result
     },
 
     'terminal:start': async (payload) => {
@@ -941,8 +1085,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
     'git:getDiff': (taskId) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) return []
-      return getWorktreeDiff(task.worktreePath, task.baseBranch ?? 'HEAD')
+      const worktree = gitWorktree(task)
+      if (!worktree) return []
+      return getWorktreeDiff(worktree, task.baseBranch ?? 'HEAD')
     },
 
     /**
@@ -952,17 +1097,19 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
      */
     'git:getDiffEntries': (taskId, opts) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) return []
+      const worktree = gitWorktree(task)
+      if (!worktree) return []
       const fetch = opts && typeof opts === 'object' ? (opts as { fetch?: unknown }).fetch : undefined
-      return getWorktreeDiffEntries(task.worktreePath, task.baseBranch ?? 'HEAD', {
+      return getWorktreeDiffEntries(worktree, task.baseBranch ?? 'HEAD', {
         fetch: typeof fetch === 'boolean' ? fetch : undefined,
       })
     },
 
     'git:getDiffFile': (taskId, filePath) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) return null
-      return getWorktreeDiffFile(task.worktreePath, task.baseBranch ?? 'HEAD', str(filePath, 'filePath'))
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getWorktreeDiffFile(worktree, task.baseBranch ?? 'HEAD', str(filePath, 'filePath'))
     },
 
     'task:listArtifacts': (taskId) => {
@@ -992,6 +1139,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'task:getSpecs': async (taskId) => {
       const task = requireTask(taskId)
       const base = task.baseBranch ?? 'main'
+      if (isMasterTask(task)) return []
       if (task.worktreePath) return readWorktreeSpecs(task.worktreePath, base)
       // Never provisioned: the branch is only a name, there is nothing to read.
       // Cards from before provisionedAt existed: an app card was provisioned
@@ -1058,28 +1206,32 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'git:approve': async (payload) => {
       const p = obj<{ taskId: unknown; message: unknown }>(payload, 'payload')
       const task = requireTask(p.taskId)
-      if (!task.worktreePath) throw new Error('找不到此任務的 worktree')
-      const result = await commitAndPush(task.worktreePath, str(p.message, 'message'))
+      const worktree = gitWorktree(task)
+      if (!worktree) throw new Error('找不到此任務的 worktree')
+      const result = await commitAndPush(worktree, str(p.message, 'message'))
       if (result.pushed) updateTask(task.id, { pushed: true })
       return { result, state: getState() }
     },
 
     'git:generateCommitMessage': (taskId) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) throw new Error('找不到此任務的 worktree')
-      return generateCommitMessage(task.worktreePath, task.baseBranch ?? 'main', task.agentCli ?? 'claude')
+      const worktree = gitWorktree(task)
+      if (!worktree) throw new Error('找不到此任務的 worktree')
+      return generateCommitMessage(worktree, task.baseBranch ?? 'main', task.agentCli ?? 'claude')
     },
 
     'git:getPrStatus': (taskId) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) return null
-      return getPrStatus(task.worktreePath)
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getPrStatus(worktree)
     },
 
     'git:getGithubCompareUrl': (taskId) => {
       const task = requireTask(taskId)
-      if (!task.worktreePath) return null
-      return getGithubCompareUrl(task.worktreePath, task.baseBranch ?? 'main')
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getGithubCompareUrl(worktree, task.baseBranch ?? 'main')
     },
 
     // One dialog at a time: a second click while it is open joins it instead
@@ -1113,8 +1265,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       // Snapshot what the branch changed before the worktree that holds it is
       // removed, so a done card can still account for the work.
       let outcome: TaskOutcome | undefined
-      if (task.worktreePath) {
-        outcome = (await captureTaskOutcome(task.worktreePath, task.baseBranch ?? 'main')) ?? undefined
+      const worktree = gitWorktree(task)
+      if (worktree) {
+        outcome = (await captureTaskOutcome(worktree, task.baseBranch ?? 'main')) ?? undefined
       }
       // Last read of the run's transcripts while the worktree they are keyed by still exists.
       const usage = usageThroughCurrentRun(task)
@@ -1149,6 +1302,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       await removeTaskWorktree(task)
       if (task.workspacePath) {
         fs.rmSync(taskAttachmentStagingPath(task.workspacePath, task.id), { recursive: true, force: true })
+      }
+      // The folder VibeFlow made for a master goes with it; one the user chose stays.
+      if (isMasterTask(task) && task.workspacePath) {
+        fs.rmSync(task.workspacePath, { recursive: true, force: true })
       }
       clearConversation(task.id)
       removeTask(task.id)
