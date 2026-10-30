@@ -53,6 +53,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
 import { taskArtifactsDir } from '@/lib/claude'
+import { readDiffView, writeDiffView, type DiffViewPrefs } from '@/lib/view-persistence'
 import { jevRoutingLabel } from '@/lib/jev'
 import {
   retainExistingDiffContents,
@@ -207,6 +208,34 @@ function subscribeInspectorMode(listener: () => void) {
 
 function useInspectorMode(): InspectorMode {
   return useSyncExternalStore(subscribeInspectorMode, getInspectorMode, () => 'docked')
+}
+
+// One preference for every diff on screen: the single-file modal and the
+// full-screen view must not disagree about how a diff is laid out.
+const DEFAULT_DIFF_VIEW: DiffViewPrefs = { split: false, fullContext: false }
+const diffViewListeners = new Set<() => void>()
+let diffView: DiffViewPrefs | null = null
+
+function getDiffView(): DiffViewPrefs {
+  if (diffView === null) diffView = readDiffView()
+  return diffView
+}
+
+function setDiffView(patch: Partial<DiffViewPrefs>) {
+  diffView = { ...getDiffView(), ...patch }
+  writeDiffView(diffView)
+  for (const listener of diffViewListeners) listener()
+}
+
+function subscribeDiffView(listener: () => void) {
+  diffViewListeners.add(listener)
+  return () => {
+    diffViewListeners.delete(listener)
+  }
+}
+
+function useDiffView(): DiffViewPrefs {
+  return useSyncExternalStore(subscribeDiffView, getDiffView, () => DEFAULT_DIFF_VIEW)
 }
 
 /** Below Tailwind's `lg` a docked inspector leaves the terminal too narrow to read. */
@@ -954,6 +983,7 @@ const DiffFileViewer = memo(function DiffFileViewer({
   file: DiffFile
   showHeader?: boolean
 }) {
+  const { split, fullContext } = useDiffView()
   return (
     <div className={cn('overflow-hidden', showHeader && 'rounded-md border border-border/70')}>
       {showHeader && (
@@ -976,7 +1006,8 @@ const DiffFileViewer = memo(function DiffFileViewer({
           <ReactDiffViewer
             oldValue={file.oldValue}
             newValue={file.newValue}
-            splitView={false}
+            splitView={split}
+            showDiffOnly={!fullContext}
             useDarkTheme
             compareMethod={'diffLines' as unknown as DiffMethod}
             renderContent={(source) => (
@@ -1061,6 +1092,42 @@ const DiffFileViewer = memo(function DiffFileViewer({
   )
 })
 
+const DIFF_TOGGLE_CLASS =
+  'rounded-sm px-2 py-1 text-xs outline-none transition-colors motion-reduce:transition-none'
+
+/** Layout (unified / side by side) and context (changes only / whole file) for every diff. */
+function DiffViewToggles() {
+  const { split, fullContext } = useDiffView()
+  const option = (active: boolean) =>
+    cn(
+      DIFF_TOGGLE_CLASS,
+      active
+        ? 'bg-primary/15 text-primary'
+        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+    )
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div role="group" aria-label="Diff 版面" className="flex rounded-md border border-border/70 p-0.5">
+        <button type="button" aria-pressed={!split} onClick={() => setDiffView({ split: false })} className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', option(!split))}>
+          整合
+        </button>
+        <button type="button" aria-pressed={split} onClick={() => setDiffView({ split: true })} className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', option(split))}>
+          左右對照
+        </button>
+      </div>
+      <button
+        type="button"
+        aria-pressed={fullContext}
+        onClick={() => setDiffView({ fullContext: !fullContext })}
+        title={fullContext ? '只顯示變更附近的行' : '顯示檔案的所有行'}
+        className={cn('border border-border/70 focus-visible:ring-[3px] focus-visible:ring-ring/50', option(fullContext))}
+      >
+        {fullContext ? '收合未變更' : '全部展開'}
+      </button>
+    </div>
+  )
+}
+
 /**
  * One changed file's diff, on its own. Opening a file from the list lands here
  * rather than expanding it in place — a diff needs the width and the scroll
@@ -1106,7 +1173,10 @@ function DiffFileModal({
           讀不到這個檔案的內容。
         </p>
       ) : (
-        <DiffFileViewer file={file} showHeader={false} />
+        <div className="space-y-3">
+          <DiffViewToggles />
+          <DiffFileViewer file={file} showHeader={false} />
+        </div>
       )}
     </DialogShell>
   )
@@ -1396,13 +1466,16 @@ function DiffContent({ taskId, diff }: { taskId: string; diff: TaskDiff }) {
                   {entries.length} changed {entries.length === 1 ? 'file' : 'files'}
                 </p>
               </div>
-              <IconButton
-                aria-label="關閉 diff 放大檢視"
-                title="關閉"
-                onClick={closeExpanded}
-              >
-                <X className="size-4" />
-              </IconButton>
+              <div className="flex items-center gap-3">
+                <DiffViewToggles />
+                <IconButton
+                  aria-label="關閉 diff 放大檢視"
+                  title="關閉"
+                  onClick={closeExpanded}
+                >
+                  <X className="size-4" />
+                </IconButton>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
               <div className="mx-auto w-full max-w-6xl space-y-4">

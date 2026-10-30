@@ -14,6 +14,7 @@ const TABS_KEY = 'vibeflow:terminal-tabs'
 const INBOX_TAB_KEY = 'vibeflow:inbox-tab'
 const FILTERS_KEY = 'vibeflow:github-filters'
 const JIRA_SCOPE_KEY = 'vibeflow:jira-scope'
+const DIFF_VIEW_KEY = 'vibeflow:diff-view'
 
 export type GithubFilterState = Record<'issues' | 'prs', GithubFilters>
 
@@ -78,6 +79,21 @@ export function readJiraScope(): JiraScope {
 }
 
 export const writeJiraScope = (scope: JiraScope) => write(JIRA_SCOPE_KEY, scope)
+
+export interface DiffViewPrefs {
+  /** Old file on the left, new on the right, rows aligned. */
+  split: boolean
+  /** Show every unchanged line instead of folding them around the changes. */
+  fullContext: boolean
+}
+
+export function readDiffView(): DiffViewPrefs {
+  const value = read(DIFF_VIEW_KEY)
+  const prefs = value && typeof value === 'object' ? (value as Partial<DiffViewPrefs>) : {}
+  return { split: prefs.split === true, fullContext: prefs.fullContext === true }
+}
+
+export const writeDiffView = (prefs: DiffViewPrefs) => write(DIFF_VIEW_KEY, prefs)
 
 function readFilters(value: unknown): GithubFilters {
   const v = (value ?? {}) as Partial<Record<keyof GithubFilters, unknown>>
