@@ -5,9 +5,11 @@ import {
   ChevronDown,
   Check,
   FileUp,
+  FolderOpen,
   GitBranch,
   Info,
   Loader2,
+  Network,
   X,
 } from 'lucide-react'
 
@@ -47,6 +49,29 @@ interface AttachmentItem {
   input: AttachmentInput
 }
 
+/** Everything the form collected, for `createTask`. */
+export interface NewTaskDraft {
+  title: string
+  description: string
+  /** `master` = a repo-less orchestrator card; absent = an ordinary card. */
+  role?: 'master'
+  /** Ordinary cards only. */
+  projectPath?: string
+  baseBranch: string | null
+  branch: string
+  /** Master only: its own folder; absent = one VibeFlow creates. */
+  workDir?: string
+  /** Ordinary cards only: the master to dispatch it under. */
+  masterId?: string
+  agentCli: AgentCliId
+  model: string
+  effort: AgentEffort
+  autoMode: boolean
+  attachments: AttachmentInput[]
+}
+
+type CardRole = 'slave' | 'master'
+
 export interface NewTaskFormProps {
   creating: boolean
   error: string | null
@@ -55,18 +80,9 @@ export interface NewTaskFormProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
-  onSubmit: (
-    title: string,
-    description: string,
-    projectPath: string,
-    baseBranch: string | null,
-    branch: string,
-    agentCli: AgentCliId,
-    model: string,
-    effort: AgentEffort,
-    autoMode: boolean,
-    attachments: AttachmentInput[]
-  ) => void
+  onSubmit: (draft: NewTaskDraft) => void
+  /** Master cards a new card can be dispatched under. */
+  masters?: Array<{ id: string; title: string }>
   onClose?: () => void
   /** Render as a full-height inline panel instead of a compact modal form. */
   inline?: boolean
@@ -375,8 +391,12 @@ export function NewTaskForm({
   initialProjectPath,
   defaultAutoMode = true,
   workstationPath,
+  masters = [],
 }: NewTaskFormProps) {
   const [step, setStep] = useState<1 | 2>(1)
+  const [role, setRole] = useState<CardRole>('slave')
+  const [workDir, setWorkDir] = useState('')
+  const [masterId, setMasterId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [projectPath, setProjectPath] = useState<string | null>(null)
@@ -510,24 +530,39 @@ export function NewTaskForm({
   const isProjectReady =
     Boolean(projectPath) && !projectMissing && isRepo && !loadingInfo && !initializing
 
-  const canGoToStep2 = isProjectReady
+  const isMaster = role === 'master'
+  const isReady = isMaster || isProjectReady
+  const canGoToStep2 = isReady
   const canSubmit =
-    title.trim().length > 0 && !creating && !isReadingAttachments && (inline ? isProjectReady : true)
+    title.trim().length > 0 && !creating && !isReadingAttachments && (inline ? isReady : true)
 
   const handleSubmit = () => {
-    if (!canSubmit || !projectPath) return
-    onSubmit(
-      title.trim(),
-      description.trim(),
-      projectPath,
-      hasRemote ? baseBranch || null : null,
-      branch.trim(),
+    if (!canSubmit || (!isMaster && !projectPath)) return
+    const shared = {
+      title: title.trim(),
+      description: description.trim(),
       agentCli,
       model,
       effort,
       autoMode,
-      attachments.map(({ input }) => input)
+      attachments: attachments.map(({ input }) => input),
+    }
+    onSubmit(
+      isMaster
+        ? { ...shared, role: 'master', baseBranch: null, branch: '', workDir: workDir.trim() || undefined }
+        : {
+            ...shared,
+            projectPath: projectPath ?? undefined,
+            baseBranch: hasRemote ? baseBranch || null : null,
+            branch: branch.trim(),
+            masterId: masterId || undefined,
+          }
     )
+  }
+
+  const handleBrowseWorkDir = async () => {
+    const path = await pickFolder()
+    if (path) setWorkDir(path)
   }
 
   const addAttachments = async (files: FileList | File[]) => {
@@ -677,6 +712,122 @@ export function NewTaskForm({
     </div>
   )
 
+  const roleSwitch = (
+    <div
+      role="radiogroup"
+      aria-label="卡片角色"
+      className="inline-flex rounded-full border border-border bg-muted/40 p-0.5"
+    >
+      {(['slave', 'master'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={role === value}
+          disabled={creating}
+          onClick={() => {
+            setRole(value)
+            setStep(1)
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full px-3 py-1 text-sm outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            role === value
+              ? value === 'master'
+                ? 'bg-master/15 text-master'
+                : 'bg-background text-foreground shadow-xs'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {value === 'master' ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
+          {value === 'master' ? 'Master' : 'Slave'}
+        </button>
+      ))}
+    </div>
+  )
+
+  const masterSettingsBlock = (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          工作目錄
+        </span>
+        <div className="flex gap-2">
+          <input
+            name="master-work-dir"
+            autoComplete="off"
+            value={workDir}
+            onChange={(e) => setWorkDir(e.target.value)}
+            placeholder="留空則由 VibeFlow 建立專屬資料夾"
+            className={cn(F, 'font-mono text-sm')}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleBrowseWorkDir()}
+            disabled={creating}
+            className="shrink-0 rounded-full"
+          >
+            <FolderOpen />
+            選擇
+          </Button>
+        </div>
+        <span className="block text-sm text-muted-foreground">
+          可以是任何資料夾，不必是 Git 專案。Master 不會建立分支或 worktree。
+        </span>
+      </div>
+      <div className="space-y-1.5 rounded-lg border border-master/30 bg-master/5 p-4">
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          <Network className="size-3.5 text-master" />
+          Master 開始執行後
+        </span>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>先判斷任務要不要拆成多張卡，再為每個 repo 建立 slave 卡片，掛在這張 master 底下。</li>
+          <li>
+            {autoMode
+              ? '已開啟 Auto Mode：沒有前置依賴的 slave 會直接拉進 In Progress 開始執行。'
+              : '未開啟 Auto Mode：slave 會留在 Backlog，由你決定何時開始。'}
+          </li>
+          <li>持續追蹤 slave 的進度，卡住或全部完成時回報你；不會自己合併 PR 或把卡片移到 Done。</li>
+        </ul>
+      </div>
+    </div>
+  )
+
+  const masterPickerBlock = masters.length > 0 && (
+    <label className="block space-y-1.5">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+        <Network className="size-3" />
+        所屬 Master（選填）
+      </span>
+      <select
+        name="master-id"
+        value={masterId}
+        onChange={(e) => setMasterId(e.target.value)}
+        className={F}
+      >
+        <option value="">不隸屬任何 master</option>
+        {masters.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.title}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+
+  const settingsBlock = isMaster ? (
+    masterSettingsBlock
+  ) : (
+    <div className="space-y-4">
+      {projectSettingsBlock}
+      {masterPickerBlock}
+    </div>
+  )
+
+  const descriptionPlaceholder = isMaster
+    ? '描述整體目標、涉及的 repo 與限制。Master 會先判斷要不要拆成多張卡…'
+    : '描述這個任務的目標、需求或背景脈絡…'
+
   const advancedSettingsBlock = (
     <div className="rounded-lg border border-border/50">
       <button
@@ -794,8 +945,11 @@ export function NewTaskForm({
   return (
     <>
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight">新增任務</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">新增任務</h2>
+          {roleSwitch}
+        </div>
         {onClose && (
           <IconButton
             aria-label="關閉新增任務"
@@ -827,7 +981,7 @@ export function NewTaskForm({
               step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
-            專案設定
+            {isMaster ? '工作目錄' : '專案設定'}
           </span>
           <div
             className={cn(
@@ -875,7 +1029,7 @@ export function NewTaskForm({
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             {/* Left: project settings + attachments */}
             <div className="space-y-4">
-              {projectSettingsBlock}
+              {settingsBlock}
               {attachmentsBlock}
             </div>
 
@@ -889,7 +1043,7 @@ export function NewTaskForm({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={12}
-                  placeholder="描述這個任務的目標、需求或背景脈絡…"
+                  placeholder={descriptionPlaceholder}
                   className={cn(F, 'mb-2 min-h-64 flex-1 resize-y')}
                 />
               </label>
@@ -924,7 +1078,7 @@ export function NewTaskForm({
       {!inline && (
         <div>
           {/* Step 1: project folder + base branch */}
-          {step === 1 && <div className="space-y-4">{projectSettingsBlock}</div>}
+          {step === 1 && settingsBlock}
 
           {/* Step 2: task details, agents, workspace */}
           {step === 2 && (
@@ -950,7 +1104,7 @@ export function NewTaskForm({
                   autoComplete="off"
                   onChange={(e) => setDescription(e.target.value)}
                   rows={4}
-                  placeholder="描述這個任務的目標、需求或背景脈絡…"
+                  placeholder={descriptionPlaceholder}
                   className={cn(F, 'resize-y')}
                 />
               </label>
@@ -985,7 +1139,7 @@ export function NewTaskForm({
       {/* Footer buttons */}
       {inline ? (
         <div className="mt-6 space-y-2 pb-10">
-          {!isProjectReady && title.trim().length > 0 && (
+          {!isReady && title.trim().length > 0 && (
             <p className="text-right text-sm text-muted-foreground">
               請先在左側選擇專案資料夾
             </p>
@@ -1012,7 +1166,7 @@ export function NewTaskForm({
               )}
             >
               {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立任務中…' : '建立任務'}
+              {creating ? '建立任務中…' : isMaster ? '建立 Master' : '建立任務'}
             </Button>
           </div>
         </div>
@@ -1071,7 +1225,7 @@ export function NewTaskForm({
               )}
             >
               {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立任務中…' : '建立任務'}
+              {creating ? '建立任務中…' : isMaster ? '建立 Master' : '建立任務'}
             </Button>
           </div>
         </div>

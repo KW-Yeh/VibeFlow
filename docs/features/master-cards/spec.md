@@ -1,6 +1,6 @@
 # Master 卡片（Orchestrator）— Spec（草稿）
 
-> 狀態：**實作中**。
+> 狀態：**已實作**（Phase 1–5；主動通知 D2 第二階段未做）。
 > UI 方案比較見同目錄的 design artifact（連結於對話中提供）。
 
 ## 問題

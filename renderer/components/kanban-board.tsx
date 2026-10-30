@@ -17,7 +17,7 @@ import {
 import { BoardColumns } from '@/components/board-columns'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
-import { NewTaskForm } from '@/components/new-task-dialog'
+import { NewTaskForm, type NewTaskDraft } from '@/components/new-task-dialog'
 import type { BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -29,13 +29,9 @@ import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
-  AgentCliId,
-  AgentEffort,
-  AttachmentInput,
   BoardState,
   ColumnId,
   GitInfo,
-  GithubRef,
   GithubTaskLinks,
   RecentProjectEntry,
   LaunchIntent,
@@ -88,19 +84,7 @@ interface KanbanBoardProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
-  onCreateTask: (
-    title: string,
-    description: string,
-    projectPath: string,
-    baseBranch: string | null,
-    branch: string,
-    agentCli: AgentCliId,
-    model: string,
-    effort: AgentEffort,
-    autoMode: boolean,
-    attachments: AttachmentInput[],
-    github?: GithubRef
-  ) => void
+  onCreateTask: (draft: NewTaskDraft) => void
 }
 
 interface LaunchEntry {
@@ -481,6 +465,18 @@ export function KanbanBoard({
                       column={entry.column}
                       active={isSelected}
                       progress={progress[entry.task.id] ?? null}
+                      progressById={progress}
+                      slaves={
+                        entry.task.role === 'master'
+                          ? allTasks.filter(({ task }) => task.masterId === entry.task.id)
+                          : undefined
+                      }
+                      master={
+                        entry.task.masterId
+                          ? allTasks.find(({ task }) => task.id === entry.task.masterId)?.task ?? null
+                          : null
+                      }
+                      onSelectTask={onSelectTask}
                       launch={terminalLaunch[taskId]}
                       onStart={startTask}
                       onReturnToBacklog={returnTaskToBacklog}
@@ -517,6 +513,9 @@ export function KanbanBoard({
                       detectAgents={detectAgents}
                       defaultAutoMode={autoMode}
                       workstationPath={workstationPath}
+                      masters={[...board.in_progress, ...board.backlog]
+                        .filter((t) => t.role === 'master')
+                        .map((t) => ({ id: t.id, title: t.title }))}
                       onSubmit={onCreateTask}
                     />
                   </div>

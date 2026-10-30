@@ -35,6 +35,9 @@
      badges). Never used for CTA fill or large surface backgrounds. */
   --warning: #e2b341;
   --success: #4ec98a;
+  /* Master-card identity (DESIGN.md accent-purple, lifted for the dark
+     canvas). Marks which cards orchestrate and which belong to one. */
+  --master: #b48cf2;
   /* Hairline border / form input border — white translucency, composited
      over the surface below (see S7 contrast synthesis). */
   --border: rgba(255, 255, 255, 0.09);
@@ -69,6 +72,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
   --color-success: var(--success);
+  --color-master: var(--master);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

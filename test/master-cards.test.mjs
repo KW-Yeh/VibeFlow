@@ -236,3 +236,11 @@ test('the master prompt follows auto mode and degrades without a CLI', () => {
   const readOnly = masterSystemPrompt({ canWrite: false, autoMode: true })
   assert.ok(!readOnly.includes('VF task create'))
 })
+
+test('an extra terminal on a master opens in its folder, whatever its column', async (t) => {
+  const { core, sessions } = setup(t)
+  const { task } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Shell' })
+  const key = 'terminal_11111111-2222-4333-8444-555555555555'
+  await core.handlers['terminal:start']({ sessionKey: key, taskId: task.id })
+  assert.equal(sessions.starts.at(-1).cwd, path.join(task.workspacePath, 'work'))
+})

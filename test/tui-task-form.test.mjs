@@ -29,7 +29,7 @@ test('a new card defaults like the Web UI: claude, auto effort, the board Auto M
 
 test('new form fields follow the git state of the chosen folder', () => {
   const s = newFormState(true, [])
-  assert.deepEqual(visibleFields(s, ctx()), ['title', 'project', 'attachments', 'description', 'effort', 'autoMode', 'agent', 'model', 'submit'])
+  assert.deepEqual(visibleFields(s, ctx()), ['role', 'title', 'project', 'attachments', 'description', 'effort', 'autoMode', 'agent', 'model', 'submit'])
   assert.ok(visibleFields({ ...s, projectPath: '/p', gitInfo: repo({ isRepo: false }) }, ctx()).includes('gitInit'))
   const withRemote = visibleFields({ ...s, projectPath: '/p', gitInfo: repo() }, ctx())
   assert.ok(withRemote.includes('baseBranch') && withRemote.includes('branch') && !withRemote.includes('gitInit'))
@@ -55,6 +55,20 @@ test('submitting needs a title and a ready git project', () => {
   assert.equal(blockReason({ ...s, projectPath: '/p', gitInfo: repo() }, ctx(), false), null)
   const edit = editFormState({ id: 't', title: 'T', branch: 'b', projectPath: '/a' }, true)
   assert.equal(blockReason(edit, ctx(), false), null, 'an unchanged project needs no git lookup')
+})
+
+test('a master card needs no project and sends no git fields', () => {
+  const s = { ...newFormState(true, []), role: 'master', title: 'Plan' }
+  const fields = visibleFields(s, ctx())
+  assert.ok(fields.includes('role') && !fields.includes('project') && !fields.includes('branch'))
+  assert.equal(blockReason(s, ctx(), false), null)
+  const payload = createPayload(s)
+  assert.equal(payload.role, 'master')
+  assert.equal(payload.projectPath, undefined)
+  assert.equal(payload.branch, undefined)
+  const edit = editFormState({ id: 'm', title: 'M', branch: '', role: 'master' }, true)
+  assert.ok(!visibleFields(edit, ctx()).includes('project'))
+  assert.equal(updatePayload(edit).branch, undefined)
 })
 
 test('the create payload matches the Web UI', (t) => {

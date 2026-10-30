@@ -234,8 +234,12 @@ export async function listAgentModels(
 export async function createTask(payload: {
   title: string
   description?: string
-  projectPath: string
-  baseBranch: string | null
+  /** Required unless `role` is master. */
+  projectPath?: string
+  baseBranch?: string | null
+  role?: 'master'
+  workDir?: string
+  masterId?: string
   branch?: string
   mode?: 'existing' | 'new'
   agentCli?: AgentCliId
@@ -261,6 +265,7 @@ export async function updateTask(payload: {
   projectPath?: string
   baseBranch?: string | null
   branch?: string
+  masterId?: string | null
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

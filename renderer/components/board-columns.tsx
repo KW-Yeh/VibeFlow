@@ -9,6 +9,7 @@ import {
   Layers,
   Loader2,
   MoreHorizontal,
+  Network,
   Pencil,
   Plus,
   Trash2,
@@ -48,7 +49,8 @@ const COLUMN_DOT: Record<ColumnId, string> = {
   done: 'bg-success',
 }
 
-function projectLabel(task: Task): string {
+export function projectLabel(task: Task): string {
+  if (task.role === 'master') return 'Master'
   if (task.projectName) return task.projectName
   const parts = (task.projectPath ?? '').split(/[/\\]/).filter(Boolean)
   return parts[parts.length - 1] ?? '未指定專案'
@@ -187,6 +189,109 @@ function GithubLinkButton({ link }: { link: GithubLink }) {
   )
 }
 
+/** Where a dispatched card stands, as one dot: its column, sharpened by what its agent is doing. */
+export function slaveState(column: ColumnId, task: Task, progress: TaskProgress | undefined): { dot: string; label: string } {
+  if (column === 'done') return { dot: 'bg-success', label: 'Done' }
+  if (column === 'backlog') {
+    return task.launchError
+      ? { dot: 'bg-destructive', label: '開始失敗' }
+      : { dot: 'bg-muted-foreground/60', label: 'Backlog' }
+  }
+  if (progress?.activity.state === 'waiting' && progress.activity.waitingFor === 'permission') {
+    return { dot: 'bg-warning', label: '等待權限' }
+  }
+  if (progress?.activity.state === 'waiting') return { dot: 'bg-primary', label: '等待回覆' }
+  return { dot: 'bg-warning animate-pulse', label: '執行中' }
+}
+
+export interface SlaveEntry {
+  task: Task
+  column: ColumnId
+}
+
+export function todoCount(progress: TaskProgress | undefined): string | null {
+  const todos = progress?.todos
+  if (!todos?.length) return null
+  return `${todos.filter((t) => t.status === 'completed').length}/${todos.length}`
+}
+
+/** A master's dispatched cards, nested under it whichever column each is in. */
+function SlaveList({
+  slaves,
+  progress,
+  selectedTaskId,
+  onSelectTask,
+}: {
+  slaves: SlaveEntry[]
+  progress: Record<string, TaskProgress>
+  selectedTaskId: string | null
+  onSelectTask: (taskId: string) => void
+}) {
+  return (
+    <ul className="ml-3 mt-1 space-y-0.5 border-l-2 border-master/40 pl-2" aria-label="Slave 卡片">
+      {slaves.map(({ task, column }) => {
+        const state = slaveState(column, task, progress[task.id])
+        const todos = column === 'in_progress' ? todoCount(progress[task.id]) : null
+        return (
+          <li key={task.id}>
+            <button
+              type="button"
+              onClick={() => onSelectTask(task.id)}
+              title={`${task.title} · ${projectLabel(task)} · ${state.label}`}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-xs outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                task.id === selectedTaskId && 'bg-accent'
+              )}
+            >
+              <span className={cn('size-1.5 shrink-0 rounded-full', state.dot)} aria-label={state.label} />
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate',
+                  column === 'done' ? 'text-muted-foreground' : 'text-foreground'
+                )}
+              >
+                {task.title}
+              </span>
+              <span className="max-w-[40%] shrink-0 truncate text-muted-foreground">{projectLabel(task)}</span>
+              {todos && <span className="shrink-0 tabular-nums text-muted-foreground">{todos}</span>}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function MasterSummary({ slaves }: { slaves: SlaveEntry[] }) {
+  const done = slaves.filter((s) => s.column === 'done').length
+  const running = slaves.filter((s) => s.column === 'in_progress').length
+  const pct = slaves.length ? Math.round((done / slaves.length) * 100) : 0
+  return (
+    <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <Network className="size-3 shrink-0 text-master" />
+        <span className="min-w-0 flex-1 truncate">
+          {slaves.length === 0
+            ? '還沒有 slave 卡片'
+            : `${slaves.length} 個 slave · ${running} 執行中 · ${done} 完成`}
+        </span>
+      </div>
+      {slaves.length > 0 && (
+        <div
+          className="h-1 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+          aria-label="Slave 完成比例"
+        >
+          <div className="h-full bg-success" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaskCard({
   task,
   column,
@@ -199,9 +304,12 @@ function TaskCard({
   onOpenTerminal,
   terminals,
   onShowTerminal,
+  slaves,
 }: {
   task: Task
   column: ColumnId
+  /** Present only for a master card: the cards it dispatched. */
+  slaves?: SlaveEntry[]
   progress: TaskProgress | null
   links?: GithubTaskLinks
   selected: boolean
@@ -219,7 +327,8 @@ function TaskCard({
   const menuOpen = menuAnchor !== null
   const running = column === 'in_progress'
   const done = column === 'done'
-  const terminalDirectory = running || (done && task.worktreePath) ? '分支' : '專案'
+  const isMaster = task.role === 'master'
+  const terminalDirectory = isMaster ? '工作' : running || (done && task.worktreePath) ? '分支' : '專案'
 
   return (
     <div
@@ -239,6 +348,8 @@ function TaskCard({
       className={cn(
         'relative cursor-pointer rounded-md border bg-card p-3 outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
         done && 'bg-card/60',
+        isMaster && 'bg-master/5',
+        isMaster && !selected && 'border-master/50 hover:border-master/70',
         selected
           ? 'border-primary shadow-[0_0_0_2px] shadow-primary/20'
           : 'border-border hover:border-input'
@@ -246,8 +357,14 @@ function TaskCard({
     >
       {/* Header: keep the terminal and menu actions in fixed positions. */}
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Layers className="size-3 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{projectLabel(task)}</span>
+        {isMaster ? (
+          <Network className="size-3 shrink-0 text-master" />
+        ) : (
+          <Layers className="size-3 shrink-0" />
+        )}
+        <span className={cn('min-w-0 flex-1 truncate', isMaster && 'font-medium text-master')}>
+          {projectLabel(task)}
+        </span>
         <IconButton
           aria-label={`在${terminalDirectory}目錄開啟 Terminal：${task.title}`}
           title={`在${terminalDirectory}目錄開啟額外 Terminal`}
@@ -296,20 +413,24 @@ function TaskCard({
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <GitBranch className="size-3 shrink-0" />
-        <span
-          className="min-w-0 flex-1 truncate"
-          title={column === 'backlog' && !task.worktreePath ? '分支會在開始執行時建立' : undefined}
-        >
-          {task.branch}
-          {column === 'backlog' && !task.worktreePath && (
-            <span className="text-muted-foreground/70">（開始時建立）</span>
-          )}
-        </span>
-        {links?.issue && <GithubLinkButton link={links.issue} />}
-        {links?.pr && <GithubLinkButton link={links.pr} />}
-      </div>
+      {isMaster ? (
+        <MasterSummary slaves={slaves ?? []} />
+      ) : (
+        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <GitBranch className="size-3 shrink-0" />
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={column === 'backlog' && !task.worktreePath ? '分支會在開始執行時建立' : undefined}
+          >
+            {task.branch}
+            {column === 'backlog' && !task.worktreePath && (
+              <span className="text-muted-foreground/70">（開始時建立）</span>
+            )}
+          </span>
+          {links?.issue && <GithubLinkButton link={links.issue} />}
+          {links?.pr && <GithubLinkButton link={links.pr} />}
+        </div>
+      )}
 
       {terminals.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5" aria-label="已開啟的 Terminal">
@@ -456,10 +577,31 @@ export function BoardColumns({
   // A filter that no longer matches any task would silently empty the board.
   const activeFilter = projectFilter && projects.includes(projectFilter) ? projectFilter : null
 
+  const [collapsedMasters, setCollapsedMasters] = useState<Set<string>>(() => new Set())
+  const masterIds = new Set(allTasks.filter((t) => t.role === 'master').map((t) => t.id))
+  const slavesOf = (masterId: string): SlaveEntry[] =>
+    COLUMNS.flatMap((column) =>
+      board[column].filter((t) => t.masterId === masterId).map((task) => ({ task, column }))
+    )
+  // A dispatched card lives under its master, not loose in its own column; one
+  // whose master is gone is an ordinary card again.
+  const nested = (task: Task) => Boolean(task.masterId && masterIds.has(task.masterId))
   const visible = (column: ColumnId) =>
-    activeFilter
-      ? board[column].filter((task) => projectLabel(task) === activeFilter)
-      : board[column]
+    board[column].filter((task) => {
+      if (nested(task)) return false
+      if (!activeFilter) return true
+      if (task.role === 'master') {
+        return activeFilter === 'Master' || slavesOf(task.id).some((s) => projectLabel(s.task) === activeFilter)
+      }
+      return projectLabel(task) === activeFilter
+    })
+  const toggleMaster = (id: string) =>
+    setCollapsedMasters((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -493,22 +635,51 @@ export function BoardColumns({
               </div>
 
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
-                {tasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    column={column}
-                    progress={column === 'in_progress' ? progress[task.id] ?? null : null}
-                    links={taskLinks[task.id]}
-                    selected={task.id === selectedTaskId}
-                    onSelect={() => onSelectTask(task.id)}
-                    onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}
-                    onDelete={() => onDeleteTask(task.id)}
-                    onOpenTerminal={() => onOpenTaskTerminal(task.id)}
-                    terminals={taskTerminals.filter((terminal) => terminal.taskId === task.id)}
-                    onShowTerminal={onShowTaskTerminal}
-                  />
-                ))}
+                {tasks.map((task) => {
+                  const slaves = task.role === 'master' ? slavesOf(task.id) : undefined
+                  const collapsed = collapsedMasters.has(task.id)
+                  return (
+                    <div key={task.id}>
+                      <TaskCard
+                        task={task}
+                        column={column}
+                        slaves={slaves}
+                        progress={column === 'in_progress' ? progress[task.id] ?? null : null}
+                        links={taskLinks[task.id]}
+                        selected={task.id === selectedTaskId}
+                        onSelect={() => onSelectTask(task.id)}
+                        onEdit={column === 'backlog' ? () => onEditTask(task.id) : undefined}
+                        onDelete={() => onDeleteTask(task.id)}
+                        onOpenTerminal={() => onOpenTaskTerminal(task.id)}
+                        terminals={taskTerminals.filter((terminal) => terminal.taskId === task.id)}
+                        onShowTerminal={onShowTaskTerminal}
+                      />
+                      {slaves && slaves.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            aria-expanded={!collapsed}
+                            onClick={() => toggleMaster(task.id)}
+                            className="ml-3 mt-1 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          >
+                            <ChevronDown
+                              className={cn('size-3 transition-transform motion-reduce:transition-none', collapsed && '-rotate-90')}
+                            />
+                            {collapsed ? `展開 ${slaves.length} 個 slave` : '收合'}
+                          </button>
+                          {!collapsed && (
+                            <SlaveList
+                              slaves={slaves}
+                              progress={progress}
+                              selectedTaskId={selectedTaskId}
+                              onSelectTask={onSelectTask}
+                            />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
 
                 {column === 'backlog' && (
                   <button

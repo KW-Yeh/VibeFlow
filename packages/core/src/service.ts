@@ -975,10 +975,14 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.taskId) {
         const requested = requireTask(p.taskId)
         const column = columnOf(requested.id)
-        const task = column === 'in_progress' && !requested.worktreePath
+        // A master has no project to fall back to: its folder is the only place it works.
+        const task = !requested.worktreePath && (column === 'in_progress' || isMasterTask(requested))
           ? await ensureProvisioned(requested)
           : requested
-        cwd = str(column === 'backlog' ? task.projectPath : task.worktreePath ?? task.projectPath, 'directory')
+        cwd = str(
+          isMasterTask(task) ? task.worktreePath : column === 'backlog' ? task.projectPath : task.worktreePath ?? task.projectPath,
+          'directory'
+        )
         projectPath = task.projectPath ?? cwd
       } else if (p.projectPath) {
         cwd = str(p.projectPath, 'projectPath')

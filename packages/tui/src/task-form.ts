@@ -28,6 +28,7 @@ export const EFFORTS: { value: AgentEffort; label: string; description: string }
 const DEFAULT_EFFORT: AgentEffort = 'auto'
 
 export type FieldId =
+  | 'role'
   | 'title'
   | 'project'
   | 'gitInit'
@@ -44,6 +45,8 @@ export type FieldId =
 export interface FormState {
   mode: 'new' | 'edit'
   taskId?: string
+  /** `master`: no project, branch or git — see Task.role. Fixed once the card exists. */
+  role: 'slave' | 'master'
   title: string
   description: string
   projectPath: string | null
@@ -77,6 +80,7 @@ export function newFormState(defaultAutoMode: boolean, agents: AgentCli[] | null
   const agentCli = agents && agents.length > 0 && !agents.some((a) => a.id === 'claude') ? agents[0].id : 'claude'
   return {
     mode: 'new',
+    role: 'slave',
     title: '',
     description: '',
     projectPath: null,
@@ -97,6 +101,7 @@ export function editFormState(task: Task, defaultAutoMode: boolean): FormState {
   return {
     mode: 'edit',
     taskId: task.id,
+    role: task.role === 'master' ? 'master' : 'slave',
     title: task.title,
     description: task.description ?? '',
     projectPath: task.projectPath ?? null,
@@ -127,8 +132,13 @@ export function visibleFields(s: FormState, ctx: FormContext): FieldId[] {
   const missing = isProjectMissing(ctx.recent, s.projectPath)
   const isRepo = s.gitInfo?.isRepo ?? false
   const hasRemote = s.gitInfo?.hasRemote ?? false
+  if (s.role === 'master') {
+    return s.mode === 'new'
+      ? ['role', 'title', 'attachments', 'description', 'effort', 'autoMode', 'agent', 'model', 'submit']
+      : ['title', 'description', 'effort', 'autoMode', 'agent', 'model', 'submit']
+  }
   if (s.mode === 'new') {
-    const fields: FieldId[] = ['title', 'project']
+    const fields: FieldId[] = ['role', 'title', 'project']
     if (s.gitInfo && !missing && !isRepo) fields.push('gitInit')
     if (isRepo && hasRemote) fields.push('baseBranch')
     if (isRepo) fields.push('branch')
@@ -167,6 +177,7 @@ export function fitEffort<T extends Pick<FormState, 'agentCli' | 'model' | 'effo
 /** Why the form cannot be submitted yet, or null when it can. */
 export function blockReason(s: FormState, ctx: FormContext, loadingGit: boolean): string | null {
   if (!s.title.trim()) return '請輸入任務標題'
+  if (s.role === 'master') return null
   if (loadingGit) return '偵測 Git 狀態中…'
   const missing = isProjectMissing(ctx.recent, s.projectPath)
   if (s.mode === 'new') {
@@ -184,12 +195,17 @@ export function blockReason(s: FormState, ctx: FormContext, loadingGit: boolean)
 
 export function createPayload(s: FormState) {
   const hasRemote = s.gitInfo?.hasRemote ?? false
+  const target = s.role === 'master'
+    ? { role: 'master' as const }
+    : {
+        projectPath: s.projectPath as string,
+        baseBranch: hasRemote ? s.baseBranch || null : null,
+        branch: s.branch.trim() || undefined,
+      }
   return {
     title: s.title.trim(),
     description: s.description.trim(),
-    projectPath: s.projectPath as string,
-    baseBranch: hasRemote ? s.baseBranch || null : null,
-    branch: s.branch.trim() || undefined,
+    ...target,
     agentCli: s.agentCli,
     model: s.model || undefined,
     effort: s.effort,
@@ -207,8 +223,12 @@ export function updatePayload(s: FormState) {
     model: s.model || undefined,
     effort: s.effort,
     autoMode: s.autoMode,
-    ...(s.projectPath ? { projectPath: s.projectPath, baseBranch: s.baseBranch || null } : {}),
-    branch: s.branch.trim(),
+    ...(s.role === 'master'
+      ? {}
+      : {
+          ...(s.projectPath ? { projectPath: s.projectPath, baseBranch: s.baseBranch || null } : {}),
+          branch: s.branch.trim(),
+        }),
   }
 }
 
@@ -255,6 +275,7 @@ interface FormViewProps {
 }
 
 const LABELS: Record<FieldId, string> = {
+  role: '角色',
   title: '任務標題',
   project: '專案資料夾',
   gitInit: '初始化 Git',
@@ -278,7 +299,7 @@ function cycle<T>(list: T[], current: T, step: number): T {
 }
 
 function sameForm(a: FormState, b: FormState): boolean {
-  const pick = (s: FormState) => [s.title, s.description, s.projectPath, s.baseBranch, s.branch, s.attachments.join('\n'), s.effort, s.autoMode, s.agentCli, s.model]
+  const pick = (s: FormState) => [s.role, s.title, s.description, s.projectPath, s.baseBranch, s.branch, s.attachments.join('\n'), s.effort, s.autoMode, s.agentCli, s.model]
   return JSON.stringify(pick(a)) === JSON.stringify(pick(b))
 }
 
@@ -391,7 +412,9 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
     if (key.downArrow || key.tab) return setFocus((f) => Math.min(fields.length - 1, f + 1))
     const step = key.leftArrow ? -1 : key.rightArrow ? 1 : 0
     if (step) {
-      if (field === 'project') {
+      if (field === 'role') {
+        setS((prev) => ({ ...prev, role: prev.role === 'master' ? 'slave' : 'master' }))
+      } else if (field === 'project') {
         const paths = ctx.recent.map((p) => p.path)
         if (paths.length) setProject(cycle(paths, s.projectPath ?? paths[paths.length - 1], step))
       } else if (field === 'baseBranch') {
@@ -433,6 +456,8 @@ function FormView({ api, ctx, initial, initialFocus, initialMessage, pristine, o
   const value = (f: FieldId): string => {
     if (editing === f) return `${draft}▏`
     switch (f) {
+      case 'role':
+        return s.role === 'master' ? '‹ Master：不綁 repo，拆解並派工給其他卡片 ›' : '‹ Slave：在一個 Git 專案裡執行 ›'
       case 'title':
         return s.title || '（例如：實作登入頁面）'
       case 'project': {

@@ -35,6 +35,7 @@ import {
   Layers,
   Loader2,
   Maximize2,
+  Network,
   RefreshCw,
   PanelRightClose,
   Pencil,
@@ -45,6 +46,7 @@ import {
 } from 'lucide-react'
 
 import { MarkdownContent } from '@/components/markdown-content'
+import { projectLabel, slaveState, todoCount, type SlaveEntry } from '@/components/board-columns'
 import { TaskTerminal } from '@/components/task-terminal'
 import { TaskProgressChip, TaskProgressDetail } from '@/components/task-progress'
 import { Button } from '@/components/ui/button'
@@ -93,9 +95,10 @@ import type {
  * on both sets, but only once the task's branch carries a spec.md — a task
  * that wrote none has no decisions to show.
  */
-type TaskTab = 'task' | 'spec' | 'artifacts' | 'diff'
+type TaskTab = 'slaves' | 'task' | 'spec' | 'artifacts' | 'diff'
 
 const TAB_LABEL: Record<TaskTab, string> = {
+  slaves: 'Slaves',
   task: '任務',
   spec: '決策',
   artifacts: 'Artifacts',
@@ -106,6 +109,12 @@ const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'spec', 'artifacts', 'diff
 const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'spec']
 // A backlog card has not run yet: nothing has been decided, produced or changed.
 const BACKLOG_TASK_TABS: readonly TaskTab[] = ['task']
+
+/** A master has no branch, so no decisions or diff; what it has is its slaves. */
+function masterTabs(column: ColumnId, hasSlaves: boolean): readonly TaskTab[] {
+  if (column === 'in_progress') return ['slaves', 'task', 'artifacts']
+  return hasSlaves ? ['slaves', 'task'] : ['task']
+}
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -167,6 +176,7 @@ const SPLITTER_WIDTH = 10
 const RAIL_WIDTH = 44
 
 const TAB_ICON: Record<TaskTab, typeof Info> = {
+  slaves: Network,
   task: Info,
   spec: FileText,
   artifacts: ImageIcon,
@@ -316,6 +326,13 @@ interface TaskWorkspacePanelProps {
   onInteract?: () => void
   /** This workspace is the one on screen (its tab is selected). */
   active?: boolean
+  /** A master's dispatched cards. */
+  slaves?: SlaveEntry[]
+  /** Live progress of every running card, for the slaves list. */
+  progressById?: Record<string, TaskProgress>
+  /** The master this card was dispatched by, if it still exists. */
+  master?: Task | null
+  onSelectTask?: (taskId: string) => void
 }
 
 function InfoSection({
@@ -482,7 +499,14 @@ function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
   )
 }
 
-function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'task' | 'column' | 'progress'>) {
+function TaskInfo({
+  task,
+  column,
+  progress,
+  master,
+  onSelectTask,
+}: Pick<TaskWorkspacePanelProps, 'task' | 'column' | 'progress' | 'master' | 'onSelectTask'>) {
+  const isMaster = task.role === 'master'
   return (
     <div className="space-y-4 text-base">
       <div>
@@ -490,6 +514,12 @@ function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'tas
           <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
             {column === 'in_progress' ? 'In Progress' : column === 'done' ? 'Done' : 'Backlog'}
           </span>
+          {isMaster && (
+            <span className="flex items-center gap-1 rounded-xs bg-master/15 px-1.5 py-0.5 text-xs font-medium text-master">
+              <Network className="size-3" />
+              Master
+            </span>
+          )}
         </div>
         <h3 className="break-words text-lg font-semibold tracking-tight text-foreground">
           {task.title}
@@ -518,6 +548,30 @@ function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'tas
         </div>
       )}
 
+      {master && (
+        <button
+          type="button"
+          onClick={() => onSelectTask?.(master.id)}
+          title="開啟 master 卡片"
+          className="flex w-full items-center gap-2 rounded-md border border-master/30 bg-master/5 p-2.5 text-left text-sm outline-none transition-colors motion-reduce:transition-none hover:bg-master/10 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Network className="size-3.5 shrink-0 text-master" />
+          <span className="shrink-0 text-muted-foreground">屬於</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{master.title}</span>
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      )}
+
+      {isMaster ? (
+        <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
+          <div className="flex items-start gap-2">
+            <FolderOpen className="mt-0.5 size-3.5 shrink-0" />
+            <span className="min-w-0 break-all font-mono text-xs">
+              {task.worktreePath ?? task.workDir ?? '開始執行時建立專屬資料夾'}
+            </span>
+          </div>
+        </div>
+      ) : (
       <div className="space-y-1.5 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
         {task.projectName && (
           <div className="flex items-center gap-2">
@@ -543,6 +597,7 @@ function TaskInfo({ task, column, progress }: Pick<TaskWorkspacePanelProps, 'tas
           </div>
         )}
       </div>
+      )}
 
       {task.description && <MarkdownContent source={task.description} />}
 
@@ -972,6 +1027,73 @@ function ArtifactsContent({
         )}
       </AnimatePresence>
     </>
+  )
+}
+
+/** A master's cards: where each stands, what it is doing now, and a way into it. */
+function SlavesContent({
+  slaves,
+  progressById,
+  onSelectTask,
+}: {
+  slaves: SlaveEntry[]
+  progressById: Record<string, TaskProgress>
+  onSelectTask?: (taskId: string) => void
+}) {
+  if (slaves.length === 0) {
+    return (
+      <p className="py-10 text-center text-sm text-muted-foreground">
+        Master 還沒有建立任何 slave 卡片。
+      </p>
+    )
+  }
+  const done = slaves.filter((s) => s.column === 'done').length
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        {slaves.length} 張卡片 · {done} 完成
+      </p>
+      <ul className="space-y-1.5">
+        {slaves.map(({ task, column }) => {
+          const progress = progressById[task.id]
+          const state = slaveState(column, task, progress)
+          const todos = column === 'in_progress' ? todoCount(progress) : null
+          const current = column === 'in_progress'
+            ? progress?.todos?.find((t) => t.status === 'in_progress')
+            : undefined
+          const pr = task.outcome?.pr
+          return (
+            <li key={task.id}>
+              <button
+                type="button"
+                onClick={() => onSelectTask?.(task.id)}
+                title={`開啟：${task.title}`}
+                className="w-full rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <div className="flex items-center gap-2">
+                  <span className={cn('size-1.5 shrink-0 rounded-full', state.dot)} />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{task.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{state.label}</span>
+                  {todos && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{todos}</span>}
+                </div>
+                <div className="mt-1 flex items-center gap-2 pl-3.5 text-xs text-muted-foreground">
+                  <Layers className="size-3 shrink-0" />
+                  <span className="max-w-[45%] shrink-0 truncate">{projectLabel(task)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {column === 'backlog' && task.launchError
+                      ? task.launchError
+                      : current
+                        ? current.activeForm ?? current.content
+                        : task.branch}
+                  </span>
+                  {pr && <span className="shrink-0">PR #{pr.number}</span>}
+                </div>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
@@ -1509,23 +1631,31 @@ export function TaskWorkspacePanel({
   onDelete,
   onInteract,
   active = true,
+  slaves = [],
+  progressById = {},
+  master = null,
+  onSelectTask,
 }: TaskWorkspacePanelProps) {
+  const isMaster = task.role === 'master'
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
   const tabBaseId = useId()
   const tabPanelId = `${tabBaseId}-panel`
   const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
-  const cwd = task.worktreePath ?? task.projectPath ?? null
+  // A master has no project; before its first run, the folder it will get stands in.
+  const cwd = task.worktreePath ?? task.projectPath ?? (isMaster ? task.workDir ?? task.workspacePath : undefined) ?? null
   const provisionNotice =
-    column === 'in_progress' && !task.worktreePath
-      ? `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
-      : null
+    column !== 'in_progress' || task.worktreePath
+      ? null
+      : isMaster
+        ? '正在準備 master 的工作資料夾，完成後 agent 會自動啟動…'
+        : `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
-  const diff = useTaskDiff(task.id, column === 'in_progress')
-  const specs = useTaskSpecs(task.id, column !== 'backlog', column === 'in_progress')
+  const diff = useTaskDiff(task.id, column === 'in_progress' && !isMaster)
+  const specs = useTaskSpecs(task.id, column !== 'backlog' && !isMaster, column === 'in_progress' && !isMaster)
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
@@ -1599,18 +1729,26 @@ export function TaskWorkspacePanel({
   // task opens on its decisions: once the work is finished they say more than
   // the prompt that started it.
   const tabs = (
-    column === 'done'
-      ? DONE_TASK_TABS
-      : column === 'backlog'
-        ? BACKLOG_TASK_TABS
-        : ACTIVE_TASK_TABS
+    isMaster
+      ? masterTabs(column, slaves.length > 0)
+      : column === 'done'
+        ? DONE_TASK_TABS
+        : column === 'backlog'
+          ? BACKLOG_TASK_TABS
+          : ACTIVE_TASK_TABS
   ).filter((tab) => tab !== 'spec' || specs.length > 0)
   const defaultTab = column === 'done' && tabs.includes('spec') ? 'spec' : tabs[0]
   const activeTab =
     activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : defaultTab
 
   const tabBadge = (tab: TaskTab) =>
-    tab === 'artifacts' ? shotCount : tab === 'diff' ? diff.entries.length : 0
+    tab === 'artifacts'
+      ? shotCount
+      : tab === 'diff'
+        ? diff.entries.length
+        : tab === 'slaves'
+          ? slaves.length
+          : 0
 
   const tabStrip = (
     <div
@@ -1647,8 +1785,10 @@ export function TaskWorkspacePanel({
   )
 
   const activeContent =
-    activeTab === 'task' ? (
-      <TaskInfo task={task} column={column} progress={progress} />
+    activeTab === 'slaves' ? (
+      <SlavesContent slaves={slaves} progressById={progressById} onSelectTask={onSelectTask} />
+    ) : activeTab === 'task' ? (
+      <TaskInfo task={task} column={column} progress={progress} master={master} onSelectTask={onSelectTask} />
     ) : activeTab === 'spec' ? (
       <SpecContent specs={specs} />
     ) : activeTab === 'artifacts' ? (
@@ -1891,13 +2031,20 @@ export function TaskWorkspacePanel({
                 active={active}
                 toolbarStart={
                   <>
-                    <span
-                      className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
-                      title={task.branch}
-                    >
-                      <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{task.branch}</span>
-                    </span>
+                    {isMaster ? (
+                      <span className="flex min-w-0 items-center gap-1.5 rounded-xs bg-master/15 px-1.5 py-0.5 text-xs font-medium text-master">
+                        <Network className="size-3 shrink-0" />
+                        Master
+                      </span>
+                    ) : (
+                      <span
+                        className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                        title={task.branch}
+                      >
+                        <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{task.branch}</span>
+                      </span>
+                    )}
                     {task.baseBranch && (
                       <span
                         className="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
@@ -2001,7 +2148,11 @@ export function TaskWorkspacePanel({
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+            {isMaster ? (
+              <Network className="size-3.5 shrink-0 text-master" />
+            ) : (
+              <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
             <span className="min-w-0 truncate text-base font-semibold">{task.title}</span>
           </div>
         </div>
@@ -2028,9 +2179,9 @@ export function TaskWorkspacePanel({
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
-        {column === 'backlog' ? (
+        {column === 'backlog' && tabs.length === 1 ? (
           <InfoSection title={TAB_LABEL.task}>
-            <TaskInfo task={task} column={column} progress={progress} />
+            <TaskInfo task={task} column={column} progress={progress} master={master} onSelectTask={onSelectTask} />
           </InfoSection>
         ) : (
           <InfoSection heading={tabStrip}>{activePanel}</InfoSection>

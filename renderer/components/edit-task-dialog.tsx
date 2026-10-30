@@ -5,6 +5,7 @@ import {
   FolderOpen,
   GitBranch,
   Loader2,
+  Network,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,8 @@ export interface EditTaskPayload {
   baseBranch?: string | null
   /** Blank keeps the card's current branch. */
   branch?: string
+  /** Master to belong to; null takes the card out of its master; absent keeps it. */
+  masterId?: string | null
 }
 
 interface EditTaskDialogProps {
@@ -58,6 +61,8 @@ interface EditTaskDialogProps {
   loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
   saving: boolean
   error: string | null
+  /** Master cards an ordinary card can be put under. */
+  masters?: Array<{ id: string; title: string }>
   onSubmit: (payload: EditTaskPayload) => void
   onClose: () => void
 }
@@ -71,9 +76,11 @@ export function EditTaskDialog({
   saving,
   error,
   defaultAutoMode = true,
+  masters = [],
   onSubmit,
   onClose,
 }: EditTaskDialogProps) {
+  const [masterId, setMasterId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
@@ -114,6 +121,7 @@ export function EditTaskDialog({
     setProjectPath(task.projectPath ?? null)
     setBaseBranch(task.baseBranch ?? '')
     setBranch(task.branch)
+    setMasterId(task.masterId ?? '')
     setGitInfo(null)
     setLoadingInfo(false)
     setProjectChanged(false)
@@ -241,17 +249,20 @@ export function EditTaskDialog({
     (!projectChanged || (isRepo && !projectMissing))
 
 
+  const isMaster = displayedTask?.role === 'master'
+
   const handleSubmit = () => {
     if (!canSubmit) return
+    const shared = { title: title.trim(), description: description.trim(), agentCli, model, effort, autoMode }
+    if (isMaster) {
+      onSubmit(shared)
+      return
+    }
     onSubmit({
-      title: title.trim(),
-      description: description.trim(),
-      agentCli,
-      model,
-      effort,
-      autoMode,
+      ...shared,
       ...(projectPath ? { projectPath, baseBranch: baseBranch || null } : {}),
       branch: branch.trim(),
+      ...(masterId !== (displayedTask?.masterId ?? '') ? { masterId: masterId || null } : {}),
     })
   }
 
@@ -348,80 +359,107 @@ export function EditTaskDialog({
           disabled={saving}
         />
 
-        <div className="space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            <FolderOpen className="size-3" />
-            專案資料夾
-          </span>
-          <ProjectFolderPicker
-            projectPath={projectPath}
-            recentProjects={recentProjects}
-            disabled={saving || loadingInfo}
-            onSelect={(path) => void selectProject(path)}
-            onBrowse={() => void handleBrowse()}
-          />
-          {loadingInfo && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
-              偵測 Git 狀態中…
-            </p>
-          )}
-          {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
-            <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-              這個資料夾不是 Git repository，請改選一個 Git 專案。
-            </p>
-          )}
-        </div>
-
-        {isRepo && hasRemote && (
+        {!isMaster && masters.length > 0 && (
           <label className="block space-y-1.5">
             <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-              <GitBranch className="size-3" />
-              基準分支 (Base Branch)
+              <Network className="size-3" />
+              所屬 Master
             </span>
             <select
-              name="edit-base-branch"
-              value={baseBranch}
-              onChange={(e) => setBaseBranch(e.target.value)}
-              disabled={saving || loadingInfo}
+              name="edit-master-id"
+              value={masterId}
+              onChange={(e) => setMasterId(e.target.value)}
+              disabled={saving}
               className={F}
             >
-              {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
-                <option value={baseBranch}>{baseBranch}</option>
-              )}
-              {(gitInfo?.branches ?? []).map((b) => (
-                <option key={b} value={b}>
-                  {b}
+              <option value="">不隸屬任何 master</option>
+              {masters.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
                 </option>
               ))}
             </select>
           </label>
         )}
 
-        <label className="block space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-            <GitBranch className="size-3" />
-            分支名稱
-          </span>
-          <input
-            name="edit-branch"
-            autoComplete="off"
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            placeholder="例如 feature/login-fix"
-            disabled={saving}
-            className={F}
-          />
-          <span className="block text-sm text-muted-foreground">
-            分支會在卡片開始執行時才建立並推到 origin。
-          </span>
-        </label>
+        {!isMaster && (
+          <>
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                <FolderOpen className="size-3" />
+                專案資料夾
+              </span>
+              <ProjectFolderPicker
+                projectPath={projectPath}
+                recentProjects={recentProjects}
+                disabled={saving || loadingInfo}
+                onSelect={(path) => void selectProject(path)}
+                onBrowse={() => void handleBrowse()}
+              />
+              {loadingInfo && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  偵測 Git 狀態中…
+                </p>
+              )}
+              {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
+                  這個資料夾不是 Git repository，請改選一個 Git 專案。
+                </p>
+              )}
+            </div>
 
-        {hasWorktree && gitFieldsChanged && (
-          <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm text-warning">
-            這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；
-            worktree 有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
-          </p>
+            {isRepo && hasRemote && (
+              <label className="block space-y-1.5">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                  <GitBranch className="size-3" />
+                  基準分支 (Base Branch)
+                </span>
+                <select
+                  name="edit-base-branch"
+                  value={baseBranch}
+                  onChange={(e) => setBaseBranch(e.target.value)}
+                  disabled={saving || loadingInfo}
+                  className={F}
+                >
+                  {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
+                    <option value={baseBranch}>{baseBranch}</option>
+                  )}
+                  {(gitInfo?.branches ?? []).map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label className="block space-y-1.5">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                <GitBranch className="size-3" />
+                分支名稱
+              </span>
+              <input
+                name="edit-branch"
+                autoComplete="off"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                placeholder="例如 feature/login-fix"
+                disabled={saving}
+                className={F}
+              />
+              <span className="block text-sm text-muted-foreground">
+                分支會在卡片開始執行時才建立並推到 origin。
+              </span>
+            </label>
+
+            {hasWorktree && gitFieldsChanged && (
+              <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm text-warning">
+                這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；
+                worktree 有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
+              </p>
+            )}
+          </>
         )}
 
         {/* Advanced — agents, workspace (mirrors the new-task dialog). */}

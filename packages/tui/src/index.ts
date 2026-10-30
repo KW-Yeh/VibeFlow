@@ -357,13 +357,18 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
         : tasks.map((t, ti) => {
             const isSel = active && ti === sel.index
             const mark = running.has(t.id) ? '● ' : '  '
+            const role = t.role === 'master' ? '◆ ' : t.masterId ? '↳ ' : ''
+            const masterTitle = t.masterId ? COLUMNS.flatMap((c) => board[c]).find((m) => m.id === t.masterId)?.title : undefined
+            const detail = t.role === 'master'
+              ? `Master · ${COLUMNS.flatMap((c) => board[c]).filter((x) => x.masterId === t.id).length} 個 slave`
+              : `${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
             const summary = col === 'backlog' ? '' : progressSummary(col === 'in_progress' ? progress[t.id] : null, t.usage)
             return h(
               Box,
               { key: t.id, flexDirection: 'column' },
-              h(Text, { inverse: isSel, color: running.has(t.id) ? 'green' : undefined }, truncate(`${mark}${t.title}`, colWidth - 4)),
+              h(Text, { inverse: isSel, color: running.has(t.id) ? 'green' : t.role === 'master' ? 'magenta' : undefined }, truncate(`${mark}${role}${t.title}`, colWidth - 4)),
               summary ? h(Text, { dimColor: !isSel, color: isSel ? 'cyan' : undefined }, truncate(`  ${summary}`, colWidth - 4)) : null,
-              isSel ? h(Text, { dimColor: true }, truncate(`  ${t.projectName ?? ''} · ${t.branch}`, colWidth - 4)) : null
+              isSel ? h(Text, { dimColor: true }, truncate(`  ${detail}`, colWidth - 4)) : null
             )
           }))
     )

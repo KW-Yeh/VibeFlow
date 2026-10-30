@@ -5,6 +5,7 @@ import { AnimatePresence } from 'motion/react'
 import { KanbanBoard } from '@/components/kanban-board'
 import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
+import type { NewTaskDraft } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
@@ -62,10 +63,7 @@ import {
   writeViewUrl,
 } from '@/lib/view-persistence'
 import type {
-  AgentCliId,
   AvailableUpdate,
-  AgentEffort,
-  AttachmentInput,
   BoardState,
   GithubItem,
   JiraTicket,
@@ -461,32 +459,14 @@ export default function HomePage() {
     }
   }
 
-  const handleCreateTask = async (
-    title: string,
-    description: string,
-    projectPath: string,
-    baseBranch: string | null,
-    branch: string,
-    agentCli: AgentCliId,
-    model: string,
-    effort: AgentEffort,
-    taskAutoMode: boolean,
-    attachments: AttachmentInput[]
-  ) => {
+  const handleCreateTask = async (draft: NewTaskDraft) => {
     setCreating(true)
     setCreateError(null)
     try {
       const result = await createTask({
-        title,
-        description,
-        projectPath,
-        baseBranch,
-        branch: branch || undefined,
-        agentCli,
-        model: model || undefined,
-        effort,
-        autoMode: taskAutoMode,
-        attachments,
+        ...draft,
+        branch: draft.branch || undefined,
+        model: draft.model || undefined,
       })
       if (result) {
         setBoard(result.state.board)
@@ -524,6 +504,7 @@ export default function HomePage() {
         projectPath: payload.projectPath,
         baseBranch: payload.baseBranch,
         branch: payload.branch,
+        masterId: payload.masterId,
       })
       if (state) setBoard(state.board)
       setEditTask(null)
@@ -743,6 +724,9 @@ export default function HomePage() {
               loadGitInfo={getGitInfo}
               saving={savingEdit}
               error={editError}
+              masters={[...board.in_progress, ...board.backlog]
+                .filter((t) => t.role === 'master')
+                .map((t) => ({ id: t.id, title: t.title }))}
               onSubmit={handleSaveEdit}
               onClose={() => setEditTask(null)}
             />
