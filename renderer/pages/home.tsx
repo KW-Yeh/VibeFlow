@@ -10,11 +10,6 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
 import type { BoardView } from '@/components/ui/view-tabs'
-import {
-  TerminalTabBar,
-  type TerminalTab,
-  type TerminalTabEntry,
-} from '@/components/terminal-tab-bar'
 import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { NotificationToaster, type Toast } from '@/components/notification-toaster'
 import { withNotificationDefaults } from '@/components/notification-settings'
@@ -51,15 +46,14 @@ import { useJiraInbox } from '@/lib/use-jira'
 import { boardJiraCards, draftFromTicket } from '@/lib/jira-display'
 import { basenameFromPath } from '@/lib/workspace-path'
 import {
+  clearRetiredKeys,
   readGithubFilters,
   readInboxTab,
   readJiraScope,
-  readTerminalTabs,
   readViewUrl,
   writeGithubFilters,
   writeInboxTab,
   writeJiraScope,
-  writeTerminalTabs,
   writeViewUrl,
 } from '@/lib/view-persistence'
 import type {
@@ -82,8 +76,6 @@ const FALLBACK_BOARD: BoardState = {
   in_progress: [],
   done: [],
 }
-
-const TAB_COLUMN_ORDER = ['in_progress', 'backlog', 'done'] as const
 
 /** One notification as the line under the card title. */
 function notificationText(n: ProgressNotification): string {
@@ -154,9 +146,6 @@ export default function HomePage() {
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  // Open terminal tabs, in bar order. Kept per browser (view-persistence), so a
-  // reload brings the bar back.
-  const [tabs, setTabs] = useState<TerminalTab[]>([])
   // The 終端機 page's shells live in core's store. A pane opened here shows at
   // once as pending; core has saved it once its start returns, and only then
   // can a rename reach core.
@@ -166,7 +155,7 @@ export default function HomePage() {
   const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 
-  // Which view the top pane shows, and what the Issues & PRs view is narrowed to.
+  // Which page is shown, and what the Issues & PRs view is narrowed to.
   const [view, setView] = useState<BoardView>('board')
   const [githubFilters, setGithubFilters] = useState<Record<'issues' | 'prs', GithubFilters>>({
     issues: EMPTY_GITHUB_FILTERS, prs: EMPTY_GITHUB_FILTERS,
@@ -191,10 +180,7 @@ export default function HomePage() {
       const where = readViewUrl()
       setView(where.view)
       setSelectedTaskId(where.taskId)
-      const savedTabs = readTerminalTabs()
-      setTabs(where.taskId && !savedTabs.some((t) => t.taskId === where.taskId)
-        ? [...savedTabs, { taskId: where.taskId, preview: true }]
-        : savedTabs)
+      clearRetiredKeys()
       setInboxTab(readInboxTab())
       setJiraScope(readJiraScope())
       setGithubFilters(readGithubFilters())
@@ -220,7 +206,6 @@ export default function HomePage() {
 
   // Written only once restored, so the first render cannot overwrite what a reload should bring back.
   useEffect(() => { if (loaded) writeViewUrl(view, selectedTaskId) }, [loaded, view, selectedTaskId])
-  useEffect(() => { if (loaded) writeTerminalTabs(tabs) }, [loaded, tabs])
   useEffect(() => { if (loaded) writeInboxTab(inboxTab) }, [loaded, inboxTab])
   useEffect(() => { if (loaded) writeJiraScope(jiraScope) }, [loaded, jiraScope])
   useEffect(() => { if (loaded) writeGithubFilters(githubFilters) }, [loaded, githubFilters])
@@ -252,16 +237,9 @@ export default function HomePage() {
     }
   }, [runningIds])
 
-  // Drop tabs whose task no longer exists. Deletions made in this window are
-  // handled by closeTabs (which also picks the next tab); this covers tasks
-  // removed by the CLI or another writer, where there is no local handler.
+  // A card deleted here, by the CLI or by another writer leaves nothing selected.
   useEffect(() => {
     const ids = new Set(Object.values(board).flat().map((t) => t.id))
-    setTabs((prev) =>
-      prev.every((t) => ids.has(t.taskId))
-        ? prev
-        : prev.filter((t) => ids.has(t.taskId))
-    )
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
 
@@ -315,35 +293,27 @@ export default function HomePage() {
     void persistBoard(next)
   }
 
-  // Open (or focus) a task's tab. A preview tab replaces the existing preview
-  // tab in place — VSCode's single-click behaviour — while a pinned open always
-  // gets its own slot at the end of the bar.
-  const openTab = (taskId: string, opts?: { pin?: boolean }) => {
-    setView('board')
-    setTabs((prev) => {
-      const existing = prev.find((t) => t.taskId === taskId)
-      if (existing) {
-        if (!opts?.pin || !existing.preview) return prev
-        return prev.map((t) => (t.taskId === taskId ? { ...t, preview: false } : t))
-      }
-      const next: TerminalTab = { taskId, preview: opts?.pin !== true }
-      const previewIndex = prev.findIndex((t) => t.preview)
-      if (next.preview && previewIndex !== -1) {
-        const copy = [...prev]
-        copy[previewIndex] = next
-        return copy
-      }
-      return [...prev, next]
-    })
+  const openTask = (taskId: string) => {
     setSelectedTaskId(taskId)
+    setView('workspace')
+  }
+
+  // The workspace with nothing picked yet opens on the first running card.
+  const selectView = (next: BoardView) => {
+    if (next === 'workspace' && !selectedTaskId && board.in_progress[0]) {
+      setSelectedTaskId(board.in_progress[0].id)
+    }
+    setView(next)
   }
 
   // Stage notifications. Core already applied the per-kind switches; whether
   // the user is looking at the card is a UI fact, so that check lives here.
-  const openTabRef = useRef(openTab)
-  openTabRef.current = openTab
+  const openTaskRef = useRef(openTask)
+  openTaskRef.current = openTask
   const selectedRef = useRef(selectedTaskId)
   selectedRef.current = selectedTaskId
+  const viewRef = useRef(view)
+  viewRef.current = view
   const notificationsRef = useRef(notificationSettings)
   notificationsRef.current = notificationSettings
   const dismissToast = useCallback((id: string) => {
@@ -354,7 +324,8 @@ export default function HomePage() {
     return onProgressNotify(({ taskId, title, notifications }) => {
       const prefs = notificationsRef.current
       if (!prefs.enabled) return
-      const watching = document.visibilityState === 'visible' && document.hasFocus() && selectedRef.current === taskId
+      const watching = document.visibilityState === 'visible' && document.hasFocus() &&
+        viewRef.current === 'workspace' && selectedRef.current === taskId
       if (watching) return
       const fresh: Toast[] = notifications.map((n) => ({
         id: `${Date.now()}-${seq++}`,
@@ -369,48 +340,13 @@ export default function HomePage() {
           const n = new Notification(toast.title, { body: toast.body, tag: `${taskId}:${toast.body}` })
           n.onclick = () => {
             window.focus()
-            openTabRef.current(taskId)
+            openTaskRef.current(taskId)
             n.close()
           }
         }
       }
     })
   }, [])
-
-  const pinTab = (taskId: string) => {
-    setTabs((prev) =>
-      prev.some((t) => t.taskId === taskId && t.preview)
-        ? prev.map((t) => (t.taskId === taskId ? { ...t, preview: false } : t))
-        : prev
-    )
-  }
-
-  const reorderTabs = (taskIds: string[]) => {
-    setTabs((prev) => {
-      const rank = new Map(taskIds.map((id, index) => [id, index]))
-      // Tabs the bar does not show keep their place behind the visible ones.
-      return [...prev].sort(
-        (a, b) => (rank.get(a.taskId) ?? Infinity) - (rank.get(b.taskId) ?? Infinity)
-      )
-    })
-  }
-
-  // Closing is purely a bar operation: the TaskWorkspacePanel stays mounted
-  // (see kanban-board's `mounted` set), so a running agent's PTY is untouched
-  // and reopening the tab shows the full scrollback.
-  const closeTabs = (taskIds: string[]) => {
-    const removing = new Set(taskIds)
-    if (selectedTaskId && removing.has(selectedTaskId)) {
-      const index = tabs.findIndex((t) => t.taskId === selectedTaskId)
-      const after = tabs.slice(index + 1).find((t) => !removing.has(t.taskId))
-      const before = tabs
-        .slice(0, Math.max(index, 0))
-        .reverse()
-        .find((t) => !removing.has(t.taskId))
-      setSelectedTaskId(after?.taskId ?? before?.taskId ?? null)
-    }
-    setTabs((prev) => prev.filter((t) => !removing.has(t.taskId)))
-  }
 
   const handleOpenNewTask = () => {
     setCreateError(null)
@@ -466,9 +402,7 @@ export default function HomePage() {
       if (result) {
         setBoard(result.state.board)
         setNewTaskOpen(false)
-        // A task the user just created is never throwaway — open it pinned so
-        // the next single-click elsewhere can't discard it.
-        openTab(result.task.id, { pin: true })
+        openTask(result.task.id)
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err))
@@ -520,19 +454,9 @@ export default function HomePage() {
     const state = await deleteTask(taskId)
     if (state) {
       setBoard(state.board)
-      closeTabs([taskId])
+      setSelectedTaskId((current) => (current === taskId ? null : current))
     }
   }
-
-  // Titles/status are read from the board each render, so editing a task or
-  // moving its card updates the tab without any tab-state bookkeeping.
-  const tabEntries: TerminalTabEntry[] = tabs.flatMap((tab) => {
-    for (const column of TAB_COLUMN_ORDER) {
-      const task = board[column].find((t) => t.id === tab.taskId)
-      if (task) return [{ ...tab, title: task.title, column }]
-    }
-    return []
-  })
 
   // Remote control has no entry point for now: nothing calls startSharing, so
   // the host never registers with the public PeerJS broker. The dialog and the
@@ -559,10 +483,6 @@ export default function HomePage() {
     return result.task.id
   }
 
-  const goToTask = (taskId: string) => {
-    setView('board')
-    openTab(taskId, { pin: true })
-  }
 
   const remoteHost = useRemoteHost({
     board,
@@ -584,7 +504,7 @@ export default function HomePage() {
             <div className="flex h-screen overflow-hidden">
               <SideMenu
                 view={view}
-                onSelectView={setView}
+                onSelectView={selectView}
                 onNewTask={handleOpenNewTask}
                 remoteActive={!!remoteHost.roomCode}
                 onOpenSettings={() => {
@@ -627,17 +547,7 @@ export default function HomePage() {
                 <div className="min-h-0 flex-1">
                 <div className={view === 'terminals' ? 'hidden' : 'h-full'}>
                 <KanbanBoard
-                  tabBar={
-                    <TerminalTabBar
-                      entries={tabEntries}
-                      activeTaskId={selectedTaskId}
-                      onSelect={openTab}
-                      onPin={pinTab}
-                      onClose={(taskId) => closeTabs([taskId])}
-                      onReorder={reorderTabs}
-                    />
-                  }
-                  onSelectTask={openTab}
+                  onSelectTask={openTask}
                   onNewTask={handleOpenNewTask}
                   board={board}
                   onBoardChange={handleBoardChange}
@@ -649,15 +559,13 @@ export default function HomePage() {
                   onShowTaskTerminal={showGridTerminal}
                   progress={progress}
                   selectedTaskId={selectedTaskId}
-                  onTaskInteract={pinTab}
-                  openTabIds={tabs.map((t) => t.taskId)}
                   view={view}
-                  onViewChange={setView}
+                  onViewChange={selectView}
                   taskLinks={taskLinks.links}
                   githubView={
                     <InboxView
                       view={view}
-                      onViewChange={setView}
+                      onViewChange={selectView}
                       tab={currentInboxTab}
                       onTabChange={setInboxTab}
                       jira={{ ...jira, scope: jiraScope, onScopeChange: setJiraScope }}
@@ -670,7 +578,7 @@ export default function HomePage() {
                       onBrowseProject={pickProjectFolder}
                       onCreateJira={createJiraTask}
                       onConvertGithub={handleConvertGithubItem}
-                      onOpenTask={goToTask}
+                      onOpenTask={openTask}
                       onOpenSettings={() => {
                         setSettingsError(null)
                         setSettingsOpen(true)
@@ -682,7 +590,7 @@ export default function HomePage() {
                 <div className={view === 'terminals' ? 'h-full' : 'hidden'}>
                   <TerminalGrid
                     view={view}
-                    onViewChange={setView}
+                    onViewChange={selectView}
                     terminals={gridTerminals}
                     taskWorktreePaths={Object.fromEntries([...board.in_progress, ...board.done]
                       .filter((task) => task.worktreePath)
@@ -791,7 +699,7 @@ export default function HomePage() {
             </AnimatePresence>
             <NotificationToaster
               toasts={toasts}
-              onOpen={(taskId) => openTabRef.current(taskId)}
+              onOpen={(taskId) => openTaskRef.current(taskId)}
               onDismiss={dismissToast}
             />
           </>

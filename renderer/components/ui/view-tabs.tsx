@@ -1,9 +1,10 @@
 import { cn } from '@/lib/utils'
 
-export type BoardView = 'board' | 'github' | 'terminals'
+export type BoardView = 'board' | 'workspace' | 'github' | 'terminals'
 
 const VIEWS: { id: BoardView; label: string }[] = [
   { id: 'board', label: '看板' },
+  { id: 'workspace', label: '工作區' },
   { id: 'github', label: '工作項目' },
   { id: 'terminals', label: '終端機' },
 ]

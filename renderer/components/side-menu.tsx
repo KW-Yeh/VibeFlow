@@ -1,4 +1,4 @@
-import { Inbox, Plus, Settings, Smartphone, SquareKanban, Terminal } from 'lucide-react'
+import { Inbox, LayoutPanelLeft, Plus, Settings, Smartphone, SquareKanban, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IconButton } from '@/components/ui/icon-button'
 import type { BoardView } from '@/components/ui/view-tabs'
@@ -41,6 +41,15 @@ export function SideMenu({
           className={cn('size-8', view === 'board' && 'text-primary hover:text-primary')}
         >
           <SquareKanban className="size-4" />
+        </IconButton>
+        <IconButton
+          aria-label="工作區"
+          aria-current={view === 'workspace' ? 'page' : undefined}
+          title="工作區"
+          onClick={() => onSelectView('workspace')}
+          className={cn('size-8', view === 'workspace' && 'text-primary hover:text-primary')}
+        >
+          <LayoutPanelLeft className="size-4" />
         </IconButton>
         <IconButton
           aria-label="工作項目"

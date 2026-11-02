@@ -322,9 +322,7 @@ interface TaskWorkspacePanelProps {
   onComplete: (task: Task) => void
   onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
-  /** Real user interaction with this workspace — pins its preview tab. */
-  onInteract?: () => void
-  /** This workspace is the one on screen (its tab is selected). */
+  /** This workspace is the one on screen (selected, on the workspace page). */
   active?: boolean
   /** A master's dispatched cards. */
   slaves?: SlaveEntry[]
@@ -1629,7 +1627,6 @@ export function TaskWorkspacePanel({
   onComplete,
   onEdit,
   onDelete,
-  onInteract,
   active = true,
   slaves = [],
   progressById = {},
@@ -1715,12 +1712,10 @@ export function TaskWorkspacePanel({
   const launchNonce = launch?.nonce ?? 0
 
   const requestLaunch = () => {
-    onInteract?.()
     onStart(task)
   }
 
   const selectTaskTab = (tab: TaskTab) => {
-    onInteract?.()
     setActiveTaskTab(tab)
   }
 
@@ -1813,7 +1808,6 @@ export function TaskWorkspacePanel({
   // In the rail, the shown tab's icon closes what it opened, so one control
   // both reveals and dismisses a view.
   const selectRailTab = (tab: TaskTab) => {
-    onInteract?.()
     if (inspectorShown && tab === activeTab) {
       if (docked) setInspectorMode('rail')
       else setDrawerOpen(false)
@@ -2027,7 +2021,6 @@ export function TaskWorkspacePanel({
                 readOnly={false}
                 onReturnToBacklog={() => onReturnToBacklog(task)}
                 onLaunchAgent={() => onLaunchAgent(task)}
-                onInteract={onInteract}
                 active={active}
                 toolbarStart={
                   <>
@@ -2078,7 +2071,6 @@ export function TaskWorkspacePanel({
                       size="sm"
                       className="h-7 shrink-0 px-2.5 text-xs"
                       onClick={() => {
-                        onInteract?.()
                         onComplete(task)
                       }}
                       title="標記完成後會清理 PTY 與 worktree"
@@ -2168,7 +2160,6 @@ export function TaskWorkspacePanel({
             aria-label="編輯任務"
             title="編輯任務"
             onClick={() => {
-              onInteract?.()
               onEdit(task.id)
             }}
           >

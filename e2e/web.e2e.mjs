@@ -248,6 +248,10 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await newTask.getByLabel('任務標題').fill('E2E card')
   await newTask.getByRole('button', { name: '建立任務' }).click()
   await newTask.waitFor({ state: 'detached' })
+  // A new card opens on the workspace page, listed as the card being viewed.
+  await page.getByRole('navigation', { name: '進行中的任務' }).getByRole('button', { name: /E2E card/ }).waitFor()
+  assert.match(page.url(), /[?&]view=workspace/)
+  await sidebar.getByRole('button', { name: '看板' }).click()
   await page.getByText('E2E card').first().waitFor()
 
   // The card's extra shell is independent of its not-yet-provisioned worktree.
@@ -262,17 +266,27 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.ok(fs.existsSync(path.join(projectPath, 'vf-grid-pwd.txt')), 'the shell wrote in the project root')
   await page.getByRole('button', { name: /關閉 Terminal/ }).click()
   await page.getByRole('dialog', { name: '關閉 Terminal' }).getByRole('button', { name: '確認關閉' }).click()
-  await page.getByRole('tab', { name: '看板' }).click()
+  await page.getByRole('tab', { name: '工作區' }).click()
 
   // Start: core builds the launch; the fake agent runs in the worktree.
   await page.getByRole('button', { name: '開始' }).click()
+  await waitForTerminal(page, 'fake-claude ready')
+  // The started card joins the running list; leaving for the board and coming
+  // back keeps the same terminal on screen.
+  const runningList = page.getByRole('navigation', { name: '進行中的任務' })
+  await runningList.getByRole('button', { name: /E2E card/ }).waitFor()
+  assert.equal(await runningList.getByText('目前檢視').count(), 0)
+  await sidebar.getByRole('button', { name: '看板' }).click()
+  await page.locator('.xterm').first().waitFor({ state: 'hidden' })
+  await page.getByText('Jev effort：模型預設值').first().waitFor()
+  await sidebar.getByRole('button', { name: '工作區' }).click()
+  await page.locator('.xterm').first().waitFor({ state: 'visible' })
   await waitForTerminal(page, 'fake-claude ready')
   const routedState = await page.evaluate(() => window.vibeflow.getState())
   assert.equal(routedState.board.in_progress[0]?.effort, 'auto')
   assert.equal(routedState.board.in_progress[0]?.model, undefined)
   assert.equal(routedState.board.in_progress[0]?.jevRoute?.status, 'fallback')
   assert.match(routedState.board.in_progress[0]?.jevRoute?.reason ?? '', /TYPESAFE_API_KEY/)
-  await page.getByText('Jev effort：模型預設值').first().waitFor()
 
   const previewTask = routedState.board.in_progress[0]
   fs.writeFileSync(path.join(previewTask.worktreePath, 'preview-image.svg'), PREVIEW_SVG)
@@ -403,6 +417,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
       (projectPath) => window.vibeflow.createTask({ title: 'Seed card', projectPath, baseBranch: null }),
       gh.projectPath
     )
+    await sidebar.getByRole('button', { name: '看板' }).click()
     await page.getByText('Seed card').first().waitFor()
     await page.getByRole('tab', { name: '工作項目' }).first().click()
     await page.getByRole('tab', { name: /^Issues/ }).last().click()
@@ -434,10 +449,12 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     assert.equal(converted.projectPath, gh.projectPath)
     assert.equal(converted.title, '側邊欄搜尋在中文輸入法組字時會閃爍')
     await page.getByRole('button', { name: '前往卡片' }).click()
+    assert.equal(await sidebar.getByRole('button', { name: '工作區' }).getAttribute('aria-current'), 'page')
+    await sidebar.getByRole('button', { name: '看板' }).click()
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
 
     // PR filters remain independent of Issues and include reviewed PRs.
-    await page.getByRole('tab', { name: '工作項目' }).first().click()
+    await sidebar.getByRole('button', { name: '工作項目' }).click()
     await page.getByRole('tab', { name: /^Pull Requests/ }).click()
     await page.getByRole('button', { name: /^Assignee篩選/ }).waitFor()
     await page.getByRole('button', { name: /#107/ }).waitFor()
@@ -626,8 +643,8 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.setViewportSize({ width: 375, height: 780 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true)
   await page.getByRole('button', { name: '前往卡片' }).click()
-  assert.equal(await page.getByRole('tab', { name: '看板' }).first().getAttribute('aria-selected'), 'true')
-  await page.getByRole('tab', { name: '工作項目' }).first().click()
+  assert.equal(await page.locator('aside').first().getByRole('button', { name: '工作區' }).getAttribute('aria-current'), 'page')
+  await page.locator('aside').first().getByRole('button', { name: '工作項目' }).click()
   await page.getByRole('tab', { name: /Issues/ }).last().click()
   await page.getByRole('button', { name: /#112/ }).click()
   await page.getByRole('dialog').waitFor()
@@ -790,4 +807,30 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await page.reload()
   await page.getByRole('tab', { name: '工作項目' }).waitFor()
   assert.equal(await page.getByRole('tab', { name: '工作項目' }).getAttribute('aria-selected'), 'true')
+
+  // Workspace page: with nothing picked it opens on the first running card.
+  const menu = page.locator('aside').first()
+  await menu.getByRole('button', { name: '工作區' }).click()
+  const running = page.getByRole('navigation', { name: '進行中的任務' })
+  await running.getByRole('button', { name: /Running terminal/ }).waitFor()
+  assert.equal(await running.getByRole('button', { name: /Running terminal/ }).getAttribute('aria-current'), 'page')
+  const where = () => Object.fromEntries(new URL(page.url()).searchParams)
+  assert.deepEqual(where(), { view: 'workspace', task: second.task.id })
+  // A done card opened from the board is listed on top as the card being viewed.
+  await menu.getByRole('button', { name: '看板' }).click()
+  await page.getByRole('button', { name: '開啟任務：Done terminal' }).click()
+  await running.getByText('目前檢視').waitFor()
+  assert.equal(await running.getByRole('button', { name: /Done terminal/ }).getAttribute('aria-current'), 'page')
+  await running.getByRole('button', { name: /Running terminal/ }).click()
+  await running.getByText('目前檢視').waitFor({ state: 'detached' })
+  // The folded list survives a reload.
+  await running.getByRole('button', { name: '收合任務清單' }).click()
+  await page.reload()
+  await page.getByRole('button', { name: '展開任務清單' }).waitFor()
+  assert.equal(await running.getByRole('button', { name: 'Running terminal' }).getAttribute('aria-current'), 'page')
+  await page.getByRole('button', { name: '展開任務清單' }).click()
+  // An address from before the split (a bare card) opens that card's workspace.
+  await page.goto(new URL(`?task=${first.task.id}`, page.url()).href)
+  await running.getByText('目前檢視').waitFor()
+  assert.deepEqual(where(), { view: 'workspace', task: first.task.id })
 })

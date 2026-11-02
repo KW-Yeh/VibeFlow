@@ -37,6 +37,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 |---|---|
 | [terminal-file-preview](features/terminal-file-preview/spec.md) ([plan](features/terminal-file-preview/plan.md)) | Click local file paths in task and independent terminals to preview images and text |
 | [workspace-layout](features/workspace-layout/spec.md) ([plan](features/workspace-layout/plan.md)) | A running card's workspace: one toolbar shared with the terminal, and an inspector that docks or folds into an icon rail |
+| [board-workspace-split](features/board-workspace-split/spec.md) ([plan](features/board-workspace-split/plan.md)) | The board and the task workspace as two full-height pages; the workspace lists running cards in a foldable left rail |
 | [master-cards](features/master-cards/spec.md) ([plan](features/master-cards/plan.md)) | Master cards: a repo-less orchestrator that dispatches, starts and follows other cards |
 | [task-form-layout](features/task-form-layout/spec.md) ([plan](features/task-form-layout/plan.md)) | Create and edit a card in one dialog layout: content on the left, a property sidebar on the right, fits half-height screens |
 | [cli-update](features/cli-update/spec.md) | Add `vibeflow update` to install the latest npm release from the CLI |

@@ -1,5 +1,4 @@
 import type { BoardView } from '@/components/ui/view-tabs'
-import type { TerminalTab } from '@/components/terminal-tab-bar'
 import type { InboxTab } from '@/components/inbox-view'
 import type { JiraScope } from '@/lib/types'
 import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
@@ -8,9 +7,11 @@ import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
 // address names them), the rest per browser. Anything unreadable falls back
 // to the defaults instead of breaking the page.
 
-const VIEWS: BoardView[] = ['board', 'github', 'terminals']
+const VIEWS: BoardView[] = ['board', 'workspace', 'github', 'terminals']
 const INBOX_TABS: InboxTab[] = ['jira', 'issues', 'prs']
-const TABS_KEY = 'vibeflow:terminal-tabs'
+const WORKSPACE_RAIL_KEY = 'vibeflow:workspace-rail'
+// The board/workspace split and the workspace tab bar are gone; their saved state is dead weight.
+const RETIRED_KEYS = ['vibeflow:terminal-tabs', 'vibeflow:board-split-px']
 const INBOX_TAB_KEY = 'vibeflow:inbox-tab'
 const FILTERS_KEY = 'vibeflow:github-filters'
 const JIRA_SCOPE_KEY = 'vibeflow:jira-scope'
@@ -21,16 +22,17 @@ export type GithubFilterState = Record<'issues' | 'prs', GithubFilters>
 export function readViewUrl(): { view: BoardView; taskId: string | null } {
   const params = new URLSearchParams(window.location.search)
   const view = params.get('view') as BoardView | null
-  return {
-    view: view && VIEWS.includes(view) ? view : 'board',
-    taskId: params.get('task') || null,
-  }
+  const taskId = params.get('task') || null
+  if (view && VIEWS.includes(view)) return { view, taskId }
+  // Before the workspace had its own page, a card with no view named meant "show this card's workspace".
+  return { view: taskId ? 'workspace' : 'board', taskId }
 }
 
 /** Replace, not push: switching views is not navigation the back button should step through. */
 export function writeViewUrl(view: BoardView, taskId: string | null): void {
   const url = new URL(window.location.href)
-  if (view === 'board') url.searchParams.delete('view')
+  // The board keeps a bare address only without a card: a bare `?task=` now opens the workspace.
+  if (view === 'board' && !taskId) url.searchParams.delete('view')
   else url.searchParams.set('view', view)
   if (taskId) url.searchParams.set('task', taskId)
   else url.searchParams.delete('task')
@@ -57,14 +59,23 @@ function write(key: string, value: unknown): void {
 const isStrings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((v) => typeof v === 'string')
 
-export function readTerminalTabs(): TerminalTab[] {
-  const value = read(TABS_KEY)
-  if (!Array.isArray(value)) return []
-  return value.filter((t): t is TerminalTab =>
-    Boolean(t) && typeof t.taskId === 'string' && typeof t.preview === 'boolean')
+export function clearRetiredKeys(): void {
+  for (const key of RETIRED_KEYS) {
+    try {
+      window.localStorage.removeItem(key)
+    } catch {
+      // Blocked storage has nothing to clear.
+    }
+  }
 }
 
-export const writeTerminalTabs = (tabs: TerminalTab[]) => write(TABS_KEY, tabs)
+/** null = never toggled; the rail then follows the window width. */
+export function readWorkspaceRailCollapsed(): boolean | null {
+  const value = read(WORKSPACE_RAIL_KEY)
+  return typeof value === 'boolean' ? value : null
+}
+
+export const writeWorkspaceRailCollapsed = (collapsed: boolean) => write(WORKSPACE_RAIL_KEY, collapsed)
 
 export function readInboxTab(): InboxTab | null {
   const value = read(INBOX_TAB_KEY)

@@ -5,18 +5,12 @@ import {
   useReducedMotion,
 } from 'motion/react'
 import { AlertTriangle, Plus } from 'lucide-react'
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type PointerEvent,
-  type ReactNode,
-} from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
+import { WorkspaceTaskRail } from '@/components/workspace-task-rail'
 import type { BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -26,6 +20,10 @@ import {
 } from '@/lib/api'
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import {
+  readWorkspaceRailCollapsed,
+  writeWorkspaceRailCollapsed,
+} from '@/lib/view-persistence'
 import type {
   BoardState,
   ColumnId,
@@ -46,22 +44,16 @@ interface KanbanBoardProps {
   onShowTaskTerminal: (sessionKey: string) => void
   /** Live progress of running cards keyed by task id (from core's transcript reader). */
   progress: Record<string, TaskProgress>
-  /** Currently selected task id (shown in the workspace panel). */
+  /** Currently selected task id (shown on the workspace page). */
   selectedTaskId?: string | null
-  /** Select a task from the board (opens its terminal tab). */
+  /** Select a task and show its workspace. */
   onSelectTask: (taskId: string) => void
   /** Open the new-task dialog. */
   onNewTask: () => void
-  /** Terminal tab bar, rendered at the top of the lower (workspace) pane. */
-  tabBar?: ReactNode
-  /** Real user interaction with a task's workspace — pins its preview tab. */
-  onTaskInteract?: (taskId: string) => void
-  /** Task ids that currently have an open terminal tab. */
-  openTabIds: string[]
-  /** Which view the top pane shows; the workspace below is the same for both. */
+  /** 'workspace' shows the task workspace; 'board' and 'github' show the board page. */
   view: BoardView
   onViewChange: (next: BoardView) => void
-  /** Rendered in the top pane instead of the board while `view` is 'github'. */
+  /** Rendered instead of the board columns while `view` is 'github'. */
   githubView: ReactNode
   /** Each card's Issue/PR, keyed by task id. */
   taskLinks: Record<string, GithubTaskLinks>
@@ -72,18 +64,12 @@ interface LaunchEntry {
   nonce: number
 }
 
-/** Height of the board pane, in px. Renderer-local UI state — deliberately not
-    in the core store, so it needs no schema migration. */
-const SPLIT_STORAGE_KEY = 'vibeflow:board-split-px'
-const MIN_BOARD_HEIGHT = 180
-const MIN_WORKSPACE_HEIGHT = 260
+/** Below this width the task rail starts folded: open beside a docked inspector, it would leave the terminal narrower than its toolbar. */
+const RAIL_ROOMY_QUERY = '(min-width: 1280px)'
 
-/** null = never sized by hand; the board then fills everything the workspace's
-    minimum leaves over, which is measured on mount. */
-function readStoredBoardHeight(): number | null {
-  if (typeof window === 'undefined') return null
-  const raw = Number(window.localStorage.getItem(SPLIT_STORAGE_KEY))
-  return Number.isFinite(raw) && raw >= MIN_BOARD_HEIGHT ? raw : null
+function initialRailCollapsed(): boolean {
+  if (typeof window === 'undefined') return false
+  return readWorkspaceRailCollapsed() ?? !window.matchMedia(RAIL_ROOMY_QUERY).matches
 }
 
 function WorkspaceSurface({
@@ -135,17 +121,14 @@ export function KanbanBoard({
   selectedTaskId,
   onSelectTask,
   onNewTask,
-  tabBar,
-  onTaskInteract,
-  openTabIds,
   view,
   onViewChange,
   githubView,
   taskLinks,
 }: KanbanBoardProps) {
   // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
-  // the DOM (just hidden) so PTY state survives switching tasks; it is dropped
-  // only when its tab closes — and only for tasks that are not in progress.
+  // the DOM (just hidden) so PTY state survives switching tasks and pages; a
+  // card that is not in progress keeps it only while selected.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed terminal launch command; bumping `nonce` fires a new launch.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
@@ -278,63 +261,17 @@ export function KanbanBoard({
     moveTask(task, 'done')
   }
 
-  // ── Board / workspace splitter ────────────────────────────────────────────
-  const splitRef = useRef<HTMLDivElement>(null)
-  const dragOriginRef = useRef<{ y: number; height: number } | null>(null)
-  const [boardHeight, setBoardHeight] = useState(readStoredBoardHeight)
-
-  // First run: hand the workspace its minimum and give the rest to the board.
-  useLayoutEffect(() => {
-    if (boardHeight !== null) return
-    const available = splitRef.current?.clientHeight ?? 0
-    if (available > 0) {
-      setBoardHeight(Math.max(MIN_BOARD_HEIGHT, available - MIN_WORKSPACE_HEIGHT))
-    }
-  }, [boardHeight])
-
-  const clampBoardHeight = (next: number) => {
-    const available = splitRef.current?.clientHeight ?? 0
-    const max = available > 0 ? available - MIN_WORKSPACE_HEIGHT : next
-    return Math.max(MIN_BOARD_HEIGHT, Math.min(next, Math.max(MIN_BOARD_HEIGHT, max)))
+  const [railCollapsed, setRailCollapsed] = useState(initialRailCollapsed)
+  const changeRailCollapsed = (collapsed: boolean) => {
+    setRailCollapsed(collapsed)
+    writeWorkspaceRailCollapsed(collapsed)
   }
 
-  const onSplitterDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (boardHeight === null) return
-    dragOriginRef.current = { y: event.clientY, height: boardHeight }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const onSplitterMove = (event: PointerEvent<HTMLDivElement>) => {
-    const origin = dragOriginRef.current
-    if (!origin) return
-    setBoardHeight(clampBoardHeight(origin.height + (event.clientY - origin.y)))
-  }
-
-  const onSplitterUp = () => {
-    if (!dragOriginRef.current || boardHeight === null) return
-    dragOriginRef.current = null
-    window.localStorage.setItem(SPLIT_STORAGE_KEY, String(boardHeight))
-  }
-
-  const nudgeSplitter = (delta: number) => {
-    if (boardHeight === null) return
-    const next = clampBoardHeight(boardHeight + delta)
-    setBoardHeight(next)
-    window.localStorage.setItem(SPLIT_STORAGE_KEY, String(next))
-  }
+  const onWorkspace = view === 'workspace'
 
   return (
-    <div
-      ref={splitRef}
-      className="flex h-full flex-col overflow-hidden bg-background text-foreground"
-    >
-      <div
-        style={view === 'github' || boardHeight === null ? undefined : { height: boardHeight }}
-        className={cn(
-          'min-h-0 overflow-hidden border-b border-border',
-          view === 'github' || boardHeight === null ? 'flex-1' : 'shrink-0'
-        )}
-      >
+    <div className="flex h-full overflow-hidden bg-background text-foreground">
+      <div className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', onWorkspace && 'hidden')}>
         {view === 'github' ? (
           githubView
         ) : (
@@ -356,72 +293,51 @@ export function KanbanBoard({
         )}
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="調整看板與工作區的高度"
-        tabIndex={0}
-        onPointerDown={onSplitterDown}
-        onPointerMove={onSplitterMove}
-        onPointerUp={onSplitterUp}
-        onPointerCancel={onSplitterUp}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowUp') {
-            event.preventDefault()
-            nudgeSplitter(-24)
-          } else if (event.key === 'ArrowDown') {
-            event.preventDefault()
-            nudgeSplitter(24)
-          }
-        }}
-        className={cn('flex h-2.5 shrink-0 cursor-row-resize items-center justify-center border-y border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50', view === 'github' && 'hidden')}
-      >
-        <span className="h-0.5 w-12 rounded-full bg-input" />
-      </div>
+      {(() => {
+        const allTasks: { task: Task; column: ColumnId }[] = [
+          ...board.in_progress.map((t) => ({
+            task: t,
+            column: 'in_progress' as const,
+          })),
+          ...board.backlog.map((t) => ({
+            task: t,
+            column: 'backlog' as const,
+          })),
+          ...board.done.map((t) => ({
+            task: t,
+            column: 'done' as const,
+          })),
+        ]
 
-      <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', view === 'github' && 'hidden')}>
-        {tabBar}
-        <main className="min-h-0 flex-1">
-        {(() => {
-          const allTasks: { task: Task; column: ColumnId }[] = [
-            ...board.in_progress.map((t) => ({
-              task: t,
-              column: 'in_progress' as const,
-            })),
-            ...board.backlog.map((t) => ({
-              task: t,
-              column: 'backlog' as const,
-            })),
-            ...board.done.map((t) => ({
-              task: t,
-              column: 'done' as const,
-            })),
-          ]
+        const selected = selectedTaskId
+          ? allTasks.find(({ task }) => task.id === selectedTaskId)
+          : null
 
-          const selected = selectedTaskId
-            ? allTasks.find(({ task }) => task.id === selectedTaskId)
-            : null
+        // A mounted panel stays in the DOM (hidden when not selected) so its
+        // PTY survives switching tasks or pages. Only an in-progress card keeps
+        // it once deselected — an agent may still be working in that terminal;
+        // any other card's panel is dropped, which kills its shell and stops
+        // the two 3s pollers every panel runs. Scrollback is kept by core
+        // (killSession leaves it), so reselecting replays the history.
+        const renderIds = new Set<string>()
+        for (const taskId of mounted) {
+          const entry = allTasks.find(({ task }) => task.id === taskId)
+          if (entry?.column === 'in_progress') renderIds.add(taskId)
+        }
+        if (selected) renderIds.add(selected.task.id)
 
-          // A mounted panel stays in the DOM (hidden when not selected) so its
-          // PTY survives switching tasks or deselecting to the new-task form.
-          // Closing its tab drops it — which kills the PTY and stops the two
-          // 3s pollers every panel runs — except while the task is in progress,
-          // where an agent may still be working in that terminal. Scrollback is
-          // kept by the main process (killSession leaves it), so reopening the
-          // tab replays the history under a fresh shell.
-          const openTabs = new Set(openTabIds)
-          const renderIds = new Set<string>()
-          for (const taskId of mounted) {
-            const entry = allTasks.find(({ task }) => task.id === taskId)
-            if (!entry) continue
-            if (openTabs.has(taskId) || entry.column === 'in_progress') {
-              renderIds.add(taskId)
-            }
-          }
-          if (selected) renderIds.add(selected.task.id)
-
-          return (
-            <>
+        return (
+          <div className={cn('min-h-0 min-w-0 flex-1', onWorkspace ? 'flex' : 'hidden')}>
+            <WorkspaceTaskRail
+              running={board.in_progress}
+              viewing={selected && selected.column !== 'in_progress' ? selected : null}
+              selectedTaskId={selectedTaskId ?? null}
+              progress={progress}
+              onSelect={onSelectTask}
+              collapsed={railCollapsed}
+              onCollapsedChange={changeRailCollapsed}
+            />
+            <main className="min-h-0 min-w-0 flex-1">
               {Array.from(renderIds).map((taskId) => {
                 const entry = allTasks.find(({ task }) => task.id === taskId)
                 if (!entry) return null
@@ -431,7 +347,7 @@ export function KanbanBoard({
                     <TaskWorkspacePanel
                       task={entry.task}
                       column={entry.column}
-                      active={isSelected}
+                      active={isSelected && onWorkspace}
                       progress={progress[entry.task.id] ?? null}
                       progressById={progress}
                       slaves={
@@ -452,9 +368,6 @@ export function KanbanBoard({
                       onComplete={completeTask}
                       onEdit={onEditTask}
                       onDelete={onDeleteTask}
-                      onInteract={
-                        onTaskInteract ? () => onTaskInteract(taskId) : undefined
-                      }
                     />
                   </WorkspaceSurface>
                 )
@@ -469,7 +382,7 @@ export function KanbanBoard({
                 >
                   <div className="flex flex-col items-center gap-3 text-center">
                     <p className="text-base text-muted-foreground">
-                      從上方看板選一張卡片，或建立新的任務。
+                      從左側選一張卡片，或建立新的任務。
                     </p>
                     <Button size="sm" onClick={onNewTask} className="rounded-full px-4">
                       <Plus />
@@ -478,11 +391,10 @@ export function KanbanBoard({
                   </div>
                 </motion.div>
               )}
-            </>
-          )
-        })()}
-        </main>
-      </div>
+            </main>
+          </div>
+        )
+      })()}
 
       <AnimatePresence>
         {confirmDone && (

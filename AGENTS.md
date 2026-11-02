@@ -256,13 +256,14 @@ renderer/                  Next.js app (Pages Router)
 │   ├── _app.tsx           imports xterm CSS + globals.css; installs the WebSocket bridge
 │   └── home.tsx           container: loads state, owns dialogs, wires the board
 ├── components/
-│   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
+│   ├── kanban-board.tsx   the board page and the workspace page (both stay mounted; `view` picks one)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
 │   ├── new-task-dialog.tsx popup create dialog: per-task project picker + git detect + create
 │   ├── task-form-layout.tsx create/edit frame: content column + property sidebar (fits half height)
 │   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
 │   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策 (spec.md)/artifacts/diff
+│   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM core (single source of truth)
@@ -353,7 +354,9 @@ docs/                      everything that is not code (index: docs/README.md)
   worktree (cleanup, delete, diff, terminal cwd) resolves it from the task, not a global.
 - **Terminal**: `task-terminal.tsx` dynamically imports xterm inside `useEffect`
   (xterm touches the DOM; never import at module top). PTY lifecycle is tied to mount —
-  collapsing a card kills its session.
+  pages switch with `hidden`, never by unmounting. A running card's workspace stays
+  mounted once opened; any other card's only while selected, so deselecting it kills
+  its shell.
 - **Branch/worktree naming**: branch `vf-<id>`, worktree `<project>/.vibeflow/vf-<id>`,
   where `<id>` is the first 8 chars of a UUID. `ensureGitignore` adds `.vibeflow/` to
   the target project's `.gitignore`.
