@@ -2,11 +2,7 @@ import { Zap } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-/**
- * Whether this card's agent may act without asking for approval. The card's own
- * value is what a launch reads; the board-wide switch only seeds new cards.
- */
-export function TaskAutoModeToggle({
+export function AutoModeSwitch({
   value,
   onChange,
   disabled = false,
@@ -16,12 +12,6 @@ export function TaskAutoModeToggle({
   disabled?: boolean
 }) {
   return (
-    <div className="space-y-2.5 rounded-lg border border-border/50 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-base font-medium">
-          <Zap className="size-4 text-muted-foreground" />
-          Auto Mode
-        </span>
         <button
           type="button"
           role="switch"
@@ -45,6 +35,30 @@ export function TaskAutoModeToggle({
             />
           </span>
         </button>
+  )
+}
+
+/**
+ * Whether this card's agent may act without asking for approval. The card's own
+ * value is what a launch reads; the board-wide switch only seeds new cards.
+ */
+export function TaskAutoModeToggle({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: boolean
+  onChange: (value: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="space-y-2.5 rounded-lg border border-border/50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-base font-medium">
+          <Zap className="size-4 text-muted-foreground" />
+          Auto Mode
+        </span>
+        <AutoModeSwitch value={value} onChange={onChange} disabled={disabled} />
       </div>
       <p className="text-sm text-muted-foreground">
         {value

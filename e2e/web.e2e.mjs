@@ -221,7 +221,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     // The page may have mounted before the host finished warming the catalog.
     // Reload after the bridge reports the ready list so the picker reads it.
     await page.reload()
-    await page.getByRole('button', { name: 'Advanced' }).click()
+    await page.locator('aside').first().getByRole('button', { name: '新增任務' }).click()
     const modelSelect = page.locator('select[name="agent-model"]')
     if (await modelSelect.locator('option', { hasText: 'Fable 5.1' }).count() === 0) {
       // If the picker first read fallback models, changing agents asks core
@@ -234,15 +234,20 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     assert.equal(await modelSelect.locator('option[value="default"]').count(), 0)
     assert.equal(await modelSelect.inputValue(), '', 'the CLI default model is selected independently of Jev')
     assert.equal(await modelSelect.locator('option[value=""]').textContent(), '使用 CLI 預設模型')
-    assert.equal(await page.locator('input[name="task-effort"]').getAttribute('aria-valuetext'), '自動 (auto)')
-    await page.getByRole('button', { name: 'Advanced' }).click()
+    assert.equal(await page.locator('select[name="task-effort"]').inputValue(), 'auto')
+    await page.getByRole('dialog', { name: '新增任務' }).getByRole('button', { name: '取消' }).click()
+    await page.getByRole('dialog', { name: '新增任務' }).waitFor({ state: 'detached' })
   }
 
-  // Create: typed project path (the browser has no folder dialog), title.
-  await page.getByLabel('輸入專案資料夾路徑').fill(projectPath)
-  await page.getByLabel('輸入專案資料夾路徑').press('Enter')
-  await page.getByPlaceholder('例如：實作登入頁面').fill('E2E card')
-  await page.getByRole('button', { name: '建立任務' }).click()
+  // Create: the side menu opens the dialog; typed project path (the browser
+  // has no folder dialog), title.
+  await page.locator('aside').first().getByRole('button', { name: '新增任務' }).click()
+  const newTask = page.getByRole('dialog', { name: '新增任務' })
+  await newTask.getByLabel('輸入專案資料夾路徑').fill(projectPath)
+  await newTask.getByLabel('輸入專案資料夾路徑').press('Enter')
+  await newTask.getByLabel('任務標題').fill('E2E card')
+  await newTask.getByRole('button', { name: '建立任務' }).click()
+  await newTask.waitFor({ state: 'detached' })
   await page.getByText('E2E card').first().waitFor()
 
   // The card's extra shell is independent of its not-yet-provisioned worktree.

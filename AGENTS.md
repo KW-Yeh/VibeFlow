@@ -258,7 +258,8 @@ renderer/                  Next.js app (Pages Router)
 ├── components/
 │   ├── kanban-board.tsx   board + cards (drag handle scoped to header)
 │   ├── task-terminal.tsx  xterm terminal (dynamic import, client-only)
-│   ├── new-task-dialog.tsx per-task project picker + git detect + create (prefilled from an Issue/PR)
+│   ├── new-task-dialog.tsx popup create dialog: per-task project picker + git detect + create
+│   ├── task-form-layout.tsx create/edit frame: content column + property sidebar (fits half height)
 │   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
 │   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策 (spec.md)/artifacts/diff

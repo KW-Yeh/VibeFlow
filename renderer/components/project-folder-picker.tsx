@@ -27,13 +27,18 @@ export function ProjectFolderPicker({
   disabled,
   onSelect,
   onBrowse,
+  compact = false,
 }: {
   projectPath: string | null
   recentProjects: RecentProjectEntry[]
   disabled: boolean
   onSelect: (projectPath: string) => void
   onBrowse: () => void
+  /** Sidebar density: smaller controls, and the chosen path as a tooltip only. */
+  compact?: boolean
 }) {
+  const control = compact ? 'h-8 px-2 py-1 text-sm' : undefined
+  const sideButton = compact ? 'rounded-md border border-border p-1.5' : 'rounded-md border border-border p-2'
   const currentName = projectPath ? basename(projectPath) : null
   // A lost entry sharing the chosen folder's name is that same project before
   // it moved; the next recorded use replaces it, so don't offer it meanwhile.
@@ -61,10 +66,11 @@ export function ProjectFolderPicker({
         <select
           name="project-folder"
           aria-label="專案資料夾"
+          title={projectPath ?? undefined}
           value={projectPath ?? ''}
           onChange={(e) => e.target.value && onSelect(e.target.value)}
           disabled={disabled || options.length === 0}
-          className={cn(fieldClass, 'min-w-0 flex-1', missing && 'border-destructive/60')}
+          className={cn(fieldClass, 'min-w-0 flex-1', control, missing && 'border-destructive/60')}
         >
           <option value="" disabled>
             {options.length > 0 ? '選擇使用過的專案…' : '尚無使用過的專案，請點右側按鈕選取'}
@@ -83,7 +89,7 @@ export function ProjectFolderPicker({
           onClick={onBrowse}
           disabled={disabled}
           tone="primary"
-          className="rounded-md border border-border p-2"
+          className={sideButton}
         >
           <FolderOpen className="size-4" />
         </IconButton>
@@ -93,7 +99,7 @@ export function ProjectFolderPicker({
           type="text"
           name="project-path"
           aria-label="輸入專案資料夾路徑"
-          placeholder="或輸入資料夾的絕對路徑，按 Enter 套用"
+          placeholder={compact ? '或輸入絕對路徑後按 Enter' : '或輸入資料夾的絕對路徑，按 Enter 套用'}
           value={typedPath}
           onChange={(e) => setTypedPath(e.target.value)}
           onKeyDown={(e) => {
@@ -104,19 +110,19 @@ export function ProjectFolderPicker({
           }}
           disabled={disabled}
           spellCheck={false}
-          className={cn(fieldClass, 'min-w-0 flex-1 font-mono text-sm')}
+          className={cn(fieldClass, 'min-w-0 flex-1 font-mono text-sm', control)}
         />
         <IconButton
           aria-label="套用輸入的路徑"
           title="套用輸入的路徑"
           onClick={applyTypedPath}
           disabled={disabled || typedPath.trim() === ''}
-          className="rounded-md border border-border p-2"
+          className={sideButton}
         >
           <CornerDownLeft className="size-4" />
         </IconButton>
       </div>
-      {projectPath && !missing && (
+      {projectPath && !missing && !compact && (
         <p className="truncate text-sm text-muted-foreground" title={projectPath}>
           {projectPath}
         </p>

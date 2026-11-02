@@ -1,44 +1,31 @@
-import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import {
-  Bot,
-  ChevronDown,
-  Check,
-  FileUp,
-  FolderOpen,
-  GitBranch,
-  Info,
-  Loader2,
-  Network,
-  X,
-} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { FileUp, FolderOpen, GitBranch, Loader2, Network, Paperclip, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { DialogShell } from '@/components/ui/dialog-shell'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
-import {
-  DEFAULT_TASK_EFFORT,
-  TaskEffortSlider,
-} from '@/components/task-effort-slider'
-import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
+import { DEFAULT_TASK_EFFORT } from '@/components/task-effort-slider'
 import {
   ProjectFolderPicker,
   isProjectMissing,
 } from '@/components/project-folder-picker'
-import { listAgentModels } from '@/lib/api'
-import { taskModel } from '@/lib/claude'
-import { clampEffort, modelFor, selectableEfforts } from '@/lib/effort'
-import type { ManualEffort } from '@/lib/types'
+import {
+  PropertyGroup,
+  PropertyNote,
+  PropertyRow,
+  ROW_FIELD,
+  RunSettingsGroup,
+  TaskFormDialog,
+  useAgentModels,
+  useModelEfforts,
+} from '@/components/task-form-layout'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
-import { createEnterVariants, createPresenceVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
-  AgentModel,
   AttachmentInput,
   GitInfo,
   RecentProjectEntry,
@@ -70,9 +57,9 @@ export interface NewTaskDraft {
   attachments: AttachmentInput[]
 }
 
-type CardRole = 'slave' | 'master'
+type CardRole = 'task' | 'master'
 
-export interface NewTaskFormProps {
+export interface NewTaskDialogProps {
   creating: boolean
   error: string | null
   pickFolder: () => Promise<string | null>
@@ -81,303 +68,16 @@ export interface NewTaskFormProps {
   initRepository: (projectPath: string) => Promise<GitInfo | null>
   detectAgents: () => Promise<AgentCli[]>
   onSubmit: (draft: NewTaskDraft) => void
+  onClose: () => void
   /** Master cards a new card can be dispatched under. */
   masters?: Array<{ id: string; title: string }>
-  onClose?: () => void
-  /** Render as a full-height inline panel instead of a compact modal form. */
-  inline?: boolean
-  /**
-   * Pre-fill an existing project folder on mount (inline mode) — triggers the
-   * same git detection + workspace auto-match as manually picking the folder.
-   */
-  initialProjectPath?: string | null
   /** Board-wide Auto Mode, used as the new card's starting value. */
   defaultAutoMode?: boolean
   /** Workstation root, so the form can name where the worktree will land. */
   workstationPath?: string
 }
 
-// Shared field class now lives in ui/field.tsx (single source of truth).
-// Re-exported as `F` for backwards-compatible imports (e.g. edit-task-dialog).
-export const F = fieldClass
-
-function InlineEnterSurface({
-  show,
-  enabled,
-  id,
-  className,
-  children,
-}: {
-  show: boolean
-  enabled: boolean
-  id?: string
-  className?: string
-  children: ReactNode
-}) {
-  const reducedMotion = useReducedMotion() ?? false
-
-  if (!show) return null
-  if (!enabled) {
-    return (
-      <div id={id} className={className}>
-        {children}
-      </div>
-    )
-  }
-
-  return (
-    <motion.div
-      id={id}
-      initial="hidden"
-      animate="visible"
-      variants={createEnterVariants({
-        timing: 'standard',
-        transform: { y: -4 },
-        reducedMotion,
-      })}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  )
-}
-
-function AttachmentRow({
-  attachment,
-  id,
-  creating,
-  animated,
-  onRemove,
-}: {
-  attachment: AttachmentInput
-  id: number
-  creating: boolean
-  animated: boolean
-  onRemove: (id: number) => void
-}) {
-  const isPresent = useIsPresent()
-  const reducedMotion = useReducedMotion() ?? false
-  const content = (
-    <>
-      <FileUp className="size-3.5 shrink-0 text-primary" />
-      <span className="min-w-0 flex-1 truncate text-sm" title={attachment.name}>
-        {attachment.name}
-      </span>
-      <IconButton
-        aria-label={`移除附件 ${attachment.name}`}
-        onClick={() => onRemove(id)}
-        disabled={creating}
-        className="p-1"
-      >
-        <X className="size-3.5" />
-      </IconButton>
-    </>
-  )
-
-  if (!animated) {
-    return (
-      <li className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-        {content}
-      </li>
-    )
-  }
-
-  return (
-    <motion.li
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      variants={createPresenceVariants({
-        timing: 'micro',
-        transform: { y: 4 },
-        reducedMotion,
-      })}
-      inert={!isPresent}
-      aria-hidden={!isPresent || undefined}
-      className={cn(
-        'flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2',
-        !isPresent && 'pointer-events-none'
-      )}
-    >
-      {content}
-    </motion.li>
-  )
-}
-
-// ── Agent CLI selector ─────────────────────────────────────────────────────
-
-/** The agent's models from core's catalog; `null` while the list loads. */
-export function useAgentModels(agentCli: AgentCliId): AgentModel[] | null {
-  // Tagged with the agent it belongs to: right after a switch, the previous
-  // agent's list must read as "still loading", not as this agent's models.
-  const [loaded, setLoaded] = useState<{ agentCli: AgentCliId; models: AgentModel[] } | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void listAgentModels(agentCli)
-      .then((list) => {
-        if (!cancelled) setLoaded({ agentCli, models: list?.models ?? [] })
-      })
-      .catch(() => {
-        if (!cancelled) setLoaded({ agentCli, models: [] })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [agentCli])
-  return loaded?.agentCli === agentCli ? loaded.models : null
-}
-
-/**
- * Effort levels the model that will actually run accepts (the agent's default
- * when none is picked). A choice it does not accept is lowered as soon as the
- * model changes, so the slider always shows what the launch will send.
- */
-export function useModelEfforts(
-  models: AgentModel[] | null,
-  agentCli: AgentCliId,
-  model: string,
-  effort: AgentEffort,
-  setEffort: (effort: AgentEffort) => void
-): readonly ManualEffort[] {
-  const info = modelFor(models, taskModel({ agentCli, model }))
-  const levels = selectableEfforts(info)
-  useEffect(() => {
-    if (models === null) return
-    const fitted = clampEffort(effort, levels)
-    if (effort !== 'auto' && fitted && fitted !== effort) setEffort(fitted)
-  }, [models, levels, effort, setEffort])
-  return levels
-}
-
-export interface AgentModelFieldsProps {
-  title: string
-  agents: AgentCli[] | null
-  detectTimedOut: boolean
-  onRetry: () => void
-  agentCli: AgentCliId
-  onAgentChange: (agentCli: AgentCliId) => void
-  model: string
-  onModelChange: (model: string) => void
-  /** From useAgentModels; `null` while the list loads. */
-  models: AgentModel[] | null
-}
-
-const CUSTOM_MODEL = '__custom__'
-
-export function AgentModelFields({
-  title,
-  agents,
-  detectTimedOut,
-  onRetry,
-  agentCli,
-  onAgentChange,
-  model,
-  onModelChange,
-  models,
-}: AgentModelFieldsProps) {
-  const [customOpen, setCustomOpen] = useState(false)
-  useEffect(() => {
-    setCustomOpen(false)
-  }, [agentCli])
-  const listed = models ?? []
-  const description = customOpen ? undefined : modelFor(listed, model || undefined)?.description
-  const modelOptions = model && !customOpen && !listed.some((m) => m.id === model)
-    ? [{ id: model, label: model }, ...listed]
-    : listed
-  return (
-    <div className="space-y-3 rounded-lg border border-border/50 p-4">
-      <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      <div className="space-y-1.5">
-        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-          <Bot className="size-3" />
-          Agent CLI
-        </span>
-        {agents === null ? (
-          detectTimedOut ? (
-            <div className="space-y-1">
-              <p className="text-sm text-destructive">偵測逾時，請確認 Agent CLI 已安裝。</p>
-              <button
-                type="button"
-                onClick={onRetry}
-                className="rounded-sm text-sm text-primary underline outline-none hover:no-underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                重新偵測
-              </button>
-            </div>
-          ) : (
-            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
-              偵測中…
-            </p>
-          )
-        ) : agents.length === 0 ? (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-            未偵測到 Agent CLI（claude / codex）。
-          </p>
-        ) : (
-          <select
-            name={`${title.toLowerCase().replace(/\s+/g, '-')}-agent-cli`}
-            value={agentCli}
-            onChange={(e) => onAgentChange(e.target.value as AgentCliId)}
-            className={F}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium text-muted-foreground">Model</span>
-        <select
-          name={`${title.toLowerCase().replace(/\s+/g, '-')}-model`}
-          value={customOpen ? CUSTOM_MODEL : model}
-          onChange={(e) => {
-            if (e.target.value === CUSTOM_MODEL) {
-              setCustomOpen(true)
-              return
-            }
-            setCustomOpen(false)
-            onModelChange(e.target.value)
-          }}
-          className={F}
-        >
-          <option value="">使用 CLI 預設模型</option>
-          {modelOptions.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-          <option value={CUSTOM_MODEL}>自訂…</option>
-        </select>
-        {models === null && (
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" />
-            讀取 model list…
-          </p>
-        )}
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-        {customOpen && (
-          <input
-            name={`${title.toLowerCase().replace(/\s+/g, '-')}-custom-model`}
-            value={model}
-            onChange={(e) => onModelChange(e.target.value.trim())}
-            placeholder="輸入完整 model id，例如 claude-opus-5-5"
-            autoFocus
-            className={F}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Main form ──────────────────────────────────────────────────────────────
-export function NewTaskForm({
+export function NewTaskDialog({
   creating,
   error,
   pickFolder,
@@ -387,14 +87,11 @@ export function NewTaskForm({
   detectAgents,
   onSubmit,
   onClose,
-  inline = false,
-  initialProjectPath,
+  masters = [],
   defaultAutoMode = true,
   workstationPath,
-  masters = [],
-}: NewTaskFormProps) {
-  const [step, setStep] = useState<1 | 2>(1)
-  const [role, setRole] = useState<CardRole>('slave')
+}: NewTaskDialogProps) {
+  const [role, setRole] = useState<CardRole>('task')
   const [workDir, setWorkDir] = useState('')
   const [masterId, setMasterId] = useState('')
   const [title, setTitle] = useState('')
@@ -409,7 +106,6 @@ export function NewTaskForm({
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<AgentEffort>(DEFAULT_TASK_EFFORT)
@@ -421,7 +117,6 @@ export function NewTaskForm({
   const [isDraggingAttachment, setIsDraggingAttachment] = useState(false)
   const [isReadingAttachments, setIsReadingAttachments] = useState(false)
 
-  const advancedContentId = useId()
   const nextAttachmentIdRef = useRef(0)
   const titleRef = useRef<HTMLInputElement>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
@@ -448,11 +143,7 @@ export function NewTaskForm({
   }, [detectAgents, detectKey])
 
   useEffect(() => {
-    if (step === 2) titleRef.current?.focus()
-  }, [step])
-
-  useEffect(() => {
-    if (inline) titleRef.current?.focus()
+    titleRef.current?.focus()
   }, [])
 
   useEffect(() => {
@@ -481,7 +172,6 @@ export function NewTaskForm({
     }
   }
 
-  // Shared by the recent-project select and the initialProjectPath prefill.
   const loadProject = async (path: string) => {
     if (isProjectMissing(recentProjects, path)) {
       setProjectPath(path)
@@ -514,27 +204,39 @@ export function NewTaskForm({
     }
   }
 
-  // Inline mode: prefill the given existing project on mount (from the sidebar's
-  // per-project「新增任務」entry). Runs once.
-  useEffect(() => {
-    if (inline && initialProjectPath) void loadProject(initialProjectPath)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const handleBrowseWorkDir = async () => {
+    const path = await pickFolder()
+    if (path) setWorkDir(path)
+  }
+
+  const addAttachments = async (files: FileList | File[]) => {
+    setAttachmentError(null)
+    setIsReadingAttachments(true)
+    try {
+      const inputs = await filesToAttachmentInputs(files)
+      const items = inputs.map((input) => ({
+        id: nextAttachmentIdRef.current++,
+        input,
+      }))
+      setAttachments((current) => [...current, ...items])
+    } catch (err) {
+      setAttachmentError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsReadingAttachments(false)
+    }
+  }
 
   const isRepo = gitInfo?.isRepo ?? false
   const hasRemote = gitInfo?.hasRemote ?? false
   const workspaceDisplayPath = `${workstationPath?.trim() || '~/Desktop'}/${
     projectPath ? basename(projectPath) : '<專案名>'
   }`
-
-  const isProjectReady =
-    Boolean(projectPath) && !projectMissing && isRepo && !loadingInfo && !initializing
-
   const isMaster = role === 'master'
-  const isReady = isMaster || isProjectReady
-  const canGoToStep2 = isReady
-  const canSubmit =
-    title.trim().length > 0 && !creating && !isReadingAttachments && (inline ? isReady : true)
+  const isReady =
+    isMaster ||
+    (Boolean(projectPath) && !projectMissing && isRepo && !loadingInfo && !initializing)
+  const canSubmit = title.trim().length > 0 && !creating && !isReadingAttachments && isReady
+  const attachmentsLocked = creating || isReadingAttachments
 
   const handleSubmit = () => {
     if (!canSubmit || (!isMaster && !projectPath)) return
@@ -560,37 +262,201 @@ export function NewTaskForm({
     )
   }
 
-  const handleBrowseWorkDir = async () => {
-    const path = await pickFolder()
-    if (path) setWorkDir(path)
-  }
+  const header = (
+    <>
+      <span className="text-sm text-muted-foreground">新增任務</span>
+      <div
+        role="radiogroup"
+        aria-label="卡片角色"
+        className="inline-flex rounded-full border border-border bg-muted/40 p-0.5"
+      >
+        {(['task', 'master'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={role === value}
+            disabled={creating}
+            onClick={() => setRole(value)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-3 py-1 text-sm outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              role === value
+                ? value === 'master'
+                  ? 'bg-master/15 text-master'
+                  : 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {value === 'master' ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
+            {value === 'master' ? 'Master' : '一般任務'}
+          </button>
+        ))}
+      </div>
+    </>
+  )
 
-  const addAttachments = async (files: FileList | File[]) => {
-    setAttachmentError(null)
-    setIsReadingAttachments(true)
-    try {
-      const inputs = await filesToAttachmentInputs(files)
-      const items = inputs.map((input) => ({
-        id: nextAttachmentIdRef.current++,
-        input,
-      }))
-      setAttachments((current) => [...current, ...items])
-    } catch (err) {
-      setAttachmentError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setIsReadingAttachments(false)
-    }
-  }
+  const content = (
+    <div
+      onDragEnter={(event) => {
+        event.preventDefault()
+        if (!attachmentsLocked) setIsDraggingAttachment(true)
+      }}
+      onDragOver={(event) => {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsDraggingAttachment(false)
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        setIsDraggingAttachment(false)
+        if (!attachmentsLocked && event.dataTransfer.files.length > 0) {
+          void addAttachments(event.dataTransfer.files)
+        }
+      }}
+      className={cn(
+        'flex min-h-0 flex-1 flex-col gap-3 rounded-lg',
+        isDraggingAttachment && 'outline-2 outline-offset-4 outline-dashed outline-primary/70'
+      )}
+    >
+      <input
+        ref={titleRef}
+        name="task-title"
+        aria-label="任務標題"
+        autoComplete="off"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+        }}
+        placeholder="任務標題，例如：實作登入頁面"
+        className="w-full rounded-sm bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      />
+      <textarea
+        name="task-description"
+        aria-label="詳細描述"
+        autoComplete="off"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+        }}
+        placeholder={
+          isMaster
+            ? '描述整體目標、涉及的 repo 與限制。Master 會先判斷要不要拆成多張卡…'
+            : '描述這個任務的目標、需求或背景脈絡…（可以直接把檔案拖進來當附件）'
+        }
+        className={cn(fieldClass, 'min-h-32 flex-1 resize-none text-sm leading-6')}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => attachmentInputRef.current?.click()}
+          disabled={attachmentsLocked}
+          className="rounded-full"
+        >
+          <Paperclip />
+          附件
+        </Button>
+        <input
+          ref={attachmentInputRef}
+          type="file"
+          multiple
+          disabled={attachmentsLocked}
+          className="hidden"
+          onChange={(event) => {
+            if (event.target.files) void addAttachments(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        {attachments.map(({ id, input }) => (
+          <span
+            key={id}
+            className="flex max-w-56 items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 py-0.5 pl-2.5 pr-1 text-sm"
+          >
+            <FileUp className="size-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 truncate" title={input.name}>
+              {input.name}
+            </span>
+            <IconButton
+              aria-label={`移除附件 ${input.name}`}
+              onClick={() => setAttachments((current) => current.filter((item) => item.id !== id))}
+              disabled={creating}
+              className="p-0.5"
+            >
+              <X className="size-3.5" />
+            </IconButton>
+          </span>
+        ))}
+        {isReadingAttachments && (
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            讀取附件中…
+          </span>
+        )}
+      </div>
+      {attachmentError && <p className="text-sm text-destructive">{attachmentError}</p>}
+      {error && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          {error}
+        </p>
+      )}
+    </div>
+  )
 
-  // ── Shared JSX blocks (closure over local state) ────────────────────────
-
-  const projectSettingsBlock = (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          專案資料夾
-        </span>
+  const locationGroup = isMaster ? (
+    <PropertyGroup label="位置">
+      <div className="space-y-1 px-1">
+        <span className="text-sm text-muted-foreground">工作目錄</span>
+        <div className="flex items-center gap-2">
+          <input
+            name="master-work-dir"
+            aria-label="工作目錄"
+            autoComplete="off"
+            value={workDir}
+            onChange={(e) => setWorkDir(e.target.value)}
+            placeholder="留空則由 VibeFlow 建立"
+            className={cn(ROW_FIELD, 'min-w-0 flex-1 font-mono')}
+          />
+          <IconButton
+            aria-label="選擇工作目錄"
+            title="選擇工作目錄"
+            onClick={() => void handleBrowseWorkDir()}
+            disabled={creating}
+            tone="primary"
+            className="rounded-md border border-border p-1.5"
+          >
+            <FolderOpen className="size-4" />
+          </IconButton>
+        </div>
+      </div>
+      <PropertyNote>
+        <details>
+          <summary className="cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            任何資料夾都可以，不建立分支或 worktree。
+          </summary>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            <li>先判斷任務要不要拆卡，再為每個 repo 建立卡片，掛在這張 Master 底下。</li>
+            <li>
+              {autoMode
+                ? 'Auto Mode 開啟：沒有前置依賴的卡片會直接開始執行。'
+                : 'Auto Mode 關閉：派出的卡片留在 Backlog，由你決定何時開始。'}
+            </li>
+            <li>追蹤進度並回報；不會自己合併 PR 或把卡片移到 Done。</li>
+          </ul>
+        </details>
+      </PropertyNote>
+    </PropertyGroup>
+  ) : (
+    <PropertyGroup label="位置">
+      <div className="space-y-1 px-1">
+        <span className="text-sm text-muted-foreground">專案</span>
         <ProjectFolderPicker
+          compact
           projectPath={projectPath}
           recentProjects={recentProjects}
           disabled={creating || initializing || loadingInfo}
@@ -598,24 +464,19 @@ export function NewTaskForm({
           onBrowse={() => void handleBrowse()}
         />
       </div>
-
-      <InlineEnterSurface
-        show={loadingInfo || initializing}
-        enabled={inline}
-      >
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
-        </p>
-      </InlineEnterSurface>
-
-      <InlineEnterSurface
-        show={Boolean(gitInfo) && !projectMissing && !loadingInfo && !initializing && !isRepo}
-        enabled={inline}
-      >
-        <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
-          <p className="text-base">
-            這個資料夾不是 Git repository。請改選一個 Git 專案，或在這裡初始化：會執行
+      {(loadingInfo || initializing) && (
+        <PropertyNote>
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" />
+            {initializing ? '初始化 Git…' : '偵測 Git 狀態中…'}
+          </span>
+        </PropertyNote>
+      )}
+      {!projectPath && <PropertyNote>選擇專案後才能建立任務。</PropertyNote>}
+      {gitInfo && !projectMissing && !loadingInfo && !initializing && !isRepo && (
+        <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm">
+          <p>
+            這個資料夾不是 Git repository。可以在這裡初始化：會執行
             <code className="text-foreground"> git init </code>並建立一個空的初始 commit。
           </p>
           <Button
@@ -628,19 +489,14 @@ export function NewTaskForm({
             初始化 Git
           </Button>
         </div>
-      </InlineEnterSurface>
-
-      <InlineEnterSurface show={isRepo && hasRemote} enabled={inline}>
-        <label className="block space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-            <GitBranch className="size-3" />
-            基準分支 (Base Branch)
-          </span>
+      )}
+      {isRepo && hasRemote && (
+        <PropertyRow label="基準分支">
           <select
             name="base-branch"
             value={baseBranch}
             onChange={(e) => setBaseBranch(e.target.value)}
-            className={F}
+            className={ROW_FIELD}
           >
             {(gitInfo?.branches ?? []).map((b) => (
               <option key={b} value={b}>
@@ -648,211 +504,76 @@ export function NewTaskForm({
               </option>
             ))}
           </select>
-        </label>
-      </InlineEnterSurface>
-
-      <InlineEnterSurface show={isRepo && !hasRemote} enabled={inline}>
-        <p className="text-sm text-muted-foreground">
-          此 repository 沒有 remote，將以目前分支 ({gitInfo?.currentBranch ?? 'HEAD'})
-          為基準建立本地 worktree。
-        </p>
-      </InlineEnterSurface>
-
-      <InlineEnterSurface show={isRepo} enabled={inline}>
-        <label className="block space-y-1.5">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-            <GitBranch className="size-3" />
-            分支名稱 (選填)
-          </span>
+        </PropertyRow>
+      )}
+      {isRepo && (
+        <PropertyRow label="分支">
           <input
             name="branch"
+            autoComplete="off"
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
-            placeholder="留空則自動命名，例如 feature/login-fix"
-            className={F}
+            placeholder="留空則自動命名"
+            className={ROW_FIELD}
           />
-          <span className="block text-sm text-muted-foreground">
-            {hasRemote
-              ? '開始執行時會建立同名分支；若 remote 已有這個分支，則直接取回並接續上面的工作。'
-              : '開始執行時會建立同名分支。'}
-          </span>
-        </label>
-      </InlineEnterSurface>
-
-      <InlineEnterSurface show={isRepo} enabled={inline}>
-        <div className="space-y-1.5 rounded-lg border border-border/50 bg-muted/20 p-4">
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            <Info className="size-3.5 text-muted-foreground" />
-            卡片開始執行時才會做這些事
-          </span>
-          <p className="text-sm text-muted-foreground">
-            建立卡片只會記下分支名稱，不會建立分支或推到 origin；放在 Backlog 期間都可以再編輯。
-          </p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>
-              {hasRemote ? '從當下最新的 origin 基準分支' : '從基準分支'}，在{' '}
-              <code className="text-foreground">{workspaceDisplayPath}</code>{' '}
-              底下建立這張卡專用的 worktree 與分支，你的專案資料夾本身不會被切換。
-            </li>
-            {hasRemote && (
-              <li>把新分支 push 到 origin；遠端會多出一條分支，有 CI 的話可能被觸發。</li>
-            )}
-            <li>
-              把被 git 忽略的檔案（例如 <code className="text-foreground">.env</code>）複製一份進
-              worktree，相依套件資料夾則在背景複製，好讓新 worktree 能直接跑起來。
-            </li>
-            <li>
-              把 VibeFlow 的執行期檔案寫進{' '}
-              <code className="text-foreground">.git/info/exclude</code>，不會動到專案的
-              .gitignore。
-            </li>
-          </ul>
-        </div>
-      </InlineEnterSurface>
-    </div>
-  )
-
-  const roleSwitch = (
-    <div
-      role="radiogroup"
-      aria-label="卡片角色"
-      className="inline-flex rounded-full border border-border bg-muted/40 p-0.5"
-    >
-      {(['slave', 'master'] as const).map((value) => (
-        <button
-          key={value}
-          type="button"
-          role="radio"
-          aria-checked={role === value}
-          disabled={creating}
-          onClick={() => {
-            setRole(value)
-            setStep(1)
-          }}
-          className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-sm outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-            role === value
-              ? value === 'master'
-                ? 'bg-master/15 text-master'
-                : 'bg-background text-foreground shadow-xs'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          {value === 'master' ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
-          {value === 'master' ? 'Master' : 'Slave'}
-        </button>
-      ))}
-    </div>
-  )
-
-  const masterSettingsBlock = (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          工作目錄
-        </span>
-        <div className="flex gap-2">
-          <input
-            name="master-work-dir"
-            autoComplete="off"
-            value={workDir}
-            onChange={(e) => setWorkDir(e.target.value)}
-            placeholder="留空則由 VibeFlow 建立專屬資料夾"
-            className={cn(F, 'font-mono text-sm')}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleBrowseWorkDir()}
-            disabled={creating}
-            className="shrink-0 rounded-full"
+        </PropertyRow>
+      )}
+      {masters.length > 0 && (
+        <PropertyRow label="隸屬於">
+          <select
+            name="master-id"
+            value={masterId}
+            onChange={(e) => setMasterId(e.target.value)}
+            className={ROW_FIELD}
           >
-            <FolderOpen />
-            選擇
-          </Button>
-        </div>
-        <span className="block text-sm text-muted-foreground">
-          可以是任何資料夾，不必是 Git 專案。Master 不會建立分支或 worktree。
-        </span>
-      </div>
-      <div className="space-y-1.5 rounded-lg border border-master/30 bg-master/5 p-4">
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          <Network className="size-3.5 text-master" />
-          Master 開始執行後
-        </span>
-        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-          <li>先判斷任務要不要拆成多張卡，再為每個 repo 建立 slave 卡片，掛在這張 master 底下。</li>
-          <li>
-            {autoMode
-              ? '已開啟 Auto Mode：沒有前置依賴的 slave 會直接拉進 In Progress 開始執行。'
-              : '未開啟 Auto Mode：slave 會留在 Backlog，由你決定何時開始。'}
-          </li>
-          <li>持續追蹤 slave 的進度，卡住或全部完成時回報你；不會自己合併 PR 或把卡片移到 Done。</li>
-        </ul>
-      </div>
-    </div>
+            <option value="">無</option>
+            {masters.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+        </PropertyRow>
+      )}
+      {isRepo && (
+        <PropertyNote>
+          <details>
+            <summary className="cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+              {hasRemote
+                ? '開始執行時才建立分支與 worktree 並 push。'
+                : `沒有 remote，開始執行時從 ${gitInfo?.currentBranch ?? 'HEAD'} 建立本地 worktree。`}
+            </summary>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              <li>
+                {hasRemote ? '從當下最新的 origin 基準分支' : '從基準分支'}，在{' '}
+                <code className="break-all text-foreground">{workspaceDisplayPath}</code>{' '}
+                底下建立這張卡專用的 worktree 與分支；專案資料夾本身不會被切換。
+              </li>
+              {hasRemote && (
+                <li>
+                  把新分支 push 到 origin；若 remote 已有同名分支，則取回並接續那條分支的工作。
+                </li>
+              )}
+              <li>把被 git 忽略的檔案（例如 .env）複製進 worktree，相依套件資料夾在背景複製。</li>
+              <li>VibeFlow 的執行期檔案寫進 .git/info/exclude，不動專案的 .gitignore。</li>
+            </ul>
+          </details>
+        </PropertyNote>
+      )}
+    </PropertyGroup>
   )
 
-  const masterPickerBlock = masters.length > 0 && (
-    <label className="block space-y-1.5">
-      <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-        <Network className="size-3" />
-        所屬 Master（選填）
-      </span>
-      <select
-        name="master-id"
-        value={masterId}
-        onChange={(e) => setMasterId(e.target.value)}
-        className={F}
-      >
-        <option value="">不隸屬任何 master</option>
-        {masters.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.title}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-
-  const settingsBlock = isMaster ? (
-    masterSettingsBlock
-  ) : (
-    <div className="space-y-4">
-      {projectSettingsBlock}
-      {masterPickerBlock}
-    </div>
-  )
-
-  const descriptionPlaceholder = isMaster
-    ? '描述整體目標、涉及的 repo 與限制。Master 會先判斷要不要拆成多張卡…'
-    : '描述這個任務的目標、需求或背景脈絡…'
-
-  const advancedSettingsBlock = (
-    <div className="rounded-lg border border-border/50">
-      <button
-        type="button"
-        aria-expanded={advancedOpen}
-        aria-controls={advancedContentId}
-        onClick={() => setAdvancedOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors motion-reduce:transition-none outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <span>Advanced</span>
-        <ChevronDown
-          className={cn(
-            'size-4 text-muted-foreground transition-transform motion-reduce:transform-none motion-reduce:transition-none',
-            advancedOpen && 'rotate-180'
-          )}
-        />
-      </button>
-      <InlineEnterSurface
-        show={advancedOpen}
-        enabled={inline}
-        id={advancedContentId}
-        className="space-y-4 border-t border-border/50 p-4"
-      >
-          <AgentModelFields
-            title="Agent"
+  return (
+    <TaskFormDialog
+      title="新增任務"
+      header={header}
+      saving={creating}
+      onClose={onClose}
+      content={content}
+      sidebar={
+        <>
+          {locationGroup}
+          <RunSettingsGroup
             agents={agents}
             detectTimedOut={detectTimedOut}
             onRetry={() => setDetectKey((k) => k + 1)}
@@ -864,397 +585,31 @@ export function NewTaskForm({
             model={model}
             onModelChange={setModel}
             models={models}
-          />
-      </InlineEnterSurface>
-    </div>
-  )
-
-  const attachmentsBlock = (
-    <div className="space-y-2">
-      <span className="text-base font-medium">附件（選填）</span>
-      <button
-        type="button"
-        disabled={creating || isReadingAttachments}
-        onClick={() => attachmentInputRef.current?.click()}
-        onDragEnter={(event) => {
-          event.preventDefault()
-          if (!creating && !isReadingAttachments) setIsDraggingAttachment(true)
-        }}
-        onDragOver={(event) => {
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'copy'
-        }}
-        onDragLeave={() => setIsDraggingAttachment(false)}
-        onDrop={(event) => {
-          event.preventDefault()
-          setIsDraggingAttachment(false)
-          if (!creating && !isReadingAttachments && event.dataTransfer.files.length > 0) {
-            void addAttachments(event.dataTransfer.files)
-          }
-        }}
-        className={cn(
-          'flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-5 text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:border-primary/50 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
-          isDraggingAttachment && 'border-primary/70 bg-primary/5 text-foreground'
-        )}
-      >
-        <FileUp className="size-5" />
-        <span className="text-sm">拖放檔案到這裡，或點擊選擇檔案</span>
-      </button>
-      <input
-        ref={attachmentInputRef}
-        type="file"
-        multiple
-        disabled={creating || isReadingAttachments}
-        className="hidden"
-        onChange={(event) => {
-          if (event.target.files) void addAttachments(event.target.files)
-          event.target.value = ''
-        }}
-      />
-      {isReadingAttachments && (
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          讀取附件中…
-        </p>
-      )}
-      <ul className="space-y-1.5">
-        <AnimatePresence initial={false}>
-          {attachments.map(({ id, input }) => (
-            <AttachmentRow
-              key={id}
-              attachment={input}
-              id={id}
-              creating={creating}
-              animated={inline}
-              onRemove={(removeId) =>
-                setAttachments((current) =>
-                  current.filter((item) => item.id !== removeId)
-                )
-              }
-            />
-          ))}
-        </AnimatePresence>
-      </ul>
-      {attachmentError && (
-        <p className="text-sm text-destructive">{attachmentError}</p>
-      )}
-    </div>
-  )
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  return (
-    <>
-      {/* Header */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">新增任務</h2>
-          {roleSwitch}
-        </div>
-        {onClose && (
-          <IconButton
-            aria-label="關閉新增任務"
-            onClick={onClose}
+            effort={effort}
+            onEffortChange={setEffort}
+            effortLevels={effortLevels}
+            autoMode={autoMode}
+            onAutoModeChange={setAutoMode}
             disabled={creating}
-            className="p-1"
-          >
-            <X className="size-4" />
-          </IconButton>
-        )}
-      </div>
-
-      {/* Step indicator (modal mode only) */}
-      {!inline && (
-        <div className="mb-5 flex items-center gap-2">
-          <div
-            className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors',
-              step === 1
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-primary/20 text-primary'
-            )}
-          >
-            {step > 1 ? <Check className="size-3.5" strokeWidth={3} /> : '1'}
-          </div>
-          <span
-            className={cn(
-              'text-base tracking-[-0.224px]',
-              step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'
-            )}
-          >
-            {isMaster ? '工作目錄' : '專案設定'}
-          </span>
-          <div
-            className={cn(
-              'h-0.5 flex-1 transition-colors',
-              step > 1 ? 'bg-primary/60' : 'bg-border'
-            )}
           />
-          <div
-            className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors',
-              step === 2
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground'
-            )}
-          >
-            2
-          </div>
-          <span
-            className={cn(
-              'text-base tracking-[-0.224px]',
-              step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'
-            )}
-          >
-            任務內容
-          </span>
-        </div>
-      )}
-
-      {/* Inline mode: title at top, then 2-col grid */}
-      {inline && (
-        <>
-          <label className="mb-5 block space-y-1.5">
-            <span className="text-base font-medium">任務標題</span>
-            <input
-              ref={titleRef}
-              name="task-title"
-              autoComplete="off"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如：實作登入頁面"
-              className={cn(F, 'text-lg')}
-            />
-          </label>
-
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            {/* Left: project settings + attachments */}
-            <div className="space-y-4">
-              {settingsBlock}
-              {attachmentsBlock}
-            </div>
-
-            {/* Right: description */}
-            <div className="flex h-full flex-col gap-4">
-              <label className="flex min-h-0 flex-1 flex-col gap-1.5">
-                <span className="text-base font-medium">詳細描述（選填）</span>
-                <textarea
-                  name="task-description"
-                  autoComplete="off"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={12}
-                  placeholder={descriptionPlaceholder}
-                  className={cn(F, 'mb-2 min-h-64 flex-1 resize-y')}
-                />
-              </label>
-
-              <TaskEffortSlider
-                value={effort}
-                onChange={setEffort}
-                levels={effortLevels}
-                disabled={creating}
-              />
-
-              <TaskAutoModeToggle
-                value={autoMode}
-                onChange={setAutoMode}
-                disabled={creating}
-              />
-
-              {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
-                  {error}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="mt-5">
-            {advancedSettingsBlock}
-          </div>
         </>
-      )}
-
-      {/* Modal mode: step-based layout */}
-      {!inline && (
-        <div>
-          {/* Step 1: project folder + base branch */}
-          {step === 1 && settingsBlock}
-
-          {/* Step 2: task details, agents, workspace */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <label className="block space-y-1.5">
-                <span className="text-base font-medium">任務標題</span>
-                <input
-                  ref={titleRef}
-                  name="task-title"
-                  autoComplete="off"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="例如：實作登入頁面"
-                  className={F}
-                />
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-base font-medium">詳細描述（選填）</span>
-                <textarea
-                  value={description}
-                  name="task-description"
-                  autoComplete="off"
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  placeholder={descriptionPlaceholder}
-                  className={cn(F, 'resize-y')}
-                />
-              </label>
-
-              <TaskEffortSlider
-                value={effort}
-                onChange={setEffort}
-                levels={effortLevels}
-                disabled={creating}
-              />
-
-              <TaskAutoModeToggle
-                value={autoMode}
-                onChange={setAutoMode}
-                disabled={creating}
-              />
-
-              {attachmentsBlock}
-
-              {advancedSettingsBlock}
-
-              {error && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-base">
-                  {error}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Footer buttons */}
-      {inline ? (
-        <div className="mt-6 space-y-2 pb-10">
-          {!isReady && title.trim().length > 0 && (
-            <p className="text-right text-sm text-muted-foreground">
-              請先在左側選擇專案資料夾
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            {onClose && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-                disabled={creating}
-                className="rounded-full"
-              >
-                取消
-              </Button>
-            )}
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={cn(
-                'rounded-full px-5 active:scale-95 transition-transform motion-reduce:transform-none motion-reduce:transition-none',
-                creating && 'opacity-80'
-              )}
-            >
-              {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立任務中…' : isMaster ? '建立 Master' : '建立任務'}
-            </Button>
-          </div>
-        </div>
-      ) : step === 1 ? (
-        <div className="mt-5 flex justify-end gap-2">
-          {onClose && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              disabled={creating}
-              className="rounded-full"
-            >
-              取消
-            </Button>
-          )}
+      }
+      actions={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={creating} className="flex-1 rounded-full">
+            取消
+          </Button>
           <Button
             size="sm"
-            onClick={() => setStep(2)}
-            disabled={!canGoToStep2}
-            className="rounded-full px-5"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={cn('flex-[2] rounded-full', creating && 'opacity-80')}
           >
-            下一步 →
+            {creating && <Loader2 className="animate-spin" />}
+            {creating ? '建立中…' : isMaster ? '建立 Master' : '建立任務'}
           </Button>
-        </div>
-      ) : (
-        <div className="mt-5 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setStep(1)}
-            disabled={creating}
-            className="rounded-full"
-          >
-            ← 上一步
-          </Button>
-          <div className="flex gap-2">
-            {onClose && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-                disabled={creating}
-                className="rounded-full"
-              >
-                取消
-              </Button>
-            )}
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={cn(
-                'rounded-full px-5 active:scale-95 transition-transform motion-reduce:transform-none motion-reduce:transition-none',
-                creating && 'opacity-80'
-              )}
-            >
-              {creating && <Loader2 className="animate-spin" />}
-              {creating ? '建立任務中…' : isMaster ? '建立 Master' : '建立任務'}
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
-// ── Dialog wrapper ─────────────────────────────────────────────────────────
-interface NewTaskDialogProps extends NewTaskFormProps {
-  open: boolean
-}
-
-export function NewTaskDialog({
-  open,
-  creating,
-  onClose,
-  ...rest
-}: NewTaskDialogProps) {
-  if (!open) return null
-  const handleClose = onClose ?? (() => {})
-  return (
-    <DialogShell
-      title="新增任務"
-      saving={creating}
-      onClose={handleClose}
-      contentClassName="max-w-md rounded-lg p-5"
-    >
-      <NewTaskForm creating={creating} onClose={onClose} {...rest} />
-    </DialogShell>
+        </>
+      }
+    />
   )
 }

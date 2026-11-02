@@ -5,7 +5,7 @@ import { AnimatePresence } from 'motion/react'
 import { KanbanBoard } from '@/components/kanban-board'
 import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
-import type { NewTaskDraft } from '@/components/new-task-dialog'
+import { NewTaskDialog, type NewTaskDraft } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
@@ -164,9 +164,7 @@ export default function HomePage() {
   const gridTerminalsRef = useRef(gridTerminals)
   gridTerminalsRef.current = gridTerminals
   const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
-  // Existing-project folder to prefill in the inline new-task form (null = blank form).
-  const [newTaskInitialProject, setNewTaskInitialProject] = useState<string | null>(null)
-  const [newTaskNonce, setNewTaskNonce] = useState(0)
+  const [newTaskOpen, setNewTaskOpen] = useState(false)
 
   // Which view the top pane shows, and what the Issues & PRs view is narrowed to.
   const [view, setView] = useState<BoardView>('board')
@@ -415,11 +413,8 @@ export default function HomePage() {
   }
 
   const handleOpenNewTask = () => {
-    setView('board')
     setCreateError(null)
-    setNewTaskInitialProject(null)
-    setNewTaskNonce((nonce) => nonce + 1)
-    setSelectedTaskId(null)
+    setNewTaskOpen(true)
   }
 
   const handleConvertGithubItem = async (item: GithubItem, projectPath: string): Promise<string> => {
@@ -470,6 +465,7 @@ export default function HomePage() {
       })
       if (result) {
         setBoard(result.state.board)
+        setNewTaskOpen(false)
         // A task the user just created is never throwaway — open it pinned so
         // the next single-click elsewhere can't discard it.
         openTab(result.task.id, { pin: true })
@@ -651,14 +647,10 @@ export default function HomePage() {
                   onOpenTaskTerminal={openTaskGridTerminal}
                   taskTerminals={gridTerminals}
                   onShowTaskTerminal={showGridTerminal}
-                  autoMode={autoMode}
-                  workstationPath={workstationPath}
                   progress={progress}
                   selectedTaskId={selectedTaskId}
                   onTaskInteract={pinTab}
                   openTabIds={tabs.map((t) => t.taskId)}
-                  initialProjectPath={newTaskInitialProject}
-                  newTaskNonce={newTaskNonce}
                   view={view}
                   onViewChange={setView}
                   taskLinks={taskLinks.links}
@@ -685,14 +677,6 @@ export default function HomePage() {
                       }}
                     />
                   }
-                  creating={creating}
-                  createError={createError}
-                  pickFolder={pickProjectFolder}
-                  loadRecentProjects={listRecentProjects}
-                  loadGitInfo={getGitInfo}
-                  initRepository={initRepository}
-                  detectAgents={detectAgents}
-                  onCreateTask={handleCreateTask}
                 />
                 </div>
                 <div className={view === 'terminals' ? 'h-full' : 'hidden'}>
@@ -715,6 +699,27 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+            <AnimatePresence>
+              {newTaskOpen && (
+                <NewTaskDialog
+                  key="new-task-dialog"
+                  creating={creating}
+                  error={createError}
+                  pickFolder={pickProjectFolder}
+                  loadRecentProjects={listRecentProjects}
+                  loadGitInfo={getGitInfo}
+                  initRepository={initRepository}
+                  detectAgents={detectAgents}
+                  defaultAutoMode={autoMode}
+                  workstationPath={workstationPath}
+                  masters={[...board.in_progress, ...board.backlog]
+                    .filter((t) => t.role === 'master')
+                    .map((t) => ({ id: t.id, title: t.title }))}
+                  onSubmit={handleCreateTask}
+                  onClose={() => setNewTaskOpen(false)}
+                />
+              )}
+            </AnimatePresence>
             <EditTaskDialog
               task={editTask}
               defaultAutoMode={autoMode}

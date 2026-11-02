@@ -1,30 +1,24 @@
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import {
-  ChevronDown,
-  FolderOpen,
-  GitBranch,
-  Loader2,
-  Network,
-} from 'lucide-react'
+import { GitBranch, Loader2, Network } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { DialogShell } from '@/components/ui/dialog-shell'
-import {
-  AgentModelFields,
-  F,
-  useAgentModels,
-  useModelEfforts,
-} from '@/components/new-task-dialog'
+import { fieldClass as F } from '@/components/ui/field'
 import {
   ProjectFolderPicker,
   isProjectMissing,
 } from '@/components/project-folder-picker'
+import { DEFAULT_TASK_EFFORT } from '@/components/task-effort-slider'
 import {
-  DEFAULT_TASK_EFFORT,
-  TaskEffortSlider,
-} from '@/components/task-effort-slider'
-import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
+  PropertyGroup,
+  PropertyNote,
+  PropertyRow,
+  ROW_FIELD,
+  RunSettingsGroup,
+  TaskFormDialog,
+  useAgentModels,
+  useModelEfforts,
+} from '@/components/task-form-layout'
 import { cn } from '@/lib/utils'
 import type {
   AgentCli,
@@ -100,7 +94,6 @@ export function EditTaskDialog({
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
-  const [advancedOpen, setAdvancedOpen] = useState(true)
   const [confirmClose, setConfirmClose] = useState(false)
   const taskSnapshotRef = useRef<Task | null>(null)
   const displayedTask = task ?? taskSnapshotRef.current
@@ -266,39 +259,10 @@ export function EditTaskDialog({
     })
   }
 
-  return (
-    <AnimatePresence>
-      {task && (
-        <DialogShell
-          key={displayedTask.id}
-      title="編輯任務"
-      description="更新任務內容與 agent 設定。"
-      saving={saving}
-      onClose={handleClose}
-      showHeader
-      contentClassName="max-w-2xl"
-      footer={
-        <>
-          <div />
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
-              取消
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className={cn(saving && 'opacity-80')}
-            >
-              {saving && <Loader2 className="animate-spin" />}
-              {saving ? '儲存中…' : '儲存變更'}
-            </Button>
-          </div>
-        </>
-      }
-    >
+  const content = (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {confirmClose && (
-        <div className="mb-4 flex items-center justify-between rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-base">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span className="text-warning">有未儲存的變更，確定要離開？</span>
           <div className="flex gap-1.5">
             <button
@@ -318,169 +282,150 @@ export function EditTaskDialog({
           </div>
         </div>
       )}
+      <input
+        autoFocus
+        name="edit-task-title"
+        aria-label="任務標題"
+        autoComplete="off"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+        }}
+        placeholder="任務標題，例如：實作登入頁面"
+        className="w-full rounded-sm bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      />
+      <textarea
+        name="edit-task-description"
+        aria-label="詳細描述"
+        autoComplete="off"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+        }}
+        placeholder="描述這個任務的目標、需求或背景脈絡…"
+        className={cn(F, 'min-h-32 flex-1 resize-none text-sm leading-6')}
+      />
+      {error && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          {error}
+        </p>
+      )}
+    </div>
+  )
 
-      <div className="space-y-4">
-        <label className="block space-y-1.5">
-          <span className="text-base font-medium">任務標題</span>
-          <input
-            autoFocus
-            name="edit-task-title"
-            autoComplete="off"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="例如：實作登入頁面"
-            className={F}
-          />
-        </label>
-
-        <label className="block space-y-1.5">
-          <span className="text-base font-medium">詳細描述（選填）</span>
-          <textarea
-            name="edit-task-description"
-            autoComplete="off"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            placeholder="描述這個任務的目標、需求或背景脈絡…"
-            className={cn(F, 'resize-y')}
-          />
-        </label>
-
-        <TaskEffortSlider
-          value={effort}
-          onChange={setEffort}
-          levels={effortLevels}
-          disabled={saving}
+  const locationGroup = !isMaster && (
+    <PropertyGroup label="位置">
+      <div className="space-y-1 px-1">
+        <span className="text-sm text-muted-foreground">專案</span>
+        <ProjectFolderPicker
+          compact
+          projectPath={projectPath}
+          recentProjects={recentProjects}
+          disabled={saving || loadingInfo}
+          onSelect={(path) => void selectProject(path)}
+          onBrowse={() => void handleBrowse()}
         />
-
-        <TaskAutoModeToggle
-          value={autoMode}
-          onChange={setAutoMode}
-          disabled={saving}
-        />
-
-        {!isMaster && masters.length > 0 && (
-          <label className="block space-y-1.5">
-            <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-              <Network className="size-3" />
-              所屬 Master
-            </span>
-            <select
-              name="edit-master-id"
-              value={masterId}
-              onChange={(e) => setMasterId(e.target.value)}
-              disabled={saving}
-              className={F}
-            >
-              <option value="">不隸屬任何 master</option>
-              {masters.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {!isMaster && (
-          <>
-            <div className="space-y-1.5">
-              <span className="flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                <FolderOpen className="size-3" />
-                專案資料夾
-              </span>
-              <ProjectFolderPicker
-                projectPath={projectPath}
-                recentProjects={recentProjects}
-                disabled={saving || loadingInfo}
-                onSelect={(path) => void selectProject(path)}
-                onBrowse={() => void handleBrowse()}
-              />
-              {loadingInfo && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-3 animate-spin" />
-                  偵測 Git 狀態中…
-                </p>
-              )}
-              {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm">
-                  這個資料夾不是 Git repository，請改選一個 Git 專案。
-                </p>
-              )}
-            </div>
-
-            {isRepo && hasRemote && (
-              <label className="block space-y-1.5">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                  <GitBranch className="size-3" />
-                  基準分支 (Base Branch)
-                </span>
-                <select
-                  name="edit-base-branch"
-                  value={baseBranch}
-                  onChange={(e) => setBaseBranch(e.target.value)}
-                  disabled={saving || loadingInfo}
-                  className={F}
-                >
-                  {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
-                    <option value={baseBranch}>{baseBranch}</option>
-                  )}
-                  {(gitInfo?.branches ?? []).map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <label className="block space-y-1.5">
-              <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                <GitBranch className="size-3" />
-                分支名稱
-              </span>
-              <input
-                name="edit-branch"
-                autoComplete="off"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                placeholder="例如 feature/login-fix"
-                disabled={saving}
-                className={F}
-              />
-              <span className="block text-sm text-muted-foreground">
-                分支會在卡片開始執行時才建立並推到 origin。
-              </span>
-            </label>
-
-            {hasWorktree && gitFieldsChanged && (
-              <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm text-warning">
-                這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；
-                worktree 有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
-              </p>
-            )}
-          </>
-        )}
-
-        {/* Advanced — agents, workspace (mirrors the new-task dialog). */}
-        <div className="rounded-lg border border-border/50">
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-4 py-3 text-left text-base font-medium transition-colors outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      </div>
+      {loadingInfo && (
+        <PropertyNote>
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" />
+            偵測 Git 狀態中…
+          </span>
+        </PropertyNote>
+      )}
+      {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
+        <PropertyNote tone="danger">這個資料夾不是 Git repository，請改選一個 Git 專案。</PropertyNote>
+      )}
+      {isRepo && hasRemote && (
+        <PropertyRow label="基準分支">
+          <select
+            name="edit-base-branch"
+            value={baseBranch}
+            onChange={(e) => setBaseBranch(e.target.value)}
+            disabled={saving || loadingInfo}
+            className={ROW_FIELD}
           >
-            <span>Advanced</span>
-            <ChevronDown
-              className={cn(
-                'size-4 text-muted-foreground transition-transform motion-reduce:transform-none motion-reduce:transition-none',
-                advancedOpen && 'rotate-180'
-              )}
-            />
-          </button>
-          {advancedOpen && (
-            <div className="space-y-4 border-t border-border/50 p-4">
-              <AgentModelFields
-                title="Agent"
+            {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
+              <option value={baseBranch}>{baseBranch}</option>
+            )}
+            {(gitInfo?.branches ?? []).map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </PropertyRow>
+      )}
+      <PropertyRow label="分支">
+        <input
+          name="edit-branch"
+          autoComplete="off"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          placeholder="例如 feature/login-fix"
+          disabled={saving}
+          className={ROW_FIELD}
+        />
+      </PropertyRow>
+      {hasWorktree && gitFieldsChanged ? (
+        <PropertyNote tone="warning">
+          這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
+        </PropertyNote>
+      ) : (
+        <PropertyNote>分支在卡片開始執行時才建立並推到 origin。</PropertyNote>
+      )}
+      {masters.length > 0 && (
+        <PropertyRow label="隸屬於">
+          <select
+            name="edit-master-id"
+            value={masterId}
+            onChange={(e) => setMasterId(e.target.value)}
+            disabled={saving}
+            className={ROW_FIELD}
+          >
+            <option value="">無</option>
+            {masters.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+        </PropertyRow>
+      )}
+    </PropertyGroup>
+  )
+
+  return (
+    <AnimatePresence>
+      {task && (
+        <TaskFormDialog
+          key={displayedTask.id}
+          title="編輯任務"
+          header={
+            <>
+              <span className="text-sm text-muted-foreground">編輯任務 · Backlog</span>
+              <span
+                title="建立後不能更改角色"
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm',
+                  isMaster ? 'border-master/40 text-master' : 'border-border text-muted-foreground'
+                )}
+              >
+                {isMaster ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
+                {isMaster ? 'Master' : '一般任務'}
+              </span>
+            </>
+          }
+          saving={saving}
+          onClose={handleClose}
+          content={content}
+          sidebar={
+            <>
+              {locationGroup}
+              <RunSettingsGroup
                 agents={agents}
                 detectTimedOut={detectTimedOut}
                 onRetry={() => setDetectKey((k) => k + 1)}
@@ -489,18 +434,32 @@ export function EditTaskDialog({
                 model={model}
                 onModelChange={setModel}
                 models={models}
+                effort={effort}
+                onEffortChange={setEffort}
+                effortLevels={effortLevels}
+                autoMode={autoMode}
+                onAutoModeChange={setAutoMode}
+                disabled={saving}
               />
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-base">
-            {error}
-          </p>
-        )}
-      </div>
-        </DialogShell>
+            </>
+          }
+          actions={
+            <>
+              <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving} className="flex-1 rounded-full">
+                取消
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+                className={cn('flex-[2] rounded-full', saving && 'opacity-80')}
+              >
+                {saving && <Loader2 className="animate-spin" />}
+                {saving ? '儲存中…' : '儲存變更'}
+              </Button>
+            </>
+          }
+        />
       )}
     </AnimatePresence>
   )

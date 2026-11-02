@@ -4,7 +4,7 @@ import {
   useAnimationControls,
   useReducedMotion,
 } from 'motion/react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Plus } from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
@@ -17,7 +17,6 @@ import {
 import { BoardColumns } from '@/components/board-columns'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
-import { NewTaskForm, type NewTaskDraft } from '@/components/new-task-dialog'
 import type { BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
@@ -28,12 +27,9 @@ import {
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type {
-  AgentCli,
   BoardState,
   ColumnId,
-  GitInfo,
   GithubTaskLinks,
-  RecentProjectEntry,
   LaunchIntent,
   Task,
   TaskProgress,
@@ -48,17 +44,13 @@ interface KanbanBoardProps {
   onOpenTaskTerminal: (taskId: string) => void
   taskTerminals: GridTerminal[]
   onShowTaskTerminal: (sessionKey: string) => void
-  /** Board-wide Auto Mode, used by cards that carry no value of their own. */
-  autoMode: boolean
-  /** Workstation root, shown by the create form as the worktree's destination. */
-  workstationPath?: string
   /** Live progress of running cards keyed by task id (from core's transcript reader). */
   progress: Record<string, TaskProgress>
   /** Currently selected task id (shown in the workspace panel). */
   selectedTaskId?: string | null
   /** Select a task from the board (opens its terminal tab). */
   onSelectTask: (taskId: string) => void
-  /** Clear the selection and show a blank new-task form in the lower pane. */
+  /** Open the new-task dialog. */
   onNewTask: () => void
   /** Terminal tab bar, rendered at the top of the lower (workspace) pane. */
   tabBar?: ReactNode
@@ -66,9 +58,6 @@ interface KanbanBoardProps {
   onTaskInteract?: (taskId: string) => void
   /** Task ids that currently have an open terminal tab. */
   openTabIds: string[]
-  /** Pre-fill the inline new-task form with this existing project folder. */
-  initialProjectPath?: string | null
-  newTaskNonce: number
   /** Which view the top pane shows; the workspace below is the same for both. */
   view: BoardView
   onViewChange: (next: BoardView) => void
@@ -76,15 +65,6 @@ interface KanbanBoardProps {
   githubView: ReactNode
   /** Each card's Issue/PR, keyed by task id. */
   taskLinks: Record<string, GithubTaskLinks>
-  /** Props forwarded to the inline NewTaskForm when no task is selected. */
-  creating: boolean
-  createError: string | null
-  pickFolder: () => Promise<string | null>
-  loadRecentProjects: () => Promise<RecentProjectEntry[]>
-  loadGitInfo: (projectPath: string) => Promise<GitInfo | null>
-  initRepository: (projectPath: string) => Promise<GitInfo | null>
-  detectAgents: () => Promise<AgentCli[]>
-  onCreateTask: (draft: NewTaskDraft) => void
 }
 
 interface LaunchEntry {
@@ -151,8 +131,6 @@ export function KanbanBoard({
   onOpenTaskTerminal,
   taskTerminals,
   onShowTaskTerminal,
-  autoMode,
-  workstationPath,
   progress,
   selectedTaskId,
   onSelectTask,
@@ -160,20 +138,10 @@ export function KanbanBoard({
   tabBar,
   onTaskInteract,
   openTabIds,
-  initialProjectPath,
-  newTaskNonce,
   view,
   onViewChange,
   githubView,
   taskLinks,
-  creating,
-  createError,
-  pickFolder,
-  loadRecentProjects,
-  loadGitInfo,
-  initRepository,
-  detectAgents,
-  onCreateTask,
 }: KanbanBoardProps) {
   // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
   // the DOM (just hidden) so PTY state survives switching tasks; it is dropped
@@ -497,27 +465,16 @@ export function KanbanBoard({
                   initial="hidden"
                   animate="visible"
                   variants={surfaceEnterVariants}
-                  className="flex h-full overflow-y-auto p-8"
+                  className="flex h-full items-center justify-center p-8"
                 >
-                  <div className="mx-auto w-full max-w-5xl pb-8">
-                    <NewTaskForm
-                      key={`${initialProjectPath ?? 'new'}:${newTaskNonce}`}
-                      inline
-                      initialProjectPath={initialProjectPath}
-                      creating={creating}
-                      error={createError}
-                      pickFolder={pickFolder}
-                      loadRecentProjects={loadRecentProjects}
-                      loadGitInfo={loadGitInfo}
-                      initRepository={initRepository}
-                      detectAgents={detectAgents}
-                      defaultAutoMode={autoMode}
-                      workstationPath={workstationPath}
-                      masters={[...board.in_progress, ...board.backlog]
-                        .filter((t) => t.role === 'master')
-                        .map((t) => ({ id: t.id, title: t.title }))}
-                      onSubmit={onCreateTask}
-                    />
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <p className="text-base text-muted-foreground">
+                      從上方看板選一張卡片，或建立新的任務。
+                    </p>
+                    <Button size="sm" onClick={onNewTask} className="rounded-full px-4">
+                      <Plus />
+                      新增任務
+                    </Button>
                   </div>
                 </motion.div>
               )}

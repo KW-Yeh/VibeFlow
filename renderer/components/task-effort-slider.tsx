@@ -1,6 +1,6 @@
-import { Gauge } from 'lucide-react'
-
+import { fieldClass } from '@/components/ui/field'
 import { clampEffort } from '@/lib/effort'
+import { cn } from '@/lib/utils'
 import type { AgentEffort, ManualEffort } from '@/lib/types'
 
 const EFFORT_OPTIONS: ReadonlyArray<{
@@ -28,65 +28,39 @@ const EFFORT_OPTIONS: ReadonlyArray<{
  */
 export const DEFAULT_TASK_EFFORT: AgentEffort = 'auto'
 
-export function TaskEffortSlider({
+/** The effort row of a task form: the levels the model accepts, plus auto. */
+export function TaskEffortSelect({
   value,
   onChange,
   levels,
   disabled = false,
+  className,
 }: {
   value: AgentEffort
   onChange: (value: AgentEffort) => void
   /** Levels the selected model accepts; empty when it takes no effort. */
   levels: readonly ManualEffort[]
   disabled?: boolean
+  className?: string
 }) {
   const options = EFFORT_OPTIONS.filter((option) => option.value === 'auto' || levels.includes(option.value))
   const shown = value === 'auto' ? value : clampEffort(value, levels) ?? 'auto'
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((option) => option.value === shown)
-  )
-  const selected = options[selectedIndex]
+  const selected = options.find((option) => option.value === shown) ?? options[0]
 
   return (
-    <div className="space-y-2.5 rounded-lg border border-border/50 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-base font-medium">
-          <Gauge className="size-4 text-muted-foreground" />
-          任務複雜度
-        </span>
-        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-sm font-medium text-primary">
-          {selected.label} · {selected.value}
-        </span>
-      </div>
-      <input
-        type="range"
-        name="task-effort"
-        min={0}
-        max={options.length - 1}
-        step={1}
-        value={selectedIndex}
-        disabled={disabled || options.length === 1}
-        aria-label="任務複雜度"
-        aria-valuetext={`${selected.label} (${selected.value})`}
-        onChange={(event) => {
-          const option = options[Number(event.target.value)]
-          if (option) onChange(option.value)
-        }}
-        className="h-2 w-full cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-50"
-      />
-      <div
-        className="grid text-center text-xs text-muted-foreground"
-        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
-        aria-hidden="true"
-      >
-        {options.map((option) => (
-          <span key={option.value}>{option.label}</span>
-        ))}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {levels.length === 0 ? '這個 model 不支援調整推理強度，啟動時使用模型預設值。' : selected.description}
-      </p>
-    </div>
+    <select
+      name="task-effort"
+      value={selected.value}
+      disabled={disabled || options.length === 1}
+      title={levels.length === 0 ? '這個 model 不支援調整推理強度，啟動時使用模型預設值。' : selected.description}
+      onChange={(event) => onChange(event.target.value as AgentEffort)}
+      className={cn(fieldClass, className)}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label} · {option.value}
+        </option>
+      ))}
+    </select>
   )
 }
