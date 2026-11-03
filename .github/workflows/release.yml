@@ -67,6 +67,7 @@ jobs:
 
       # Playwright drives the runner's preinstalled Chrome / Edge.
       - name: End-to-end (Web UI + fake agent)
+        timeout-minutes: 10
         run: npm run test:e2e
 
       # No claude/codex on the runner.

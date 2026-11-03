@@ -502,7 +502,6 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   const { projectPath: newProjectPath, cleanup: cleanupNewProject } = await makeRepo({ withRemote: false })
   await git(projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
-  t.after(async () => { await cleanup(); await cleanupNewProject(); fs.rmSync(tmp, { recursive: true, force: true }) })
   let folderPicks = 0
   const openedUrls = []
   const jiraSearches = []
@@ -555,6 +554,7 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
     },
   }, bus, staticDir: webDir, token: 'jira-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
+  t.after(async () => { await cleanup(); await cleanupNewProject(); fs.rmSync(tmp, { recursive: true, force: true }) })
   await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
@@ -660,7 +660,6 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   t.after(() => browser.close())
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-terminal-e2e-'))
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
-  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
   setPlatform(createNodePlatform({ userDataDir: tmp }))
   const workstationPath = path.join(tmp, 'workstation')
   fs.mkdirSync(workstationPath)
@@ -683,6 +682,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   core.handlers['vibeflow:setBoard']({ backlog: [first.task], in_progress: [second.task], done: [third.task] })
   const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'terminal-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
+  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
   assert.equal(await page.getByText(/個任務 · .*個專案/).count(), 0)
