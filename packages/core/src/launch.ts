@@ -92,7 +92,7 @@ function toShellPath(p: string): string {
  * shell `if` statement, which that prefix form cannot carry.
  */
 function boardEnvPrefix(
-  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch' | 'worktreePath' | 'masterId'>,
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
@@ -102,6 +102,7 @@ function boardEnvPrefix(
   if (!board) return ''
   const entries: Array<[string, string | undefined]> = [
     ['VIBEFLOW_TASK_ID', task.id],
+    ['VIBEFLOW_MASTER_ID', task.masterId],
     ['VIBEFLOW_PROJECT_PATH', task.projectPath],
     ['VIBEFLOW_BRANCH', task.branch],
     ['VIBEFLOW_BASE_BRANCH', task.baseBranch],
@@ -232,6 +233,37 @@ export function resolveSystemPrompt(custom?: string | null): string {
  * one launch that adds text of VibeFlow's own, because a master is useless
  * without knowing the CLI that makes it one.
  */
+const BOARD_CLI_SETUP = [
+  '先定義這個 shell 函式，之後所有指令都用它，並且一律帶上 --store-path "$VIBEFLOW_STORE_DIR"：',
+  '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
+]
+
+/**
+ * What a card dispatched by a master is told: the master, not the user, is who
+ * it answers to, so it has to report there — otherwise the master only learns
+ * that a turn ended, never what came of it.
+ */
+export function slaveSystemPrompt(opts: { canWrite: boolean }): string {
+  const lines = [
+    '這張卡片由 VibeFlow 的 Master agent 派工並統籌（master 的 id 在 $VIBEFLOW_MASTER_ID）；使用者主要透過 master 跟你協作。',
+    '你收到的 <vibeflow from="…"> 訊息來自 master 或 VibeFlow 本身，照其中的指示做。',
+  ]
+  if (!opts.canWrite) {
+    lines.push('這次啟動無法使用 board CLI，你不能主動回報；完成或卡住時直接在 terminal 寫清楚結果。')
+    return lines.join('\n')
+  }
+  lines.push(
+    '',
+    ...BOARD_CLI_SETUP,
+    '',
+    '回報：任務完成、需要 master 決定、或卡住無法繼續時，立刻用這個指令回報，然後停下來等下一步指示：',
+    '  VF task send --store-path "$VIBEFLOW_STORE_DIR" --task "$VIBEFLOW_MASTER_ID" --text "<回報內容>"',
+    '回報內容要自包含：做了什麼、怎麼驗證、結果；驗收類工作逐項列出通過與未通過的項目及重現步驟；開了 PR 就附上連結。',
+    '沒有 master 要求就不要開 PR。'
+  )
+  return lines.join('\n')
+}
+
 export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean }): string {
   const lines = [
     '你是 VibeFlow 的 Master agent，不屬於任何 repo，工作目錄只是你的筆記區。',
@@ -246,8 +278,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
     return lines.join('\n')
   }
   lines.push(
-    '先定義這個 shell 函式，之後所有指令都用它，並且一律帶上 --store-path "$VIBEFLOW_STORE_DIR"：',
-    '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
+    ...BOARD_CLI_SETUP,
     '',
     '1. 判斷：一張卡做得完就只建一張；涉及多個 repo 或可平行的獨立工作才拆成多張。每張只動一個 repo，各自能獨立驗收。',
     '2. 派工：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容>',
@@ -260,9 +291,13 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
       : '3. 啟動：不要自己啟動卡片。列出你建了哪些卡、建議的啟動順序，等使用者在 VibeFlow 按開始。'
   )
   lines.push(
-    '4. 監聽：VF task list --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" 會回傳每張卡的欄位、是否在跑、todo 進度、活動狀態與 PR。',
-    '   定期查看；卡在等待權限、有 launchError、或長時間沒有活動時，告訴使用者並提出處理方式。',
-    '5. 你不會把卡片移到 Done、不會合併 PR。全部 slave 完成後，整理每張的結果與 PR 連結，交給使用者做最後確認。'
+    '4. 回報會自己送來：slave 做完、要你決定或卡住時會用 task send 回報；slave 卡在權限確認、啟動失敗、session 結束、或回合結束卻沒回報時，VibeFlow 也會通知你。',
+    '   這些訊息以 <vibeflow from="…"> 包住、直接出現在你的輸入裡。不要輪詢 task list；要看細節時才用 VF task show --store-path "$VIBEFLOW_STORE_DIR" --task <id>。',
+    '5. 調度：用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對自己的卡下指示；卡與卡之間不能直接傳話，一律經過你。',
+    '   需要獨立驗收時另開一張驗收卡。驗收回報問題時，把具體問題與重現步驟整理好轉給負責開發的卡修正，修完再請驗收卡複驗，直到通過。',
+    '   task send 回 TARGET_BLOCKED 代表對方卡在權限確認，請使用者到那張卡處理。',
+    '6. PR：驗收通過後，交代開發卡用 pr skill 開 PR（環境裡沒有這個 skill 就用 gh pr create），並回報 PR 連結給你。',
+    '7. 使用者主要只跟你溝通：主動向使用者回報整體進度與需要使用者決定的事。你不會把卡片移到 Done、不會合併 PR；全部完成後整理每張卡的結果與 PR 連結，交給使用者做最後確認。'
   )
   return lines.join('\n')
 }
@@ -451,6 +486,7 @@ export function buildAgentCommand(
     | 'branch'
     | 'baseBranch'
     | 'role'
+    | 'masterId'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -459,11 +495,13 @@ export function buildAgentCommand(
   const agent = taskAgent(task)
   const model = taskModel(task)
   const custom = resolveSystemPrompt(systemPrompt)
-  const sys = task.role === 'master'
-    ? [custom, masterSystemPrompt({ canWrite: Boolean(opts?.boardCli?.cliPath), autoMode: opts?.autoMode === true })]
-        .filter(Boolean)
-        .join('\n\n')
-    : custom
+  const canWrite = Boolean(opts?.boardCli?.cliPath)
+  const role = task.role === 'master'
+    ? masterSystemPrompt({ canWrite, autoMode: opts?.autoMode === true })
+    : task.masterId
+      ? slaveSystemPrompt({ canWrite })
+      : null
+  const sys = role ? [custom, role].filter(Boolean).join('\n\n') : custom
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.

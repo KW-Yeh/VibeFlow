@@ -4,14 +4,14 @@ import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
-import { findTask } from '../../core/src/store'
+import { findTask, isMasterTask } from '../../core/src/store'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
 import type { ColumnId } from '../../core/src/store'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'send', 'artifact']
 const ROLES = ['slave', 'master']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
@@ -25,6 +25,7 @@ Usage:
   vibeflow task start --task <id> [options]
   vibeflow task list [--master <id>] [options]
   vibeflow task show --task <id> [options]
+  vibeflow task send --task <id> --text <text> [options]
   vibeflow task artifact add --file <path> [options]
 
 task create options:
@@ -33,7 +34,8 @@ task create options:
   --project <path>       Target project directory (required for a slave)
   --work-dir <path>      Master only: run in this existing folder (git or not)
                          instead of one VibeFlow creates
-  --master <id>          Dispatch the new card under this master card
+  --master <id>          Dispatch the new card under this master card (default: the
+                         calling card, when a master runs this from its own shell)
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
@@ -64,12 +66,17 @@ task update options:
   At least one of --title / --prompt / --status / --master is required. Branch,
   worktree and project path are provisioned on disk and cannot be changed here.
 
-task start / list / show (need the running VibeFlow host):
+task start / list / show / send (need the running VibeFlow host):
   start --task <id>      Move a Backlog card to In Progress and start its agent,
                          the same as dragging it in the app
   list [--master <id>]   Every card, or one master's cards, with column, whether
                          its agent is running, todo progress, activity and PR
   show --task <id>       The same summary for one card
+  send --task <id> --text <text> [--force] [--from <id>]
+                         Type a message into that card's agent, tagged with the
+                         sender. Only a master and its own cards can message each
+                         other. --from defaults to VIBEFLOW_TASK_ID; --force types
+                         even into a permission dialog
 
 task artifact add options:
   --file <path>         Copy a file into the card's user-facing Artifacts folder
@@ -160,6 +167,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         'auto-mode':   { type: 'string' },
         attach:        { type: 'string', multiple: true },
         file:          { type: 'string' },
+        text:          { type: 'string' },
+        from:          { type: 'string' },
+        force:         { type: 'boolean' },
         'store-path':  { type: 'string' },
         profile:       { type: 'string' },
         help:          { type: 'boolean', short: 'h' },
@@ -248,11 +258,15 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     fail('ATTACHMENT_READ_FAILED', `無法讀取附件：${(err as Error).message}`)
   }
 
+  // A master dispatching from its own shell owns what it creates.
+  const caller = process.env.VIBEFLOW_TASK_ID ? findTask(process.env.VIBEFLOW_TASK_ID) : undefined
+  const masterId = values.master ?? (!master && caller && isMasterTask(caller) ? caller.id : undefined)
+
   const { task, storePath: resolvedPath } = await createTaskFromInput({
     projectPath: values.project,
     role: master ? 'master' : undefined,
     workDir: values['work-dir'],
-    masterId: values.master,
+    masterId,
     title: values.title!,
     description: values.prompt,
     status: (values.status ?? 'backlog') as ColumnId,
@@ -285,7 +299,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   }
 }
 
-const HOST_COMMANDS = ['start', 'list', 'show']
+const HOST_COMMANDS = ['start', 'list', 'show', 'send']
 
 /**
  * Starting a card runs its agent, and only the host owns sessions; summaries
@@ -294,10 +308,14 @@ const HOST_COMMANDS = ['start', 'list', 'show']
  */
 async function hostCommand(
   sub: string,
-  values: { task?: string; master?: string },
+  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean },
   storePath: string
 ): Promise<Record<string, unknown>> {
   if (sub !== 'list' && !values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
+  const from = values.from ?? process.env.VIBEFLOW_TASK_ID
+  if (sub === 'send' && (!values.text || !from)) {
+    fail('MISSING_ARGUMENT', 'task send needs --text and --from (or VIBEFLOW_TASK_ID)')
+  }
   const lock = liveHost(storePath)
   if (!lock) fail('HOST_NOT_RUNNING', `No VibeFlow host is running for ${storePath}. Start it with \`vibeflow\` first.`)
   const remote = connectToHost(lock)
@@ -306,12 +324,22 @@ async function hostCommand(
       const { task } = await remote.api.startTask(values.task!)
       return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null } }
     }
+    if (sub === 'send') {
+      try {
+        return await remote.api.sendMessage({ from: from!, to: values.task!, text: values.text!, force: values.force === true })
+      } catch (err) {
+        // The agent acts on why it was refused (blocked, not running, …).
+        const e = err as { code?: string; message?: string }
+        fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
+      }
+    }
     if (sub === 'show') {
       const [task] = await remote.api.taskSummaries({ taskId: values.task })
       return { task }
     }
     return { tasks: await remote.api.taskSummaries(values.master ? { masterId: values.master } : undefined) }
   } catch (err) {
+    if (err instanceof CliFailure) throw err
     fail('HOST_ERROR', (err as Error).message)
   } finally {
     remote.close()

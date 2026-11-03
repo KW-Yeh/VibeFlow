@@ -34,6 +34,11 @@ export interface SessionBackend {
    */
   start(key: string, options: SessionStartOptions): Promise<StartResult>
   write(key: string, data: string): void
+  /**
+   * False when the session runs but core holds no client to write through (tmux
+   * after a host restart, before anything re-attached): a write would be lost.
+   */
+  isAttached?(key: string): boolean
   resize(key: string, cols: number, rows: number): void
   /** End the session. */
   kill(key: string): Promise<void>

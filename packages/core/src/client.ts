@@ -190,6 +190,9 @@ export function createBridge(t: BridgeTransport) {
   /** Cards as a master sees them; filter by master or a single card. */
   taskSummaries: (filter?: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> =>
     t.invoke('task:summaries', filter),
+  /** Type a message into another card's agent: a master to its cards, a card to its master. */
+  sendMessage: (payload: { from: string; to: string; text: string; force?: boolean }): Promise<{ delivered: true; queuedMs: number }> =>
+    t.invoke('vibeflow:sendMessage', payload),
   /** Clear prior execution state and prepare a fresh run of this task. */
   resetTaskRun: (
     taskId: string

@@ -86,6 +86,8 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
+import { createMailbox, frameMessage, isBlocked } from './mailbox'
+import { createNotifier } from './notifier'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
@@ -198,6 +200,12 @@ export class InvalidRequestError extends Error {
 }
 
 const STANDALONE_KEY = /^terminal_[0-9a-f-]{36}$/
+
+const MAX_MESSAGE_LENGTH = 20_000
+
+function coded(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code })
+}
 
 function invalid(message: string): never {
   throw new InvalidRequestError(message)
@@ -317,7 +325,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const progress = createProgressTracker({
     homeDir: home,
     codexHomes: () => [path.join(home, '.codex'), ...(libraryCodexHome ? [libraryCodexHome] : [])],
-    onUpdate: (taskId, value) => bus.emit('progress:update', { taskId, progress: value }),
+    onUpdate: (taskId, value) => {
+      bus.emit('progress:update', { taskId, progress: value })
+      notifier.activity(taskId, value.activity)
+      notifier.retry(taskId)
+    },
     onNotify: (taskId, list) => {
       const prefs = resolveNotificationSettings(getSettings())
       if (!prefs.enabled) return
@@ -330,6 +342,31 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const task = findTask(taskId)
       if (!task || !notifications.length) return
       bus.emit('progress:notify', { taskId, title: task.title, notifications })
+    },
+  })
+
+  // Everything typed into a card's agent goes through here, a person's keys too,
+  // so a message never lands inside a dialog or in the middle of someone's typing.
+  const agentActivity = (key: string) => (progress.isTracking(key) ? progress.snapshot(key)?.activity ?? null : null)
+  const mailbox = createMailbox({
+    write: (key, data) => sessions.write(key, data),
+    activity: agentActivity,
+  })
+
+  const notifier = createNotifier({
+    cardOf: (taskId) => {
+      const task = findTask(taskId)
+      return task?.masterId ? { title: task.title, masterId: task.masterId } : null
+    },
+    canReceive: async (masterId) => {
+      const master = findTask(masterId)
+      if (!master || !isMasterTask(master) || columnOf(master.id) !== 'in_progress') return 'never'
+      if (!(await sessions.isAlive(master.id))) return 'later'
+      return isBlocked(agentActivity(master.id)) ? 'later' : 'yes'
+    },
+    deliver: async (masterId, text) => {
+      await attachAgent(masterId)
+      await mailbox.deliver(masterId, frameMessage(null, text))
     },
   })
 
@@ -389,6 +426,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     standaloneTerminals.delete(key)
     terminalDirectories.delete(key)
     unwatchSubAgents(key)
+    mailbox.forget(key)
   }
 
   function isStandaloneKey(key: string): boolean {
@@ -541,6 +579,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     }
     setBoard(next)
     bus.emit('state:changed', getState())
+    notifier.launchFailed(taskId, launchError)
   }
 
   let folderDialog: Promise<PickFolderResult> | null = null
@@ -584,7 +623,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       cols: typeof p.cols === 'number' ? p.cols : undefined,
       rows: typeof p.rows === 'number' ? p.rows : undefined,
       // Session ended (natural exit included), so stop its watcher.
-      onExit: () => unwatchSubAgents(key),
+      onExit: () => {
+        unwatchSubAgents(key)
+        if (key === task.id) notifier.exited(task.id)
+      },
     })
     terminalDirectories.set(key, cwd)
     watchSubAgents(key, cwd, (subAgents) => {
@@ -597,6 +639,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (current) trackProgress(current)
     }
     return result
+  }
+
+  /** A running agent nobody has re-attached since the host started cannot be typed into yet. */
+  async function attachAgent(taskId: string): Promise<void> {
+    const task = findTask(taskId)
+    if (task && sessions.isAttached?.(taskId) === false) await startTaskSession(task, taskId, { taskId })
   }
 
   async function summarizeTasks(filter: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> {
@@ -954,11 +1002,31 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     // Every card on the board, or one master's cards, as the CLI and a master's
     // agent read them.
     'task:summaries': (payload) => {
-      const p = payload === undefined ? {} : obj<{ masterId?: unknown; taskId?: unknown }>(payload, 'payload')
+      const p = payload === undefined || payload === null ? {} : obj<{ masterId?: unknown; taskId?: unknown }>(payload, 'payload')
       return summarizeTasks({
         masterId: p.masterId === undefined ? undefined : requireTask(p.masterId).id,
         taskId: p.taskId === undefined ? undefined : requireTask(p.taskId).id,
       })
+    },
+
+    // One card's agent talks to another's: a master to its own cards, a card to
+    // its master, nothing else — cards coordinate through their master.
+    'vibeflow:sendMessage': async (payload) => {
+      const p = obj<{ from: unknown; to: unknown; text: unknown; force?: unknown }>(payload, 'payload')
+      const from = findTask(str(p.from, 'from'))
+      const to = findTask(str(p.to, 'to'))
+      if (!from || !to) throw coded('UNKNOWN_TASK', `unknown task ${!from ? String(p.from) : String(p.to)}`)
+      const related = (isMasterTask(from) && to.masterId === from.id) || (isMasterTask(to) && from.masterId === to.id)
+      if (!related) throw coded('NOT_RELATED', '只有 master 與它自己的卡片之間可以互傳訊息')
+      const text = str(p.text, 'text').trim()
+      if (!text) invalid('text must not be empty')
+      if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
+      if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
+      // Counted when asked, not when typed: the turn may end while this waits for quiet.
+      if (isMasterTask(to)) notifier.reported(from.id)
+      await attachAgent(to.id)
+      const { queuedMs } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
+      return { delivered: true, queuedMs }
     },
 
     'terminal:start': async (payload) => {
@@ -1054,7 +1122,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
     'pty:input': (payload) => {
       const p = obj<{ sessionKey: unknown; data: unknown }>(payload, 'payload')
-      sessions.write(requireSessionKey(p.sessionKey), str(p.data, 'data'))
+      mailbox.userInput(requireSessionKey(p.sessionKey), str(p.data, 'data'))
     },
 
     'pty:resize': (payload) => {

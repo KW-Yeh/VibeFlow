@@ -149,6 +149,7 @@ npm run vibeflow -- task create --project <repo> --title "…" --prompt "…" --
 npm run vibeflow -- task start --task <id>          # Backlog → In Progress + agent starts
 npm run vibeflow -- task list [--master <id>]       # column, running, todos x/y, activity, PR
 npm run vibeflow -- task show --task <id>
+npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a message into that card's agent
 ```
 
 - A master keeps its folder in `worktreePath` (default `<storeDir>/masters/<id>/work`,
@@ -157,12 +158,26 @@ npm run vibeflow -- task show --task <id>
   operation must check `isMasterTask` first** (`gitWorktree()` in `service.ts`).
 - Deleting a master removes only `<storeDir>/masters/<id>` and clears `masterId` on
   its cards; a `--work-dir` folder is never deleted.
-- `start` / `list` / `show` talk to the running host (lock file → WebSocket),
+- `start` / `list` / `show` / `send` talk to the running host (lock file → WebSocket),
   because only the host owns agent sessions and live progress; without one they
   fail with `HOST_NOT_RUNNING`. In a task shell the store defaults to
   `VIBEFLOW_STORE_DIR`.
 - `vibeflow:startTask` does what dragging a card into In Progress does, headlessly.
   A frontend that later opens the card re-attaches to the running session.
+- `task create` run from a master's shell (`VIBEFLOW_TASK_ID` is a master) puts the
+  new card under it without `--master`.
+- **Masters and their cards talk through the host, not by polling.** `task send`
+  (`vibeflow:sendMessage`) types a `<vibeflow from="<id> <title>">` message into the
+  other card's agent; only a master and its own cards may (`NOT_RELATED` otherwise).
+  What a card cannot say itself — permission dialog, `launchError`, session ended, a
+  turn that ended without a `task send` to its master — `notifier.ts` tells the master,
+  once each, batched, held while the master is on a dialog or not running, dropped
+  once it leaves In Progress. Pending notes live in host memory only.
+- **Everything typed into an agent goes through `mailbox.ts`**, a person's keys
+  (`pty:input`) included: one bracketed paste + Enter, never into a permission dialog
+  unless forced (`TARGET_BLOCKED`), only after the person stopped typing for
+  `VIBEFLOW_QUIET_MS` (3 s), and never split by another write. Codex reports no
+  permission dialog, so for Codex that guard and the blocked note do not apply.
 
 ### CLI artifact delivery
 
@@ -177,9 +192,11 @@ not an injected prompt.
 ### What a launch sends
 
 A launch's prompt is exactly the user's custom system prompt (Settings) plus the
-card's title and description — nothing else. The single exception is a master
-card, whose system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to
-dispatch, start and follow cards with the board CLI, following its auto mode. The Library (`library.ts`) is storage
+card's title and description — nothing else. Two exceptions: a master card, whose
+system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to dispatch, start
+and steer cards with the board CLI, following its auto mode; and a card with a
+`masterId`, which gets `slaveSystemPrompt()`: who its master is and to report there
+with `task send`. The Library (`library.ts`) is storage
 only: no Library skill, prompt snippet or script is loaded or injected
 (`buildAgentCommand` adds no `--plugin-dir` and no `CODEX_HOME`). Skills the agent
 CLIs discover on their own (`~/.claude/skills`, the project's `.claude/skills`,
@@ -194,6 +211,7 @@ put more cards on the board it is itself running on (see `boardEnvPrefix` in
 | Variable | Value |
 |---|---|
 | `VIBEFLOW_TASK_ID` | the card's id — what `task update --task` takes |
+| `VIBEFLOW_MASTER_ID` | only on a master's card: its master's id — what `task send --task` takes to report |
 | `VIBEFLOW_PROJECT_PATH` | the card's project — what `task create --project` takes |
 | `VIBEFLOW_BRANCH` / `VIBEFLOW_BASE_BRANCH` | the card's branch and its base |
 | `VIBEFLOW_STORE_DIR` | store dir of the **running** app — pass it as `--store-path` instead of guessing `--profile` |

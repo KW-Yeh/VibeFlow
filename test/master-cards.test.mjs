@@ -8,7 +8,7 @@ import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput, updateTaskFromInput } from '../packages/core/src/tasks.ts'
-import { buildAgentCommand, masterSystemPrompt } from '../packages/core/src/launch.ts'
+import { buildAgentCommand, masterSystemPrompt, slaveSystemPrompt } from '../packages/core/src/launch.ts'
 import { exists, makeRepo, writeFile } from './support/repo.mjs'
 
 function fakeSessions() {
@@ -16,13 +16,14 @@ function fakeSessions() {
   return {
     kind: 'pty',
     starts: [],
+    writes: [],
     alive,
     async start(key, opts) {
       this.starts.push({ key, ...opts })
       alive.add(key)
       return { pid: 1, scrollback: null }
     },
-    write() {},
+    write(key, data) { this.writes.push({ key, data }) },
     resize() {},
     async kill(key) { alive.delete(key) },
     async isAlive(key) { return alive.has(key) },
@@ -174,6 +175,18 @@ test('summaries list a master’s cards with where they are and whether they run
   assert.equal(byId[a.id].masterId, master.id)
 })
 
+test('summaries without a filter list every card, also when the filter arrives as null over the WebSocket', async (t) => {
+  const { core } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Summary master' })
+  const { task: slave } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'S', masterId: master.id })
+  const { task: loose } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Loose' })
+
+  const unfiltered = (await core.handlers['task:summaries']()).map((s) => s.id).sort()
+  for (const id of [master.id, slave.id, loose.id]) assert.ok(unfiltered.includes(id))
+  assert.deepEqual((await core.handlers['task:summaries'](null)).map((s) => s.id).sort(), unfiltered)
+})
+
 test('deleting a master frees its cards and removes only the folder VibeFlow made', async (t) => {
   const { core } = setup(t)
   const projectPath = await slaveRepo(t)
@@ -243,4 +256,134 @@ test('an extra terminal on a master opens in its folder, whatever its column', a
   const key = 'terminal_11111111-2222-4333-8444-555555555555'
   await core.handlers['terminal:start']({ sessionKey: key, taskId: task.id })
   assert.equal(sessions.starts.at(-1).cwd, path.join(task.workspacePath, 'work'))
+})
+
+async function masterWithCards(t) {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const create = (input) => core.handlers['vibeflow:createTask'](input).then((r) => r.task)
+  const master = await create({ role: 'master', title: 'Lead' })
+  const other = await create({ role: 'master', title: 'Other lead' })
+  const dev = await create({ projectPath, title: 'Dev', masterId: master.id })
+  const qa = await create({ projectPath, title: 'QA', masterId: master.id })
+  const stray = await create({ projectPath, title: 'Stray', masterId: other.id })
+  for (const card of [master, other, dev, qa, stray]) sessions.alive.add(card.id)
+  const send = (from, to, text = 'hello') => core.handlers['vibeflow:sendMessage']({ from: from.id, to: to.id, text })
+  return { core, sessions, master, other, dev, qa, stray, send }
+}
+
+test('a master and its own cards message each other, tagged with the sender', async (t) => {
+  const { sessions, master, dev, send } = await masterWithCards(t)
+  assert.deepEqual(await send(master, dev, 'fix the login test').then((r) => r.delivered), true)
+  await send(dev, master, 'done: PR #12')
+  const [toDev, enter, toMaster] = sessions.writes
+  assert.equal(toDev.key, dev.id)
+  assert.ok(toDev.data.startsWith(`\x1b[200~<vibeflow from="${master.id} Lead">\n`))
+  assert.ok(toDev.data.includes('fix the login test'))
+  assert.deepEqual(enter, { key: dev.id, data: '\r' })
+  assert.equal(toMaster.key, master.id)
+  assert.ok(toMaster.data.includes(`from="${dev.id} Dev"`))
+})
+
+test('cards outside one master relationship cannot message each other', async (t) => {
+  const { core, sessions, master, other, dev, qa, stray, send } = await masterWithCards(t)
+  const refusedWith = (code) => (err) => err.code === code
+  await assert.rejects(send(dev, qa), refusedWith('NOT_RELATED'), 'two cards of one master go through it')
+  await assert.rejects(send(stray, master), refusedWith('NOT_RELATED'), "another master's card")
+  await assert.rejects(send(master, stray), refusedWith('NOT_RELATED'))
+  await assert.rejects(send(master, other), refusedWith('NOT_RELATED'), 'masters do not talk to each other')
+  await assert.rejects(
+    core.handlers['vibeflow:sendMessage']({ from: master.id, to: 'deadbeef', text: 'x' }),
+    refusedWith('UNKNOWN_TASK')
+  )
+  sessions.alive.delete(dev.id)
+  await assert.rejects(send(master, dev), refusedWith('NOT_RUNNING'))
+  await assert.rejects(send(master, qa, '   '), refusedWith('INVALID_REQUEST'))
+  assert.equal(sessions.writes.length, 0)
+})
+
+test("a person's keys reach the agent untagged", async (t) => {
+  const { core, sessions, dev } = await masterWithCards(t)
+  core.handlers['pty:input']({ sessionKey: dev.id, data: 'y' })
+  assert.deepEqual(sessions.writes, [{ key: dev.id, data: 'y' }])
+})
+
+test("a master's card knows its master and how to report; any other card launches as before", () => {
+  const boardCli = { storeDir: '/s', cliPath: '/cli/vibeflow.mjs' }
+  const base = { id: 'abcd1234', title: 'T', worktreePath: '/w', branch: 'vf-abcd1234', projectPath: '/p', agentCli: 'claude' }
+  const slave = buildAgentCommand({ ...base, masterId: 'feed0001' }, 'house rules', { boardCli, autoMode: true })
+  assert.ok(slave.includes("VIBEFLOW_MASTER_ID='feed0001'"))
+  assert.ok(slave.includes('VF task send'))
+  assert.ok(slave.includes('house rules'))
+  assert.ok(!slave.includes('VF task start'), 'the master instructions stay with masters')
+  for (const agentCli of ['claude', 'codex']) {
+    const plain = buildAgentCommand({ ...base, agentCli }, 'house rules', { boardCli, autoMode: true })
+    assert.ok(!plain.includes('VIBEFLOW_MASTER_ID'))
+    assert.ok(!plain.includes('VF task send'))
+    assert.ok(!plain.includes('master'))
+  }
+  assert.ok(!slaveSystemPrompt({ canWrite: false }).includes('VF task send'), 'no CLI, no command it cannot run')
+})
+
+test("VibeFlow tells a running master when one of its cards' session ends", async (t) => {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
+  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
+  await core.handlers['vibeflow:startTask'](master.id)
+  await core.handlers['vibeflow:startTask'](dev.id)
+  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await new Promise((r) => setTimeout(r, 400))
+  const toMaster = sessions.writes.filter((w) => w.key === master.id)
+  assert.equal(toMaster.length, 2, 'one paste and its Enter')
+  assert.ok(toMaster[0].data.includes('<vibeflow from="vibeflow">'))
+  assert.ok(toMaster[0].data.includes(dev.id))
+  assert.ok(toMaster[0].data.includes('session 已結束'))
+})
+
+test('news for a master that is not running is dropped, never typed into a shell', async (t) => {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
+  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
+  await core.handlers['vibeflow:startTask'](dev.id)
+  sessions.alive.add(master.id)
+  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await new Promise((r) => setTimeout(r, 400))
+  assert.equal(sessions.writes.length, 0, 'the master is still in Backlog')
+})
+
+test('a master waits for reports instead of polling, relays fixes, and has its cards open the PR', () => {
+  const prompt = masterSystemPrompt({ canWrite: true, autoMode: true })
+  assert.ok(!prompt.includes('定期查看'))
+  assert.ok(prompt.includes('不要輪詢'))
+  assert.ok(prompt.includes('VF task send'))
+  assert.ok(prompt.includes('驗收卡'))
+  assert.ok(prompt.includes('pr skill'))
+  assert.ok(prompt.includes('不會合併 PR'))
+  assert.ok(prompt.includes('不會把卡片移到 Done'))
+})
+
+test('a running agent nobody re-attached since a host restart is attached before it is typed into', async (t) => {
+  const { core, sessions, master, dev, send } = await masterWithCards(t)
+  await core.handlers['vibeflow:startTask'](dev.id)
+  const attached = new Set()
+  sessions.isAttached = (key) => attached.has(key)
+  const start = sessions.start.bind(sessions)
+  sessions.start = async (key, opts) => {
+    attached.add(key)
+    return start(key, opts)
+  }
+  sessions.starts.length = 0
+  await send(master, dev)
+  const reattach = sessions.starts.find((s) => s.key === dev.id)
+  assert.ok(reattach, 'the session was re-attached')
+  assert.equal(reattach.command, undefined, 're-attached, not relaunched')
+  assert.ok(sessions.writes.some((w) => w.key === dev.id && w.data.includes('hello')))
 })

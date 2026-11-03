@@ -14,7 +14,7 @@ import {
   writeAttachments,
 } from '@/lib/api'
 import type { LaunchIntent } from '@/lib/types'
-import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
+import { fitColumnsWithinViewport, waitForLayoutBox } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
 import { ArrowDown, Bot, Undo2 } from 'lucide-react'
@@ -118,6 +118,7 @@ export function TaskTerminal({
   // re-running the heavy terminal-init effect.
   const readyRef = useRef(false)
   const sentNonceRef = useRef(-1)
+  const stopWaitingForLayoutRef = useRef<(() => void) | null>(null)
   const runningCommandRef = useRef(false)
   const launchCmdRef = useRef<LaunchIntent | null | undefined>(launchCommand)
   const launchNonceRef = useRef(launchNonce)
@@ -270,6 +271,8 @@ export function TaskTerminal({
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
     let scrollCheckTimer: ReturnType<typeof setTimeout> | undefined
     let offWheel: (() => void) | undefined
+    const waitingForLayout = new AbortController()
+    stopWaitingForLayoutRef.current = () => waitingForLayout.abort()
 
     void (async () => {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
@@ -327,6 +330,10 @@ export function TaskTerminal({
       }))
       term.open(containerRef.current)
       const fitToVisibleViewport = () => {
+        // A hidden page has no box to fit: FitAddon would read the host's `100%`
+        // as 100px and shrink the agent's PTY to a few columns until it is shown.
+        const host = containerRef.current
+        if (!host || host.clientWidth === 0 || host.clientHeight === 0) return
         fit.fit()
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
         const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
@@ -344,6 +351,9 @@ export function TaskTerminal({
       // before a resize reaches it is laid out for the old width, and its
       // relative-cursor redraws then drift until the next full repaint.
       await document.fonts.ready
+      // An agent launch must not wait for the user to open the page; anything
+      // else attaches only once it can be born at its real size.
+      if (!launchCmdRef.current) await waitForLayoutBox(containerRef.current, waitingForLayout.signal)
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       if (disposed || termRef.current !== term) return
       fitToVisibleViewport()
@@ -496,6 +506,8 @@ export function TaskTerminal({
 
     return () => {
       disposed = true
+      waitingForLayout.abort()
+      stopWaitingForLayoutRef.current = null
       readyRef.current = false
       offData?.()
       offExit?.()
@@ -512,6 +524,7 @@ export function TaskTerminal({
 
   // Launch a new agent command when the parent bumps the nonce while mounted.
   useEffect(() => {
+    if (launchCommand) stopWaitingForLayoutRef.current?.()
     maybeLaunch()
   }, [launchCommand, launchNonce, maybeLaunch])
 
