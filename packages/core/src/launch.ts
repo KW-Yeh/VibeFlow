@@ -284,7 +284,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
     '2. 派工：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容>',
     '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——slave 看不到你的對話。',
     '   標題要短、彼此一眼分得出來：以這張卡負責的部分開頭（例如「後端：…」「驗收：…」），不要讓多張卡共用同一段開頭。',
-    '   需要時可加 --agent / --model / --effort / --base-branch。',
+    '   預設不要加 --model / --effort：沒指定時 Jev 會依任務複雜度挑模型與 effort；只有任務明確需要特定模型或 effort 時才指定。需要時可加 --agent / --base-branch。',
   )
   lines.push(
     opts.autoMode
@@ -306,14 +306,25 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
 
 /** Build the initial prompt fed to the agent from a card's title + description. */
 export function buildPrompt(
-  task: Pick<Task, 'title' | 'description'>
+  task: Pick<Task, 'title' | 'description'>,
+  preface?: LaunchPreface
 ): string {
   const lines = [`任務標題：${task.title}`]
   const description = task.description?.trim()
   if (description) {
     lines.push('', '任務描述：', description)
   }
+  const context = preface?.context.trim()
+  if (preface && context) {
+    lines.push('', `前置分析（${preface.model}，僅供參考）：`, context)
+  }
   return lines.join('\n')
+}
+
+/** A read-only scout's analysis of the repo, handed to the agent after the card text. */
+export interface LaunchPreface {
+  model: string
+  context: string
 }
 
 /**
@@ -361,6 +372,8 @@ export interface LaunchOptions {
    * read-only for the agent.
    */
   boardCli?: BoardCliLaunchInfo
+  /** Jev's scout analysis for this run; added to the first prompt only. */
+  preface?: LaunchPreface
   /**
    * The card's Auto Mode: whether the agent may act without asking for
    * approval. ON gives Claude `--permission-mode auto` and Codex
@@ -503,12 +516,16 @@ export function buildAgentCommand(
     : task.masterId
       ? slaveSystemPrompt({ canWrite })
       : null
-  const sys = role ? [custom, role].filter(Boolean).join('\n\n') : custom
+  // A master's card answers to the master alone, so the user's custom prompt
+  // (written for cards the user drives) is left out.
+  const sys = task.masterId && task.role !== 'master'
+    ? role ?? ''
+    : role ? [custom, role].filter(Boolean).join('\n\n') : custom
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
   const prompt = includeTaskPrompt && !opts?.resume
-    ? buildPrompt(task)
+    ? buildPrompt(task, opts?.preface)
     : ''
   // An agent-only launch is intentionally independent from the task's pinned
   // conversation. Claude creates a fresh interactive session of its own.

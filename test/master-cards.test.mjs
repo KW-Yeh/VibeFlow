@@ -313,13 +313,14 @@ test("a person's keys reach the agent untagged", async (t) => {
 test("a master's card knows its master and how to report; any other card launches as before", () => {
   const boardCli = { storeDir: '/s', cliPath: '/cli/vibeflow.mjs' }
   const base = { id: 'abcd1234', title: 'T', worktreePath: '/w', branch: 'vf-abcd1234', projectPath: '/p', agentCli: 'claude' }
-  const slave = buildAgentCommand({ ...base, masterId: 'feed0001' }, 'house rules', { boardCli, autoMode: true })
-  assert.ok(slave.includes("VIBEFLOW_MASTER_ID='feed0001'"))
-  assert.ok(slave.includes('VF task send'))
-  assert.ok(slave.includes('house rules'))
-  assert.ok(!slave.includes('VF task start'), 'the master instructions stay with masters')
   for (const agentCli of ['claude', 'codex']) {
+    const slave = buildAgentCommand({ ...base, agentCli, masterId: 'feed0001' }, 'house rules', { boardCli, autoMode: true })
+    assert.ok(slave.includes("VIBEFLOW_MASTER_ID='feed0001'"))
+    assert.ok(slave.includes('VF task send'))
+    assert.ok(!slave.includes('house rules'), `${agentCli}: a master's card follows the master, not the custom prompt`)
+    assert.ok(!slave.includes('VF task start'), 'the master instructions stay with masters')
     const plain = buildAgentCommand({ ...base, agentCli }, 'house rules', { boardCli, autoMode: true })
+    assert.ok(plain.includes('house rules'), `${agentCli}: other cards keep the custom prompt`)
     assert.ok(!plain.includes('VIBEFLOW_MASTER_ID'))
     assert.ok(!plain.includes('VF task send'))
     assert.ok(!plain.includes('master'))
@@ -369,6 +370,21 @@ test('a master waits for reports instead of polling, relays fixes, and has its c
   assert.ok(prompt.includes('不會合併 PR'))
   assert.ok(prompt.includes('不會把卡片移到 Done'))
   assert.ok(prompt.includes('<id>「<標題>」'))
+})
+
+test('a master leaves model and effort to Jev unless a card needs a specific one', () => {
+  const prompt = masterSystemPrompt({ canWrite: true, autoMode: true })
+  assert.ok(prompt.includes('預設不要加 --model / --effort'))
+  assert.ok(prompt.includes('Jev'))
+})
+
+test('a scout analysis follows the card text in the first prompt only', () => {
+  const base = { id: 'abcd1234', title: 'T', description: 'D', worktreePath: '/w', agentCli: 'claude' }
+  const preface = { model: 'opus', context: '影響 auth.ts' }
+  const first = buildAgentCommand(base, '', { preface })
+  assert.ok(first.includes('前置分析（opus，僅供參考）'))
+  assert.ok(first.indexOf('任務描述') < first.indexOf('前置分析'))
+  assert.ok(!buildAgentCommand(base, '', { preface, resume: true }).includes('前置分析'), 'a resume sends no prompt')
 })
 
 test('a running agent nobody re-attached since a host restart is attached before it is typed into', async (t) => {
