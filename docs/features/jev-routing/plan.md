@@ -100,4 +100,26 @@
 
 ## 實作與驗證紀錄
 
-（尚未實作）
+2026-11-03 實作完成，commits：`4fdfc9a`（launch：slave prompt、前置分析、master 文案）、`6095d98`（jev-router）、`14ebf64`（service 接線、TaskSummary）、`d0c07db`（Web UI）、`258415f`（文件）。
+
+| 檢查 | 結果 |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | 通過 |
+| `npx tsc --noEmit -p renderer/tsconfig.json` | 通過 |
+| `npm test` | 518 tests，511 pass、0 fail（其餘為既有 skip） |
+| `npm run build:web` | 通過 |
+| `npm run test:e2e` | 3/3 pass |
+| scout 旗標 | 實際執行 `claude -p --model haiku --permission-mode plan --effort low` 與 `codex exec --model gpt-5.6-luna -c model_reasoning_effort=low --sandbox read-only --skip-git-repo-check -` 皆成功，`-p` 接受 `--effort` |
+
+**Live 驗證**（暫存 `--store-path`、真 Jev key、Windows pty、一個只有 `math.js` 的 demo repo；設定了 custom system prompt 標記 `HOUSE-RULES-MARKER`）：
+
+- slave「後端：add subtract / add multiply」（master 派發、未指定模型）經 `task start` 啟動：Jev 判 `simple` → `haiku` · `low`。實際 `claude.exe` 命令列含 `--model haiku --effort low`、`VIBEFLOW_MASTER_ID`、slave prompt，**不含** custom 標記（AC-1、AC-7、AC-8）。
+- 一般卡「Make it better」「Tidy things up」：Jev 判 `unclear` → `opus` scout 讀 repo（1,639／3,333 字分析）→ 第二次判斷選 `sonnet` · `xhigh`／`medium`；啟動含 scout 約 37 秒。命令列含 custom 標記與前置分析，無 `VIBEFLOW_MASTER_ID`（AC-2、AC-8）。
+- `task:summaries` 回傳上述 model/effort（AC-7）。
+- 看板卡片顯示「Jev：sonnet · xhigh」；工作區面板顯示結果與可展開的「前置分析（opus）」（AC-10）。
+
+**限制與觀察**
+
+- scout 的 Claude transcript 寫在卡片 worktree 對應的 `~/.claude/projects/<dir>` 下，progress tracker 會把它的 token 算進卡片用量；todo／進度仍只跟 executor session。視為合理的成本歸屬，未另外處理。
+- 驗證過程中，部分在背景（`task start`）啟動的卡片，在 Web UI 開啟其工作區後 agent 行程不在了；未經 Jev 的對照卡（指定 `haiku` + `low`）也一樣，因此與本功能無關，未在本次處理。另一張相同方式啟動的卡開啟後仍存活，未能穩定重現。
+- 瀏覽器 pane 在背景時，工作區頁有時停在「載入中…」，與本功能無關。
