@@ -31,7 +31,7 @@ import { AGENT_EFFORTS, detectAgents, type AgentCliId, type AgentEffort } from '
 import { createModelCatalog, type ModelCatalog } from './agent-models'
 import { createJevRouter, type JevRouter } from './jev-router'
 import { jevKeyStatus, readJevApiKey, removeJevApiKey, saveJevApiKey } from './jev-credentials'
-import { clampEffort } from './effort'
+import { clampEffort, type ManualEffort } from './effort'
 import {
   cancelGitHubCliLogin,
   getGitHubCliAuthStatus,
@@ -173,6 +173,9 @@ export interface TaskSummary {
   masterId?: string
   projectName?: string
   branch?: string
+  /** Model and effort the card runs on: its own, or Jev's choice for the current run. Absent = CLI default. */
+  model?: string
+  effort?: ManualEffort
   /** Its agent session is alive right now. */
   running: boolean
   launchedAt?: number
@@ -470,18 +473,29 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return str(task.worktreePath ?? task.projectPath, 'directory')
   }
 
+  /** The model a run uses: the card's own, else the one Jev picked for this run. */
+  function launchModel(task: Task, route?: Task['jevRoute']): string | undefined {
+    return taskModel(task) ?? route?.model
+  }
+
   /** Resolve auto before launching; never pass the sentinel to an agent CLI. */
   function launchEffort(task: Task, route?: Task['jevRoute']): Task['effort'] {
     const effort = task.effort === 'auto' ? route?.effort : task.effort
-    const model = models.findModel(taskAgent(task), taskModel(task))
+    const model = models.findModel(taskAgent(task), launchModel(task, route))
     return model?.efforts ? clampEffort(effort, model.efforts) : effort
+  }
+
+  /** A route left `routing` by a crashed host decided nothing. */
+  function settledRoute(task: Task): Task['jevRoute'] {
+    return task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
   }
 
   async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
     const settings = getSettings()
     const boardCli = await boardCliLaunchInfo()
-    let route = task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
-    if (task.effort === 'auto' && !intent.resume && intent.includeTaskPrompt !== false) {
+    let route = settledRoute(task)
+    const needsRoute = !taskModel(task) || task.effort === 'auto'
+    if (needsRoute && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
         const setRoute = (jevRoute: Task['jevRoute']): void => {
@@ -493,7 +507,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           const candidateModels = (await (router.enabled === false
             ? models.get(taskAgent(task))
             : models.refresh(taskAgent(task)))).models
-          const selected = await router.route(task, candidateModels)
+          const selected = await router.route(task, candidateModels, {
+            // A master has no repo to read, only its notes folder.
+            scout: !isMasterTask(task),
+            cwd: task.worktreePath,
+            onPhase: (phase) => setRoute({ status: 'routing', phase }),
+          })
           setRoute(selected)
           return selected
         })().catch((err) => {
@@ -504,14 +523,18 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       }
       route = await pending
     }
+    const preface = route?.context && route.scoutModel
+      ? { model: route.scoutModel, context: route.context }
+      : undefined
     return buildAgentCommand(
-      { ...task, model: taskModel(task), effort: launchEffort(task, route) },
+      { ...task, model: launchModel(task, route), effort: launchEffort(task, route) },
       settings.systemPrompt ?? '',
       {
         resume: intent.resume === true,
         includeTaskPrompt: intent.includeTaskPrompt !== false,
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
+        preface,
       },
       task.workspacePath
     )
@@ -647,6 +670,17 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     if (task && sessions.isAttached?.(taskId) === false) await startTaskSession(task, taskId, { taskId })
   }
 
+  /** What a card runs (or will run) on, so a master sees what Jev chose for its cards. */
+  function launchChoice(task: Task): Pick<TaskSummary, 'model' | 'effort'> {
+    const route = settledRoute(task)
+    const model = launchModel(task, route)
+    const effort = launchEffort(task, route)
+    return {
+      ...(model ? { model } : {}),
+      ...(effort && effort !== 'auto' ? { effort } : {}),
+    }
+  }
+
   async function summarizeTasks(filter: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> {
     const board = getState().board
     const alive = new Set(await sessions.list())
@@ -668,6 +702,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           ...(task.masterId ? { masterId: task.masterId } : {}),
           ...(task.projectName ? { projectName: task.projectName } : {}),
           ...(task.branch ? { branch: task.branch } : {}),
+          ...launchChoice(task),
           running: alive.has(task.id),
           ...(task.launchedAt ? { launchedAt: task.launchedAt } : {}),
           ...(task.launchError ? { launchError: task.launchError } : {}),

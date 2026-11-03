@@ -427,6 +427,45 @@ test('the card shows Jev routing before the agent starts', async (t) => {
   assert.equal(read().status, 'routed')
 })
 
+test('a card without a model runs on the model Jev picked, with the scout analysis, until it restarts', async (t) => {
+  const calls = []
+  const router = { async route(task, _list, opts) {
+    calls.push({ task, opts })
+    opts.onPhase?.('scouting')
+    return { status: 'routed', model: 'sonnet', effort: 'medium', complexity: 'unclear', scoutModel: 'opus', context: '影響 login.ts' }
+  } }
+  const { core, sessions, task } = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+  })
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].opts.scout, true)
+  assert.ok(calls[0].opts.cwd, 'the scout reads the provisioned worktree')
+  const command = sessions.starts[0].command
+  assert.match(command, /--model sonnet --effort medium /)
+  assert.ok(command.includes('前置分析（opus，僅供參考）'))
+  assert.ok(command.includes('影響 login.ts'))
+  const stored = core.handlers['vibeflow:getState']().board.backlog.find((item) => item.id === task.id)
+  assert.equal(stored.model, undefined, 'the card still leaves its model to Jev')
+  assert.equal(stored.jevRoute.model, 'sonnet')
+
+  sessions.alive.delete(task.id)
+  await core.handlers['pty:start']({ taskId: task.id, launch: { resume: true }, fresh: true })
+  assert.equal(calls.length, 1, 'a resume reuses the decision')
+  assert.match(sessions.starts[1].command, /--model sonnet --effort medium /)
+  assert.ok(!sessions.starts[1].command.includes('前置分析'))
+})
+
+test('a manual effort is fitted to the model Jev picked', async (t) => {
+  const router = { async route() { return { status: 'routed', model: 'claude-opus-4-6' } } }
+  const { core, sessions, task } = await coreWithTask(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+    task: { effort: 'xhigh' },
+  })
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  assert.match(sessions.starts[0].command, /--model claude-opus-4-6 --effort high /)
+})
+
 test('updateTask rejects an unknown effort', async (t) => {
   const { core, task } = await coreWithTask(t)
   await assert.rejects(

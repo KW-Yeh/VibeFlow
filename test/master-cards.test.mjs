@@ -175,6 +175,28 @@ test('summaries list a master’s cards with where they are and whether they run
   assert.equal(byId[a.id].masterId, master.id)
 })
 
+test("Jev picks the model for a master's card started from the CLI, and summaries say what it runs on", async (t) => {
+  const calls = []
+  const jevRouter = { async route(task, _list, opts) {
+    calls.push({ id: task.id, scout: opts.scout })
+    return { status: 'routed', model: 'sonnet', effort: 'high', complexity: 'moderate' }
+  } }
+  const sessions = fakeSessions()
+  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9', jevRouter })
+  t.after(() => core.shutdown())
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
+  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id, agentCli: 'claude' })
+  await core.handlers['vibeflow:startTask'](master.id)
+  await core.handlers['vibeflow:startTask'](dev.id)
+
+  assert.deepEqual(calls, [{ id: master.id, scout: false }, { id: dev.id, scout: true }], 'only cards with a repo are scouted')
+  assert.match(sessions.starts.find((s) => s.key === dev.id).command, /--model sonnet --effort high /)
+  const [summary] = await core.handlers['task:summaries']({ taskId: dev.id })
+  assert.equal(summary.model, 'sonnet')
+  assert.equal(summary.effort, 'high')
+})
+
 test('summaries without a filter list every card, also when the filter arrives as null over the WebSocket', async (t) => {
   const { core } = setup(t)
   const projectPath = await slaveRepo(t)
