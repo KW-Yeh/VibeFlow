@@ -357,3 +357,21 @@ test('a master waits for reports instead of polling, relays fixes, and has its c
   assert.ok(prompt.includes('不會合併 PR'))
   assert.ok(prompt.includes('不會把卡片移到 Done'))
 })
+
+test('a running agent nobody re-attached since a host restart is attached before it is typed into', async (t) => {
+  const { core, sessions, master, dev, send } = await masterWithCards(t)
+  await core.handlers['vibeflow:startTask'](dev.id)
+  const attached = new Set()
+  sessions.isAttached = (key) => attached.has(key)
+  const start = sessions.start.bind(sessions)
+  sessions.start = async (key, opts) => {
+    attached.add(key)
+    return start(key, opts)
+  }
+  sessions.starts.length = 0
+  await send(master, dev)
+  const reattach = sessions.starts.find((s) => s.key === dev.id)
+  assert.ok(reattach, 'the session was re-attached')
+  assert.equal(reattach.command, undefined, 're-attached, not relaunched')
+  assert.ok(sessions.writes.some((w) => w.key === dev.id && w.data.includes('hello')))
+})

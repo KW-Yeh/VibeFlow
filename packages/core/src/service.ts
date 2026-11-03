@@ -365,6 +365,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return isBlocked(agentActivity(master.id)) ? 'later' : 'yes'
     },
     deliver: async (masterId, text) => {
+      await attachAgent(masterId)
       await mailbox.deliver(masterId, frameMessage(null, text))
     },
   })
@@ -638,6 +639,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (current) trackProgress(current)
     }
     return result
+  }
+
+  /** A running agent nobody has re-attached since the host started cannot be typed into yet. */
+  async function attachAgent(taskId: string): Promise<void> {
+    const task = findTask(taskId)
+    if (task && sessions.isAttached?.(taskId) === false) await startTaskSession(task, taskId, { taskId })
   }
 
   async function summarizeTasks(filter: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> {
@@ -1017,6 +1024,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
       // Counted when asked, not when typed: the turn may end while this waits for quiet.
       if (isMasterTask(to)) notifier.reported(from.id)
+      await attachAgent(to.id)
       const { queuedMs } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
       return { delivered: true, queuedMs }
     },

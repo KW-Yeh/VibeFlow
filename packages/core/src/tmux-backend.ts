@@ -259,6 +259,10 @@ export class TmuxBackend implements SessionBackend {
     this.clients.get(key)?.proc.write(data)
   }
 
+  isAttached(key: string): boolean {
+    return this.clients.has(key)
+  }
+
   resize(key: string, cols: number, rows: number): void {
     try {
       this.clients.get(key)?.proc.resize(Math.max(cols, 1), Math.max(rows, 1))
