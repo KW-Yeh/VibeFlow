@@ -86,7 +86,8 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
-import { createMailbox, frameMessage } from './mailbox'
+import { createMailbox, frameMessage, isBlocked } from './mailbox'
+import { createNotifier } from './notifier'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
@@ -324,7 +325,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const progress = createProgressTracker({
     homeDir: home,
     codexHomes: () => [path.join(home, '.codex'), ...(libraryCodexHome ? [libraryCodexHome] : [])],
-    onUpdate: (taskId, value) => bus.emit('progress:update', { taskId, progress: value }),
+    onUpdate: (taskId, value) => {
+      bus.emit('progress:update', { taskId, progress: value })
+      notifier.activity(taskId, value.activity)
+      notifier.retry(taskId)
+    },
     onNotify: (taskId, list) => {
       const prefs = resolveNotificationSettings(getSettings())
       if (!prefs.enabled) return
@@ -342,9 +347,26 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
   // Everything typed into a card's agent goes through here, a person's keys too,
   // so a message never lands inside a dialog or in the middle of someone's typing.
+  const agentActivity = (key: string) => (progress.isTracking(key) ? progress.snapshot(key)?.activity ?? null : null)
   const mailbox = createMailbox({
     write: (key, data) => sessions.write(key, data),
-    activity: (key) => (progress.isTracking(key) ? progress.snapshot(key)?.activity ?? null : null),
+    activity: agentActivity,
+  })
+
+  const notifier = createNotifier({
+    cardOf: (taskId) => {
+      const task = findTask(taskId)
+      return task?.masterId ? { title: task.title, masterId: task.masterId } : null
+    },
+    canReceive: async (masterId) => {
+      const master = findTask(masterId)
+      if (!master || !isMasterTask(master) || columnOf(master.id) !== 'in_progress') return 'never'
+      if (!(await sessions.isAlive(master.id))) return 'later'
+      return isBlocked(agentActivity(master.id)) ? 'later' : 'yes'
+    },
+    deliver: async (masterId, text) => {
+      await mailbox.deliver(masterId, frameMessage(null, text))
+    },
   })
 
   /** The card's git worktree; a master's folder is not one, so git must never run there. */
@@ -556,6 +578,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     }
     setBoard(next)
     bus.emit('state:changed', getState())
+    notifier.launchFailed(taskId, launchError)
   }
 
   let folderDialog: Promise<PickFolderResult> | null = null
@@ -599,7 +622,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       cols: typeof p.cols === 'number' ? p.cols : undefined,
       rows: typeof p.rows === 'number' ? p.rows : undefined,
       // Session ended (natural exit included), so stop its watcher.
-      onExit: () => unwatchSubAgents(key),
+      onExit: () => {
+        unwatchSubAgents(key)
+        if (key === task.id) notifier.exited(task.id)
+      },
     })
     terminalDirectories.set(key, cwd)
     watchSubAgents(key, cwd, (subAgents) => {
@@ -989,6 +1015,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (!text) invalid('text must not be empty')
       if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
       if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
+      // Counted when asked, not when typed: the turn may end while this waits for quiet.
+      if (isMasterTask(to)) notifier.reported(from.id)
       const { queuedMs } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
       return { delivered: true, queuedMs }
     },

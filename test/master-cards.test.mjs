@@ -314,3 +314,35 @@ test("a master's card knows its master and how to report; any other card launche
   }
   assert.ok(!slaveSystemPrompt({ canWrite: false }).includes('VF task send'), 'no CLI, no command it cannot run')
 })
+
+test("VibeFlow tells a running master when one of its cards' session ends", async (t) => {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
+  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
+  await core.handlers['vibeflow:startTask'](master.id)
+  await core.handlers['vibeflow:startTask'](dev.id)
+  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await new Promise((r) => setTimeout(r, 400))
+  const toMaster = sessions.writes.filter((w) => w.key === master.id)
+  assert.equal(toMaster.length, 2, 'one paste and its Enter')
+  assert.ok(toMaster[0].data.includes('<vibeflow from="vibeflow">'))
+  assert.ok(toMaster[0].data.includes(dev.id))
+  assert.ok(toMaster[0].data.includes('session 已結束'))
+})
+
+test('news for a master that is not running is dropped, never typed into a shell', async (t) => {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
+  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
+  await core.handlers['vibeflow:startTask'](dev.id)
+  sessions.alive.add(master.id)
+  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await new Promise((r) => setTimeout(r, 400))
+  assert.equal(sessions.writes.length, 0, 'the master is still in Backlog')
+})
