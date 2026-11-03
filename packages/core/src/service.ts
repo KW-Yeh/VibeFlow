@@ -1002,7 +1002,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     // Every card on the board, or one master's cards, as the CLI and a master's
     // agent read them.
     'task:summaries': (payload) => {
-      const p = payload === undefined ? {} : obj<{ masterId?: unknown; taskId?: unknown }>(payload, 'payload')
+      const p = payload === undefined || payload === null ? {} : obj<{ masterId?: unknown; taskId?: unknown }>(payload, 'payload')
       return summarizeTasks({
         masterId: p.masterId === undefined ? undefined : requireTask(p.masterId).id,
         taskId: p.taskId === undefined ? undefined : requireTask(p.taskId).id,

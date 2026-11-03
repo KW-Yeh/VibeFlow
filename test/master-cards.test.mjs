@@ -175,6 +175,18 @@ test('summaries list a master’s cards with where they are and whether they run
   assert.equal(byId[a.id].masterId, master.id)
 })
 
+test('summaries without a filter list every card, also when the filter arrives as null over the WebSocket', async (t) => {
+  const { core } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Summary master' })
+  const { task: slave } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'S', masterId: master.id })
+  const { task: loose } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Loose' })
+
+  const unfiltered = (await core.handlers['task:summaries']()).map((s) => s.id).sort()
+  for (const id of [master.id, slave.id, loose.id]) assert.ok(unfiltered.includes(id))
+  assert.deepEqual((await core.handlers['task:summaries'](null)).map((s) => s.id).sort(), unfiltered)
+})
+
 test('deleting a master frees its cards and removes only the folder VibeFlow made', async (t) => {
   const { core } = setup(t)
   const projectPath = await slaveRepo(t)
