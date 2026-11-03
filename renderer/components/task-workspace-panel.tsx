@@ -56,7 +56,7 @@ import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
 import { taskArtifactsDir } from '@/lib/claude'
 import { readDiffView, writeDiffView, type DiffViewPrefs } from '@/lib/view-persistence'
-import { jevRoutingLabel } from '@/lib/jev'
+import { jevResultLabel, jevRoutingLabel } from '@/lib/jev'
 import {
   retainExistingDiffContents,
   sameDiffEntry,
@@ -532,17 +532,27 @@ function TaskInfo({
         </p>
       )}
 
-      {task.effort === 'auto' && task.jevRoute?.status === 'routing' && (
+      {task.jevRoute?.status === 'routing' && (
         <div className="flex items-center gap-2 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground" role="status">
           <Loader2 className="size-3.5 shrink-0 animate-spin" />
           Jev：{jevRoutingLabel(task.jevRoute)}（完成後才會啟動 agent）
         </div>
       )}
 
-      {task.effort === 'auto' && task.jevRoute && task.jevRoute.status !== 'routing' && (
-        <div className="rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
-          Jev effort：{task.jevRoute.effort ?? '模型預設值'}
+      {task.jevRoute && task.jevRoute.status !== 'routing' && (
+        <div className="space-y-1 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground">
+          <p>{jevResultLabel(task.jevRoute, task.model)}</p>
           {task.jevRoute.reason && <p>自動選擇未完成：{task.jevRoute.reason}</p>}
+          {task.jevRoute.context && (
+            <details>
+              <summary className="cursor-pointer select-none">
+                前置分析（{task.jevRoute.scoutModel ?? '高思考模型'}）
+              </summary>
+              <div className="mt-2 text-foreground">
+                <MarkdownContent source={task.jevRoute.context} compact />
+              </div>
+            </details>
+          )}
         </div>
       )}
 

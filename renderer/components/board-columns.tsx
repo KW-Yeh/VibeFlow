@@ -16,7 +16,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { jevRoutingLabel } from '@/lib/jev'
+import { jevResultLabel, jevRoutingLabel } from '@/lib/jev'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
@@ -467,16 +467,16 @@ function TaskCard({
 
       {(running || done) && <TaskProgressBadge progress={progress} usage={task.usage} />}
 
-      {task.effort === 'auto' && task.jevRoute?.status === 'routing' && (
+      {task.jevRoute?.status === 'routing' && (
         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
           <Loader2 className="size-3 shrink-0 animate-spin" />
           <span className="min-w-0 truncate">Jev：{jevRoutingLabel(task.jevRoute)}</span>
         </p>
       )}
 
-      {task.effort === 'auto' && task.jevRoute && task.jevRoute.status !== 'routing' && (
+      {task.jevRoute && task.jevRoute.status !== 'routing' && (
         <p className="mt-1.5 truncate text-xs text-muted-foreground" title={task.jevRoute.reason}>
-          Jev effort：{task.jevRoute.effort ?? '模型預設值'}
+          {jevResultLabel(task.jevRoute, task.model)}
         </p>
       )}
 

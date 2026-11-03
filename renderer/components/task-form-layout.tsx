@@ -256,7 +256,7 @@ export function RunSettingsGroup({
           }}
           className={ROW_FIELD}
         >
-          <option value="">使用 CLI 預設模型</option>
+          <option value="">未指定（由 Jev 選擇，沒有金鑰時用 CLI 預設模型）</option>
           {modelOptions.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
