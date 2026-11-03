@@ -44,7 +44,7 @@ export async function makeRepo({ withRemote = true } = {}) {
   await git(projectPath, 'branch', '-M', 'main')
   if (withRemote) await git(projectPath, 'push', '-u', 'origin', 'main')
 
-  const cleanup = () => fs.rm(root, { recursive: true, force: true })
+  const cleanup = () => fs.rm(root, { recursive: true, force: true, maxRetries: 10 })
   return { root, projectPath, remotePath, cleanup }
 }
 

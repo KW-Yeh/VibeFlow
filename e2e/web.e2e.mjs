@@ -121,6 +121,9 @@ const PREVIEW_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
 const canFakeGh = process.platform !== 'win32'
 const hasWeb = fs.existsSync(path.join(webDir, 'home', 'index.html'))
 
+/** Windows keeps a folder locked until the processes the host started in it have exited, which outlives teardown by a moment. */
+const removeDir = (dir) => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10 })
+
 test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'run npm run build:web first', timeout: 180_000 }, async (t) => {
   const browser = await launchBrowser()
   if (browser.error) {
@@ -190,7 +193,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   t.after(async () => {
     host.kill()
     await cleanup()
-    fs.rmSync(tmp, { recursive: true, force: true })
+    await removeDir(tmp)
   })
 
   const lock = await waitForLock(storeDir)
@@ -304,22 +307,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await zoom.focus()
   await page.keyboard.press('ArrowRight')
   assert.notEqual(await zoom.inputValue(), beforeZoom)
-  const evidence = process.env.VIBEFLOW_E2E_ARTIFACTS
-  if (evidence) fs.mkdirSync(evidence, { recursive: true })
-  for (const width of [375, 768, 1440]) {
-    await page.setViewportSize({ width, height: 900 })
-    await page.waitForFunction(() => {
-      const dialog = document.querySelector('[role="dialog"]')
-      const box = dialog.getBoundingClientRect()
-      return box.x >= 0 && box.right <= innerWidth && dialog.scrollWidth <= dialog.clientWidth && getComputedStyle(dialog).opacity === '1' && getComputedStyle(dialog).transform === 'none'
-    })
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-    if (evidence) await page.screenshot({ path: path.join(evidence, `a7-terminal-file-preview-${width}.png`) })
-  }
   await page.keyboard.press('Escape')
   await fileDialog.waitFor({ state: 'detached' })
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await waitForTerminalLayout(page)
   await clickTerminalFile(page, '"./preview notes.md"', './preview notes.md')
   await fileDialog.getByRole('heading', { name: 'Terminal preview' }).waitFor()
   assert.equal(await page.evaluate(() => window.previewUnsafe), undefined)
@@ -378,6 +367,27 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     await fileDialog.locator('img').waitFor()
     await page.keyboard.press('Escape')
   }
+
+  // The preview fits every width. Narrowing the window re-wraps what the terminal
+  // already printed (ConPTY hard-wraps it on Windows), so no link lookup follows.
+  await clickTerminalFile(page, './preview-image.svg')
+  await page.waitForFunction(() => document.querySelector('[role="dialog"] img')?.naturalWidth === 480)
+  const evidence = process.env.VIBEFLOW_E2E_ARTIFACTS
+  if (evidence) fs.mkdirSync(evidence, { recursive: true })
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.waitForFunction(() => {
+      const dialog = document.querySelector('[role="dialog"]')
+      const box = dialog.getBoundingClientRect()
+      return box.x >= 0 && box.right <= innerWidth && dialog.scrollWidth <= dialog.clientWidth && getComputedStyle(dialog).opacity === '1' && getComputedStyle(dialog).transform === 'none'
+    })
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    if (evidence) await page.screenshot({ path: path.join(evidence, `a7-terminal-file-preview-${width}.png`) })
+  }
+  await page.keyboard.press('Escape')
+  await fileDialog.waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await waitForTerminalLayout(page)
 
   // Diff: the file the agent wrote shows up.
   await page.getByRole('tab', { name: 'Git diff' }).click()
@@ -554,7 +564,7 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
     },
   }, bus, staticDir: webDir, token: 'jira-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
-  t.after(async () => { await cleanup(); await cleanupNewProject(); fs.rmSync(tmp, { recursive: true, force: true }) })
+  t.after(async () => { await cleanup(); await cleanupNewProject(); await removeDir(tmp) })
   await core.handlers['vibeflow:createTask']({ title: 'Seed project', projectPath, baseBranch: null })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
@@ -682,7 +692,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   core.handlers['vibeflow:setBoard']({ backlog: [first.task], in_progress: [second.task], done: [third.task] })
   const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'terminal-e2e-token' })
   t.after(async () => { core.shutdown(); await server.close() })
-  t.after(async () => { await cleanup(); fs.rmSync(tmp, { recursive: true, force: true }) })
+  t.after(async () => { await cleanup(); await removeDir(tmp) })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(server.loginUrl())
   assert.equal(await page.getByText(/個任務 · .*個專案/).count(), 0)
