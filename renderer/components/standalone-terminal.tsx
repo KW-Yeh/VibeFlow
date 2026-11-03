@@ -2,7 +2,7 @@ import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 import { standaloneTermStart, termInput, termKill, termResize } from '@/lib/api'
-import { fitColumnsWithinViewport } from '@/lib/terminal-fit'
+import { fitColumnsWithinViewport, waitForLayoutBox } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 
 const TerminalFilePreview = dynamic(() => import('@/components/terminal-file-preview').then((m) => m.TerminalFilePreview), { ssr: false })
@@ -41,6 +41,7 @@ export function StandaloneTerminal({
     let offExit: (() => void) | undefined
     let observer: ResizeObserver | undefined
     let resizeTimer: ReturnType<typeof setTimeout> | undefined
+    const waitingForLayout = new AbortController()
 
     void (async () => {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
@@ -85,6 +86,7 @@ export function StandaloneTerminal({
         }
       }
       await document.fonts.ready
+      await waitForLayoutBox(hostRef.current, waitingForLayout.signal)
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       if (disposed) return
       fitTerminal()
@@ -137,6 +139,7 @@ export function StandaloneTerminal({
 
     return () => {
       disposed = true
+      waitingForLayout.abort()
       offData?.()
       offExit?.()
       observer?.disconnect()
