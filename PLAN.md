@@ -59,7 +59,7 @@ R12. Codex 卡：`task send` 與「回合結束」的補位通知可用；由於
 - A5. 寫入目標的位元組以寄件者標記開頭、包含 id 與標題；`pty:input` 進來的使用者按鍵原樣寫入、沒有標記。 ← R4
 - A6. 目標 activity 為 `waiting/permission` 時回 `TARGET_BLOCKED` 且沒有寫入；同條件帶 `force` 則寫入。 ← R5
 - A7. 使用者在目標 terminal 按鍵後立刻送出：在安靜門檻內沒有寫入，門檻過後寫入一次（測試用環境變數把門檻縮短）。 ← R6
-- A8. 兩則 send 同時送進同一 terminal、送出途中插入使用者按鍵：fake backend 收到的寫入順序是「第一則完整（含 Enter）→ 第二則完整 → 使用者按鍵」，沒有交錯。 ← R7
+- A8. 兩則 send 同時送進同一 terminal、送出途中插入使用者按鍵：fake backend 收到的寫入順序是「第一則完整（含 Enter）→ 使用者按鍵 → 第二則完整」，沒有任何一則被切開（使用者按鍵不會被後面排隊的訊息餓死）。 ← R7
 - A9. 寫入內容為 `ESC[200~` ＋ 文字 ＋ `ESC[201~`，接著單獨一個 `\r`；文字含 `ESC[201~` 時該序列被移除。 ← R8
 - A10. 對 progress tracker 餵入事件序列：slave 轉為等待權限、`launchError` 寫入、session `onExit`、`Stop`（該回合沒有 send）各產生一則給 master 的 note；`Stop` 前該回合已對 master send 過則不產生。 ← R9
 - A11. 同一事件重複觸發只送一次；master 狀態為 working 時照樣寫入；為 permission 或 session 不在時不寫入，轉為可收後把排隊的多則合併成一次寫入；master 移到 Done 或刪除後佇列清空，之後也不再寫入。 ← R10

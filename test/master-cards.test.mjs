@@ -8,7 +8,7 @@ import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput, updateTaskFromInput } from '../packages/core/src/tasks.ts'
-import { buildAgentCommand, masterSystemPrompt } from '../packages/core/src/launch.ts'
+import { buildAgentCommand, masterSystemPrompt, slaveSystemPrompt } from '../packages/core/src/launch.ts'
 import { exists, makeRepo, writeFile } from './support/repo.mjs'
 
 function fakeSessions() {
@@ -296,4 +296,21 @@ test("a person's keys reach the agent untagged", async (t) => {
   const { core, sessions, dev } = await masterWithCards(t)
   core.handlers['pty:input']({ sessionKey: dev.id, data: 'y' })
   assert.deepEqual(sessions.writes, [{ key: dev.id, data: 'y' }])
+})
+
+test("a master's card knows its master and how to report; any other card launches as before", () => {
+  const boardCli = { storeDir: '/s', cliPath: '/cli/vibeflow.mjs' }
+  const base = { id: 'abcd1234', title: 'T', worktreePath: '/w', branch: 'vf-abcd1234', projectPath: '/p', agentCli: 'claude' }
+  const slave = buildAgentCommand({ ...base, masterId: 'feed0001' }, 'house rules', { boardCli, autoMode: true })
+  assert.ok(slave.includes("VIBEFLOW_MASTER_ID='feed0001'"))
+  assert.ok(slave.includes('VF task send'))
+  assert.ok(slave.includes('house rules'))
+  assert.ok(!slave.includes('VF task start'), 'the master instructions stay with masters')
+  for (const agentCli of ['claude', 'codex']) {
+    const plain = buildAgentCommand({ ...base, agentCli }, 'house rules', { boardCli, autoMode: true })
+    assert.ok(!plain.includes('VIBEFLOW_MASTER_ID'))
+    assert.ok(!plain.includes('VF task send'))
+    assert.ok(!plain.includes('master'))
+  }
+  assert.ok(!slaveSystemPrompt({ canWrite: false }).includes('VF task send'), 'no CLI, no command it cannot run')
 })

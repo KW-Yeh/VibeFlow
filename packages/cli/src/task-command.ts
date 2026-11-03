@@ -4,7 +4,7 @@ import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
-import { findTask } from '../../core/src/store'
+import { findTask, isMasterTask } from '../../core/src/store'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
 import type { ColumnId } from '../../core/src/store'
@@ -34,7 +34,8 @@ task create options:
   --project <path>       Target project directory (required for a slave)
   --work-dir <path>      Master only: run in this existing folder (git or not)
                          instead of one VibeFlow creates
-  --master <id>          Dispatch the new card under this master card
+  --master <id>          Dispatch the new card under this master card (default: the
+                         calling card, when a master runs this from its own shell)
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
@@ -257,11 +258,15 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     fail('ATTACHMENT_READ_FAILED', `無法讀取附件：${(err as Error).message}`)
   }
 
+  // A master dispatching from its own shell owns what it creates.
+  const caller = process.env.VIBEFLOW_TASK_ID ? findTask(process.env.VIBEFLOW_TASK_ID) : undefined
+  const masterId = values.master ?? (!master && caller && isMasterTask(caller) ? caller.id : undefined)
+
   const { task, storePath: resolvedPath } = await createTaskFromInput({
     projectPath: values.project,
     role: master ? 'master' : undefined,
     workDir: values['work-dir'],
-    masterId: values.master,
+    masterId,
     title: values.title!,
     description: values.prompt,
     status: (values.status ?? 'backlog') as ColumnId,

@@ -92,7 +92,7 @@ function toShellPath(p: string): string {
  * shell `if` statement, which that prefix form cannot carry.
  */
 function boardEnvPrefix(
-  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'projectPath' | 'branch' | 'baseBranch' | 'worktreePath' | 'masterId'>,
   opts?: LaunchOptions,
   workspacePath?: string
 ): string {
@@ -102,6 +102,7 @@ function boardEnvPrefix(
   if (!board) return ''
   const entries: Array<[string, string | undefined]> = [
     ['VIBEFLOW_TASK_ID', task.id],
+    ['VIBEFLOW_MASTER_ID', task.masterId],
     ['VIBEFLOW_PROJECT_PATH', task.projectPath],
     ['VIBEFLOW_BRANCH', task.branch],
     ['VIBEFLOW_BASE_BRANCH', task.baseBranch],
@@ -232,6 +233,37 @@ export function resolveSystemPrompt(custom?: string | null): string {
  * one launch that adds text of VibeFlow's own, because a master is useless
  * without knowing the CLI that makes it one.
  */
+const BOARD_CLI_SETUP = [
+  '先定義這個 shell 函式，之後所有指令都用它，並且一律帶上 --store-path "$VIBEFLOW_STORE_DIR"：',
+  '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
+]
+
+/**
+ * What a card dispatched by a master is told: the master, not the user, is who
+ * it answers to, so it has to report there — otherwise the master only learns
+ * that a turn ended, never what came of it.
+ */
+export function slaveSystemPrompt(opts: { canWrite: boolean }): string {
+  const lines = [
+    '這張卡片由 VibeFlow 的 Master agent 派工並統籌（master 的 id 在 $VIBEFLOW_MASTER_ID）；使用者主要透過 master 跟你協作。',
+    '你收到的 <vibeflow from="…"> 訊息來自 master 或 VibeFlow 本身，照其中的指示做。',
+  ]
+  if (!opts.canWrite) {
+    lines.push('這次啟動無法使用 board CLI，你不能主動回報；完成或卡住時直接在 terminal 寫清楚結果。')
+    return lines.join('\n')
+  }
+  lines.push(
+    '',
+    ...BOARD_CLI_SETUP,
+    '',
+    '回報：任務完成、需要 master 決定、或卡住無法繼續時，立刻用這個指令回報，然後停下來等下一步指示：',
+    '  VF task send --store-path "$VIBEFLOW_STORE_DIR" --task "$VIBEFLOW_MASTER_ID" --text "<回報內容>"',
+    '回報內容要自包含：做了什麼、怎麼驗證、結果；驗收類工作逐項列出通過與未通過的項目及重現步驟；開了 PR 就附上連結。',
+    '沒有 master 要求就不要開 PR。'
+  )
+  return lines.join('\n')
+}
+
 export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean }): string {
   const lines = [
     '你是 VibeFlow 的 Master agent，不屬於任何 repo，工作目錄只是你的筆記區。',
@@ -246,8 +278,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
     return lines.join('\n')
   }
   lines.push(
-    '先定義這個 shell 函式，之後所有指令都用它，並且一律帶上 --store-path "$VIBEFLOW_STORE_DIR"：',
-    '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
+    ...BOARD_CLI_SETUP,
     '',
     '1. 判斷：一張卡做得完就只建一張；涉及多個 repo 或可平行的獨立工作才拆成多張。每張只動一個 repo，各自能獨立驗收。',
     '2. 派工：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容>',
@@ -451,6 +482,7 @@ export function buildAgentCommand(
     | 'branch'
     | 'baseBranch'
     | 'role'
+    | 'masterId'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -459,11 +491,13 @@ export function buildAgentCommand(
   const agent = taskAgent(task)
   const model = taskModel(task)
   const custom = resolveSystemPrompt(systemPrompt)
-  const sys = task.role === 'master'
-    ? [custom, masterSystemPrompt({ canWrite: Boolean(opts?.boardCli?.cliPath), autoMode: opts?.autoMode === true })]
-        .filter(Boolean)
-        .join('\n\n')
-    : custom
+  const canWrite = Boolean(opts?.boardCli?.cliPath)
+  const role = task.role === 'master'
+    ? masterSystemPrompt({ canWrite, autoMode: opts?.autoMode === true })
+    : task.masterId
+      ? slaveSystemPrompt({ canWrite })
+      : null
+  const sys = role ? [custom, role].filter(Boolean).join('\n\n') : custom
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
