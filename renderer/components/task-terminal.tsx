@@ -327,6 +327,10 @@ export function TaskTerminal({
       }))
       term.open(containerRef.current)
       const fitToVisibleViewport = () => {
+        // A hidden page has no box to fit: FitAddon would read the host's `100%`
+        // as 100px and shrink the agent's PTY to a few columns until it is shown.
+        const host = containerRef.current
+        if (!host || host.clientWidth === 0 || host.clientHeight === 0) return
         fit.fit()
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
         const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
