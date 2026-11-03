@@ -1,6 +1,6 @@
 # Master 卡片（Orchestrator）— Spec（草稿）
 
-> 狀態：**已實作**（Phase 1–5；主動通知 D2 第二階段未做）。
+> 狀態：**已實作**（Phase 1–5，以及 D2 第二階段：主動回報與 `task send`）。
 > UI 方案比較見同目錄的 design artifact（連結於對話中提供）。
 
 ## 問題
@@ -83,7 +83,13 @@ workDir?: string         // master 指定的資料夾；缺省 = VibeFlow 自建
   `--profile` / `--store-path`），第一次啟動時建立；建立時可改成任意既有資料夾，不必是 git。
   刪卡只刪 `<storeDir>/masters/<id>`，使用者指定的資料夾不動。實作上 master 的資料夾放在
   `worktreePath`，所以 terminal / transcript / artifacts 沿用，所有 git 操作前檢查 `isMasterTask`。
-- **D2 監聽方式（暫定）**：第一階段由 master 自行輪詢 `task list --master`；
+- **D2 監聽方式（已定，第二階段已實作）**：master 不輪詢。slave 用 `task send` 回報；slave 自己說不出口的
+  （卡在權限、啟動失敗、session 結束、回合結束沒回報）由 host 代打一則 note 進 master。訊息一律以
+  bracketed paste ＋ Enter 打進對方 terminal，包上 `<vibeflow from="…">` 標記；不打進權限對話框、等使用者
+  停手 3 秒、同一 terminal 的寫入不交錯（`mailbox.ts`、`notifier.ts`）。只允許 master ↔ 自己的卡傳話，卡與卡
+  之間經 master 轉傳；master 工作中照樣送（當插話），在權限對話框或 session 不在時排隊；佇列只在 host 記憶體。
+  Codex 沒有 hook，偵測不到權限對話框，所以這兩項保護對 Codex 不生效。PR 由 master 交代開發卡用 `pr` skill 開。
+  原本第一階段的做法如下，保留作紀錄：第一階段由 master 自行輪詢 `task list --master`；
   「slave 狀態變化時 host 把事件推進 master terminal」列為第二階段。
 - **D3 派工後是否啟動（已定）**：跟著 master 卡片的 auto mode。開 → master 直接
   `task start`；關 → slave 留在 Backlog，master 列出清單等使用者啟動。

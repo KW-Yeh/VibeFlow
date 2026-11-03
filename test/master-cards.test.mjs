@@ -346,3 +346,14 @@ test('news for a master that is not running is dropped, never typed into a shell
   await new Promise((r) => setTimeout(r, 400))
   assert.equal(sessions.writes.length, 0, 'the master is still in Backlog')
 })
+
+test('a master waits for reports instead of polling, relays fixes, and has its cards open the PR', () => {
+  const prompt = masterSystemPrompt({ canWrite: true, autoMode: true })
+  assert.ok(!prompt.includes('定期查看'))
+  assert.ok(prompt.includes('不要輪詢'))
+  assert.ok(prompt.includes('VF task send'))
+  assert.ok(prompt.includes('驗收卡'))
+  assert.ok(prompt.includes('pr skill'))
+  assert.ok(prompt.includes('不會合併 PR'))
+  assert.ok(prompt.includes('不會把卡片移到 Done'))
+})
