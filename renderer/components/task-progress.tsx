@@ -1,4 +1,4 @@
-import { Circle, CircleCheck, CircleDot, Hand, Loader2, MessageCircleQuestion } from 'lucide-react'
+import { Circle, CircleCheck, CircleDot, Loader2 } from 'lucide-react'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import type { Activity, TaskProgress, TodoItem, TokenUsage } from '@/lib/types'
@@ -56,9 +56,48 @@ function ProgressBar({ done, total, className }: { done: number; total: number; 
   )
 }
 
+/** A state shown as a spinner while it runs, otherwise as a dot of `dot`'s color. */
+export function StatusMark({
+  dot,
+  spinning,
+  label,
+  className,
+}: {
+  dot: string
+  spinning?: boolean
+  label: string
+  className?: string
+}) {
+  if (spinning) {
+    return (
+      <span role="img" aria-label={label} title={label} className={cn('flex shrink-0', className)}>
+        <Loader2 aria-hidden="true" className="size-3 animate-spin text-warning motion-reduce:animate-none" />
+      </span>
+    )
+  }
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn('size-1.5 shrink-0 rounded-full', dot, className)}
+    />
+  )
+}
+
+/** What a running card's agent is doing: working, or stopped for an answer or a permission. */
+export function activityMark(activity: Activity | undefined): { dot: string; spinning: boolean; label: string } {
+  if (activity?.state === 'waiting') {
+    return activity.waitingFor === 'permission'
+      ? { dot: 'bg-warning', spinning: false, label: '等待權限' }
+      : { dot: 'bg-primary', spinning: false, label: '等待輸入' }
+  }
+  return { dot: 'bg-warning', spinning: true, label: activity?.tool ? `執行中：${activity.tool}` : '執行中' }
+}
+
 /**
- * The card's one-line summary: steps done, a thin bar, waiting state and
- * tokens. Running cards pass live `progress`; done cards only `usage`.
+ * The card's one-line summary: steps done, a thin bar, what the agent is
+ * doing and tokens. Running cards pass live `progress`; done cards only `usage`.
  */
 export function TaskProgressBadge({
   progress,
@@ -70,10 +109,10 @@ export function TaskProgressBadge({
   const total = progress?.totalUsage ?? usage
   if (!progress && !total) return null
   const counts = todoCounts(progress?.todos ?? null)
-  const waiting = progress?.activity.state === 'waiting'
   const tokens = total ? usageTotal(total) : 0
   return (
     <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+      {progress && <StatusMark {...activityMark(progress.activity)} />}
       {counts && (
         <>
           <span className="shrink-0 tabular-nums">
@@ -83,16 +122,6 @@ export function TaskProgressBadge({
         </>
       )}
       {!counts && <span className="flex-1" />}
-      {waiting && (
-        <span className="flex shrink-0 items-center gap-1 rounded-xs bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
-          {progress?.activity.waitingFor === 'permission' ? (
-            <Hand className="size-2.5" />
-          ) : (
-            <MessageCircleQuestion className="size-2.5" />
-          )}
-          {progress?.activity.waitingFor === 'permission' ? '等待權限' : '等待輸入'}
-        </span>
-      )}
       {tokens > 0 && (
         <span className="shrink-0 tabular-nums" title={`${tokens.toLocaleString()} tokens`}>
           {formatTokens(tokens)} tok
@@ -102,13 +131,14 @@ export function TaskProgressBadge({
   )
 }
 
-/** Steps done and whether the agent is waiting — sized for a toolbar. */
-export function TaskProgressChip({ progress }: { progress?: TaskProgress | null }) {
+/** Steps done and what the agent is doing — sized for a toolbar. `mark: false` when the row already shows it. */
+export function TaskProgressChip({ progress, mark = true }: { progress?: TaskProgress | null; mark?: boolean }) {
   const counts = todoCounts(progress?.todos ?? null)
-  const waiting = progress?.activity.state === 'waiting'
-  if (!counts && !waiting) return null
+  const showMark = mark && Boolean(progress)
+  if (!counts && !showMark) return null
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {showMark && <StatusMark {...activityMark(progress?.activity)} />}
       {counts && (
         <>
           <ProgressBar done={counts.done} total={counts.total} className="w-10" />
@@ -116,16 +146,6 @@ export function TaskProgressChip({ progress }: { progress?: TaskProgress | null 
             {counts.done}/{counts.total}
           </span>
         </>
-      )}
-      {waiting && (
-        <span className="flex items-center gap-1 rounded-xs bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
-          {progress?.activity.waitingFor === 'permission' ? (
-            <Hand className="size-2.5" />
-          ) : (
-            <MessageCircleQuestion className="size-2.5" />
-          )}
-          {progress?.activity.waitingFor === 'permission' ? '等待權限' : '等待輸入'}
-        </span>
       )}
     </span>
   )

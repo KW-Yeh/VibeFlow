@@ -368,6 +368,7 @@ test('a master waits for reports instead of polling, relays fixes, and has its c
   assert.ok(prompt.includes('pr skill'))
   assert.ok(prompt.includes('不會合併 PR'))
   assert.ok(prompt.includes('不會把卡片移到 Done'))
+  assert.ok(prompt.includes('<id>「<標題>」'))
 })
 
 test('a running agent nobody re-attached since a host restart is attached before it is typed into', async (t) => {

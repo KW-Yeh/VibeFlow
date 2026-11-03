@@ -46,9 +46,9 @@ import {
 } from 'lucide-react'
 
 import { MarkdownContent } from '@/components/markdown-content'
-import { projectLabel, slaveState, todoCount, type SlaveEntry } from '@/components/board-columns'
+import { projectLabel, slaveState, TaskId, todoCount, type SlaveEntry } from '@/components/board-columns'
 import { TaskTerminal } from '@/components/task-terminal'
-import { TaskProgressChip, TaskProgressDetail } from '@/components/task-progress'
+import { StatusMark, TaskProgressChip, TaskProgressDetail } from '@/components/task-progress'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
@@ -1069,7 +1069,8 @@ function SlavesContent({
                 className="w-full rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-left outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <div className="flex items-center gap-2">
-                  <span className={cn('size-1.5 shrink-0 rounded-full', state.dot)} />
+                  <StatusMark {...state} />
+                  <TaskId id={task.id} />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{task.title}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{state.label}</span>
                   {todos && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{todos}</span>}

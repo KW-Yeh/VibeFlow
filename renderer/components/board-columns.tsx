@@ -32,7 +32,7 @@ import type {
   Task,
   TaskProgress,
 } from '@/lib/types'
-import { TaskProgressBadge } from '@/components/task-progress'
+import { StatusMark, TaskProgressBadge } from '@/components/task-progress'
 import type { GridTerminal } from '@/components/terminal-grid'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
@@ -189,8 +189,21 @@ function GithubLinkButton({ link }: { link: GithubLink }) {
   )
 }
 
-/** Where a dispatched card stands, as one dot: its column, sharpened by what its agent is doing. */
-export function slaveState(column: ColumnId, task: Task, progress: TaskProgress | undefined): { dot: string; label: string } {
+/** The id a master and its notes call a card by — shown wherever cards are listed so the two can be matched. */
+export function TaskId({ id, className }: { id: string; className?: string }) {
+  return (
+    <span className={cn('shrink-0 font-mono text-[11px] text-muted-foreground/80', className)} title={`任務 id：${id}`}>
+      {id}
+    </span>
+  )
+}
+
+/** Where a dispatched card stands, as one mark: its column, sharpened by what its agent is doing. */
+export function slaveState(
+  column: ColumnId,
+  task: Task,
+  progress: TaskProgress | undefined
+): { dot: string; label: string; spinning?: boolean } {
   if (column === 'done') return { dot: 'bg-success', label: 'Done' }
   if (column === 'backlog') {
     return task.launchError
@@ -201,7 +214,7 @@ export function slaveState(column: ColumnId, task: Task, progress: TaskProgress 
     return { dot: 'bg-warning', label: '等待權限' }
   }
   if (progress?.activity.state === 'waiting') return { dot: 'bg-primary', label: '等待回覆' }
-  return { dot: 'bg-warning animate-pulse', label: '執行中' }
+  return { dot: 'bg-warning', label: '執行中', spinning: true }
 }
 
 export interface SlaveEntry {
@@ -243,7 +256,8 @@ function SlaveList({
                 task.id === selectedTaskId && 'bg-accent'
               )}
             >
-              <span className={cn('size-1.5 shrink-0 rounded-full', state.dot)} aria-label={state.label} />
+              <StatusMark {...state} />
+              <TaskId id={task.id} />
               <span
                 className={cn(
                   'min-w-0 flex-1 truncate',
@@ -365,6 +379,7 @@ function TaskCard({
         <span className={cn('min-w-0 flex-1 truncate', isMaster && 'font-medium text-master')}>
           {projectLabel(task)}
         </span>
+        <TaskId id={task.id} />
         <IconButton
           aria-label={`在${terminalDirectory}目錄開啟 Terminal：${task.title}`}
           title={`在${terminalDirectory}目錄開啟額外 Terminal`}
