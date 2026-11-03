@@ -86,6 +86,7 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
+import { createMailbox, frameMessage } from './mailbox'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
@@ -198,6 +199,12 @@ export class InvalidRequestError extends Error {
 }
 
 const STANDALONE_KEY = /^terminal_[0-9a-f-]{36}$/
+
+const MAX_MESSAGE_LENGTH = 20_000
+
+function coded(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code })
+}
 
 function invalid(message: string): never {
   throw new InvalidRequestError(message)
@@ -333,6 +340,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     },
   })
 
+  // Everything typed into a card's agent goes through here, a person's keys too,
+  // so a message never lands inside a dialog or in the middle of someone's typing.
+  const mailbox = createMailbox({
+    write: (key, data) => sessions.write(key, data),
+    activity: (key) => (progress.isTracking(key) ? progress.snapshot(key)?.activity ?? null : null),
+  })
+
   /** The card's git worktree; a master's folder is not one, so git must never run there. */
   function gitWorktree(task: Task): string | undefined {
     return isMasterTask(task) ? undefined : task.worktreePath
@@ -389,6 +403,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     standaloneTerminals.delete(key)
     terminalDirectories.delete(key)
     unwatchSubAgents(key)
+    mailbox.forget(key)
   }
 
   function isStandaloneKey(key: string): boolean {
@@ -961,6 +976,23 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       })
     },
 
+    // One card's agent talks to another's: a master to its own cards, a card to
+    // its master, nothing else — cards coordinate through their master.
+    'vibeflow:sendMessage': async (payload) => {
+      const p = obj<{ from: unknown; to: unknown; text: unknown; force?: unknown }>(payload, 'payload')
+      const from = findTask(str(p.from, 'from'))
+      const to = findTask(str(p.to, 'to'))
+      if (!from || !to) throw coded('UNKNOWN_TASK', `unknown task ${!from ? String(p.from) : String(p.to)}`)
+      const related = (isMasterTask(from) && to.masterId === from.id) || (isMasterTask(to) && from.masterId === to.id)
+      if (!related) throw coded('NOT_RELATED', '只有 master 與它自己的卡片之間可以互傳訊息')
+      const text = str(p.text, 'text').trim()
+      if (!text) invalid('text must not be empty')
+      if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
+      if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
+      const { queuedMs } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
+      return { delivered: true, queuedMs }
+    },
+
     'terminal:start': async (payload) => {
       const p = obj<StandaloneTerminalPayload>(payload, 'payload')
       const key = str(p.sessionKey, 'sessionKey')
@@ -1054,7 +1086,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
     'pty:input': (payload) => {
       const p = obj<{ sessionKey: unknown; data: unknown }>(payload, 'payload')
-      sessions.write(requireSessionKey(p.sessionKey), str(p.data, 'data'))
+      mailbox.userInput(requireSessionKey(p.sessionKey), str(p.data, 'data'))
     },
 
     'pty:resize': (payload) => {

@@ -16,13 +16,14 @@ function fakeSessions() {
   return {
     kind: 'pty',
     starts: [],
+    writes: [],
     alive,
     async start(key, opts) {
       this.starts.push({ key, ...opts })
       alive.add(key)
       return { pid: 1, scrollback: null }
     },
-    write() {},
+    write(key, data) { this.writes.push({ key, data }) },
     resize() {},
     async kill(key) { alive.delete(key) },
     async isAlive(key) { return alive.has(key) },
@@ -243,4 +244,56 @@ test('an extra terminal on a master opens in its folder, whatever its column', a
   const key = 'terminal_11111111-2222-4333-8444-555555555555'
   await core.handlers['terminal:start']({ sessionKey: key, taskId: task.id })
   assert.equal(sessions.starts.at(-1).cwd, path.join(task.workspacePath, 'work'))
+})
+
+async function masterWithCards(t) {
+  process.env.VIBEFLOW_QUIET_MS = '0'
+  t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
+  const { core, sessions } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const create = (input) => core.handlers['vibeflow:createTask'](input).then((r) => r.task)
+  const master = await create({ role: 'master', title: 'Lead' })
+  const other = await create({ role: 'master', title: 'Other lead' })
+  const dev = await create({ projectPath, title: 'Dev', masterId: master.id })
+  const qa = await create({ projectPath, title: 'QA', masterId: master.id })
+  const stray = await create({ projectPath, title: 'Stray', masterId: other.id })
+  for (const card of [master, other, dev, qa, stray]) sessions.alive.add(card.id)
+  const send = (from, to, text = 'hello') => core.handlers['vibeflow:sendMessage']({ from: from.id, to: to.id, text })
+  return { core, sessions, master, other, dev, qa, stray, send }
+}
+
+test('a master and its own cards message each other, tagged with the sender', async (t) => {
+  const { sessions, master, dev, send } = await masterWithCards(t)
+  assert.deepEqual(await send(master, dev, 'fix the login test').then((r) => r.delivered), true)
+  await send(dev, master, 'done: PR #12')
+  const [toDev, enter, toMaster] = sessions.writes
+  assert.equal(toDev.key, dev.id)
+  assert.ok(toDev.data.startsWith(`\x1b[200~<vibeflow from="${master.id} Lead">\n`))
+  assert.ok(toDev.data.includes('fix the login test'))
+  assert.deepEqual(enter, { key: dev.id, data: '\r' })
+  assert.equal(toMaster.key, master.id)
+  assert.ok(toMaster.data.includes(`from="${dev.id} Dev"`))
+})
+
+test('cards outside one master relationship cannot message each other', async (t) => {
+  const { core, sessions, master, other, dev, qa, stray, send } = await masterWithCards(t)
+  const refusedWith = (code) => (err) => err.code === code
+  await assert.rejects(send(dev, qa), refusedWith('NOT_RELATED'), 'two cards of one master go through it')
+  await assert.rejects(send(stray, master), refusedWith('NOT_RELATED'), "another master's card")
+  await assert.rejects(send(master, stray), refusedWith('NOT_RELATED'))
+  await assert.rejects(send(master, other), refusedWith('NOT_RELATED'), 'masters do not talk to each other')
+  await assert.rejects(
+    core.handlers['vibeflow:sendMessage']({ from: master.id, to: 'deadbeef', text: 'x' }),
+    refusedWith('UNKNOWN_TASK')
+  )
+  sessions.alive.delete(dev.id)
+  await assert.rejects(send(master, dev), refusedWith('NOT_RUNNING'))
+  await assert.rejects(send(master, qa, '   '), refusedWith('INVALID_REQUEST'))
+  assert.equal(sessions.writes.length, 0)
+})
+
+test("a person's keys reach the agent untagged", async (t) => {
+  const { core, sessions, dev } = await masterWithCards(t)
+  core.handlers['pty:input']({ sessionKey: dev.id, data: 'y' })
+  assert.deepEqual(sessions.writes, [{ key: dev.id, data: 'y' }])
 })

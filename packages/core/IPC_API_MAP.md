@@ -66,6 +66,7 @@ are.
 | `vibeflow:updateTask` | core | `updateTask(id, patch)` | | Backlog cards only. `projectPath` / `baseBranch` / `branch` are stored, not provisioned; a clean worktree is given up. `masterId` (id or null) moves the card under / out of a master |
 | `vibeflow:startTask` | core | `startTask(id)` | | Backlog → In Progress and the agent starts on the host, with no frontend involved (`task start`, master dispatch) |
 | `task:summaries` | core | `taskSummaries({ masterId?, taskId? })` | | Column, running session, todo x/y, activity, PR and outcome per card (`task list` / `task show`) |
+| `vibeflow:sendMessage` | core | `sendMessage({ from, to, text, force? })` | | Pastes a tagged message into `to`'s agent (`task send`). Only master ↔ its own cards (`NOT_RELATED`); refuses a permission dialog unless `force` (`TARGET_BLOCKED`), a dead session (`NOT_RUNNING`); waits for a person to stop typing |
 | `vibeflow:removeTask` | core | `removeTask(id)` | | |
 | `vibeflow:resetTaskRun` | core | `resetTaskRun(id)` | | "Return to Backlog" wipes the run |
 | `vibeflow:cleanupTask` | core | `cleanup(id)` | | Moved to Done: worktree, branch and artifacts removed |
