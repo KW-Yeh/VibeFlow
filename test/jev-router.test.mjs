@@ -27,17 +27,130 @@ test('Jev chooses effort supported by the current model without choosing a model
   assert.equal(requests[0].questions.model, undefined)
 })
 
-test('the CLI default model determines which effort levels Jev can choose', async () => {
+const catalog = [
+  { id: 'default', label: 'Default', efforts: ['low', 'medium', 'high'] },
+  { id: 'sonnet', label: 'Sonnet', efforts: ['low', 'medium', 'high'] },
+  { id: 'opus', label: 'Opus', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'haiku', label: 'Haiku', efforts: [] },
+]
+const open = { ...task, model: undefined }
+const reply = (answers) => ({ ok: true, async json() { return { answers } } })
+const choice = (value) => ({ type: 'choice', choice: value })
+
+test('a card without a model gets a model and effort from one Jev request when the task is clear', async () => {
+  const requests = []
+  const phases = []
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    async fetcher(_url, init) {
+      requests.push(JSON.parse(init.body))
+      return reply({ complexity: choice('moderate'), model: choice('sonnet'), effort: choice('medium') })
+    },
+    scout: async () => { throw new Error('no scout for a clear task') },
+  })
+  const route = await router.route(open, catalog, { cwd: '/w', onPhase: (p) => phases.push(p) })
+  assert.deepEqual(route, { status: 'routed', model: 'sonnet', effort: 'medium', complexity: 'moderate' })
+  assert.equal(requests.length, 1)
+  assert.deepEqual(Object.keys(requests[0].questions.model.criteria), ['haiku', 'sonnet', 'opus'], 'one model per tier, never the alias')
+  assert.ok('unclear' in requests[0].questions.complexity.criteria)
+  assert.deepEqual(Object.keys(requests[0].questions.effort.criteria), ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.deepEqual(phases, ['judging'])
+})
+
+test('an unclear task is scouted by the strongest model, then Jev decides with the analysis', async () => {
+  const requests = []
+  const scouts = []
   const router = createJevRouter({
     apiKey: 'test-key',
     async fetcher(_url, init) {
       const body = JSON.parse(init.body)
-      assert.equal(body.state.currentModel, 'opus')
-      assert.ok(!('xhigh' in body.questions.effort.criteria))
-      return { ok: true, async json() { return { answers: { effort: { type: 'choice', choice: 'max' } } } } }
+      requests.push(body)
+      return requests.length === 1
+        ? reply({ complexity: choice('unclear'), model: choice('haiku'), effort: choice('low') })
+        : reply({ complexity: choice('complex'), model: choice('opus'), effort: choice('xhigh') })
+    },
+    async scout(agent, model, effort, prompt, cwd) {
+      scouts.push({ agent, model, effort, cwd })
+      assert.match(prompt, /Do not edit/)
+      return '  touches auth.ts and session.ts  '
     },
   })
-  assert.equal((await router.route({ ...task, model: undefined }, [{ ...models[0], isDefault: true }])).effort, 'max')
+  const phases = []
+  const route = await router.route(open, catalog, { cwd: '/w', onPhase: (p) => phases.push(p) })
+  assert.deepEqual(scouts, [{ agent: 'claude', model: 'opus', effort: 'high', cwd: '/w' }])
+  assert.equal(requests.length, 2)
+  assert.equal(requests[1].state.context, 'touches auth.ts and session.ts')
+  assert.ok(!('unclear' in requests[1].questions.complexity.criteria))
+  assert.deepEqual(route, {
+    status: 'routed', model: 'opus', effort: 'xhigh', complexity: 'unclear',
+    scoutModel: 'opus', context: 'touches auth.ts and session.ts',
+  })
+  assert.deepEqual(phases, ['judging', 'scouting', 'selecting'])
+})
+
+test('a failed scout launches the strongest model at high effort and says why', async () => {
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => reply({ complexity: choice('unclear'), model: choice('haiku'), effort: choice('low') }),
+    scout: async () => { throw new Error('timed out') },
+  })
+  const route = await router.route(open, catalog, { cwd: '/w' })
+  assert.equal(route.status, 'fallback')
+  assert.equal(route.model, 'opus')
+  assert.equal(route.effort, 'high')
+  assert.equal(route.reason, 'timed out')
+})
+
+test('a master is not scouted: an unclear task goes straight to the strongest model', async () => {
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => reply({ complexity: choice('unclear'), model: choice('haiku'), effort: choice('low') }),
+    scout: async () => { throw new Error('a master has no repo to read') },
+  })
+  assert.deepEqual(await router.route(open, catalog, { scout: false }),
+    { status: 'routed', model: 'opus', effort: 'high', complexity: 'unclear' })
+})
+
+test('with a manual effort Jev picks only the model', async () => {
+  let request
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    async fetcher(_url, init) {
+      request = JSON.parse(init.body)
+      return reply({ complexity: choice('simple'), model: choice('haiku') })
+    },
+  })
+  const route = await router.route({ ...open, effort: 'low' }, catalog, { cwd: '/w' })
+  assert.equal(request.questions.effort, undefined)
+  assert.deepEqual(route, { status: 'routed', model: 'haiku', complexity: 'simple' })
+})
+
+test('the chosen effort is lowered to what the chosen model accepts', async () => {
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => reply({ complexity: choice('complex'), model: choice('sonnet'), effort: choice('max') }),
+  })
+  assert.equal((await router.route(open, catalog, { cwd: '/w' })).effort, 'high')
+  const noEffort = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => reply({ complexity: choice('simple'), model: choice('haiku'), effort: choice('low') }),
+  })
+  assert.equal((await noEffort.route(open, catalog, { cwd: '/w' })).effort, undefined)
+})
+
+test('a model outside the catalog, or no key, leaves the CLI default model', async () => {
+  const stranger = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => reply({ complexity: choice('simple'), model: choice('gpt-x'), effort: choice('low') }),
+  })
+  const route = await stranger.route(open, catalog, { cwd: '/w' })
+  assert.equal(route.status, 'fallback')
+  assert.equal(route.model, undefined)
+  assert.match(route.reason, /不在模型清單/)
+  const absent = createJevRouter({ apiKey: '', fetcher: async () => { throw new Error('unexpected request') } })
+  const none = await absent.route(open, catalog, { cwd: '/w' })
+  assert.equal(none.model, undefined)
+  assert.match(none.reason, /TYPESAFE_API_KEY/)
 })
 
 test('Jev rejects an unsupported effort and falls back to the model default', async () => {
