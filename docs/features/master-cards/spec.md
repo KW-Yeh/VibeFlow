@@ -26,6 +26,7 @@ In Progress、再逐張看進度。需要一個**不隸屬任何 repo** 的 Agen
 2. **Master 的工作目錄** ⚠️（見決策 D1）。
 3. **Master 專屬 prompt**：master 啟動時，在使用者的 system prompt 與卡片內容之外，
    額外注入一段 master 指引（怎麼拆卡、怎麼用 CLI 派工與監聽、何時回報）。
+   slave（有 `masterId` 的卡）只拿 `slaveSystemPrompt()`，不套用使用者的 system prompt（2026-11-03，見 [jev-routing](../jev-routing/spec.md)）。
    這是 AGENTS.md「launch 只送 system prompt + title + description」規則的**明確例外**，
    需同步改 AGENTS.md。
 4. **Slave 歸屬**：slave 最多一個 master；master 不能再有 master（不巢狀）。

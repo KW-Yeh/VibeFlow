@@ -95,6 +95,11 @@ npm run vibeflow -- task create \
 - `--effort` defaults to `auto`, matching the UI. The default lives in
   `packages/core/src/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
+- Leave `--model` out to let Jev pick one at launch (spec: `docs/features/jev-routing/`):
+  a card without a model asks Jev for complexity, model and effort; when Jev cannot
+  judge, the strongest catalog model reads the worktree read-only first and its
+  analysis joins the prompt. The choice lives in `jevRoute`, never in `Task.model`,
+  so a restart routes again and a resume reuses it. Masters are never scouted.
 - Unknown flags are rejected, so a typo fails loudly instead of being ignored.
 - `--profile dev` writes to `<appData>/vibeflow (development)/vibeflow-state.json`,
   which is what `npm start -- --profile dev` uses. Omitting `--profile` writes to the
@@ -195,8 +200,9 @@ A launch's prompt is exactly the user's custom system prompt (Settings) plus the
 card's title and description — nothing else. Two exceptions: a master card, whose
 system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to dispatch, start
 and steer cards with the board CLI, following its auto mode; and a card with a
-`masterId`, which gets `slaveSystemPrompt()`: who its master is and to report there
-with `task send`. The Library (`library.ts`) is storage
+`masterId`, which gets **only** `slaveSystemPrompt()` — not the user's custom
+system prompt: who its master is and to report there with `task send`. A Jev scout
+analysis, when there is one, follows the card text in the first prompt. The Library (`library.ts`) is storage
 only: no Library skill, prompt snippet or script is loaded or injected
 (`buildAgentCommand` adds no `--plugin-dir` and no `CODEX_HOME`). Skills the agent
 CLIs discover on their own (`~/.claude/skills`, the project's `.claude/skills`,
