@@ -34,7 +34,7 @@
   2. 第一次請求一次問齊：`complexity`（含 `unclear`）、`model`、以及 `opts.chooseEffort` 時的 `effort`（候選 = 各候選模型 `selectableEfforts` 的聯集，依 `MANUAL_EFFORTS` 排序）。合併成一次請求，讓最常見的情境（判得出來）只多花一次 HTTP，而不是舊版的兩次。
   3. `complexity !== 'unclear'` → 採用。`unclear` 且 `opts.scout` → `onPhase('scouting')`，以最高層模型 + `high`（clamp）跑 scout，再 `onPhase('selecting')` 問第二次（無 `complexity`，state 帶 `context`）。`unclear` 且不 scout（master）→ 直接最高層 + `high`。
   4. 最終 effort 一律依選定模型 `clampEffort`；選定模型宣告不接受 effort 時為 undefined。
-  5. 失敗：第一次請求前／中 → `fallback`（無 model、無 effort）；scout 或第二次請求失敗 → `fallback` 但帶 `model = 最高層`、`effort = high(clamp)`、有的話帶 `context`，`reason` 說明。
+  5. 失敗：第一次請求前／中 → `fallback`（無 model、無 effort）；scout 失敗 → `fallback` 但帶 `model = 最高層`、`effort = high(clamp)`；第二次 Jev 請求失敗 → 與第一次相同（無 model、無 effort），但保留 `context` 附給 agent。HTTP 402／429 的 `reason` 寫明額度用完。（2026-11-03 使用者追加）
 
 **Scout 執行器可注入。** `createJevRouter({ scout })`，預設實作用 `runAgentPrint`：Claude `['-p', '--model', id, '--permission-mode', 'plan', '--effort', e]`，Codex `['exec', '--model', id, '-c', 'model_reasoning_effort="e"', '--sandbox', 'read-only', '--skip-git-repo-check', '-']`；timeout 300,000 ms、maxBuffer 128 KB、輸出 trim 後截 8,000 字。args 只放固定 token（agent-print 的 Windows 限制），prompt 走 stdin。模型 id 先過 `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`，才能安全放進命令列。
 

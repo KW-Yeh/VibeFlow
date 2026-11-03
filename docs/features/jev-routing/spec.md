@@ -4,7 +4,7 @@
 - Ticket：尚無
 - 需求來源：使用者需求（2026-11-03）：卡片未指定模型時由 Jev 判斷複雜度並選模型與 effort；無法判定時先由高思考模型補 context；master 派發的 slave 卡同邏輯；slave 卡不套用 system prompt，只遵從 master 指派的任務與進度。相關既有設計：[master-cards spec](../master-cards/spec.md)。
 - 更新日期：2026-11-03
-- 確認紀錄：2026-11-03 使用者確認範圍決策——無法判定時以唯讀 scout run 補 context；scout 分析同時存到卡片並餵給主 agent；Jev 只在該卡的 agent CLI 型錄內選模型。slave 判定沿用 main 上既有的 `masterId`（使用者指示改依 master-cards 設計）。2026-11-03 使用者確認整份 Spec，待確認事項依提議定案：scout 逾時 5 分鐘；master 卡未指定模型時也由 Jev 選，但不跑 scout。
+- 確認紀錄：2026-11-03 使用者確認範圍決策——無法判定時以唯讀 scout run 補 context；scout 分析同時存到卡片並餵給主 agent；Jev 只在該卡的 agent CLI 型錄內選模型。slave 判定沿用 main 上既有的 `masterId`（使用者指示改依 master-cards 設計）。2026-11-03 使用者確認整份 Spec，待確認事項依提議定案：scout 逾時 5 分鐘；master 卡未指定模型時也由 Jev 選，但不跑 scout。2026-11-03 使用者追加：沒有 Jev 或額度用完時一律退回 CLI 預設模型，讓終端機沿用上次使用的設定（第二次請求失敗也是）。
 
 ## 問題與目標
 
@@ -67,9 +67,9 @@ slave 卡套用完全相同的規則。master 卡見「Master 卡」一節。
 
 | 失敗點 | 結果 |
 | --- | --- |
-| 沒有 key、Jev 請求失敗或回傳非法答案（第一次請求） | CLI 預設模型；effort `auto` 時不帶 effort flag；卡片顯示原因 |
+| 沒有 key、額度用完（HTTP 402／429）、Jev 請求失敗或回傳非法答案（任何一次請求） | 不帶 `--model`，effort `auto` 時也不帶 effort flag，讓 agent CLI 沿用它自己目前的設定（上次使用的模型與 effort）；卡片顯示原因，額度用完時明確寫出 |
 | scout 失敗、逾時或沒有輸出 | 以 scout 模型、effort `high`（clamp 後）啟動；卡片顯示原因（任務已被判定為不明確，採取保守選擇） |
-| 第二次 Jev 請求失敗 | 同上，以 scout 模型與 `high` 啟動，並附上已取得的 scout 分析 |
+| 第二次 Jev 請求失敗 | 同「沒有 key／額度用完」：CLI 預設模型與 effort；已取得的 scout 分析照樣附給 agent |
 | 型錄為空 | CLI 預設模型，顯示原因 |
 | host 在 `routing` 中途當掉 | 殘留的 `routing` 紀錄不被採用，下次啟動重新判斷（維持現況） |
 
@@ -97,6 +97,7 @@ slave 卡套用完全相同的規則。master 卡見「Master 卡」一節。
 - [ ] AC-1：未指定模型、effort `auto` 的卡片，在 Jev 回答 `moderate` + 某型錄模型 + `medium` 時，以該模型與 `--effort medium`（Claude）／`model_reasoning_effort="medium"`（Codex）啟動，且不跑 scout。
 - [ ] AC-2：Jev 第一次回答 `unclear` 時，以最高層級模型在 worktree 執行唯讀 scout（Claude `-p --permission-mode plan`、Codex `exec --sandbox read-only`），第二次請求的 state 帶有 scout 分析且沒有 `unclear` 選項，主 agent 的 prompt 包含該分析。
 - [ ] AC-3：scout 失敗時，卡片以 scout 模型與 `high`（clamp 後）啟動，`jevRoute.reason` 記錄原因。
+- [ ] AC-3b：Jev 無法使用（沒有 key、額度用完、請求失敗）時，不論第一次或第二次請求，啟動命令都不帶 `--model`，effort `auto` 時也不帶 effort；額度用完的原因寫明「額度」。
 - [ ] AC-4：未指定模型、手動 effort `low` 的卡片，Jev 選模型後 effort 依該模型 clamp；選定模型不支援 effort 時不帶 flag。
 - [ ] AC-5：已指定模型的卡片行為與目前一致（只選 effort 或不呼叫 Jev），不跑 scout。
 - [ ] AC-6：resume 沿用路由出的模型，不再呼叫 Jev；重新開始後重新路由。

@@ -102,6 +102,9 @@ export function createJevRouter(opts: {
       body: JSON.stringify({ model: 'jev-latest', state, questions }),
       signal: AbortSignal.timeout(15_000),
     })
+    if (response.status === 402 || response.status === 429) {
+      throw new Error(`Jev 額度已用完或請求過多（HTTP ${response.status}），改用 CLI 目前的模型`)
+    }
     if (!response.ok) throw new Error(`Jev API 回應 ${response.status}`)
     const body = await response.json() as JevResponse
     if (!body.answers) throw new Error('Jev API 沒有回傳判斷')
@@ -188,7 +191,7 @@ export function createJevRouter(opts: {
     }
 
     if (ro.scout === false) return conservative({ status: 'routed', complexity })
-    let context: string | undefined
+    let context: string
     try {
       if (!ro.cwd) throw new Error('補充 context 時找不到 worktree')
       ro.onPhase?.('scouting')
@@ -198,16 +201,17 @@ export function createJevRouter(opts: {
         + taskText
       context = (await scout(agent, strongest.id, scoutEffort, instruction, ro.cwd)).trim().slice(0, MAX_CONTEXT_CHARS)
       if (!context) throw new Error('補充 context 的模型沒有回傳分析')
+    } catch (err) {
+      return conservative({ status: 'fallback', complexity, reason: message(err) })
+    }
+    try {
       ro.onPhase?.('selecting')
       const second = await ask({ task: taskText, agent, context }, questions(false))
       return decide(second, { complexity, scoutModel: strongest.id, context })
     } catch (err) {
-      return conservative({
-        status: 'fallback',
-        complexity,
-        reason: message(err),
-        ...(context ? { scoutModel: strongest.id, context } : {}),
-      })
+      // Jev itself is unavailable: like any Jev failure, leave model and effort
+      // to the CLI's own setting, but keep the analysis already paid for.
+      return { status: 'fallback', complexity, reason: message(err), scoutModel: strongest.id, context }
     }
   }
 

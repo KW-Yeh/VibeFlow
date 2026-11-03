@@ -101,6 +101,40 @@ test('a failed scout launches the strongest model at high effort and says why', 
   assert.equal(route.reason, 'timed out')
 })
 
+test('when Jev runs out of quota after a scout, the CLI keeps its own model and effort, with the analysis', async () => {
+  let calls = 0
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    async fetcher() {
+      calls += 1
+      return calls === 1
+        ? reply({ complexity: choice('unclear'), model: choice('haiku'), effort: choice('low') })
+        : { ok: false, status: 429, async json() { return {} } }
+    },
+    scout: async () => 'touches auth.ts',
+  })
+  const route = await router.route(open, catalog, { cwd: '/w' })
+  assert.equal(route.status, 'fallback')
+  assert.equal(route.model, undefined)
+  assert.equal(route.effort, undefined)
+  assert.equal(route.context, 'touches auth.ts')
+  assert.match(route.reason, /額度/)
+})
+
+test('a Jev out of quota on the first request leaves model and effort to the CLI', async () => {
+  const router = createJevRouter({
+    apiKey: 'test-key',
+    fetcher: async () => ({ ok: false, status: 402, async json() { return {} } }),
+    scout: async () => { throw new Error('no scout without a judgement') },
+  })
+  const route = await router.route(open, catalog, { cwd: '/w' })
+  assert.deepEqual({ model: route.model, effort: route.effort, status: route.status }, { model: undefined, effort: undefined, status: 'fallback' })
+  assert.match(route.reason, /額度/)
+  const effortOnly = await router.route(task, models)
+  assert.equal(effortOnly.effort, undefined)
+  assert.match(effortOnly.reason, /額度/)
+})
+
 test('a master is not scouted: an unclear task goes straight to the strongest model', async () => {
   const router = createJevRouter({
     apiKey: 'test-key',
