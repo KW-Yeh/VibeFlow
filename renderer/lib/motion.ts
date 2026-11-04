@@ -119,6 +119,9 @@ export const MOTION_SPRING = {
   value: { stiffness: 140, damping: 24 },
 } as const satisfies Record<string, Transition | { stiffness: number; damping: number }>
 
+/** For a change the eye must not follow, e.g. a card leaving a column it is travelling out of. */
+export const MOTION_INSTANT: Transition = { duration: 0 }
+
 /** A one-shot ring that draws the eye to a state that needs the user. */
 export const MOTION_PULSE: Transition = { duration: 0.7, ease: 'easeOut' }
 

@@ -16,6 +16,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from 'motion/react'
 import { jevResultLabel, jevRoutingLabel } from '@/lib/jev'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
@@ -34,7 +35,9 @@ import type {
 } from '@/lib/types'
 import { StatusMark, TaskProgressBadge } from '@/components/task-progress'
 import { AnimatedNumber } from '@/components/ui/animated-number'
+import { createEnterVariants, MOTION_INSTANT, MOTION_SPRING, timed } from '@/lib/motion'
 import type { GridTerminal } from '@/components/terminal-grid'
+import { HoldButton } from '@/components/ui/hold-button'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -101,7 +104,6 @@ function CardMenu({
   onDelete: () => void
   onClose: () => void
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const ref = useDismissible(true, onClose)
   // Keep the menu on screen for cards near the right edge or the splitter.
   const left = Math.max(8, Math.min(anchor.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
@@ -131,38 +133,18 @@ function CardMenu({
         </button>
       )}
 
-      {confirmDelete ? (
-        <div className="flex items-center gap-1 rounded-sm bg-destructive/10 p-1">
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(false)}
-            className="rounded-sm px-2 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onDelete()
-              onClose()
-            }}
-            className="ml-auto rounded-sm px-2 py-1 text-sm font-medium text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            確認刪除
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => setConfirmDelete(true)}
-          className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'text-destructive hover:bg-destructive/15')}
-          title={`刪除任務「${task.title}」（清理 worktree）`}
-        >
-          <Trash2 className="size-3.5 shrink-0" />
-          刪除任務
-        </button>
-      )}
+      <HoldButton
+        role="menuitem"
+        onConfirm={() => {
+          onDelete()
+          onClose()
+        }}
+        className={cn(MENU_ITEM, 'text-destructive hover:bg-destructive/15')}
+        title={`按住以刪除任務「${task.title}」（清理 worktree）`}
+      >
+        <Trash2 className="size-3.5 shrink-0" />
+        按住刪除任務
+      </HoldButton>
     </div>
   )
 }
@@ -587,6 +569,25 @@ export function BoardColumns({
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
 
   const allTasks = [...board.backlog, ...board.in_progress, ...board.done]
+  const reducedMotion = useReducedMotion() ?? false
+  const allIds = new Set(allTasks.map((task) => task.id))
+  // Cards already on the board when it first showed any are not "new": only a
+  // card that arrives later (CLI, master, Jira) animates in.
+  const knownIds = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (knownIds.current === null && allIds.size === 0) return
+    knownIds.current = new Set([...(knownIds.current ?? []), ...allIds])
+  })
+  const isNew = (id: string) => knownIds.current !== null && !knownIds.current.has(id)
+  const cardVariants = (id: string): Variants => ({
+    ...createEnterVariants({ timing: 'spatial', transform: { y: -8, scale: 0.98 }, reducedMotion }),
+    // A card still on the board is travelling to another column (or under a
+    // master): its shared layout carries it, so the copy left here just goes.
+    exit: (ids: Set<string>) =>
+      ids.has(id)
+        ? { opacity: 0, transition: MOTION_INSTANT }
+        : { opacity: 0, scale: reducedMotion ? 1 : 0.96, transition: timed('micro', reducedMotion, 'exit') },
+  })
   const projects = Array.from(new Set(allTasks.map(projectLabel))).sort((a, b) =>
     a.localeCompare(b)
   )
@@ -631,6 +632,7 @@ export function BoardColumns({
         />
       </div>
 
+      <LayoutGroup id="board-cards">
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
         {COLUMNS.map((column) => {
           const tasks = visible(column)
@@ -648,12 +650,24 @@ export function BoardColumns({
                 <AnimatedNumber value={tasks.length} className="text-xs tabular-nums text-muted-foreground/80" />
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
+              <motion.div layoutScroll className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
+                <AnimatePresence initial={false} custom={allIds}>
                 {tasks.map((task) => {
                   const slaves = task.role === 'master' ? slavesOf(task.id) : undefined
                   const collapsed = collapsedMasters.has(task.id)
                   return (
-                    <div key={task.id}>
+                    <motion.div
+                      key={task.id}
+                      layout="position"
+                      layoutId={`card-${task.id}`}
+                      transition={MOTION_SPRING.layout}
+                      variants={cardVariants(task.id)}
+                      custom={allIds}
+                      initial={isNew(task.id) ? 'hidden' : false}
+                      animate="visible"
+                      exit="exit"
+                      className="relative"
+                    >
                       <TaskCard
                         task={task}
                         column={column}
@@ -691,9 +705,10 @@ export function BoardColumns({
                           )}
                         </>
                       )}
-                    </div>
+                    </motion.div>
                   )
                 })}
+                </AnimatePresence>
 
                 {column === 'backlog' && (
                   <button
@@ -709,11 +724,12 @@ export function BoardColumns({
                 {tasks.length === 0 && column !== 'backlog' && (
                   <p className="px-2 py-1 text-sm text-muted-foreground/60">尚無任務</p>
                 )}
-              </div>
+              </motion.div>
             </section>
           )
         })}
       </div>
+      </LayoutGroup>
     </div>
   )
 }

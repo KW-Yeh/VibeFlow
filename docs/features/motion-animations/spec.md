@@ -39,6 +39,7 @@ reviewed 2026-11-04).
 | 7 | **Copy Button** (icon morph to ✓) | The four `navigator.clipboard` call sites: `remote-share-dialog.tsx`, `task-workspace-panel.tsx` (artifacts dir, ~L1927), `settings-dialog.tsx` (GitHub code) | Copy icon morphs into a check for ~1.5 s, confirming the copy without a toast |
 | 8 | **Skeleton crossfade** (`AnimatePresence mode="popLayout"`) | Loading states in `github-view.tsx`, `jira-panel.tsx`, `library-panel.tsx`, `terminal-file-preview.tsx` | Content cross-fades in over the loading state instead of popping |
 | 9 | **Toast: Stacked notifications** | `notification-toaster.tsx` | Toasts already enter/exit; add a stacked (collapsed) look when >2 are open and expand on hover; pause the auto-dismiss timer while hovered |
+| 10 | **Hold to confirm** | 刪除任務 (card menu, task workspace header), 退回 Backlog (terminal toolbar) | The control fires only after being held for 1.2 s (`HOLD_TO_CONFIRM_MS`); a fill grows while held and drains if released early. Space / Enter can be held too. It replaces the inline 確認刪除 step and the 退回 Backlog dialog; the consequences moved into the control's tooltip. 完成任務 keeps its dialog |
 
 ## Considered, not chosen
 
@@ -52,15 +53,16 @@ reviewed 2026-11-04).
 | Radix / Base UI / Clerk examples | Those libraries are not used here; the patterns they show (dialog, toast, tabs) are covered by #1, #9 and the existing `DialogShell` |
 | Reorder animation / Multidimensional reorder | Terminal tabs already reorder by grip (`3dc7676`); board order is not user-sortable |
 | Drag / Swipe actions | Cards move by buttons today; making them draggable is a feature decision, not an animation |
-| Hold to confirm | Would change how delete / return-to-backlog are confirmed — a UX decision, not polish. Listed as an open question |
 | Layout animation of the workspace rail / inspector fold | Contains xterm — see ground rules |
 | Command palette, Mega menu, Radial menu | New features, not animations of existing UI |
 
-## Open questions
+## Decisions
 
-- **Hold to confirm** for 刪除卡片 / 退回 Backlog — replace the current confirm, or skip?
-- **#2 cross-column travel**: columns are separate scroll containers; if `layoutScroll`
-  cannot keep the travel smooth when the target column is scrolled, fall back to #3
-  (exit here, enter there) for that card.
+- Hold to confirm replaces the existing confirmation for 刪除任務 and 退回 Backlog
+  (user decision, 2026-11-04).
+- Copy feedback is an icon (`ui/copy-feedback-icon.tsx`) dropped into each copy
+  control rather than a whole button: the four call sites have different shells
+  (text button, outline button, icon button, input suffix).
+- #2 falls back to #3 if cross-column travel stutters in a scrolled column.
 
 Implementation order and verification: [plan.md](plan.md).

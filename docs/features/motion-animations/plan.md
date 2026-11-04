@@ -13,9 +13,11 @@ independently shippable.
    `motion.span`, formatted by a passed `format` (`formatTokens`,
    `toLocaleString`). Renders the final value immediately under reduced motion and
    on first mount (no count-up from 0 on page load). Keeps `tabular-nums`.
-3. `ui/copy-button.tsx`: wraps `IconButton`; `Copy` ↔ `Check` through
-   `AnimatePresence mode="wait"`, resets after 1.5 s, announces 「已複製」 via
-   `aria-live`. Takes the text (or an async getter) and an `aria-label`.
+3. `ui/copy-feedback-icon.tsx`: `Copy` ↔ `Check` through `AnimatePresence`;
+   each call site keeps its own copy state and shell.
+   `ui/hold-button.tsx`: hold-to-confirm `<button>` (pointer and Space/Enter),
+   fill driven by a motion value, fires `onConfirm` after `HOLD_TO_CONFIRM_MS`.
+   `ui/tab-indicator.tsx`, `ui/fade-swap.tsx`: the shared pieces of #1 and #8.
 4. Migrate `notification-toaster.tsx`'s inline `duration: 0.15` to the tokens.
 
 ## Phase 1 — tabs and status (#1, #6) — low risk, highest frequency
@@ -40,7 +42,7 @@ independently shippable.
 
 ## Phase 3 — copy feedback and loading crossfade (#7, #8)
 
-- Swap the four clipboard call sites to `CopyButton`.
+- Put `CopyFeedbackIcon` in the four clipboard call sites.
 - Wrap loading ↔ content in `github-view`, `jira-panel`, `library-panel`,
   `terminal-file-preview` with `AnimatePresence mode="popLayout" initial={false}`.
   Background refreshes that keep the old list visible must **not** cross-fade
@@ -63,6 +65,14 @@ independently shippable.
 - Stacked mode when more than two toasts are open: older ones offset and scaled
   behind the newest; hover/focus on the stack expands it (`layout`) and pauses every
   item's dismiss timer; leaving resumes them with the remaining time.
+
+## Phase 6 — hold to confirm (#10)
+
+- Card menu 刪除任務 and the workspace header's delete icon become `HoldButton`s;
+  their inline 確認刪除 state (and its Esc handler) goes away.
+- The terminal toolbar's 退回 Backlog becomes a `HoldButton`;
+  `returnTaskToBacklog` in `kanban-board.tsx` resets directly and the confirm
+  dialog is removed.
 
 ## Verification (each phase)
 

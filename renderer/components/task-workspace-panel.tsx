@@ -76,6 +76,7 @@ import {
 import { isModalOpen } from '@/lib/modal-presence'
 import { cn } from '@/lib/utils'
 import { CopyFeedbackIcon } from '@/components/ui/copy-feedback-icon'
+import { HoldButton } from '@/components/ui/hold-button'
 import type {
   ArtifactContent,
   ArtifactKind,
@@ -1647,7 +1648,6 @@ export function TaskWorkspacePanel({
 }: TaskWorkspacePanelProps) {
   const isMaster = task.role === 'master'
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
   const tabBaseId = useId()
   const tabGroup = useId()
@@ -1707,19 +1707,6 @@ export function TaskWorkspacePanel({
     }
   }, [task.id, column])
 
-  // Inline delete confirmation is dismissible with Esc, matching the dialog
-  // affordance elsewhere (the row is not a modal, so DialogShell doesn't cover it).
-  useEffect(() => {
-    if (!confirmDelete) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      // Defer to a modal dialog's own Esc handling if one is open above the row.
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
-      setConfirmDelete(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [confirmDelete])
   const canLaunch = column === 'backlog'
   const launchCommand = launch?.launch
   const launchNonce = launch?.nonce ?? 0
@@ -1996,32 +1983,15 @@ export function TaskWorkspacePanel({
     applyAsideWidth(width + delta, true)
   }
 
-  const deleteControl = confirmDelete ? (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() => setConfirmDelete(false)}
-        className="rounded-md px-1.5 py-1 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        取消
-      </button>
-      <button
-        type="button"
-        onClick={() => onDelete(task.id)}
-        className="rounded-md px-1.5 py-1 text-sm text-destructive outline-none transition-colors motion-reduce:transition-none hover:bg-destructive/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        確認刪除
-      </button>
-    </div>
-  ) : (
-    <IconButton
-      aria-label="刪除任務"
-      title="刪除任務（清理 worktree）"
-      tone="danger"
-      onClick={() => setConfirmDelete(true)}
+  const deleteControl = (
+    <HoldButton
+      aria-label="按住刪除任務"
+      title="按住以刪除任務（清理 worktree）"
+      onConfirm={() => onDelete(task.id)}
+      className="inline-flex shrink-0 items-center justify-center rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
     >
       <Trash2 className="size-4" />
-    </IconButton>
+    </HoldButton>
   )
 
   // A running task has no header: its title is the tab above, and its

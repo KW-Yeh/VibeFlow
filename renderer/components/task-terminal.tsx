@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Terminal as XTerm } from '@xterm/xterm'
 
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import {
   hasBridge,
@@ -17,6 +17,7 @@ import type { LaunchIntent } from '@/lib/types'
 import { fitColumnsWithinViewport, waitForLayoutBox } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
+import { HoldButton } from '@/components/ui/hold-button'
 import { ArrowDown, Bot, Undo2 } from 'lucide-react'
 
 const TerminalFilePreview = dynamic(() => import('@/components/terminal-file-preview').then((m) => m.TerminalFilePreview), { ssr: false })
@@ -614,17 +615,15 @@ export function TaskTerminal({
         ) : (
           <div className="flex shrink-0 items-center gap-1">
             {onReturnToBacklog && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 shrink-0 px-2 text-xs"
-                onClick={() => void returnToBacklog()}
+              <HoldButton
+                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-6 shrink-0 px-2 text-xs')}
+                onConfirm={() => void returnToBacklog()}
                 disabled={!cwd || isReturningToBacklog || isLaunchingAgent}
-                title="捨棄這次執行的程式碼變更與 artifacts 並退回 Backlog，之後按「開始」才會重新啟動 Agent"
+                title="按住以退回 Backlog：停止 Agent，捨棄這張卡在本地的 commit、未 commit 變更與 artifacts（遠端分支不動，無法復原）。之後按「開始」才會重新啟動 Agent"
               >
                 <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
-                {isReturningToBacklog ? '退回中…' : '退回 Backlog'}
-              </Button>
+                {isReturningToBacklog ? '退回中…' : '按住退回 Backlog'}
+              </HoldButton>
             )}
             {onLaunchAgent && (
               <Button
