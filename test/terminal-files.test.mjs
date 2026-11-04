@@ -17,6 +17,26 @@ test('file candidates support quotes, locations, local URLs and ignore web URLs'
   assert.deepEqual(findTerminalFiles('C:\\work\\a.ts:2:1').map((m) => m.path), ['C:\\work\\a.ts'])
 })
 
+test('absolute paths glued to a tool call or prose are detected as absolute', () => {
+  const cases = [
+    ['● Write(/Users/me/a.md)', '/Users/me/a.md'],
+    ['Read(~/x/y.ts)', '~/x/y.ts'],
+    ['報告在：/Users/me/a.md。', '/Users/me/a.md'],
+    ['見（/Users/me/a.md）', '/Users/me/a.md'],
+    ['path=/Users/me/a.png', '/Users/me/a.png'],
+    ['Edit(C:\\work\\a.ts)', 'C:\\work\\a.ts'],
+  ]
+  for (const [text, expected] of cases) {
+    const matches = findTerminalFiles(text)
+    assert.deepEqual(matches.map((m) => m.path), [expected], text)
+    assert.equal(text.slice(matches[0].start, matches[0].end), expected, text)
+  }
+  // Relative paths and web URLs keep their old shape.
+  assert.deepEqual(findTerminalFiles('src/foo.ts:12 node_modules/.bin/x.js').map((m) => m.path), ['src/foo.ts', 'node_modules/.bin/x.js'])
+  assert.deepEqual(findTerminalFiles('url=https://example.com/a.png'), [])
+  assert.deepEqual(spanning(['報告在：/Users/me/My Shots/a.png'], ['/Users/me/My Shots/a.png']).map((c) => c.path), ['/Users/me/My Shots/a.png'])
+})
+
 function spanning(lines, existing) {
   return pickSpanningFiles(spanningFileCandidates(lines), existing)
 }

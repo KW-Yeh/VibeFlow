@@ -5,6 +5,9 @@ export interface TerminalFileMatch {
   end: number
 }
 
+const EXPLICIT_START = /^(?:file:\/\/|\/|~[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i
+const EMBEDDED_ABSOLUTE = /(?<=[^\p{L}\p{N}_.@+~\\/-])(?:file:\/\/|~[\\/]|\/(?!\/)|[a-z]:[\\/])/iu
+
 /** Candidate detection only; core validates existence on an explicit click. */
 export function findTerminalFiles(text: string): TerminalFileMatch[] {
   const matches: TerminalFileMatch[] = []
@@ -19,14 +22,20 @@ export function findTerminalFiles(text: string): TerminalFileMatch[] {
       // Markdown links and surrounding prose punctuation aren't part of paths.
       const markdown = value.indexOf('](')
       if (markdown >= 0) { start += markdown + 2; value = value.slice(markdown + 2) }
-      const prefix = value.match(/^[([{]+/)?.[0].length ?? 0
+      const prefix = value.match(/^[([{（「『【《〈]+/)?.[0].length ?? 0
       start += prefix
-      value = value.slice(prefix).replace(/[)\]},;.!?]+$/, '')
+      value = value.slice(prefix).replace(/[)\]},;.!?）」』】》〉。，、；：！？]+$/, '')
+      // An absolute path glued to a tool call or prose (`Write(/a.md`, `報告在：/a.md`)
+      // is that path, not a relative name rooted in the session directory.
+      if (!EXPLICIT_START.test(value)) {
+        const embedded = value.search(EMBEDDED_ABSOLUTE)
+        if (embedded > 0) { start += embedded; value = value.slice(embedded) }
+      }
     }
     if (/^[a-z][a-z\d+.-]*:/i.test(value) && !/^file:\/\//i.test(value) && !/^[a-z]:[\\/]/i.test(value)) continue
     const fullLength = value.length
     value = value.replace(/:\d+(?::\d+)?$/, '')
-    const explicit = /^(?:file:\/\/|\/|~[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i.test(value)
+    const explicit = EXPLICIT_START.test(value)
     const filename = /^[\p{L}\p{N}_@.+-][^\s:]*\.[a-z][a-z\d]{0,15}$/iu.test(value) && !value.includes('@')
     if (!value || (!explicit && !filename)) continue
     matches.push({ path: value, start, end: start + fullLength })
@@ -47,7 +56,7 @@ export interface TerminalSpanCandidate {
   end: TerminalTextPosition
 }
 
-const PATH_START = /(?<=^|[\s"'`(<[])(?:file:\/\/|~[\\/]|\.{1,2}[\\/]|[a-z]:[\\/]|\/(?!\/)|[\p{L}\p{N}_@.+-]+[\\/])/giu
+const PATH_START = /(?<=^|[\s"'`(<[=（「『【《：])(?:file:\/\/|~[\\/]|\.{1,2}[\\/]|[a-z]:[\\/]|\/(?!\/)|[\p{L}\p{N}_@.+-]+[\\/])/giu
 const WORD_END = /[\s"'`<>]/
 const MAX_WORDS = 12
 const MAX_LINE_BREAKS = 3
