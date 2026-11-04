@@ -14,6 +14,7 @@ import {
   writeAttachments,
 } from '@/lib/api'
 import type { LaunchIntent } from '@/lib/types'
+import { osc52Text } from '@/lib/terminal-clipboard'
 import { fitColumnsWithinViewport, waitForLayoutBox } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
@@ -288,6 +289,8 @@ export function TaskTerminal({
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
         disableStdin: readOnlyRef.current,
+        // Option+drag selects in xterm itself even while tmux or the agent owns the mouse.
+        macOptionClickForcesSelection: true,
         linkHandler: {
           activate: (_event, uri) => openTerminalLink(uri, setPreviewPath),
           hover: (_event, uri) => showTerminalLink(term, uri),
@@ -330,6 +333,11 @@ export function TaskTerminal({
         leave: () => hideTerminalLink(term),
       }))
       term.open(containerRef.current)
+      term.parser.registerOscHandler(52, (data) => {
+        const text = osc52Text(data)
+        if (text !== null) void navigator.clipboard?.writeText(text).catch(() => {})
+        return true
+      })
       const fitToVisibleViewport = () => {
         // A hidden page has no box to fit: FitAddon would read the host's `100%`
         // as 100px and shrink the agent's PTY to a few columns until it is shown.
