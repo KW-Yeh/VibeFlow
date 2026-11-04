@@ -5,7 +5,8 @@ import { AnimatedNumber } from '@/components/ui/animated-number'
 import { createPresenceVariants, MOTION_PULSE, MOTION_SPRING } from '@/lib/motion'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
-import type { Activity, TaskProgress, TodoItem, TokenUsage } from '@/lib/types'
+import { normalizeRuns } from '@/lib/run-records'
+import type { Activity, RunEnd, RunRecord, TaskProgress, TodoItem, TokenUsage } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // Everything here is read from the agent's own transcript by core
@@ -232,16 +233,45 @@ function UsageTable({ usage, contextTokens }: { usage: TokenUsage; contextTokens
   )
 }
 
-/** The task tab's progress section: the agent's todo list, what it is doing, and token usage. */
+const RUN_END_LABEL: Record<RunEnd, string> = { restart: '重新開始', completed: '完成', handoff: '交接' }
+const COMPLEXITY_LABEL: Record<string, string> = { simple: '簡單', moderate: '中等', complex: '複雜', unclear: '不明確' }
+
+/** One line per finished run: what it ran on, what it cost, and how it ended. */
+function RunHistory({ runs }: { runs: RunRecord[] }) {
+  return (
+    <div className="space-y-2">
+      <span className={SECTION_LABEL}>執行紀錄</span>
+      <ol className="space-y-1 text-sm">
+        {runs.map((run, i) => (
+          <li key={`${run.runId ?? ''}:${run.startedAt}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="tabular-nums text-muted-foreground">#{i + 1}</span>
+            <span className="font-medium">{run.model ?? 'CLI 預設'}</span>
+            <span className="text-muted-foreground">
+              {[run.effort ?? '預設 effort', run.complexity && COMPLEXITY_LABEL[run.complexity]].filter(Boolean).join(' · ')}
+            </span>
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {run.calls} 次呼叫 · {formatTokens(usageTotal(run.usage))} · {RUN_END_LABEL[run.endedBy]}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/** The task tab's progress section: the agent's todo list, what it is doing, token usage, and the runs that ended. */
 export function TaskProgressDetail({
   progress,
   usage,
+  runs,
 }: {
   progress?: TaskProgress | null
   usage?: TokenUsage
+  runs?: unknown
 }) {
   const total = progress?.totalUsage ?? usage
   if (!progress && !total) return null
+  const history = normalizeRuns(runs)
   const counts = todoCounts(progress?.todos ?? null)
   const label = progress ? activityLabel(progress.activity) : null
   const when = progress ? relativeTime(progress.activity.at) : null
@@ -315,6 +345,7 @@ export function TaskProgressDetail({
           <UsageTable usage={total} contextTokens={progress?.contextTokens} />
         </div>
       )}
+      {history.length > 0 && <RunHistory runs={history} />}
     </section>
   )
 }

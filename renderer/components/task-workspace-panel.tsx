@@ -612,7 +612,7 @@ function TaskInfo({
       {task.description && <MarkdownContent source={task.description} />}
 
       {column !== 'backlog' && (
-        <TaskProgressDetail progress={column === 'in_progress' ? progress : null} usage={task.usage} />
+        <TaskProgressDetail progress={column === 'in_progress' ? progress : null} usage={task.usage} runs={task.runs} />
       )}
 
       {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}

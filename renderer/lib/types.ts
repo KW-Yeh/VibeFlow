@@ -14,6 +14,7 @@ export type {
   VibeFlowState,
 } from '../../packages/core/src/store'
 export type { JevRoute } from '../../packages/core/src/jev-router'
+export type { RunEnd, RunRecord } from '../../packages/core/src/run-records'
 export type {
   GitInfo,
   DiffEntry,
