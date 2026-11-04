@@ -11,7 +11,7 @@ import { BoardColumns } from '@/components/board-columns'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
 import { WorkspaceTaskRail } from '@/components/workspace-task-rail'
-import type { BoardView } from '@/components/ui/view-tabs'
+import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import {
@@ -312,7 +312,11 @@ export function KanbanBoard({
         if (selected) renderIds.add(selected.task.id)
 
         return (
-          <div className={cn('min-h-0 min-w-0 flex-1', onWorkspace ? 'flex' : 'hidden')}>
+          <div className={cn('min-h-0 min-w-0 flex-1 flex-col', onWorkspace ? 'flex' : 'hidden')}>
+            <div className="flex h-12 shrink-0 items-center border-b border-border px-5">
+              <ViewTabs value={view} onChange={onViewChange} />
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail
               running={board.in_progress}
               viewing={selected && selected.column !== 'in_progress' ? selected : null}
@@ -377,6 +381,7 @@ export function KanbanBoard({
                 </motion.div>
               )}
             </main>
+            </div>
           </div>
         )
       })()}
