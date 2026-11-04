@@ -127,12 +127,12 @@ Jev 已能替未指定模型的卡片選模型與 effort，但 2026-09-04 – 20
 
 - [ ] AC-1：在 Web 對話框、TUI 表單、`task create` 不選模型建立卡片，三者寫入的 `model` 都是未指定。
 - [ ] AC-2：有 Jev 金鑰時，Web／TUI 的「未指定」選項顯示「由 Jev 選擇」；沒有金鑰時顯示使用 CLI 預設模型。選了最高層級模型時顯示提示且仍可建立；選其他模型或沒有金鑰時不提示。
-- [ ] AC-3：Claude 卡經「重新開始」後，卡片多一筆 `endedBy: restart` 的 run 紀錄，欄位如「行為」表所列，`usage` 為該 run 自己的用量，`complexity`／`model`／`effort` 是該 run 啟動時的實際值（即使 `jevRoute` 之後被清掉）。
-- [ ] AC-4：卡片完成時寫入 `endedBy: completed` 的 run 紀錄；同一 `runId` 重複完成不新增紀錄。
-- [ ] AC-5：Codex 卡的 run 紀錄含 rollout session id 與近似 `calls`；`test/fixtures/progress/` 的 fixture 固定新讀取的欄位。
-- [ ] AC-6：沒有 `runs` 欄位的舊 store 能載入、顯示、完成與重開，且之後新 run 會產生紀錄；`Task.usage` 不變。
-- [ ] AC-7：不讀任何 transcript，僅憑卡片資料，統計函式與 `vibeflow task stats` 能輸出各「複雜度 × 模型 × effort」組合的 run 數、tokens／calls／平均 context 中位數與重開率，並回報被略過的舊卡數量。
-- [ ] AC-8：Web 工作區面板顯示執行紀錄清單；沒有紀錄的卡不顯示該區塊。
+- [x] AC-3：Claude 卡經「重新開始」後，卡片多一筆 `endedBy: restart` 的 run 紀錄，欄位如「行為」表所列，`usage` 為該 run 自己的用量，`complexity`／`model`／`effort` 是該 run 啟動時的實際值（即使 `jevRoute` 之後被清掉）。
+- [x] AC-4：卡片完成時寫入 `endedBy: completed` 的 run 紀錄；同一 `runId` 重複完成不新增紀錄。
+- [x] AC-5：Codex 卡的 run 紀錄含 rollout session id 與近似 `calls`；`test/fixtures/progress/` 的 fixture 固定新讀取的欄位。
+- [x] AC-6：沒有 `runs` 欄位的舊 store 能載入、顯示、完成與重開，且之後新 run 會產生紀錄；`Task.usage` 不變。
+- [x] AC-7：不讀任何 transcript，僅憑卡片資料，統計函式與 `vibeflow task stats` 能輸出各「複雜度 × 模型 × effort」組合的 run 數、tokens／calls／平均 context 中位數與重開率，並回報被略過的舊卡數量。
+- [x] AC-8：Web 工作區面板顯示執行紀錄清單；沒有紀錄的卡不顯示該區塊。
 - [ ] AC-9：In Progress 卡片在看板上顯示目前 context；超過門檻時顯示交接提示，低於時消失；`contextWarnTokens` 可在 Settings 修改，`0` 關閉，舊 store 使用預設 250,000。
 - [ ] AC-10：交接重開後 worktree 的檔案與 commit 不變、`runId` 與 session 改變、第一個 prompt 含卡片文字與交接摘要；產生 `endedBy: handoff` 紀錄；「升級一層」的模型為下一層；master 卡與無 worktree 的卡不提供。
 - [ ] AC-11：分支有 `狀態：已確認` 的 `plan.md` 且卡片未指定模型時，新 run 的 Jev 候選不含最高層；指定模型的卡不受影響；`task handoff --model up` 與交接重開的「升級一層」都能把模型升到下一層。
