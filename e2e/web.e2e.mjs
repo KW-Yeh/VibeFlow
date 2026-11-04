@@ -36,7 +36,8 @@ const selectValue = (trigger) => trigger.getAttribute('data-value')
 async function chooseOption(trigger, value) {
   await trigger.click()
   const listbox = trigger.page().getByRole('listbox')
-  await listbox.locator(`[role="option"][data-value="${value}"]`).click()
+  // JSON quoting doubles backslashes, which CSS reads back as literal ones (Windows paths).
+  await listbox.locator(`[role="option"][data-value=${JSON.stringify(value)}]`).click()
   await listbox.waitFor({ state: 'detached' })
 }
 async function readOptions(trigger) {
