@@ -6,6 +6,7 @@ import type { TokenUsage } from './progress'
 import type { GithubRef } from './github'
 import type { JiraRef } from './jira'
 import type { JevRoute } from './jev-router'
+import type { RunRecord } from './run-records'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
@@ -86,6 +87,12 @@ export interface Task {
    * current run (see progress-tracker.ts).
    */
   usage?: TokenUsage
+  /**
+   * One record per finished run, written when a run ends (restart, completion).
+   * Absent on cards that finished runs before the field existed; read it
+   * through `normalizeRuns`.
+   */
+  runs?: RunRecord[]
   /** The GitHub Issue or PR this card was converted from. Absent = created by hand. */
   github?: GithubRef
   /** The Jira ticket this card was created from. */
