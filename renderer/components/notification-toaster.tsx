@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Bell, X } from 'lucide-react'
 
 import { IconButton } from '@/components/ui/icon-button'
+import { timed } from '@/lib/motion'
 
 export interface Toast {
   id: string
@@ -23,6 +24,7 @@ function ToastItem({
   onOpen: (taskId: string) => void
   onDismiss: (id: string) => void
 }) {
+  const reducedMotion = useReducedMotion() ?? false
   useEffect(() => {
     const timer = setTimeout(() => onDismiss(toast.id), TOAST_MS)
     return () => clearTimeout(timer)
@@ -34,7 +36,7 @@ function ToastItem({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
-      transition={{ duration: 0.15 }}
+      transition={timed('standard', reducedMotion)}
       className="pointer-events-auto flex w-80 items-start gap-2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
     >
       <Bell className="mt-0.5 size-4 shrink-0 text-primary" />

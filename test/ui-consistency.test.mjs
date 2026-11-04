@@ -203,3 +203,20 @@ test('mermaid stays inert and out of the initial bundle', () => {
     'mermaid must be imported inside the effect, not at module scope'
   )
 })
+
+test('motion timings come from lib/motion.ts, not inline numbers', () => {
+  const literal = /\b(duration|stiffness|damping|mass|delay)\s*:\s*\d/g
+  const violations = []
+  for (const file of FILES) {
+    const src = stripBlockComments(read(file))
+    let m
+    while ((m = literal.exec(src)) !== null) {
+      violations.push(`${rel(file)}:${lineOf(src, m.index)}`)
+    }
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    `Inline motion timing found (add a token to renderer/lib/motion.ts):\n${violations.join('\n')}`
+  )
+})
