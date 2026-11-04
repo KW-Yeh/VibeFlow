@@ -4,10 +4,10 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
 import { EventEmitter } from 'node:events'
-import { TmuxBackend, hasTmux, TMUX_SOCKET } from '../packages/core/src/tmux-backend.ts'
+import { TmuxBackend, hasTmux, systemCopyCommand, TMUX_SOCKET } from '../packages/core/src/tmux-backend.ts'
 
 /** A fake `tmux` that keeps its own set of sessions, plus fake attach clients. */
-function harness(t) {
+function harness(t, extra = {}) {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-tmux-'))
   t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }))
   const sessions = new Set()
@@ -58,7 +58,7 @@ function harness(t) {
   }
   const events = []
   const sink = { send: (channel, payload) => events.push([channel, payload]), isDestroyed: () => false }
-  const backend = new TmuxBackend(sink, { stateDir, run, attach })
+  const backend = new TmuxBackend(sink, { stateDir, run, attach, copyCommand: null, ...extra })
   return { backend, sessions, inMode, calls, clients, events, stateDir }
 }
 
@@ -117,6 +117,32 @@ test('kill is reported as intentional, and shutdown only detaches', async (t) =>
   await flush()
   assert.ok(sessions.has('vf-k3'), 'the agent keeps running after core exits')
   assert.deepEqual(await backend.list(), ['k3'])
+})
+
+test('every start points tmux copy-command at the system clipboard, a re-attach included', async (t) => {
+  const { backend, calls } = harness(t, { copyCommand: 'pbcopy' })
+  await backend.start('abc12345', { cwd: '/w', command: 'agent' })
+  await backend.start('abc12345', { cwd: '/w' })
+  const sets = calls.filter((c) => c[4] === 'set-option')
+  assert.equal(sets.length, 2)
+  assert.deepEqual(sets[0].slice(5), ['-s', 'copy-command', 'pbcopy'])
+})
+
+test('no clipboard writer means copy-command is left alone', async (t) => {
+  const { backend, calls } = harness(t)
+  await backend.start('abc12345', { cwd: '/w', command: 'agent' })
+  assert.equal(calls.filter((c) => c[4] === 'set-option').length, 0)
+})
+
+test('systemCopyCommand picks the platform clipboard writer', () => {
+  const none = () => false
+  const all = () => true
+  assert.equal(systemCopyCommand('darwin', {}, none), 'LC_CTYPE=UTF-8 pbcopy')
+  assert.equal(systemCopyCommand('win32', {}, all), null)
+  assert.equal(systemCopyCommand('linux', { WAYLAND_DISPLAY: 'wayland-0', DISPLAY: ':0' }, all), 'wl-copy')
+  assert.equal(systemCopyCommand('linux', { DISPLAY: ':0' }, all), 'xclip -selection clipboard')
+  assert.equal(systemCopyCommand('linux', { DISPLAY: ':0' }, none), null)
+  assert.equal(systemCopyCommand('linux', {}, all), null)
 })
 
 test('session names are safe for tmux', (t) => {

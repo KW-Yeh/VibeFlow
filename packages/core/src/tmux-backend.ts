@@ -30,6 +30,37 @@ export const TMUX_CONF = [
   '',
 ].join('\n')
 
+/**
+ * The machine's clipboard writer for tmux's `copy-command`. A mouse selection
+ * must land on the system clipboard from the host itself: the browser refuses a
+ * clipboard write that arrives over the WebSocket after the mouse is released.
+ * The host only serves loopback, so its clipboard is the viewer's.
+ */
+export function systemCopyCommand(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = buildPtyEnv(),
+  onPath: (bin: string) => boolean = (bin) => commandOnPath(bin, env.PATH ?? '')
+): string | null {
+  // pbcopy decodes stdin by locale, and the tmux server's environment may have none.
+  if (platform === 'darwin') return 'LC_CTYPE=UTF-8 pbcopy'
+  if (platform !== 'linux') return null
+  if (env.WAYLAND_DISPLAY && onPath('wl-copy')) return 'wl-copy'
+  if (env.DISPLAY && onPath('xclip')) return 'xclip -selection clipboard'
+  return null
+}
+
+function commandOnPath(bin: string, pathList: string): boolean {
+  return pathList.split(path.delimiter).some((dir) => {
+    if (!dir) return false
+    try {
+      fs.accessSync(path.join(dir, bin), fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
 export type TmuxRun = (args: string[]) => Promise<{ code: number; stdout: string }>
 
 /** Quote for POSIX sh. */
@@ -65,6 +96,8 @@ export interface TmuxBackendOptions {
   run?: TmuxRun
   /** Injected in tests; defaults to node-pty running `tmux attach`. */
   attach?: (args: string[], cols: number, rows: number) => nodePty.IPty
+  /** Injected in tests; defaults to `systemCopyCommand()`. */
+  copyCommand?: string | null
 }
 
 interface Client {
@@ -92,6 +125,7 @@ export class TmuxBackend implements SessionBackend {
   private readonly run: TmuxRun
   private readonly confPath: string
   private readonly logDir: string
+  private readonly copyCommand: string | null
 
   private readonly sink: EventSink
   private readonly options: TmuxBackendOptions
@@ -102,6 +136,7 @@ export class TmuxBackend implements SessionBackend {
     this.run = options.run ?? defaultRun(buildPtyEnv())
     this.confPath = path.join(options.stateDir, 'tmux.conf')
     this.logDir = path.join(options.stateDir, 'logs')
+    this.copyCommand = options.copyCommand !== undefined ? options.copyCommand : systemCopyCommand()
   }
 
   /** `tmux -L vibeflow -f <conf> …` */
@@ -172,6 +207,8 @@ export class TmuxBackend implements SessionBackend {
       if (created.code !== 0) throw new Error(`tmux new-session failed for ${name}`)
       await this.tmux('pipe-pane', '-o', '-t', `=${name}`, `cat >> ${q(this.logPath(key))}`)
     }
+    // A server-wide option, set on every start because the server may predate this host.
+    if (this.copyCommand) await this.tmux('set-option', '-s', 'copy-command', this.copyCommand)
 
     const proc = this.options.attach
       ? this.options.attach(this.attachArgs(key), cols, rows)
