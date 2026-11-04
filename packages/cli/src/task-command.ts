@@ -83,8 +83,8 @@ task start / list / show / send (need the running VibeFlow host):
 task stats options:
   Median usage per complexity x model x effort, and how often a run ended in a
   restart, from the run records kept on the cards. Reads the store directly, so
-  no host is needed. Cards finished before run records existed are skipped and
-  counted.
+  no host is needed. Cards with no run records (finished before they existed, or
+  never run) are skipped and counted.
   --table               Print a table instead of the JSON envelope
   --store-path <dir>    Store directory (defaults to VIBEFLOW_STORE_DIR in a task shell)
   --profile <name>      dev | prod — when no store path is given

@@ -190,8 +190,8 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
 store, so it works with no host running, and prints median tokens, API calls and
 per-request context plus the restart rate for each complexity × model × effort
 (spec: `docs/features/jev-routing-efficiency/`). Output is the JSON envelope every `task`
-subcommand uses; `--table` prints a table instead. Cards finished before run records
-existed are skipped and counted in `cardsWithoutRuns`. Inside a task shell the store
+subcommand uses; `--table` prints a table instead. Cards with no run records (finished
+before they existed, or never run) are skipped and counted in `cardsWithoutRuns`. Inside a task shell the store
 defaults to `VIBEFLOW_STORE_DIR`, like `task artifact add`.
 
 ### CLI artifact delivery
@@ -362,7 +362,7 @@ docs/                      everything that is not code (index: docs/README.md)
 - **Single source of truth for types**: domain types live in `packages/core/src/*.ts`;
   `renderer/lib/types.ts` re-exports them with `export type` (erased at build).
   The renderer imports core at runtime only from the types-only modules
-  (`launch.ts`, `client.ts`, `ws-transport.ts`, `effort.ts`); `test/core-boundary` enforces it.
+  (`launch.ts`, `client.ts`, `ws-transport.ts`, `effort.ts`, `run-records.ts`); `test/core-boundary` enforces it.
   Don't duplicate type definitions.
 - **Erasable TypeScript only in `packages/`**: Node runs it with
   `--experimental-strip-types`, so no enums, namespaces or constructor parameter

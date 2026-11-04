@@ -163,10 +163,26 @@
 1. **進行中的 run 不在「執行紀錄」裡標示**：計畫的修改表原寫「以進度即時值標示」。實作時發現同一個面板已有「Token 使用量」與「目前 context」，再列一行只是重複，AC-8 也只要求已記錄的清單與無紀錄時隱藏，所以只列已結束的 run。修改表該列已改成現況。
 2. **Live 實測的啟動方式**：計畫寫 `npm start -- --store-path <tmp> --no-open --port 47831`；實際以腳本直接 spawn `packages/cli/src/bin.ts`（`npm start` 執行的同一個入口，`--backend pty --no-open`，埠由系統分配），好讓腳本取得 lock 檔裡的 token 與埠。`npm run build:web` 先重建過 `app/`。
 3. **舊形狀 store 的「重新開始、完成」沒有在 live 做**：live 只驗了「開面板、不被改寫」。「舊卡之後重新開始與完成仍保留 `usage` 並開始記錄」由 `test/service.test.mjs` 的「a card from before run records keeps its usage, loses nothing, and starts recording」釘住。
-4. **`Task.usage` 在重複完成時不會重複計算**：風險段說要回報此事。`test/service.test.mjs` 在對已完成的卡再執行一次 `cleanupTask` 後斷言 `runs` 仍是兩筆、`usage.output` 不變，已通過。這只涵蓋「再執行一次 cleanup」；從看板把 Done 卡拖回 In Progress 再完成的路徑沒有另外量測。
+4. **`Task.usage` 在兩種情境下的表現**（風險段要求回報）：
+   - 對已完成的卡再執行一次 `cleanupTask`：`runs` 仍是兩筆、`usage.output` 不變，`test/service.test.mjs` 已斷言。
+   - Done 卡拖回 In Progress 後以 `pty:start` 加 launch intent 重新啟動（`runId`、`launchedAt` 都不變），再完成：`runs` 仍是一筆，符合 AC-4，但 `Task.usage.output` 會從 2,364 變成 4,728，同一批 transcript 被計兩次。這是驗收卡（見下）量到的；`usage` 的算法在本卡沒有改，屬於既有問題，不在本卡範圍，建議另開卡處理。單純拖回 In Progress 不重新啟動就再完成，`runs` 與 `usage` 都不變。
 
 ### 沒有驗證的事
 
 - 真實的 Claude Code／Codex 執行：transcript 是 fixture，`calls` 的 Claude 算法（distinct assistant message id）與 Codex 的近似算法沒有對真實長流程比對。
 - Jev 有金鑰時的 `modelSource: jev` 與 `complexity` 欄位：只有 `test/service.test.mjs` 以假 router 驗證，沒有在 live UI 看過。
 - Windows：e2e 的 transcript 注入在 Windows 上跳過（`os.homedir()` 不看 `HOME`）。
+
+### 驗收（獨立 session）
+
+驗收卡 `ad3c4df2`（只執行、不改程式碼；報告 `acceptance-report.md`，錄影 `run-records-acceptance.webm`）在 `722d9a8` 上驗：兩份 typecheck、`npm test` 549 項、`npm run build:web`、`npm run test:e2e` 全部通過；AC-3～AC-8 通過，其中 AC-7 用兩種模型、奇偶筆資料手算與 `task stats` 一致，並以攔截 fs 呼叫確認不讀任何 transcript；面板「執行紀錄」與既有區塊的字級、間距、顏色 token 一致。
+
+它發現的落差與處理：
+
+| 發現 | 處理 |
+| --- | --- |
+| AC-13：`AGENTS.md` 的 renderer types-only 模組清單缺 `run-records.ts` | 已補 |
+| `docs/README.md` 這列缺 plan 連結 | 已補 |
+| `cardsWithoutRuns` 實際包含「從沒跑過」的卡，`AGENTS.md` 與 `task stats --help` 寫成「完成於紀錄存在之前」 | 兩處措辭已改成「沒有 run 紀錄的卡」 |
+| O-1：重新啟動 Done 卡時 `Task.usage` 重複計算 | 既有行為，見上方偏差第 4 點，不在本卡範圍 |
+| 「執行紀錄」與「Token 使用量」標題的下邊距沒生效（行內 `<span>` 在 `space-y-2` 內，實際 3px） | 兩個區塊寫法一致、不是本卡的回歸，維持原樣 |
