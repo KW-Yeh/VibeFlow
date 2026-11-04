@@ -4,14 +4,15 @@ import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
-import { findTask, isMasterTask } from '../../core/src/store'
+import { getState, findTask, isMasterTask } from '../../core/src/store'
+import { routingStats, type RoutingStats } from '../../core/src/routing-stats'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
 import type { ColumnId } from '../../core/src/store'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'send', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'send', 'artifact', 'stats']
 const ROLES = ['slave', 'master']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
@@ -27,6 +28,7 @@ Usage:
   vibeflow task show --task <id> [options]
   vibeflow task send --task <id> --text <text> [options]
   vibeflow task artifact add --file <path> [options]
+  vibeflow task stats [--table] [options]
 
 task create options:
   --role <role>          ${ROLES.join(' | ')}  (default: slave). A master has no project:
@@ -78,6 +80,15 @@ task start / list / show / send (need the running VibeFlow host):
                          other. --from defaults to VIBEFLOW_TASK_ID; --force types
                          even into a permission dialog
 
+task stats options:
+  Median usage per complexity x model x effort, and how often a run ended in a
+  restart, from the run records kept on the cards. Reads the store directly, so
+  no host is needed. Cards finished before run records existed are skipped and
+  counted.
+  --table               Print a table instead of the JSON envelope
+  --store-path <dir>    Store directory (defaults to VIBEFLOW_STORE_DIR in a task shell)
+  --profile <name>      dev | prod — when no store path is given
+
 task artifact add options:
   --file <path>         Copy a file into the card's user-facing Artifacts folder
   --task <id>           Card ID (defaults to VIBEFLOW_TASK_ID in a task shell)
@@ -97,6 +108,9 @@ Examples:
     --attach ./screenshot.png \\
     --profile dev
 `.trim()
+
+/** A result carrying this key is printed as plain text instead of the JSON envelope. */
+const PRINT_AS_TEXT = Symbol('print as text')
 
 class CliFailure extends Error {
   code: string
@@ -133,7 +147,8 @@ export async function runTaskCommand(argv: string[]): Promise<number> {
       console.log(TASK_USAGE)
       return 0
     }
-    process.stdout.write(JSON.stringify({ ok: true, ...result }, null, 2) + '\n')
+    const text = (result as { [PRINT_AS_TEXT]?: string })[PRINT_AS_TEXT]
+    process.stdout.write(text !== undefined ? text + '\n' : JSON.stringify({ ok: true, ...result }, null, 2) + '\n')
     return 0
   } catch (err) {
     const e = err as { code?: string; message?: string }
@@ -172,6 +187,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         force:         { type: 'boolean' },
         'store-path':  { type: 'string' },
         profile:       { type: 'string' },
+        table:         { type: 'boolean' },
         help:          { type: 'boolean', short: 'h' },
       },
       allowPositionals: true,
@@ -186,7 +202,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (values.help || !sub) return null
 
   const storePath = resolveStorePath(
-    values['store-path'] ?? (sub === 'artifact' || HOST_COMMANDS.includes(sub) ? process.env.VIBEFLOW_STORE_DIR : undefined),
+    values['store-path'] ?? (sub === 'artifact' || sub === 'stats' || HOST_COMMANDS.includes(sub) ? process.env.VIBEFLOW_STORE_DIR : undefined),
     values.profile
   )
   setPlatform(createNodePlatform({ userDataDir: storePath }))
@@ -202,6 +218,11 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     const task = findTask(taskId)
     if (!task) fail('TASK_NOT_FOUND', `Task not found: ${taskId}`)
     return { taskId, path: addTaskArtifact(task, values.file) }
+  }
+
+  if (sub === 'stats') {
+    const stats = routingStats(getState().board)
+    return values.table ? { [PRINT_AS_TEXT]: statsTable(stats) } : { storePath, ...stats }
   }
 
   if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath)
@@ -297,6 +318,23 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       autoMode: task.autoMode,
     },
   }
+}
+
+function statsTable(stats: RoutingStats): string {
+  const head = ['complexity', 'model', 'effort', 'runs', 'cards', 'tokens', 'calls', 'ctx/call', 'restarted']
+  const rows = stats.groups.map((g) => [
+    g.complexity, g.model, g.effort, String(g.runs), String(g.cards),
+    String(g.medianTokens), String(g.medianCalls), String(g.medianContextPerCall), `${Math.round(g.restartRate * 100)}%`,
+  ])
+  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)))
+  const line = (cells: string[]) => cells.map((c, i) => (i < 3 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join('  ').trimEnd()
+  return [
+    line(head),
+    ...rows.map(line),
+    '',
+    'tokens, calls and ctx/call are medians per run.',
+    `${stats.runs} runs on ${stats.cards} cards; ${stats.cardsWithoutRuns} cards without run records skipped.`,
+  ].join('\n')
 }
 
 const HOST_COMMANDS = ['start', 'list', 'show', 'send']
