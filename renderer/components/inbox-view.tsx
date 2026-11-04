@@ -1,4 +1,6 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useId, useRef, type KeyboardEvent } from 'react'
+import { LayoutGroup } from 'motion/react'
+import { TabIndicator } from '@/components/ui/tab-indicator'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { GithubView } from '@/components/github-view'
 import { JiraPanel, type JiraProject } from '@/components/jira-panel'
@@ -30,6 +32,7 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   onOpenSettings: () => void
 }) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const tabGroup = useId()
   const counts = {
     jira: jira.inbox?.status === 'ok' ? jira.inbox.tickets.length : null,
     issues: github.inbox?.status === 'ok' ? github.inbox.repos.reduce((n, repo) => n + repo.issues.length, 0) : null,
@@ -45,13 +48,14 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   }
   return <div className="flex h-full min-h-0 flex-col bg-background">
     <div className="flex h-12 shrink-0 items-center border-b border-border px-5"><ViewTabs value={view} onChange={onViewChange} /></div>
-    <div role="tablist" aria-label="來源" className="flex h-10 shrink-0 items-stretch gap-5 border-b border-border px-5">
+    <LayoutGroup id={tabGroup}><div role="tablist" aria-label="來源" className="flex h-10 shrink-0 items-stretch gap-5 border-b border-border px-5">
       {TABS.map((entry, index) => <button key={entry.id} ref={(node) => { tabRefs.current[index] = node }} type="button" role="tab"
         aria-selected={tab === entry.id} tabIndex={tab === entry.id ? 0 : -1} onKeyDown={(event) => move(event, index)} onClick={() => onTabChange(entry.id)}
-        className={cn('-mb-px flex items-center gap-1.5 border-b-2 px-1 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50', tab === entry.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+        className={cn('relative flex items-center gap-1.5 px-1 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50', tab === entry.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground')}>
         {entry.label}{counts[entry.id] !== null && <span className="text-xs tabular-nums text-muted-foreground/80">{counts[entry.id]}</span>}
+        {tab === entry.id && <TabIndicator layoutId="inbox-tab" className="inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />}
       </button>)}
-    </div>
+    </div></LayoutGroup>
     {tab === 'jira' ? <JiraPanel {...jira} onRefresh={jira.refresh}
       boardCards={jiraCards} projects={projects} onBrowseProject={onBrowseProject} onCreate={onCreateJira} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings} />
       : <GithubView view={view} onViewChange={onViewChange} inbox={github.inbox} loading={github.loading} error={github.error}

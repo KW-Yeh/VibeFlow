@@ -33,6 +33,7 @@ import type {
   TaskProgress,
 } from '@/lib/types'
 import { StatusMark, TaskProgressBadge } from '@/components/task-progress'
+import { AnimatedNumber } from '@/components/ui/animated-number'
 import type { GridTerminal } from '@/components/terminal-grid'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
@@ -644,9 +645,7 @@ export function BoardColumns({
                 >
                   {COLUMN_LABEL[column]}
                 </h2>
-                <span className="text-xs tabular-nums text-muted-foreground/80">
-                  {tasks.length}
-                </span>
+                <AnimatedNumber value={tasks.length} className="text-xs tabular-nums text-muted-foreground/80" />
               </div>
 
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">

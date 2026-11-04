@@ -119,6 +119,9 @@ export const MOTION_SPRING = {
   value: { stiffness: 140, damping: 24 },
 } as const satisfies Record<string, Transition | { stiffness: number; damping: number }>
 
+/** A one-shot ring that draws the eye to a state that needs the user. */
+export const MOTION_PULSE: Transition = { duration: 0.7, ease: 'easeOut' }
+
 /** How long a destructive control must be held before it fires. */
 export const HOLD_TO_CONFIRM_MS = 1200
 

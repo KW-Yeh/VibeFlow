@@ -11,7 +11,8 @@ import {
   useSyncExternalStore,
 } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { AnimatePresence } from 'motion/react'
+import { AnimatePresence, LayoutGroup } from 'motion/react'
+import { TabIndicator } from '@/components/ui/tab-indicator'
 import type { DiffMethod } from 'react-diff-viewer-continued'
 
 const ReactDiffViewer = lazy(() =>
@@ -1649,6 +1650,7 @@ export function TaskWorkspacePanel({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([])
   const tabBaseId = useId()
+  const tabGroup = useId()
   const tabPanelId = `${tabBaseId}-panel`
   const tabId = (tab: TaskTab) => `${tabBaseId}-tab-${tab}`
   // A master has no project; before its first run, the folder it will get stands in.
@@ -1757,6 +1759,7 @@ export function TaskWorkspacePanel({
           : 0
 
   const tabStrip = (
+    <LayoutGroup id={`${tabGroup}-strip`}>
     <div
       role="tablist"
       aria-label="任務檢視"
@@ -1774,12 +1777,15 @@ export function TaskWorkspacePanel({
             aria-controls={tabPanelId}
             onClick={() => selectTaskTab(tab)}
             className={cn(
-              'shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              'relative isolate shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
               activeTab === tab
-                ? 'bg-primary/15 text-primary'
+                ? 'text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
+            {activeTab === tab && (
+              <TabIndicator layoutId="task-tab" className="inset-0 -z-10 rounded-sm bg-primary/15" />
+            )}
             {TAB_LABEL[tab]}
             {badge > 0 && (
               <span className="ml-1 tabular-nums text-muted-foreground/80">{badge}</span>
@@ -1788,6 +1794,7 @@ export function TaskWorkspacePanel({
         )
       })}
     </div>
+    </LayoutGroup>
   )
 
   const activeContent =
@@ -1878,6 +1885,7 @@ export function TaskWorkspacePanel({
   )
 
   const rail = (
+    <LayoutGroup id={`${tabGroup}-rail`}>
     <div
       role="tablist"
       aria-label="任務檢視"
@@ -1900,12 +1908,15 @@ export function TaskWorkspacePanel({
             title={TAB_LABEL[tab]}
             onClick={() => selectRailTab(tab)}
             className={cn(
-              'relative flex size-8 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              'relative isolate flex size-8 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
               shown
-                ? 'bg-primary/15 text-primary'
+                ? 'text-primary'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             )}
           >
+            {shown && (
+              <TabIndicator layoutId="task-rail-tab" className="inset-0 -z-10 rounded-md bg-primary/15" />
+            )}
             <Icon className="size-4" />
             {badge > 0 && (
               <span
@@ -1919,6 +1930,7 @@ export function TaskWorkspacePanel({
         )
       })}
     </div>
+    </LayoutGroup>
   )
 
   const [pathCopy, setPathCopy] = useState<'idle' | 'copied' | 'error'>('idle')

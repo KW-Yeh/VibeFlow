@@ -1,3 +1,7 @@
+import { useId } from 'react'
+import { LayoutGroup } from 'motion/react'
+
+import { TabIndicator } from '@/components/ui/tab-indicator'
 import { cn } from '@/lib/utils'
 
 export type BoardView = 'board' | 'workspace' | 'github' | 'terminals'
@@ -17,7 +21,9 @@ export function ViewTabs({
   value: BoardView
   onChange: (next: BoardView) => void
 }) {
+  const group = useId()
   return (
+    <LayoutGroup id={group}>
     <div role="tablist" aria-label="檢視" className="flex h-full items-stretch gap-4">
       {VIEWS.map((view) => {
         const active = view.id === value
@@ -29,16 +35,18 @@ export function ViewTabs({
             aria-selected={active}
             onClick={() => onChange(view.id)}
             className={cn(
-              '-mb-px flex items-center border-b-2 px-1 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              active
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              'relative flex items-center px-1 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
             )}
           >
             {view.label}
+            {active && (
+              <TabIndicator layoutId="view-tab" className="inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
+            )}
           </button>
         )
       })}
     </div>
+    </LayoutGroup>
   )
 }

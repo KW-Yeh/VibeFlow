@@ -1,4 +1,8 @@
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Circle, CircleCheck, CircleDot, Loader2 } from 'lucide-react'
+
+import { AnimatedNumber } from '@/components/ui/animated-number'
+import { createPresenceVariants, MOTION_PULSE, MOTION_SPRING } from '@/lib/motion'
 
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import type { Activity, TaskProgress, TodoItem, TokenUsage } from '@/lib/types'
@@ -48,15 +52,21 @@ function ProgressBar({ done, total, className }: { done: number; total: number; 
       aria-label={`完成 ${done}/${total} 個步驟`}
       className={cn('relative block h-1 overflow-hidden rounded-full bg-border', className)}
     >
-      <span
-        className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] motion-reduce:transition-none"
-        style={{ width: `${(done / total) * 100}%` }}
+      <motion.span
+        className="absolute inset-0 origin-left rounded-full bg-primary"
+        initial={false}
+        animate={{ scaleX: total > 0 ? done / total : 0 }}
+        transition={MOTION_SPRING.layout}
       />
     </span>
   )
 }
 
-/** A state shown as a spinner while it runs, otherwise as a dot of `dot`'s color. */
+/**
+ * A state shown as a spinner while it runs, otherwise as a dot of `dot`'s color.
+ * A change of state cross-fades, and stopping for a permission pulses once, so
+ * a card that just started waiting on the user is noticed.
+ */
 export function StatusMark({
   dot,
   spinning,
@@ -68,20 +78,38 @@ export function StatusMark({
   label: string
   className?: string
 }) {
-  if (spinning) {
-    return (
-      <span role="img" aria-label={label} title={label} className={cn('flex shrink-0', className)}>
-        <Loader2 aria-hidden="true" className="size-3 animate-spin text-warning motion-reduce:animate-none" />
-      </span>
-    )
-  }
+  const reducedMotion = useReducedMotion() ?? false
+  const variants = createPresenceVariants({ timing: 'micro', transform: { scale: 0.5 }, reducedMotion })
+  const permission = label === '等待權限'
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className={cn('size-1.5 shrink-0 rounded-full', dot, className)}
-    />
+    <span role="img" aria-label={label} title={label} className="relative flex shrink-0 items-center justify-center">
+      <AnimatePresence mode="popLayout" initial={false}>
+        {spinning ? (
+          <motion.span key="spinning" variants={variants} initial="hidden" animate="visible" exit="exit" className={cn('flex', className)}>
+            <Loader2 aria-hidden="true" className="size-3 animate-spin text-warning motion-reduce:animate-none" />
+          </motion.span>
+        ) : (
+          <motion.span
+            key={`${dot}-${permission}`}
+            variants={variants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className={cn('relative size-1.5 rounded-full', dot, className)}
+          >
+            {permission && !reducedMotion && (
+              <motion.span
+                aria-hidden="true"
+                initial={{ scale: 1, opacity: 0.7 }}
+                animate={{ scale: 3, opacity: 0 }}
+                transition={MOTION_PULSE}
+                className={cn('absolute inset-0 rounded-full', dot)}
+              />
+            )}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </span>
   )
 }
 
@@ -124,7 +152,7 @@ export function TaskProgressBadge({
       {!counts && <span className="flex-1" />}
       {tokens > 0 && (
         <span className="shrink-0 tabular-nums" title={`${tokens.toLocaleString()} tokens`}>
-          {formatTokens(tokens)} tok
+          <AnimatedNumber value={tokens} format={formatTokens} /> tok
         </span>
       )}
     </div>
@@ -152,9 +180,21 @@ export function TaskProgressChip({ progress, mark = true }: { progress?: TaskPro
 }
 
 function TodoIcon({ status }: { status: TodoItem['status'] }) {
-  if (status === 'completed') return <CircleCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
-  if (status === 'in_progress') return <CircleDot className="mt-0.5 size-3.5 shrink-0 text-foreground" />
-  return <Circle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" />
+  const reducedMotion = useReducedMotion() ?? false
+  const variants = createPresenceVariants({ timing: 'micro', transform: { scale: 0.5 }, reducedMotion })
+  const icon =
+    status === 'completed' ? <CircleCheck className="size-3.5 text-primary" />
+    : status === 'in_progress' ? <CircleDot className="size-3.5 text-foreground" />
+    : <Circle className="size-3.5 text-muted-foreground/60" />
+  return (
+    <span className="relative mt-0.5 flex size-3.5 shrink-0">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span key={status} variants={variants} initial="hidden" animate="visible" exit="exit" className="flex">
+          {icon}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  )
 }
 
 function UsageTable({ usage, contextTokens }: { usage: TokenUsage; contextTokens?: number }) {
@@ -169,23 +209,23 @@ function UsageTable({ usage, contextTokens }: { usage: TokenUsage; contextTokens
       {rows.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-muted-foreground">{label}</dt>
-          <dd className="text-right tabular-nums">{value.toLocaleString()}</dd>
+          <dd className="text-right tabular-nums"><AnimatedNumber value={value} /></dd>
         </div>
       ))}
       {usage.reasoning > 0 && (
         <div className="contents">
           <dt className="text-muted-foreground">　其中推理</dt>
-          <dd className="text-right tabular-nums text-muted-foreground">{usage.reasoning.toLocaleString()}</dd>
+          <dd className="text-right tabular-nums text-muted-foreground"><AnimatedNumber value={usage.reasoning} /></dd>
         </div>
       )}
       <div className="contents font-medium">
         <dt>合計</dt>
-        <dd className="text-right tabular-nums">{usageTotal(usage).toLocaleString()}</dd>
+        <dd className="text-right tabular-nums"><AnimatedNumber value={usageTotal(usage)} /></dd>
       </div>
       {contextTokens != null && contextTokens > 0 && (
         <div className="contents">
           <dt className="text-muted-foreground">目前 context</dt>
-          <dd className="text-right tabular-nums text-muted-foreground">{contextTokens.toLocaleString()}</dd>
+          <dd className="text-right tabular-nums text-muted-foreground"><AnimatedNumber value={contextTokens} /></dd>
         </div>
       )}
     </dl>
@@ -206,6 +246,8 @@ export function TaskProgressDetail({
   const label = progress ? activityLabel(progress.activity) : null
   const when = progress ? relativeTime(progress.activity.at) : null
   const priorRuns = progress && usageTotal(progress.totalUsage) > usageTotal(progress.runUsage)
+  const reducedMotion = useReducedMotion() ?? false
+  const todoVariants = createPresenceVariants({ timing: 'standard', transform: { y: -4 }, reducedMotion })
 
   return (
     <section className="space-y-3 rounded-md border border-border/70 p-3" aria-label="任務進度">
@@ -237,8 +279,17 @@ export function TaskProgressDetail({
           {counts && <ProgressBar done={counts.done} total={counts.total} />}
           {progress.todos && progress.todos.length > 0 ? (
             <ul className="space-y-1 text-sm">
+              <AnimatePresence initial={false}>
               {progress.todos.map((todo, i) => (
-                <li key={todo.id ?? `${i}:${todo.content}`} className="flex items-start gap-2">
+                <motion.li
+                  key={todo.id ?? `${i}:${todo.content}`}
+                  layout="position"
+                  variants={todoVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  className="flex items-start gap-2"
+                >
                   <TodoIcon status={todo.status} />
                   <span
                     className={cn(
@@ -249,8 +300,9 @@ export function TaskProgressDetail({
                   >
                     {todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.content}
                   </span>
-                </li>
+                </motion.li>
               ))}
+              </AnimatePresence>
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">Agent 尚未建立待辦清單。</p>
