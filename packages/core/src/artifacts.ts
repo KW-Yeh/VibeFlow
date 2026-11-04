@@ -82,7 +82,7 @@ const IMAGE_MIME: Record<string, string> = {
  * codec Chromium lacks (ProRes) still fails to decode — the player shows that
  * and points at the folder button, which beats hiding the file entirely.
  */
-const VIDEO_MIME: Record<string, string> = {
+export const VIDEO_MIME: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.m4v': 'video/mp4',
   '.webm': 'video/webm',

@@ -18,6 +18,7 @@ export function TerminalFilePreview({ sessionKey, path, onClose }: {
   const [openError, setOpenError] = useState('')
   const [opening, setOpening] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
+  const [playbackFailed, setPlaybackFailed] = useState(false)
   useEffect(() => {
     let active = true
     void readTerminalFile(sessionKey, path).then((result) => {
@@ -68,6 +69,21 @@ export function TerminalFilePreview({ sessionKey, path, onClose }: {
         <div onError={() => setImageFailed(true)}>
           {imageFailed ? <p role="alert">無法顯示這張圖片，請用系統程式開啟。</p> : <ZoomableImage src={content.dataUrl} alt={content.path} />}
         </div>
+      ) : content.kind === 'video' ? (
+        playbackFailed ? (
+          <p role="alert" className="py-10 text-center text-sm text-muted-foreground">這個影片的編碼無法在 VibeFlow 內播放，請用系統程式開啟。</p>
+        ) : (
+          <video
+            src={content.dataUrl}
+            controls
+            autoPlay
+            loop
+            muted
+            playsInline
+            onError={() => setPlaybackFailed(true)}
+            className="max-h-[70vh] w-full rounded-md bg-black"
+          />
+        )
       ) : content.kind === 'binary' ? (
         <p className="py-10 text-center text-sm text-muted-foreground">{content.reason} 請用系統程式開啟。</p>
       ) : (

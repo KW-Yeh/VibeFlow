@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { MAX_VIDEO_BYTES, VIDEO_MIME } from './artifacts'
 
 export const MAX_PREVIEW_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_TEXT_BYTES = 256 * 1024
@@ -14,6 +15,7 @@ const IMAGE_MIME: Record<string, string> = {
 
 export type TerminalFileResult =
   | { ok: true; path: string; kind: 'image'; dataUrl: string }
+  | { ok: true; path: string; kind: 'video'; dataUrl: string }
   | { ok: true; path: string; kind: 'text'; text: string; truncated: boolean }
   | { ok: true; path: string; kind: 'binary'; reason: string }
   | { ok: false; error: 'invalid_path' | 'not_found' | 'not_file' | 'unreadable'; message: string }
@@ -65,11 +67,14 @@ export async function readTerminalFile(cwd: string, input: string, metadataOnly 
     const stat = await handle.stat()
     if (!stat.isFile()) return { ok: false, error: 'not_file', message: '這個路徑不是一般檔案。' }
     if (metadataOnly) return { ok: true, path: target, kind: 'binary', reason: '' }
-    const mime = IMAGE_MIME[path.extname(target).toLowerCase()]
-    if (mime && stat.size > MAX_PREVIEW_IMAGE_BYTES) {
-      return { ok: true, path: target, kind: 'binary', reason: '圖片超過 20 MB 預覽上限。' }
-    }
-    const limit = mime ? MAX_PREVIEW_IMAGE_BYTES : MAX_TEXT_BYTES
+    const extension = path.extname(target).toLowerCase()
+    const imageMime = IMAGE_MIME[extension]
+    const videoMime = VIDEO_MIME[extension]
+    const mime = imageMime ?? videoMime
+    const mediaLimit = videoMime ? MAX_VIDEO_BYTES : MAX_PREVIEW_IMAGE_BYTES
+    const tooLarge = videoMime ? '影片超過 20 MB 預覽上限。' : '圖片超過 20 MB 預覽上限。'
+    if (mime && stat.size > mediaLimit) return { ok: true, path: target, kind: 'binary', reason: tooLarge }
+    const limit = mime ? mediaLimit : MAX_TEXT_BYTES
     const buffer = Buffer.alloc(Math.min(stat.size, limit + 1))
     let bytes = 0
     while (bytes < buffer.length) {
@@ -78,8 +83,8 @@ export async function readTerminalFile(cwd: string, input: string, metadataOnly 
       bytes += bytesRead
     }
     if (mime) {
-      if (bytes > limit) return { ok: true, path: target, kind: 'binary', reason: '圖片超過 20 MB 預覽上限。' }
-      return { ok: true, path: target, kind: 'image', dataUrl: `data:${mime};base64,${buffer.subarray(0, bytes).toString('base64')}` }
+      if (bytes > limit) return { ok: true, path: target, kind: 'binary', reason: tooLarge }
+      return { ok: true, path: target, kind: videoMime ? 'video' : 'image', dataUrl: `data:${mime};base64,${buffer.subarray(0, bytes).toString('base64')}` }
     }
     const sample = buffer.subarray(0, Math.min(bytes, 8192))
     if (/\.(pdf|zip|gz|tar|exe|dll|woff2?|mp4|mov|webm|mp3|wav)$/i.test(target) || sample.some((b) => b === 0 || (b < 9 || (b > 13 && b < 32)))) {
