@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   activityFromHook,
   addUsage,
+  claudeCalls,
   claudeUsageTotal,
   describeNotification,
   diffProgress,
@@ -96,6 +97,14 @@ test('Claude usage — one count per message id even when a reply spans lines', 
   assert.equal(state.contextTokens, 48920)
 })
 
+test('Claude calls — one per distinct assistant message id with usage', () => {
+  // Counted from the fixtures' distinct assistant message ids, not through the reducer.
+  assert.equal(claudeCalls(foldClaude(lines('claude-todowrite.jsonl'))), 11)
+  assert.equal(claudeCalls(foldClaude(lines('claude-tasks.jsonl'))), 10)
+  assert.equal(claudeCalls(foldClaude(lines('claude-todowrite-subagent.jsonl'))), 2)
+  assert.equal(claudeCalls(initialClaudeState()), 0)
+})
+
 test('Claude sub-agent transcript — usage counted on its own', () => {
   const state = foldClaude(lines('claude-todowrite-subagent.jsonl'))
   assert.deepEqual(claudeUsageTotal(state), { input: 18, output: 355, cacheRead: 28623, cacheWrite: 31752, reasoning: 190 })
@@ -124,6 +133,20 @@ test('Codex update_plan — last plan wins; usage is the last cumulative count',
   assert.deepEqual(state.usage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19 })
   assert.equal(state.contextTokens, 16139)
   assert.equal(state.activity.state, 'waiting')
+})
+
+test('Codex — session id from session_meta; calls count token_count events that raised the total', () => {
+  const all = lines('codex-plan.jsonl')
+  const state = foldCodex(all)
+  assert.equal(state.sessionId, 'ROLLOUT')
+  assert.equal(state.calls, 6) // six token_count events, each with a larger total_tokens
+  // A repeated event (same total) and one with no info are not new requests.
+  const repeat = all.filter((l) => l.includes('"token_count"')).at(-1)
+  const again = foldCodex([...all, repeat, '{"type":"event_msg","payload":{"type":"token_count","info":null}}'])
+  assert.equal(again.calls, 6)
+  assert.deepEqual(again.usage, state.usage)
+  assert.equal(initialCodexState().calls, 0)
+  assert.equal(initialCodexState().sessionId, undefined)
 })
 
 test('Codex — a run in progress shows the tool being called', () => {

@@ -4,6 +4,7 @@ import path from 'path'
 import {
   activityFromHook,
   addUsage,
+  claudeCalls,
   claudeUsageTotal,
   diffProgress,
   emptyUsage,
@@ -283,11 +284,15 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
   function compose(entry: Entry): TaskProgress | null {
     const { target } = entry
     let runUsage = emptyUsage()
+    let runCalls = 0
+    const runSessionIds: string[] = []
     let primary: { todos: TaskProgress['todos']; contextTokens?: number; activity: Activity; startedAt?: number } | null = null
     if (target.agent === 'claude') {
       for (const [file, cursor] of entry.claude) {
         runUsage = addUsage(runUsage, claudeUsageTotal(cursor.state))
+        runCalls += claudeCalls(cursor.state)
         if (file.includes(`${path.sep}subagents${path.sep}`)) continue
+        runSessionIds.push(path.basename(file, '.jsonl'))
         const isExecutor = path.basename(file, '.jsonl') === target.sessionId
         const s = cursor.state
         if (isExecutor || (!target.sessionId && (!primary || (s.startedAt ?? 0) > (primary.startedAt ?? 0)))) {
@@ -295,9 +300,11 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
         }
       }
     } else {
-      for (const cursor of entry.codex.values()) {
+      for (const [file, cursor] of entry.codex) {
         const s = cursor.state
         runUsage = addUsage(runUsage, s.usage)
+        runCalls += s.calls
+        runSessionIds.push(s.sessionId ?? path.basename(file, '.jsonl'))
         if (!primary || (s.startedAt ?? 0) >= (primary.startedAt ?? 0)) {
           primary = { todos: s.todos, contextTokens: s.contextTokens, activity: s.activity, startedAt: s.startedAt }
         }
@@ -315,6 +322,8 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
       todos: primary.todos,
       runUsage,
       totalUsage: addUsage(target.priorUsage ?? emptyUsage(), runUsage),
+      runCalls,
+      runSessionIds: runSessionIds.sort(),
       ...(primary.contextTokens != null ? { contextTokens: primary.contextTokens } : {}),
       activity,
     }

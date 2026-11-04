@@ -51,6 +51,10 @@ export interface TaskProgress {
   runUsage: TokenUsage
   /** Earlier runs (Task.usage) plus this one — what the card has cost so far. */
   totalUsage: TokenUsage
+  /** API requests this run made, across every session counted into `runUsage`. */
+  runCalls: number
+  /** The sessions counted into `runUsage`, sorted; sub-agent transcripts are part of their parent. */
+  runSessionIds: string[]
   /** Tokens the last request sent — how full the context window is. */
   contextTokens?: number
   activity: Activity
@@ -260,6 +264,10 @@ export function claudeUsageTotal(state: ClaudeState): TokenUsage {
   return Object.values(state.usageById).reduce(addUsage, emptyUsage())
 }
 
+export function claudeCalls(state: ClaudeState): number {
+  return Object.keys(state.usageById).length
+}
+
 // ---------------------------------------------------------------------------
 // Codex
 // ---------------------------------------------------------------------------
@@ -267,16 +275,20 @@ export function claudeUsageTotal(state: ClaudeState): TokenUsage {
 export interface CodexState {
   /** session_meta cwd — which worktree this rollout belongs to. */
   cwd?: string
+  /** session_meta id — the rollout's own session. */
+  sessionId?: string
   startedAt?: number
   todos: TodoItem[] | null
   /** token_count is cumulative per rollout: the last one is the total. */
   usage: TokenUsage
+  /** token_count events that raised the total; a repeated event does not count twice. */
+  calls: number
   contextTokens?: number
   activity: Activity
 }
 
 export function initialCodexState(): CodexState {
-  return { todos: null, usage: emptyUsage(), activity: { state: 'unknown' } }
+  return { todos: null, usage: emptyUsage(), calls: 0, activity: { state: 'unknown' } }
 }
 
 function codexUsage(u: Record<string, unknown>): TokenUsage {
@@ -316,6 +328,7 @@ export function reduceCodexLine(state: CodexState, line: string): CodexState {
     return {
       ...state,
       cwd: typeof payload.cwd === 'string' ? payload.cwd : state.cwd,
+      sessionId: typeof payload.id === 'string' ? payload.id : state.sessionId,
       startedAt: parseTime(payload.timestamp) ?? at ?? state.startedAt,
     }
   }
@@ -334,7 +347,13 @@ export function reduceCodexLine(state: CodexState, line: string): CodexState {
       const total = info?.total_token_usage as Record<string, unknown> | undefined
       if (!total) return state
       const last = info?.last_token_usage as Record<string, unknown> | undefined
-      return { ...state, usage: codexUsage(total), contextTokens: last ? num(last.input_tokens) : state.contextTokens }
+      const usage = codexUsage(total)
+      return {
+        ...state,
+        usage,
+        calls: totalTokens(usage) > totalTokens(state.usage) ? state.calls + 1 : state.calls,
+        contextTokens: last ? num(last.input_tokens) : state.contextTokens,
+      }
     }
     if (payload.type === 'task_complete') {
       return { ...state, activity: { state: 'waiting', waitingFor: 'input', at } }

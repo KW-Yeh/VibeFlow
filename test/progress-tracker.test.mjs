@@ -97,6 +97,10 @@ test('Claude — usage adds other sessions of this run and their sub-agents, not
   })
   // Todos still come from the executor, not the tab.
   assert.equal(p.todos.length, 3)
+  // 11 executor replies + 2 sub-agent + 1 tab; the older run's reply is not counted.
+  assert.equal(p.runCalls, 11 + 2 + 1)
+  // Sub-agent files belong to their parent session; the older run's session is not listed.
+  assert.deepEqual(p.runSessionIds, [SESSION, 'tab-session'])
 })
 
 test('no transcript yet — snapshot is null and nothing is emitted', (t) => {
@@ -184,6 +188,8 @@ test('Codex — rollout matched by cwd and run start across CODEX_HOMEs', (t) =>
   assert.deepEqual(p.runUsage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19 })
   assert.deepEqual(p.todos.map((t) => t.status), ['completed', 'completed'])
   assert.equal(p.activity.state, 'waiting')
+  assert.equal(p.runCalls, 6)
+  assert.deepEqual(p.runSessionIds, ['ROLLOUT'])
   assert.equal(tracker.isTracking('card'), false)
 })
 
