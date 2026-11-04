@@ -745,7 +745,7 @@ test('a CLI card that never launched still shows its spec after its PR is merged
 const PROGRESS_FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'progress', 'claude-todowrite.jsonl')
 
 /** A core whose agent transcripts live under a throwaway home, plus one launched card. */
-async function coreWithProgress(t) {
+async function coreWithProgress(t, { coreOptions = {}, task: taskInput = {} } = {}) {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-service-home-'))
@@ -753,9 +753,9 @@ async function coreWithProgress(t) {
   const bus = new EventBus()
   const events = []
   bus.on((channel, payload) => events.push({ channel, payload }))
-  const core = createCore({ sessions: fakeSessions(), bus, version: '9.9.9', homeDir: home })
+  const core = createCore({ sessions: fakeSessions(), bus, version: '9.9.9', homeDir: home, ...coreOptions })
   t.after(() => core.shutdown())
-  const { task: created } = await createTaskFromInput({ projectPath, title: 'Progress card', status: 'in_progress' })
+  const { task: created } = await createTaskFromInput({ projectPath, title: 'Progress card', status: 'in_progress', ...taskInput })
   // The renderer stamps launchedAt when it starts a card; the fixture was recorded 2026-10-05.
   const launchedAt = Date.parse('2026-10-05T14:00:00Z')
   const state = getStore().get('board')
@@ -826,6 +826,105 @@ test('progress — restart and completion fold the run into Task.usage', async (
   assert.equal(done.usage.output, 2364)
   assert.equal(done.worktreePath, undefined)
   assert.equal(await core.handlers['progress:get'](task.id), null)
+})
+
+const FIXTURE_RUN_USAGE = { input: 94, output: 2364, cacheRead: 485121, cacheWrite: 22025, reasoning: 907 }
+const storedTask = (id) => Object.values(getStore().get('board')).flat().find((t) => t.id === id)
+
+test('progress — a restart and a completion each leave a record of the run that ended', async (t) => {
+  const { core, task, transcript, lines } = await coreWithProgress(t, { task: { model: 'sonnet', effort: 'high' } })
+  await writeLines(transcript, lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { task: reset } = await core.handlers['vibeflow:resetTaskRun'](task.id)
+
+  assert.equal(reset.runs.length, 1)
+  const [first] = reset.runs
+  assert.ok(first.endedAt >= first.startedAt)
+  assert.deepEqual({ ...first, endedAt: 0 }, {
+    startedAt: task.launchedAt,
+    endedAt: 0,
+    endedBy: 'restart',
+    agent: 'claude',
+    sessionIds: [executorSessionId(task.id, task.runId)],
+    model: 'sonnet',
+    modelSource: 'card',
+    effort: 'high',
+    usage: FIXTURE_RUN_USAGE,
+    calls: 11,
+  })
+
+  // The restarted run is its own run: new id, new executor session, its own record.
+  const second = path.join(path.dirname(transcript), `${executorSessionId(task.id, reset.runId)}.jsonl`)
+  await writeLines(second, lines)
+  await core.handlers['vibeflow:cleanupTask'](task.id)
+  const done = storedTask(task.id)
+  assert.equal(done.runs.length, 2)
+  assert.deepEqual(done.runs[0], first)
+  assert.deepEqual(
+    [done.runs[1].runId, done.runs[1].startedAt, done.runs[1].endedBy, done.runs[1].calls, done.runs[1].sessionIds],
+    [reset.runId, reset.launchedAt, 'completed', 11, [executorSessionId(task.id, reset.runId)]]
+  )
+  assert.deepEqual(done.runs[1].usage, FIXTURE_RUN_USAGE, 'a record holds its own run, not the card total')
+  assert.equal(done.usage.output, 2364 * 2, 'Task.usage stays the card total')
+
+  await core.handlers['vibeflow:cleanupTask'](task.id)
+  assert.equal(storedTask(task.id).runs.length, 2, 'completing a finished card again adds nothing')
+})
+
+test('progress — the record keeps what Jev chose for the run after the card forgets it', async (t) => {
+  const router = { async route() { return { status: 'routed', model: 'sonnet', effort: 'medium', complexity: 'moderate', scoutModel: 'opus', context: 'notes' } } }
+  const { core, task, transcript, lines } = await coreWithProgress(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+  })
+  await writeLines(transcript, lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  assert.equal(storedTask(task.id).jevRoute.complexity, 'moderate')
+  const { task: reset } = await core.handlers['vibeflow:resetTaskRun'](task.id)
+
+  assert.equal(reset.jevRoute, undefined, 'the next run routes again')
+  const [record] = reset.runs
+  assert.deepEqual(
+    [record.model, record.modelSource, record.effort, record.complexity, record.scoutModel],
+    ['sonnet', 'jev', 'medium', 'moderate', 'opus']
+  )
+})
+
+test('progress — a run Jev could not route is recorded as running on the CLI default', async (t) => {
+  const router = { async route() { return { status: 'fallback', reason: '額度已用完' } } }
+  const { core, task, transcript, lines } = await coreWithProgress(t, {
+    coreOptions: { modelCatalog: fakeCatalog(catalogModels), jevRouter: router },
+  })
+  await writeLines(transcript, lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { task: reset } = await core.handlers['vibeflow:resetTaskRun'](task.id)
+  const [record] = reset.runs
+  assert.equal(record.modelSource, 'cli')
+  for (const key of ['model', 'effort', 'complexity', 'scoutModel']) assert.ok(!(key in record), key)
+})
+
+test('progress — a card from before run records keeps its usage, loses nothing, and starts recording', async (t) => {
+  const { core, task, transcript, lines } = await coreWithProgress(t, { task: { model: 'sonnet', effort: 'high' } })
+  const prior = { input: 1, output: 1, cacheRead: 1, cacheWrite: 1, reasoning: 0 }
+  const board = getStore().get('board')
+  getStore().set('board', {
+    ...board,
+    // `runs` as hand-edited garbage is the worst a stored card can hold.
+    in_progress: board.in_progress.map((c) => (c.id === task.id ? { ...c, usage: prior, runs: 'junk' } : c)),
+  })
+
+  // No transcript yet: the run left nothing to record, and the old usage is not touched.
+  const empty = await core.handlers['vibeflow:resetTaskRun'](task.id)
+  assert.equal(empty.task.runs, 'junk', 'nothing new to add, nothing rewritten')
+  assert.deepEqual(empty.task.usage, prior)
+
+  const runId = empty.task.runId
+  await writeLines(path.join(path.dirname(transcript), `${executorSessionId(task.id, runId)}.jsonl`), lines)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { task: reset } = await core.handlers['vibeflow:resetTaskRun'](task.id)
+  assert.equal(reset.runs.length, 1, 'the unreadable value is replaced by the first real record')
+  assert.deepEqual(reset.runs[0].usage, FIXTURE_RUN_USAGE)
+  assert.equal(reset.runs[0].runId, runId)
+  assert.equal(reset.usage.output, 2364 + 1)
 })
 
 test('a card converted from GitHub keeps its source ref; a ref outside github.com is refused', async (t) => {

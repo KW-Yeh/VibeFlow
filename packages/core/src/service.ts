@@ -88,7 +88,8 @@ import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './la
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
 import { createNotifier } from './notifier'
-import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
+import type { Activity, ProgressNotification, TaskProgress } from './progress'
+import { upsertRun, type RunEnd, type RunRecord } from './run-records'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
 import { getPlatform } from './platform'
@@ -398,17 +399,40 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   /**
-   * The card's usage including the run that is ending, for folding into
-   * Task.usage before the run's transcripts stop counting (restart, completion).
+   * What the run that is ending leaves on the card: its usage folded into
+   * Task.usage, and its own record in Task.runs. Call it while the run's
+   * transcripts still count and before `jevRoute` is cleared — the record keeps
+   * the choice Jev made for this run.
    */
-  function usageThroughCurrentRun(task: Task): TokenUsage | undefined {
+  function finishRun(task: Task, endedBy: RunEnd): Pick<Task, 'usage' | 'runs'> {
+    const kept = { ...(task.usage ? { usage: task.usage } : {}), ...(task.runs ? { runs: task.runs } : {}) }
     const target = progressTarget(task)
-    if (!target) return task.usage
+    if (!target) return kept
     const wasTracking = progress.isTracking(task.id)
     progress.track(target)
     const snapshot = progress.snapshot(task.id)
     if (!wasTracking) progress.untrack(task.id)
-    return snapshot?.totalUsage ?? task.usage
+    if (!snapshot) return kept
+    const usage = snapshot.totalUsage
+    if (task.launchedAt == null || snapshot.runCalls === 0) return { ...kept, usage }
+    const route = settledRoute(task)
+    const choice = launchChoice(task)
+    const record: RunRecord = {
+      ...(task.runId ? { runId: task.runId } : {}),
+      startedAt: task.launchedAt,
+      endedAt: Date.now(),
+      endedBy,
+      agent: taskAgent(task),
+      sessionIds: snapshot.runSessionIds,
+      ...(choice.model ? { model: choice.model } : {}),
+      modelSource: taskModel(task) ? 'card' : route?.model ? 'jev' : 'cli',
+      ...(choice.effort ? { effort: choice.effort } : {}),
+      ...(route?.complexity ? { complexity: route.complexity } : {}),
+      ...(route?.scoutModel ? { scoutModel: route.scoutModel } : {}),
+      usage: snapshot.runUsage,
+      calls: snapshot.runCalls,
+    }
+    return { usage, runs: upsertRun(task.runs, record) }
   }
 
   // Cards already running when the host starts (tmux kept them alive, or an
@@ -891,9 +915,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         await teardownTask(task.id)
         if (task.workspacePath) deleteArtifacts(task.workspacePath, task.worktreePath)
         resetSubAgents(task.worktreePath)
-        const usage = usageThroughCurrentRun(task)
+        const finished = finishRun(task, 'restart')
         progress.untrack(task.id)
-        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...(usage ? { usage } : {}) })
+        updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...finished })
         const reset = findTask(task.id)
         if (!reset) throw new Error('找不到要重置的任務')
         bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
@@ -916,9 +940,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       deleteDecisions(workspacePath, decisionsKey(task.worktreePath, task.branch))
       resetSubAgents(task.worktreePath)
       // The tokens are spent even though the work is thrown away.
-      const usage = usageThroughCurrentRun(task)
+      const finished = finishRun(task, 'restart')
       progress.untrack(task.id)
-      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...(usage ? { usage } : {}) })
+      updateTask(task.id, { launchedAt: Date.now(), runId: randomUUID(), jevRoute: undefined, ...finished })
       const reset = findTask(task.id)
       if (!reset) throw new Error('找不到要重置的任務')
       bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
@@ -1377,7 +1401,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         outcome = (await captureTaskOutcome(worktree, task.baseBranch ?? 'main')) ?? undefined
       }
       // Last read of the run's transcripts while the worktree they are keyed by still exists.
-      const usage = usageThroughCurrentRun(task)
+      const finished = finishRun(task, 'completed')
       progress.untrack(task.id)
       if (task.projectPath && task.worktreePath) {
         await removeTaskWorktree(task)
@@ -1389,7 +1413,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       updateTask(task.id, {
         worktreePath: undefined,
         ...(outcome ? { outcome } : {}),
-        ...(usage ? { usage } : {}),
+        ...finished,
       })
       return getState()
     },
