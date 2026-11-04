@@ -62,15 +62,16 @@ echo "fake-claude ready"
 echo "https://example.com/plain-link"
 printf '\\033]8;;https://example.com/osc-link\\033\\\\OSC link\\033]8;;\\033\\\\\\n'
 echo "written by the fake agent" > fake-agent-output.txt
-echo './preview-image.svg'
-echo '"./preview notes.md"'
-echo './preview-missing.txt'
-echo './preview-report.pdf'
-echo './preview-long-directory/another-long-directory/and-one-more-long-directory/preview-wrapped-image.png'
+echo 'relative ./preview-relative.svg'
+echo '~/preview-image.svg'
+echo '"~/preview notes.md"'
+echo '~/preview-missing.txt'
+echo '~/preview-report.pdf'
+echo '~/preview-long-directory/another-long-directory/and-one-more-long-directory/preview-wrapped-image.png'
 while read -r line; do
   if [ "$line" = "spanning-paths" ]; then
-    echo './preview shots/agent shot.png is ready'
-    printf './preview-hard-wrap/agent-wra\\n  pped.png done\\n'
+    echo '~/preview shots/agent shot.png is ready'
+    printf '~/preview-hard-wrap/agent-wra\\n  pped.png done\\n'
   fi
   echo "got:$line"
 done
@@ -135,6 +136,20 @@ async function clickTerminalFile(page, label, target = label) {
   await page.waitForFunction((expected) => [...document.querySelectorAll('.xterm')].some((term) => term.title === expected), target)
   await page.mouse.click(x, y)
   await page.getByRole('dialog', { name: '檔案預覽' }).waitFor()
+}
+
+/** A relative name is highlighted but neither titled nor opened: its cwd is a guess. */
+async function clickRelativeTerminalFile(page, label) {
+  const row = page.locator('.xterm-rows:visible').getByText(label, { exact: false }).first()
+  const box = await row.boundingBox()
+  assert.ok(box, `${label} is visible`)
+  const x = box.x + Math.min(20, box.width / 2)
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.click(x, y)
+  await page.waitForTimeout(500)
+  assert.equal(await page.getByRole('dialog', { name: '檔案預覽' }).count(), 0, `${label} opens nothing`)
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.xterm')].every((term) => !term.title)), `${label} shows no link title`)
 }
 
 const PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="240" viewBox="0 0 480 240"><rect width="480" height="240" rx="16" fill="#1e293b"/><circle cx="90" cy="120" r="48" fill="#38bdf8"/><text x="160" y="115" fill="white" font-family="sans-serif" font-size="26">Terminal preview</text><text x="160" y="150" fill="#94a3b8" font-family="sans-serif" font-size="16">Local image opened in VibeFlow</text></svg>'
@@ -319,15 +334,18 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(routedState.board.in_progress[0]?.jevRoute?.status, 'fallback')
   assert.match(routedState.board.in_progress[0]?.jevRoute?.reason ?? '', /TYPESAFE_API_KEY/)
 
+  // Only absolute paths open; `~/` keeps the labels short and resolves to the host's private HOME.
   const previewTask = routedState.board.in_progress[0]
-  fs.writeFileSync(path.join(previewTask.worktreePath, 'preview-image.svg'), PREVIEW_SVG)
-  fs.writeFileSync(path.join(previewTask.worktreePath, 'preview notes.md'), '# Terminal preview\n\nReadable markdown.\n<script>window.previewUnsafe = true</script>')
-  fs.writeFileSync(path.join(previewTask.worktreePath, 'preview-report.pdf'), '%PDF-1.7')
-  const wrappedPath = './preview-long-directory/another-long-directory/and-one-more-long-directory/preview-wrapped-image.png'
-  fs.mkdirSync(path.dirname(path.join(previewTask.worktreePath, wrappedPath)), { recursive: true })
-  fs.writeFileSync(path.join(previewTask.worktreePath, wrappedPath), PREVIEW_PNG)
+  fs.writeFileSync(path.join(previewTask.worktreePath, 'preview-relative.svg'), PREVIEW_SVG)
+  fs.writeFileSync(path.join(home, 'preview-image.svg'), PREVIEW_SVG)
+  fs.writeFileSync(path.join(home, 'preview notes.md'), '# Terminal preview\n\nReadable markdown.\n<script>window.previewUnsafe = true</script>')
+  fs.writeFileSync(path.join(home, 'preview-report.pdf'), '%PDF-1.7')
+  const wrappedPath = '~/preview-long-directory/another-long-directory/and-one-more-long-directory/preview-wrapped-image.png'
+  fs.mkdirSync(path.dirname(path.join(home, wrappedPath.slice(2))), { recursive: true })
+  fs.writeFileSync(path.join(home, wrappedPath.slice(2)), PREVIEW_PNG)
   const fileDialog = page.getByRole('dialog', { name: '檔案預覽' })
-  await clickTerminalFile(page, './preview-image.svg')
+  await clickRelativeTerminalFile(page, './preview-relative.svg')
+  await clickTerminalFile(page, '~/preview-image.svg')
   await fileDialog.locator('img').waitFor()
   await page.waitForFunction(() => document.querySelector('[role="dialog"] img')?.naturalWidth === 480)
   const zoom = fileDialog.getByRole('slider')
@@ -337,18 +355,18 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.notEqual(await zoom.inputValue(), beforeZoom)
   await page.keyboard.press('Escape')
   await fileDialog.waitFor({ state: 'detached' })
-  await clickTerminalFile(page, '"./preview notes.md"', './preview notes.md')
+  await clickTerminalFile(page, '"~/preview notes.md"', '~/preview notes.md')
   await fileDialog.getByRole('heading', { name: 'Terminal preview' }).waitFor()
   assert.equal(await page.evaluate(() => window.previewUnsafe), undefined)
   await page.keyboard.press('Escape')
-  await clickTerminalFile(page, './preview-missing.txt')
+  await clickTerminalFile(page, '~/preview-missing.txt')
   await fileDialog.getByRole('alert').filter({ hasText: '找不到' }).waitFor()
   await page.keyboard.press('Escape')
-  await clickTerminalFile(page, './preview-report.pdf')
+  await clickTerminalFile(page, '~/preview-report.pdf')
   await fileDialog.getByText(/此格式無法/).waitFor()
   await fileDialog.getByRole('button', { name: '用系統程式開啟' }).waitFor()
   await page.keyboard.press('Escape')
-  await clickTerminalFile(page, './preview-long-directory/', wrappedPath)
+  await clickTerminalFile(page, '~/preview-long-directory/', wrappedPath)
   await fileDialog.locator('img').waitFor()
   await page.keyboard.press('Escape')
 
@@ -383,13 +401,13 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.keyboard.press('Enter')
   await waitForTerminal(page, 'got:spanning-paths')
   for (const file of ['preview shots/agent shot.png', 'preview-hard-wrap/agent-wrapped.png']) {
-    fs.mkdirSync(path.dirname(path.join(previewTask.worktreePath, file)), { recursive: true })
-    fs.writeFileSync(path.join(previewTask.worktreePath, file), PREVIEW_PNG)
+    fs.mkdirSync(path.dirname(path.join(home, file)), { recursive: true })
+    fs.writeFileSync(path.join(home, file), PREVIEW_PNG)
   }
   for (const [label, target] of [
-    ['./preview shots/agent', './preview shots/agent shot.png'],
-    ['./preview-hard-wrap/agent-wra', './preview-hard-wrap/agent-wrapped.png'],
-    ['pped.png done', './preview-hard-wrap/agent-wrapped.png'],
+    ['~/preview shots/agent', '~/preview shots/agent shot.png'],
+    ['~/preview-hard-wrap/agent-wra', '~/preview-hard-wrap/agent-wrapped.png'],
+    ['pped.png done', '~/preview-hard-wrap/agent-wrapped.png'],
   ]) {
     await clickTerminalFile(page, label, target)
     await fileDialog.locator('img').waitFor()
@@ -398,7 +416,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
 
   // The preview fits every width. Narrowing the window re-wraps what the terminal
   // already printed (ConPTY hard-wraps it on Windows), so no link lookup follows.
-  await clickTerminalFile(page, './preview-image.svg')
+  await clickTerminalFile(page, '~/preview-image.svg')
   await page.waitForFunction(() => document.querySelector('[role="dialog"] img')?.naturalWidth === 480)
   const evidence = process.env.VIBEFLOW_E2E_ARTIFACTS
   if (evidence) fs.mkdirSync(evidence, { recursive: true })
@@ -749,9 +767,10 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await page.getByRole('tab', { name: '終端機' }).click()
   const panes = page.locator('section[aria-label^="Terminal："]')
   fs.writeFileSync(path.join(projectPath, 'standalone-preview.png'), PREVIEW_PNG)
-  bus.emit('pty:data', { sessionKey: starts[0].key, data: './standalone-preview.png\r\n' })
-  await waitForTerminal(page, './standalone-preview.png')
-  await clickTerminalFile(page, './standalone-preview.png')
+  const standalonePreview = path.join(projectPath, 'standalone-preview.png')
+  bus.emit('pty:data', { sessionKey: starts[0].key, data: `${standalonePreview}\r\n` })
+  await waitForTerminal(page, 'standalone-preview.png')
+  await clickTerminalFile(page, 'standalone-preview.png', standalonePreview)
   await page.getByRole('dialog', { name: '檔案預覽' }).locator('img').waitFor()
   await page.keyboard.press('Escape')
   assert.equal(starts.length, 3, 'preview keeps standalone sessions mounted')

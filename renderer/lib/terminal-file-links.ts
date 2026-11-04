@@ -6,7 +6,17 @@ export interface TerminalFileMatch {
 }
 
 const EXPLICIT_START = /^(?:file:\/\/|\/|~[\\/]|\.{1,2}[\\/]|[a-z]:[\\/])/i
+const ABSOLUTE_START = /^(?:file:\/\/|\/|~[\\/]|[a-z]:[\\/])/i
 const EMBEDDED_ABSOLUTE = /(?<=[^\p{L}\p{N}_.@+~\\/-])(?:file:\/\/|~[\\/]|\/(?!\/)|[a-z]:[\\/])/iu
+
+/**
+ * Only a path that names one file wherever the terminal runs is clickable. A
+ * relative name depends on a cwd the agent may have left, so it is shown but
+ * never opened.
+ */
+export function isAbsoluteTerminalPath(path: string): boolean {
+  return ABSOLUTE_START.test(path)
+}
 
 /** Candidate detection only; core validates existence on an explicit click. */
 export function findTerminalFiles(text: string): TerminalFileMatch[] {

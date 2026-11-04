@@ -6,7 +6,7 @@ Status: implemented and verified on 2026-10-29. The user approved implementation
 
 **目的**：讓使用者能直接查看 agent 或 shell 提到的本機產出，不必先把路徑複製到檔案管理員，也不必先將檔案加入 Artifacts。使用者已確認「點擊路徑、在 VibeFlow 預覽」；其他格式提供系統程式開啟按鈕。
 
-R1. 任務 terminal 與獨立 terminal 都能點擊本機檔案路徑，包含絕對路徑、`~/`、`./`、`../`、有副檔名的裸檔名與本機 `file:` 連結。
+R1. 任務 terminal 與獨立 terminal 都能點擊本機檔案路徑：絕對路徑、`~/`、Windows 磁碟路徑與本機 `file:` 連結。`./`、`../`、`src/…` 等相對路徑與有副檔名的裸檔名只在 hover 時加底線、不可點擊（2026-11-04 依使用者回饋調整：相對路徑常因 agent 已離開啟動目錄而指向不存在的檔案）。
 R2. 引號中的空白路徑可開啟，常見行號／欄號後綴不會被當成檔名；相對路徑以 terminal 的啟動目錄解析。
 R2a. 未加引號但含空白的路徑，以及 agent 自行換行（硬換行加縮排，xterm 不標記為 wrapped）而斷開的路徑可開啟；這類候選有歧義，只在 core 確認拼接後的檔案存在時才成為連結。
 R3. 圖片以可縮放的對話框顯示；文字以唯讀內容顯示，Markdown 沿用既有安全 renderer。

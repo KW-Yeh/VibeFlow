@@ -1,6 +1,6 @@
 import type { ILink, Terminal } from '@xterm/xterm'
 import { existingTerminalFiles } from '@/lib/api'
-import { findTerminalFiles, pickSpanningFiles, spanningFileCandidates } from './terminal-file-links'
+import { findTerminalFiles, isAbsoluteTerminalPath, pickSpanningFiles, spanningFileCandidates } from './terminal-file-links'
 
 export function openTerminalLink(uri: string, onFile?: (path: string) => void): void {
   try {
@@ -48,13 +48,18 @@ const CONTEXT_LINES = 3
 
 /** Register once per terminal. */
 export function registerTerminalFiles(term: Terminal, sessionKey: string, onFile: (path: string) => void) {
-  const link = (path: string, start: Cell, end: Cell): ILink => ({
+  const link = (path: string, start: Cell, end: Cell): ILink => isAbsoluteTerminalPath(path) ? {
     text: path,
     range: { start, end },
     activate: () => onFile(path),
     hover: () => showTerminalLink(term, path),
     leave: () => hideTerminalLink(term),
-  })
+  } : {
+    text: path,
+    range: { start, end },
+    decorations: { pointerCursor: false, underline: true },
+    activate: () => {},
+  }
   return term.registerLinkProvider({
     provideLinks(lineNumber, callback) {
       const buffer = term.buffer.active

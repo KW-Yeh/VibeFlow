@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { existingTerminalFiles, readTerminalFile, resolveTerminalFile, MAX_PREVIEW_IMAGE_BYTES } from '../packages/core/src/terminal-files.ts'
-import { findTerminalFiles, pickSpanningFiles, spanningFileCandidates } from '../renderer/lib/terminal-file-links.ts'
+import { findTerminalFiles, isAbsoluteTerminalPath, pickSpanningFiles, spanningFileCandidates } from '../renderer/lib/terminal-file-links.ts'
 
 test('file candidates support quotes, locations, local URLs and ignore web URLs', () => {
   const text = 'see ./src/app.ts:12:4 and "./my image.png" /tmp/screen.png ~/notes.md file:///tmp/a%20b.png README.md https://example.com/a.png'
@@ -35,6 +35,11 @@ test('absolute paths glued to a tool call or prose are detected as absolute', ()
   assert.deepEqual(findTerminalFiles('src/foo.ts:12 node_modules/.bin/x.js').map((m) => m.path), ['src/foo.ts', 'node_modules/.bin/x.js'])
   assert.deepEqual(findTerminalFiles('url=https://example.com/a.png'), [])
   assert.deepEqual(spanning(['報告在：/Users/me/My Shots/a.png'], ['/Users/me/My Shots/a.png']).map((c) => c.path), ['/Users/me/My Shots/a.png'])
+})
+
+test('only absolute paths are clickable; relative names are highlighted', () => {
+  for (const p of ['/Users/me/a.md', '~/notes.md', 'file:///tmp/a.png', 'C:\\work\\a.ts', 'c:/work/a.ts']) assert.ok(isAbsoluteTerminalPath(p), p)
+  for (const p of ['./src/app.ts', '../a.md', 'src/foo.ts', 'README.md', '~notes.md']) assert.ok(!isAbsoluteTerminalPath(p), p)
 })
 
 function spanning(lines, existing) {
