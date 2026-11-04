@@ -84,7 +84,7 @@ Jev 已能替未指定模型的卡片選模型與 effort，但 2026-09-04 – 20
 
 **統計**（core 純函式，輸入卡片資料，不讀 transcript）：依 `複雜度（無則 none）× 模型（缺省為 cli-default）× effort（缺省為 default）` 分組，每組回傳：run 數、卡片數、總 tokens 中位數、`calls` 中位數、平均每次呼叫 context 中位數（`(input+cacheRead+cacheWrite)/calls`）、**重開率**（組內 `endedBy = restart` 的 run ÷ 已結束的 run）。進行中的 run 不計入。
 
-**呈現**：CLI `vibeflow task stats [--json]` 直接讀 store（不需要 host 在跑）。Web 工作區面板的用量區塊新增「執行紀錄」清單（每個已結束的 run 一行：第幾輪、模型、effort、複雜度、呼叫數、tokens、結束原因），沒有紀錄時不顯示。
+**呈現**：CLI `vibeflow task stats [--table]` 直接讀 store（不需要 host 在跑）；與其他 `task` 子指令一致，預設輸出 JSON，`--table` 才印人看的表格。Web 工作區面板的用量區塊新增「執行紀錄」清單（每個已結束的 run 一行：第幾輪、模型、effort、複雜度、呼叫數、tokens、結束原因），沒有紀錄時不顯示。
 
 ### 項目 3：context 顯示與交接提示
 
@@ -156,7 +156,7 @@ Jev 已能替未指定模型的卡片選模型與 effort，但 2026-09-04 – 20
 - 拆卡：整份 spec 涵蓋五項；本卡實作 spec／plan 與**項目 2**，項目 1、項目 3＋交接重開、項目 4、項目 5 各開一張子卡，順序為 項目 2 → 項目 1 → 項目 3＋交接重開 → 項目 4 → 項目 5。
 - 升級觸發：只做手動，不做自動建議。
 - 交接摘要：由 core 機械產生（待辦、`git diff --stat`、commit 清單、原因）。
-- 統計呈現：CLI `vibeflow task stats` 加卡片的執行紀錄清單，不新增 Web 統計頁。
+- 統計呈現：CLI `vibeflow task stats`（預設 JSON、`--table` 印表格，2026-11-04 隨 plan 確認）加卡片的執行紀錄清單，不新增 Web 統計頁。
 
 依提議定案（2026-11-04 隨整份 Spec 確認）：
 
