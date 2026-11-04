@@ -869,6 +869,7 @@ test('progress — a restart and a completion each leave a record of the run tha
 
   await core.handlers['vibeflow:cleanupTask'](task.id)
   assert.equal(storedTask(task.id).runs.length, 2, 'completing a finished card again adds nothing')
+  assert.equal(storedTask(task.id).usage.output, 2364 * 2, 'nor does it count the transcripts a second time')
 })
 
 test('progress — the record keeps what Jev chose for the run after the card forgets it', async (t) => {

@@ -67,7 +67,7 @@
 | `packages/core/src/service.ts` | `usageThroughCurrentRun` → `finishRun(task, endedBy)`；`resetTaskRun`（master／一般兩分支）寫 `endedBy: restart`，`cleanupTask` 寫 `completed`；未佈署卡不寫 | AC-3、AC-4、AC-6 |
 | `packages/cli/src/task-command.ts` | `stats` 子指令（`--table`、`--store-path`、`--profile`）、`TASK_USAGE`、`SUBCOMMANDS`、`parseArgs` options | AC-7 |
 | `renderer/lib/types.ts`、`renderer/lib/run-records.ts`（新增） | 重新匯出 `RunRecord` 型別與 `normalizeRuns` | AC-8 |
-| `renderer/components/task-progress.tsx`、`renderer/components/task-workspace-panel.tsx` | `TaskProgressDetail` 新增「執行紀錄」清單（第幾輪、模型、effort、複雜度、呼叫數、tokens、結束原因）；無紀錄不顯示；進行中的當前 run 以進度即時值標示 | AC-8 |
+| `renderer/components/task-progress.tsx`、`renderer/components/task-workspace-panel.tsx` | `TaskProgressDetail` 新增「執行紀錄」清單（第幾輪、模型、effort、複雜度、呼叫數、tokens、結束原因）；無紀錄不顯示；只列已結束的 run，進行中的 run 沿用既有的「Token 使用量」與「目前 context」，不重複標示 | AC-8 |
 | `test/core-boundary.test.mjs` | `RENDERER_SAFE` 加入 `run-records.ts` | 工程品質 |
 | `test/progress.test.mjs`、`test/progress-tracker.test.mjs`、`test/fixtures/progress/` | 新讀欄位的斷言；必要時補 Codex fixture 的 `session_meta.id`（現為占位字串 `ROLLOUT`）與重複 `token_count` 案例 | AC-5 |
 | `test/run-records.test.mjs`、`test/routing-stats.test.mjs`（新增） | normalize 壞資料；upsert 冪等；分組、中位數（奇／偶筆）、重開率、略過舊卡數 | AC-6、AC-7 |
@@ -131,4 +131,42 @@
 
 ## 實作與驗證紀錄
 
-尚未實作。
+本卡（項目 2）已實作，分 6 個實作 commit（見 `git log`）。驗證於 2026-11-04 在最後一個 commit 的內容上執行。
+
+### 結果
+
+| 檢查 | 命令或操作 | 結果 |
+| --- | --- | --- |
+| Core typecheck | `npx tsc --noEmit -p tsconfig.json` | 通過 |
+| Renderer typecheck | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | 通過 |
+| 測試 | `npm test` | 549 項全數通過 |
+| Web UI build | `npm run build:web` | 成功 |
+| E2E | `npm run test:e2e` | 3 項通過（含「完成後面板出現執行紀錄」斷言） |
+| Live Web UI | 暫存 store、私有 HOME、假 claude；以 Playwright（Chrome）操作，錄影與截圖 | 全部檢查通過，細節如下 |
+| CLI 實跑 | 同一個暫存 store 上 `vibeflow task stats` 與 `--table` | 通過，細節如下 |
+
+### Live Web UI 實測看到的事實
+
+流程：開一張含 `usage`、沒有 `runs` 的舊形狀 Done 卡 → 建立新卡並啟動（`launchedAt`、worktree 皆有）→ 放入 transcript → 重新開始 → 放入第二份 transcript → 完成。
+
+- **舊形狀卡**：開啟面板，用量表照常顯示、沒有「執行紀錄」區塊；整段流程結束後這張卡的 `runs` 仍是 `undefined`、`usage` 不變（沒有被改寫）。
+- **進行中的 run**：面板已有「Token 使用量」，尚無「執行紀錄」（紀錄在 run 結束時才寫）。
+- **重新開始後**：`runs` 一筆，`endedBy: restart`、`calls: 11`、`modelSource: cli`（沒指定模型、Jev 沒有金鑰）、`sessionIds` 為該 run 的 executor session，`jevRoute` 已清空；面板出現「#1 CLI 預設 · 預設 effort · 11 次呼叫 · 510k · 重新開始」。
+- **完成後**：`runs` 兩筆，第二筆 `endedBy: completed`、有自己的 `runId`；單筆 `usage.output` 為 2,364、`Task.usage.output` 為其兩倍（卡片總量）；面板列出 #1、#2。
+- **`task stats`**：2 次 run、1 張卡，舊形狀卡被略過並計入 `cardsWithoutRuns: 1`；唯一一組為 `none × cli-default × default`，重開率 50%、呼叫數中位數 11。`--table` 輸出同一份數字。
+- Host log 無錯誤。
+
+證據檔（暫存 store 與 HOME 已刪除，不含真實 store）已用 `task artifact add` 放進本卡的 Artifacts：`run-records-live.webm`、`01-legacy-card.png`、`04-after-completion.png`、`task-stats-table.txt`。
+
+### 與計畫不同之處
+
+1. **進行中的 run 不在「執行紀錄」裡標示**：計畫的修改表原寫「以進度即時值標示」。實作時發現同一個面板已有「Token 使用量」與「目前 context」，再列一行只是重複，AC-8 也只要求已記錄的清單與無紀錄時隱藏，所以只列已結束的 run。修改表該列已改成現況。
+2. **Live 實測的啟動方式**：計畫寫 `npm start -- --store-path <tmp> --no-open --port 47831`；實際以腳本直接 spawn `packages/cli/src/bin.ts`（`npm start` 執行的同一個入口，`--backend pty --no-open`，埠由系統分配），好讓腳本取得 lock 檔裡的 token 與埠。`npm run build:web` 先重建過 `app/`。
+3. **舊形狀 store 的「重新開始、完成」沒有在 live 做**：live 只驗了「開面板、不被改寫」。「舊卡之後重新開始與完成仍保留 `usage` 並開始記錄」由 `test/service.test.mjs` 的「a card from before run records keeps its usage, loses nothing, and starts recording」釘住。
+4. **`Task.usage` 在重複完成時不會重複計算**：風險段說要回報此事。`test/service.test.mjs` 在對已完成的卡再執行一次 `cleanupTask` 後斷言 `runs` 仍是兩筆、`usage.output` 不變，已通過。這只涵蓋「再執行一次 cleanup」；從看板把 Done 卡拖回 In Progress 再完成的路徑沒有另外量測。
+
+### 沒有驗證的事
+
+- 真實的 Claude Code／Codex 執行：transcript 是 fixture，`calls` 的 Claude 算法（distinct assistant message id）與 Codex 的近似算法沒有對真實長流程比對。
+- Jev 有金鑰時的 `modelSource: jev` 與 `complexity` 欄位：只有 `test/service.test.mjs` 以假 router 驗證，沒有在 live UI 看過。
+- Windows：e2e 的 transcript 注入在 Windows 上跳過（`os.homedir()` 不看 `HOME`）。
