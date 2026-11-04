@@ -25,6 +25,8 @@ import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { getStore } from '../packages/core/src/store.ts'
+import { executorSessionId } from '../packages/core/src/launch.ts'
+import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
 import { startWebServer } from '../packages/core/src/web-server.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -456,12 +458,29 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(approved.result.pushed, true, JSON.stringify(approved.result))
   assert.match(await git(remotePath, 'log', '--oneline', task.branch), /e2e: fake agent change/)
 
+  // The fake agent writes no transcript; leave the one a real run would have, under the host's private HOME.
+  const readsHome = process.platform !== 'win32' // os.homedir() follows USERPROFILE there, not HOME
+  if (readsHome) {
+    const transcript = path.join(claudeProjectDir(home, task.worktreePath), `${executorSessionId(task.id, task.runId)}.jsonl`)
+    fs.mkdirSync(path.dirname(transcript), { recursive: true })
+    fs.copyFileSync(path.join(root, 'test', 'fixtures', 'progress', 'claude-todowrite.jsonl'), transcript)
+  }
+
   // Finish: cleanup removes the worktree and keeps what the work amounted to.
   const done = await page.evaluate((id) => window.vibeflow.cleanupTask(id), task.id)
   const finished = [...done.board.in_progress, ...done.board.done, ...done.board.backlog].find((x) => x.id === task.id)
   assert.equal(finished.worktreePath, undefined)
   assert.ok(finished.outcome?.files.some((f) => f.path === 'fake-agent-output.txt'))
   assert.equal(fs.existsSync(task.worktreePath), false)
+
+  // The finished run is on the card and listed in the panel.
+  if (readsHome) {
+    assert.equal(finished.runs?.length, 1)
+    assert.deepEqual([finished.runs[0].endedBy, finished.runs[0].modelSource, finished.runs[0].calls], ['completed', 'cli', 11])
+    await page.getByRole('tab', { name: '任務', exact: true }).click()
+    await page.getByText('執行紀錄').waitFor()
+    await page.getByText('11 次呼叫').waitFor()
+  }
 
   if (canFakeGh) {
     // Work items: a project whose origin is on GitHub lists its Issues; one

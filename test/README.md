@@ -60,17 +60,19 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `mailbox.test.mjs` | `packages/core/src/mailbox.ts` | typing for someone else: bracketed paste + Enter, no typing into a permission dialog, waits for a person to stop typing, never splits a delivery, sender tag |
 | `notifier.test.mjs` | `packages/core/src/notifier.ts` | what a master's card cannot say itself (permission dialog, launch failure, session end, unreported turn) reaches its master once, waits while it cannot take it, dropped once it is done |
 | `progress.test.mjs` | `packages/core/src/progress.ts` | transcript reducers against recorded fixtures (`fixtures/progress/`): todo lists, usage de-duplication, activity, hook events, notification diffs |
-| `progress-tracker.test.mjs` | `packages/core/src/progress-tracker.ts` | finding a card's transcripts under a temp home: incremental reads, run filtering, Codex cwd matching, hook event files, no back-filled notifications |
+| `progress-tracker.test.mjs` | `packages/core/src/progress-tracker.ts` | finding a card's transcripts under a temp home: incremental reads, run filtering, Codex cwd matching, hook event files, no back-filled notifications; the run's call count and session ids |
+| `run-records.test.mjs` | `packages/core/src/run-records.ts` | reading `Task.runs` from untrusted store data (bad records dropped, numbers repaired), the same run replaces its record |
+| `routing-stats.test.mjs` | `packages/core/src/routing-stats.ts` | grouping runs by complexity × model × effort: medians (odd/even), restart rate, cards left out |
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
 | `pty-helper.test.mjs` | `packages/core/src/pty-helper.ts` | node-pty `spawn-helper` executable bit and its fix command |
 | `recent-projects.test.mjs` | `packages/core/src/recent-projects.ts` | recent-project ordering, replacement and lost-folder flags |
-| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card |
+| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events, usage folded into the card and a run record written when a run restarts or completes |
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
 | `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, master ↔ card messages, VibeFlow's notes to a master |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
-| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors |
+| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task stats` (JSON and `--table`) |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
 | `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, exit status, kill vs. detach |
 | `tui.test.mjs` | `packages/tui/src/index.ts` | TUI board moves and selection |

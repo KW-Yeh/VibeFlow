@@ -184,6 +184,16 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   `VIBEFLOW_QUIET_MS` (3 s), and never split by another write. Codex reports no
   permission dialog, so for Codex that guard and the blocked note do not apply.
 
+### CLI run statistics
+
+`vibeflow task stats` reads the run records on the cards (`Task.runs`) straight from the
+store, so it works with no host running, and prints median tokens, API calls and
+per-request context plus the restart rate for each complexity × model × effort
+(spec: `docs/features/jev-routing-efficiency/`). Output is the JSON envelope every `task`
+subcommand uses; `--table` prints a table instead. Cards finished before run records
+existed are skipped and counted in `cardsWithoutRuns`. Inside a task shell the store
+defaults to `VIBEFLOW_STORE_DIR`, like `task artifact add`.
+
 ### CLI artifact delivery
 
 From a running task shell, use `vibeflow task artifact add --file <path>` to copy a
@@ -267,6 +277,8 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
+│   ├── run-records.ts     RunRecord (Task.runs), normalizeRuns, upsertRun — no value imports (renderer-safe)
+│   ├── routing-stats.ts   median usage and restart rate per complexity × model × effort, from the cards
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
 ├── core/builtin-skills/   skills VibeFlow ships (copied to dist/builtin-skills by build:npm)
 ├── cli/src/               `vibeflow` command: main.ts (dispatch), host.ts (lock+core+server),
@@ -397,6 +409,15 @@ docs/                      everything that is not code (index: docs/README.md)
   `.vibeflow-subagents/`); they only wake the tracker and report permission prompts.
   Codex gets **no** hook: `-c notify=…` would replace the user's own `notify`. A run's
   usage is folded into `Task.usage` on restart and completion.
+- **A finished run leaves a `RunRecord` on the card** (`Task.runs`, `run-records.ts`,
+  written by `finishRun` in `service.ts`; spec: `docs/features/jev-routing-efficiency/`):
+  the run's own usage and API-call count, the sessions behind them, and the model, effort
+  and Jev complexity it started with — captured before the next run clears `jevRoute`.
+  The tracker supplies `runCalls` / `runSessionIds` (Claude: distinct assistant message
+  ids; Codex: `token_count` events that raised the total, so approximate). A run with no
+  transcript or no `launchedAt` writes nothing, and writing the same run again replaces
+  its record. The field is optional and never rewritten in bulk: read it only through
+  `normalizeRuns`, and expect cards finished before it existed to have none.
 - **Model lists come from the signed-in agent CLIs, never an API key**
   (`packages/core/src/agent-models.ts`, spec: `docs/features/agent-model-catalog/`).
   At host start (`startHost` → `core.warmModelCatalog()`), in the background: Claude
