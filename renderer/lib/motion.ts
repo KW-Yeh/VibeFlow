@@ -117,7 +117,24 @@ export const MOTION_SPRING = {
   layout: { type: 'spring', stiffness: 520, damping: 42, mass: 0.9 },
   indicator: { type: 'spring', stiffness: 650, damping: 46 },
   value: { stiffness: 140, damping: 24 },
+  sheet: { type: 'spring', stiffness: 420, damping: 40, mass: 0.9 },
 } as const satisfies Record<string, Transition | { stiffness: number; damping: number }>
+
+/**
+ * A sheet rises from the bottom edge on a spring and drops back quickly; under
+ * reduced motion it only fades.
+ */
+export function createSheetVariants(reducedMotion: boolean): Variants {
+  if (reducedMotion) return createPresenceVariants({ timing: 'micro', reducedMotion })
+  return {
+    hidden: { opacity: 1, y: '100%' },
+    visible: { opacity: 1, y: 0, transition: MOTION_SPRING.sheet },
+    exit: { opacity: 1, y: '100%', transition: transition('spatial', false, 'exit') },
+  }
+}
+
+/** How far, or how fast, a sheet must be dragged down before letting go closes it. */
+export const SHEET_DISMISS = { offset: 120, velocity: 600 } as const
 
 /** For a change the eye must not follow, e.g. a card leaving a column it is travelling out of. */
 export const MOTION_INSTANT: Transition = { duration: 0 }

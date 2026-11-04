@@ -5,6 +5,7 @@ import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
+import { Select } from '@/components/ui/select'
 import { openExternal } from '@/lib/api'
 import { jiraStatusColumns } from '@/lib/jira-columns'
 import { JIRA_CATEGORY_CLASS, dueInfo } from '@/lib/jira-display'
@@ -13,6 +14,14 @@ import type { JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
 import { FadeSwap } from '@/components/ui/fade-swap'
 
 export interface JiraProject { path: string; name: string }
+
+/** Options for a "create into project" picker; a chosen path not in the list still shows. */
+export function projectSelectOptions(projects: JiraProject[], projectPath: string) {
+  const listed = projects.map((project) => ({ value: project.path, label: `${project.name} · ${project.path}`, title: project.path }))
+  return projectPath && !projects.some((project) => project.path === projectPath)
+    ? [{ value: projectPath, label: projectPath, title: projectPath }, ...listed]
+    : listed
+}
 
 export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefresh, boardCards, projects, onBrowseProject, onCreate, onOpenTask, onOpenSettings }: {
   inbox: JiraInbox | null
@@ -78,11 +87,9 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
     <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-b border-border px-5 py-1">
       <label className="flex items-center gap-2 text-sm">
         <span className="shrink-0 text-muted-foreground">抓取範圍</span>
-        <select aria-label="Jira 抓取範圍" value={scope} onChange={(event) => onScopeChange(event.target.value as JiraScope)}
-          className="h-8 max-w-40 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
-          <option value="sprint">Active Sprint</option>
-          <option value="all">全部指派給我</option>
-        </select>
+        <Select aria-label="Jira 抓取範圍" value={scope} onChange={onScopeChange}
+          className="h-8 w-auto max-w-40 px-2 text-sm"
+          options={[{ value: 'sprint', label: 'Active Sprint' }, { value: 'all', label: '全部指派給我' }]} />
       </label>
       <span className="ml-auto min-w-0 truncate text-sm text-muted-foreground">
         {inbox?.email ?? inbox?.site ?? ''}{inbox?.status === 'ok' ? ` · ${tickets.length} 筆` : ''}
@@ -140,12 +147,9 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
           <Button variant="ghost" size="sm" title="已經有對應卡片，仍可再建一張" onClick={() => { setDuplicate(true); setCreatedTaskId(null); setProjectPath('') }}>再建一張</Button>
           <Button size="sm" onClick={() => { setSelectedKey(null); onOpenTask(taskId) }}><SquareArrowOutUpRight />前往卡片</Button>
         </div> : <div className="ml-auto flex flex-wrap items-center gap-2">
-          <select aria-label="建立到專案" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} disabled={creating}
-            className="h-9 max-w-56 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
-            <option value="">選擇專案…</option>
-            {projectPath && !projects.some((project) => project.path === projectPath) && <option value={projectPath}>{projectPath}</option>}
-            {projects.map((project) => <option key={project.path} value={project.path}>{project.name} · {project.path}</option>)}
-          </select>
+          <Select aria-label="建立到專案" value={projectPath} onChange={setProjectPath} disabled={creating}
+            placeholder="選擇專案…" className="h-9 w-auto max-w-56 px-2 text-sm"
+            options={projectSelectOptions(projects, projectPath)} />
           <IconButton aria-label="從資料夾選擇專案" title="從資料夾選擇專案" disabled={creating}
             className="rounded-md border border-border p-2"
             onClick={() => void onBrowseProject().then((path) => { if (path) setProjectPath(path) })}>

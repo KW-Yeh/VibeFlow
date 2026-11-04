@@ -5,6 +5,7 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
+import { Select } from '@/components/ui/select'
 import { AutoModeSwitch } from '@/components/task-auto-mode-toggle'
 import { TaskEffortSelect } from '@/components/task-effort-slider'
 import { listAgentModels } from '@/lib/api'
@@ -52,6 +53,7 @@ export function TaskFormDialog({
       title={title}
       saving={saving}
       onClose={onClose}
+      motionVariant="sheet"
       contentClassName="max-w-[880px] overflow-hidden"
     >
       <IconButton
@@ -225,45 +227,39 @@ export function RunSettingsGroup({
         <PropertyNote tone="danger">未偵測到 Agent CLI（claude / codex）。</PropertyNote>
       ) : (
         <PropertyRow label="Agent">
-          <select
+          <Select
             name="agent-agent-cli"
+            aria-label="Agent"
             value={agentCli}
             disabled={disabled}
-            onChange={(e) => onAgentChange(e.target.value as AgentCliId)}
+            onChange={onAgentChange}
             className={ROW_FIELD}
-          >
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+            options={agents.map((a) => ({ value: a.id, label: a.name }))}
+          />
         </PropertyRow>
       )}
       <PropertyRow label="Model">
-        <select
+        <Select
           name="agent-model"
+          aria-label="Model"
           value={customOpen ? CUSTOM_MODEL : model}
           disabled={disabled}
           title={description}
-          onChange={(e) => {
-            if (e.target.value === CUSTOM_MODEL) {
+          onChange={(next) => {
+            if (next === CUSTOM_MODEL) {
               setCustomOpen(true)
               return
             }
             setCustomOpen(false)
-            onModelChange(e.target.value)
+            onModelChange(next)
           }}
           className={ROW_FIELD}
-        >
-          <option value="">未指定（由 Jev 選擇，沒有金鑰時用 CLI 預設模型）</option>
-          {modelOptions.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-          <option value={CUSTOM_MODEL}>自訂…</option>
-        </select>
+          options={[
+            { value: '', label: '未指定（由 Jev 選擇，沒有金鑰時用 CLI 預設模型）' },
+            ...modelOptions.map((m) => ({ value: m.id, label: m.label })),
+            { value: CUSTOM_MODEL, label: '自訂…' },
+          ]}
+        />
       </PropertyRow>
       {customOpen && (
         <PropertyRow label="Model id">

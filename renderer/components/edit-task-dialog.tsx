@@ -9,6 +9,7 @@ import {
   isProjectMissing,
 } from '@/components/project-folder-picker'
 import { DEFAULT_TASK_EFFORT } from '@/components/task-effort-slider'
+import { Select } from '@/components/ui/select'
 import {
   PropertyGroup,
   PropertyNote,
@@ -341,22 +342,18 @@ export function EditTaskDialog({
       )}
       {isRepo && hasRemote && (
         <PropertyRow label="基準分支">
-          <select
+          <Select
             name="edit-base-branch"
+            aria-label="基準分支"
             value={baseBranch}
-            onChange={(e) => setBaseBranch(e.target.value)}
+            onChange={setBaseBranch}
             disabled={saving || loadingInfo}
             className={ROW_FIELD}
-          >
-            {baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) && (
-              <option value={baseBranch}>{baseBranch}</option>
-            )}
-            {(gitInfo?.branches ?? []).map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+            options={[
+              ...(baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) ? [baseBranch] : []),
+              ...(gitInfo?.branches ?? []),
+            ].map((b) => ({ value: b, label: b }))}
+          />
         </PropertyRow>
       )}
       <PropertyRow label="分支">
@@ -379,20 +376,15 @@ export function EditTaskDialog({
       )}
       {masters.length > 0 && (
         <PropertyRow label="隸屬於">
-          <select
+          <Select
             name="edit-master-id"
+            aria-label="隸屬於"
             value={masterId}
-            onChange={(e) => setMasterId(e.target.value)}
+            onChange={setMasterId}
             disabled={saving}
             className={ROW_FIELD}
-          >
-            <option value="">無</option>
-            {masters.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
+            options={[{ value: '', label: '無' }, ...masters.map((m) => ({ value: m.id, label: m.title }))]}
+          />
         </PropertyRow>
       )}
     </PropertyGroup>

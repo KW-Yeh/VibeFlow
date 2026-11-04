@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
 import { DEFAULT_TASK_EFFORT } from '@/components/task-effort-slider'
+import { Select } from '@/components/ui/select'
 import {
   ProjectFolderPicker,
   isProjectMissing,
@@ -492,18 +493,14 @@ export function NewTaskDialog({
       )}
       {isRepo && hasRemote && (
         <PropertyRow label="基準分支">
-          <select
+          <Select
             name="base-branch"
+            aria-label="基準分支"
             value={baseBranch}
-            onChange={(e) => setBaseBranch(e.target.value)}
+            onChange={setBaseBranch}
             className={ROW_FIELD}
-          >
-            {(gitInfo?.branches ?? []).map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+            options={(gitInfo?.branches ?? []).map((b) => ({ value: b, label: b }))}
+          />
         </PropertyRow>
       )}
       {isRepo && (
@@ -520,19 +517,14 @@ export function NewTaskDialog({
       )}
       {masters.length > 0 && (
         <PropertyRow label="隸屬於">
-          <select
+          <Select
             name="master-id"
+            aria-label="隸屬於"
             value={masterId}
-            onChange={(e) => setMasterId(e.target.value)}
+            onChange={setMasterId}
             className={ROW_FIELD}
-          >
-            <option value="">無</option>
-            {masters.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
+            options={[{ value: '', label: '無' }, ...masters.map((m) => ({ value: m.id, label: m.title }))]}
+          />
         </PropertyRow>
       )}
       {isRepo && (

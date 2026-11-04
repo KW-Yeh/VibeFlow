@@ -15,11 +15,12 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { GithubFilterMenu } from '@/components/github-filter-menu'
-import type { JiraProject } from '@/components/jira-panel'
+import { projectSelectOptions, type JiraProject } from '@/components/jira-panel'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
+import { Select } from '@/components/ui/select'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { openExternal } from '@/lib/api'
@@ -256,12 +257,9 @@ function DetailDrawer({
         <Button variant="outline" size="sm" onClick={() => void openExternal(item.url)}><ExternalLink />在 GitHub 開啟</Button>
         {createdId && <span className="text-sm text-success">已建立到 Backlog</span>}
         {!entry.projectPath && <div className="ml-auto flex items-center gap-1">
-          <select aria-label="建立到專案" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} disabled={creating}
-            className="h-9 max-w-56 rounded-md border border-input bg-background px-2 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50">
-            <option value="">選擇本機專案…</option>
-            {projectPath && !projects.some((project) => project.path === projectPath) && <option value={projectPath}>{projectPath}</option>}
-            {projects.map((project) => <option key={project.path} value={project.path}>{project.name} · {project.path}</option>)}
-          </select>
+          <Select aria-label="建立到專案" value={projectPath} onChange={setProjectPath} disabled={creating}
+            placeholder="選擇本機專案…" className="h-9 w-auto max-w-56 px-2 text-sm"
+            options={projectSelectOptions(projects, projectPath)} />
           <IconButton aria-label="從資料夾選擇專案" title="從資料夾選擇專案" disabled={creating}
             onClick={() => void onBrowseProject().then((path) => { if (path) setProjectPath(path) })}>
             <FolderOpen className="size-4" />

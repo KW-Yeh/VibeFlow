@@ -30,6 +30,27 @@ import { startWebServer } from '../packages/core/src/web-server.ts'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webDir = path.join(root, 'app')
 
+// The app's selects are listboxes: the value sits on the trigger, and the
+// options exist only while the popup is open.
+const selectValue = (trigger) => trigger.getAttribute('data-value')
+async function chooseOption(trigger, value) {
+  await trigger.click()
+  const listbox = trigger.page().getByRole('listbox')
+  await listbox.locator(`[role="option"][data-value="${value}"]`).click()
+  await listbox.waitFor({ state: 'detached' })
+}
+async function readOptions(trigger) {
+  await trigger.click()
+  const listbox = trigger.page().getByRole('listbox')
+  await listbox.waitFor()
+  const options = await listbox.getByRole('option').evaluateAll((nodes) =>
+    nodes.map((node) => ({ value: node.dataset.value, text: node.textContent }))
+  )
+  await trigger.page().keyboard.press('Escape')
+  await listbox.waitFor({ state: 'detached' })
+  return options
+}
+
 /**
  * The fake agent: announce, change a file, then echo what the user types.
  * `-p` is the host asking for the model catalog at startup instead.
@@ -225,19 +246,25 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     // Reload after the bridge reports the ready list so the picker reads it.
     await page.reload()
     await page.locator('aside').first().getByRole('button', { name: '新增任務' }).click()
-    const modelSelect = page.locator('select[name="agent-model"]')
-    if (await modelSelect.locator('option', { hasText: 'Fable 5.1' }).count() === 0) {
+    const modelSelect = page.locator('button[name="agent-model"]')
+    const hasFable = (options) => options.some((option) => option.text.includes('Fable 5.1'))
+    if (!hasFable(await readOptions(modelSelect))) {
       // If the picker first read fallback models, changing agents asks core
       // again after the catalog has finished warming.
-      const agentSelect = page.locator('select[name="agent-agent-cli"]')
-      await agentSelect.selectOption('codex')
-      await agentSelect.selectOption('claude')
+      const agentSelect = page.locator('button[name="agent-agent-cli"]')
+      await chooseOption(agentSelect, 'codex')
+      await chooseOption(agentSelect, 'claude')
     }
-    await modelSelect.locator('option', { hasText: 'Fable 5.1' }).waitFor({ state: 'attached' })
-    assert.equal(await modelSelect.locator('option[value="default"]').count(), 0)
-    assert.equal(await modelSelect.inputValue(), '', 'a new card leaves its model to Jev')
-    assert.equal(await modelSelect.locator('option[value=""]').textContent(), '未指定（由 Jev 選擇，沒有金鑰時用 CLI 預設模型）')
-    assert.equal(await page.locator('select[name="task-effort"]').inputValue(), 'auto')
+    let modelOptions = await readOptions(modelSelect)
+    for (let attempt = 0; !hasFable(modelOptions) && attempt < 40; attempt++) {
+      await page.waitForTimeout(250)
+      modelOptions = await readOptions(modelSelect)
+    }
+    assert.ok(hasFable(modelOptions), 'the model picker lists the catalog')
+    assert.equal(modelOptions.filter((option) => option.value === 'default').length, 0)
+    assert.equal(await selectValue(modelSelect), '', 'a new card leaves its model to Jev')
+    assert.equal(modelOptions.find((option) => option.value === '')?.text, '未指定（由 Jev 選擇，沒有金鑰時用 CLI 預設模型）')
+    assert.equal(await selectValue(page.locator('button[name="task-effort"]')), 'auto')
     await page.getByRole('dialog', { name: '新增任務' }).getByRole('button', { name: '取消' }).click()
     await page.getByRole('dialog', { name: '新增任務' }).waitFor({ state: 'detached' })
   }
@@ -615,11 +642,11 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
     const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     assert.ok(pageWidth <= width, `Jira page overflows at ${width}px: ${pageWidth}px`)
   }
-  await page.getByLabel('Jira 抓取範圍').selectOption('all')
+  await chooseOption(page.getByRole('combobox', { name: 'Jira 抓取範圍' }), 'all')
   for (let attempt = 0; jiraSearches.length < 2 && attempt < 30; attempt++) await new Promise((resolve) => setTimeout(resolve, 50))
   assert.equal(jiraSearches.at(-1), 'assignee = currentUser() ORDER BY updated DESC')
   await page.reload()
-  assert.equal(await page.getByLabel('Jira 抓取範圍').inputValue(), 'all')
+  assert.equal(await selectValue(page.getByRole('combobox', { name: 'Jira 抓取範圍' })), 'all')
   await page.getByRole('button', { name: /WR-5729/ }).click()
   await page.getByRole('dialog').waitFor()
   assert.equal(await page.getByRole('link', { name: 'WR-5729' }).getAttribute('href'), 'https://example.atlassian.net/browse/WR-5729')
@@ -638,13 +665,13 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
   await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
   await page.waitForTimeout(100)
-  assert.equal(await page.getByLabel('建立到專案').inputValue(), '')
+  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), '')
   await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
-  await page.waitForFunction((path) => document.querySelector('select[aria-label="建立到專案"]')?.value === path, newProjectPath)
-  assert.equal(await page.getByLabel('建立到專案').inputValue(), newProjectPath)
+  await page.waitForFunction((path) => document.querySelector('[role="combobox"][aria-label="建立到專案"]')?.dataset.value === path, newProjectPath)
+  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), newProjectPath)
   await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
   await page.waitForTimeout(100)
-  assert.equal(await page.getByLabel('建立到專案').inputValue(), newProjectPath)
+  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), newProjectPath)
   await page.getByRole('button', { name: '建立卡片' }).click()
   await page.getByText('已建立到 Backlog').waitFor()
   const state = await page.evaluate(() => window.vibeflow.getState())
@@ -784,7 +811,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await page.getByRole('tab', { name: '終端機' }).click()
 
   await page.getByRole('button', { name: '新增 Terminal' }).click()
-  await page.getByRole('combobox', { name: '專案資料夾' }).selectOption(projectPath)
+  await chooseOption(page.getByRole('combobox', { name: '專案資料夾' }), projectPath)
   await page.getByRole('button', { name: '開啟 Terminal' }).click()
   await page.waitForFunction(() => document.querySelectorAll('.xterm').length === 3)
   for (let attempt = 0; starts.length < 4 && attempt < 50; attempt++) {

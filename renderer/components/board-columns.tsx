@@ -37,6 +37,7 @@ import { StatusMark, TaskProgressBadge } from '@/components/task-progress'
 import { AnimatedNumber } from '@/components/ui/animated-number'
 import { createEnterVariants, MOTION_INSTANT, MOTION_SPRING, timed } from '@/lib/motion'
 import type { GridTerminal } from '@/components/terminal-grid'
+import { NewTaskButton } from '@/components/new-task-button'
 import { HoldButton } from '@/components/ui/hold-button'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
@@ -630,6 +631,7 @@ export function BoardColumns({
           value={activeFilter}
           onChange={setProjectFilter}
         />
+        <NewTaskButton onClick={onNewTask} />
       </div>
 
       <LayoutGroup id="board-cards">

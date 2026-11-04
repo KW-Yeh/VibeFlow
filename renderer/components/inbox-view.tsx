@@ -6,6 +6,7 @@ import { GithubView } from '@/components/github-view'
 import { JiraPanel, type JiraProject } from '@/components/jira-panel'
 import type { GithubFilters } from '@/lib/github-filter'
 import type { GithubInbox, GithubItem, JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
+import { NewTaskButton } from '@/components/new-task-button'
 import { cn } from '@/lib/utils'
 
 export type InboxTab = 'jira' | 'issues' | 'prs'
@@ -13,7 +14,7 @@ const TABS: { id: InboxTab; label: string }[] = [
   { id: 'jira', label: 'Jira' }, { id: 'issues', label: 'Issues' }, { id: 'prs', label: 'Pull Requests' },
 ]
 
-export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings }: {
+export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings, onNewTask }: {
   view: BoardView
   onViewChange: (view: BoardView) => void
   tab: InboxTab
@@ -30,6 +31,7 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   onConvertGithub: (item: GithubItem, projectPath: string) => Promise<string>
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
+  onNewTask: () => void
 }) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const tabGroup = useId()
@@ -47,7 +49,7 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
     onTabChange(TABS[next].id)
   }
   return <div className="flex h-full min-h-0 flex-col bg-background">
-    <div className="flex h-12 shrink-0 items-center border-b border-border px-5"><ViewTabs value={view} onChange={onViewChange} /></div>
+    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5"><ViewTabs value={view} onChange={onViewChange} /><NewTaskButton onClick={onNewTask} /></div>
     <LayoutGroup id={tabGroup}><div role="tablist" aria-label="來源" className="flex h-10 shrink-0 items-stretch gap-5 border-b border-border px-5">
       {TABS.map((entry, index) => <button key={entry.id} ref={(node) => { tabRefs.current[index] = node }} type="button" role="tab"
         aria-selected={tab === entry.id} tabIndex={tab === entry.id ? 0 : -1} onKeyDown={(event) => move(event, index)} onClick={() => onTabChange(entry.id)}

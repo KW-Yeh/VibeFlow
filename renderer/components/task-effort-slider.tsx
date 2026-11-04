@@ -1,6 +1,5 @@
-import { fieldClass } from '@/components/ui/field'
+import { Select } from '@/components/ui/select'
 import { clampEffort } from '@/lib/effort'
-import { cn } from '@/lib/utils'
 import type { AgentEffort, ManualEffort } from '@/lib/types'
 
 const EFFORT_OPTIONS: ReadonlyArray<{
@@ -48,19 +47,19 @@ export function TaskEffortSelect({
   const selected = options.find((option) => option.value === shown) ?? options[0]
 
   return (
-    <select
+    <Select
       name="task-effort"
+      aria-label="推理強度"
       value={selected.value}
       disabled={disabled || options.length === 1}
       title={levels.length === 0 ? '這個 model 不支援調整推理強度，啟動時使用模型預設值。' : selected.description}
-      onChange={(event) => onChange(event.target.value as AgentEffort)}
-      className={cn(fieldClass, className)}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label} · {option.value}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      className={className}
+      options={options.map((option) => ({
+        value: option.value,
+        label: `${option.label} · ${option.value}`,
+        title: option.description,
+      }))}
+    />
   )
 }

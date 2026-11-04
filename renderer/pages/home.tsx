@@ -583,6 +583,7 @@ export default function HomePage() {
                         setSettingsError(null)
                         setSettingsOpen(true)
                       }}
+                      onNewTask={handleOpenNewTask}
                     />
                   }
                 />
@@ -602,6 +603,7 @@ export default function HomePage() {
                     onStarted={gridTerminalStarted}
                     onClose={closeGridTerminal}
                     onBrowse={pickProjectFolder}
+                    onNewTask={handleOpenNewTask}
                   />
                 </div>
                 </div>

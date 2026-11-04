@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CornerDownLeft, FolderOpen, TriangleAlert } from 'lucide-react'
 
 import { fieldClass } from '@/components/ui/field'
+import { Select } from '@/components/ui/select'
 import { IconButton } from '@/components/ui/icon-button'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
@@ -63,26 +64,21 @@ export function ProjectFolderPicker({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <select
+        <Select
           name="project-folder"
           aria-label="專案資料夾"
           title={projectPath ?? undefined}
           value={projectPath ?? ''}
-          onChange={(e) => e.target.value && onSelect(e.target.value)}
+          onChange={onSelect}
           disabled={disabled || options.length === 0}
-          className={cn(fieldClass, 'min-w-0 flex-1', control, missing && 'border-destructive/60')}
-        >
-          <option value="" disabled>
-            {options.length > 0 ? '選擇使用過的專案…' : '尚無使用過的專案，請點右側按鈕選取'}
-          </option>
-          {options.map((p) => (
-            <option key={p.path} value={p.path} title={p.path}>
-              {p.name}
-              {(nameCounts.get(p.name) ?? 0) > 1 ? ` — ${parentDir(p.path)}` : ''}
-              {p.missing ? '（路徑遺失）' : ''}
-            </option>
-          ))}
-        </select>
+          placeholder={options.length > 0 ? '選擇使用過的專案…' : '尚無使用過的專案，請點右側按鈕選取'}
+          className={cn('min-w-0 flex-1', control, missing && 'border-destructive/60')}
+          options={options.map((p) => ({
+            value: p.path,
+            title: p.path,
+            label: `${p.name}${(nameCounts.get(p.name) ?? 0) > 1 ? ` — ${parentDir(p.path)}` : ''}${p.missing ? '（路徑遺失）' : ''}`,
+          }))}
+        />
         <IconButton
           aria-label="從資料夾選擇專案"
           title="從資料夾選擇專案"

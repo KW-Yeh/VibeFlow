@@ -8,6 +8,7 @@ import { AlertTriangle, Plus } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
+import { NewTaskButton } from '@/components/new-task-button'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
 import { WorkspaceTaskRail } from '@/components/workspace-task-rail'
@@ -313,8 +314,9 @@ export function KanbanBoard({
 
         return (
           <div className={cn('min-h-0 min-w-0 flex-1 flex-col', onWorkspace ? 'flex' : 'hidden')}>
-            <div className="flex h-12 shrink-0 items-center border-b border-border px-5">
+            <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
               <ViewTabs value={view} onChange={onViewChange} />
+              <NewTaskButton onClick={onNewTask} />
             </div>
             <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail

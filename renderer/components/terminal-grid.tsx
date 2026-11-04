@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import type { RecentProjectEntry, StandaloneTerminalEntry } from '@/lib/types'
 import { basenameFromPath } from '@/lib/workspace-path'
+import { NewTaskButton } from '@/components/new-task-button'
 import { cn } from '@/lib/utils'
 
 export type GridTerminal = StandaloneTerminalEntry
@@ -24,7 +25,9 @@ export function TerminalGrid({
   onStarted,
   onClose,
   onBrowse,
+  onNewTask,
 }: {
+  onNewTask: () => void
   view: BoardView
   onViewChange: (view: BoardView) => void
   terminals: GridTerminal[]
@@ -56,9 +59,12 @@ export function TerminalGrid({
     <div className="@container flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
         <ViewTabs value={view} onChange={onViewChange} />
-        <Button size="sm" aria-label="新增 Terminal" onClick={() => setPickerOpen(true)}>
-          <Plus className="size-4" /><span className="hidden sm:inline">新增 Terminal</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" aria-label="新增 Terminal" onClick={() => setPickerOpen(true)}>
+            <Plus className="size-4" /><span className="hidden sm:inline">新增 Terminal</span>
+          </Button>
+          <NewTaskButton onClick={onNewTask} />
+        </div>
       </div>
 
       {terminals.length === 0 ? (
