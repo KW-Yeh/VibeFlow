@@ -7,6 +7,7 @@ import { ZoomableImage } from '@/components/zoomable-image'
 import { MarkdownContent } from '@/components/markdown-content'
 import { openTerminalFile, readTerminalFile } from '@/lib/api'
 import type { TerminalFileResult } from '@/lib/types'
+import { FadeSwap } from '@/components/ui/fade-swap'
 
 export function TerminalFilePreview({ sessionKey, path, onClose }: {
   sessionKey: string
@@ -58,6 +59,7 @@ export function TerminalFilePreview({ sessionKey, path, onClose }: {
         </div>
       ) : undefined}
     >
+      <FadeSwap phase={!content ? 'loading' : content.ok ? content.kind : 'error'}>
       {!content ? (
         <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />讀取中…</p>
       ) : !content.ok ? (
@@ -76,6 +78,7 @@ export function TerminalFilePreview({ sessionKey, path, onClose }: {
           {content.truncated && <p className="mt-2 text-xs text-muted-foreground">內容過長，僅顯示開頭 256 KB。</p>}
         </>
       )}
+      </FadeSwap>
     </DialogShell>, document.body
   )
 }

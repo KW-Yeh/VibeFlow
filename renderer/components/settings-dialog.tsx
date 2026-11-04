@@ -40,6 +40,7 @@ import {
   saveJevApiKey,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { CopyFeedbackIcon } from '@/components/ui/copy-feedback-icon'
 import type {
   NotificationSettings,
   AgentCliId,
@@ -529,7 +530,7 @@ export function SettingsDialog({
                     className="flex h-9 items-center gap-1.5 rounded-r-md px-3 text-base text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset disabled:opacity-50"
                     disabled={!githubCode}
                   >
-                    <Clipboard className="size-4" />
+                    <CopyFeedbackIcon copied={copiedCode} icon={Clipboard} className="size-4" />
                     {copiedCode ? '已複製' : '複製'}
                   </button>
                 </div>

@@ -27,6 +27,7 @@ import {
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { LibraryEntry, LibraryKind } from '@/lib/types'
+import { FadeSwap } from '@/components/ui/fade-swap'
 
 const KINDS: { id: LibraryKind; label: string; hint: string }[] = [
   {
@@ -297,6 +298,7 @@ export function LibraryPanel({
               </div>
             )}
 
+            <FadeSwap phase={loading ? 'loading' : 'ready'}>
             {loading ? (
               <p className="text-sm text-muted-foreground">讀取中…</p>
             ) : kindEntries.length === 0 ? (
@@ -399,6 +401,7 @@ export function LibraryPanel({
                 ))}
               </div>
             )}
+            </FadeSwap>
           </section>
         )
       })}

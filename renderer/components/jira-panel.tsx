@@ -10,6 +10,7 @@ import { jiraStatusColumns } from '@/lib/jira-columns'
 import { JIRA_CATEGORY_CLASS, dueInfo } from '@/lib/jira-display'
 import { cn } from '@/lib/utils'
 import type { JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
+import { FadeSwap } from '@/components/ui/fade-swap'
 
 export interface JiraProject { path: string; name: string }
 
@@ -92,6 +93,7 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
       </IconButton>
     </div>
     {inbox?.error && <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-5 py-2 text-sm text-destructive">{inbox.error}</div>}
+    <FadeSwap phase={!inbox ? (loading ? 'loading' : 'error') : inbox.status === 'ok' ? 'ready' : inbox.status} className="flex min-h-0 flex-1 flex-col">
     {inbox?.status === 'acli-missing' ? notice('找不到 Atlassian CLI（acli）。安裝並登入後就能看到指派給你的 Jira ticket。', true)
       : inbox?.status === 'unauthenticated' ? notice('尚未登入 Atlassian。', true)
       : !inbox ? notice(loading ? '讀取 Jira 中…' : error ?? '無法讀取 Jira ticket')
@@ -128,6 +130,7 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
             </section>)}
           </div>
         </div>}
+    </FadeSwap>
     <AnimatePresence>{selected && <DialogShell key={selected.key} title={`${selected.key} ${selected.summary}`} showHeader saving={creating}
       description={`${selected.issueType} · ${selected.status.name}`} onClose={() => setSelectedKey(null)}
       contentClassName="max-w-3xl" bodyClassName="min-h-0"

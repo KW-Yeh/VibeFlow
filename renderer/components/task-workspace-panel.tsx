@@ -21,7 +21,6 @@ const ReactDiffViewer = lazy(() =>
 import {
   Check,
   ChevronRight,
-  Copy,
   FileDiff,
   FileText,
   Film,
@@ -76,6 +75,7 @@ import {
 } from '@/lib/api'
 import { isModalOpen } from '@/lib/modal-presence'
 import { cn } from '@/lib/utils'
+import { CopyFeedbackIcon } from '@/components/ui/copy-feedback-icon'
 import type {
   ArtifactContent,
   ArtifactKind,
@@ -916,7 +916,7 @@ function ArtifactsContent({
             title="複製 Artifact 資料夾路徑"
             className="shrink-0 text-xs"
           >
-            {copyState === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            <CopyFeedbackIcon copied={copyState === 'copied'} />
             {copyState === 'copied' ? '已複製' : copyState === 'error' ? '複製失敗' : '複製路徑'}
           </Button>
         </div>
@@ -2082,7 +2082,7 @@ export function TaskWorkspacePanel({
                       disabled={!cwd}
                       onClick={copyPath}
                     >
-                      {pathCopy === 'copied' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      <CopyFeedbackIcon copied={pathCopy === 'copied'} />
                     </IconButton>
                     <TaskProgressChip progress={progress} />
                   </>

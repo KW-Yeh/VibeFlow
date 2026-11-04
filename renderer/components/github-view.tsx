@@ -45,6 +45,7 @@ import {
 } from '@/lib/github-filter'
 import { cn } from '@/lib/utils'
 import type { GithubInbox, GithubItem, GithubUser } from '@/lib/types'
+import { FadeSwap } from '@/components/ui/fade-swap'
 
 export interface GithubViewProps {
   view: BoardView
@@ -543,7 +544,7 @@ export function GithubView({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">{body}</div>
+        <FadeSwap phase={!inbox ? (loading ? 'loading' : 'error') : inbox.status === 'ok' && repos.length > 0 ? 'ready' : `${inbox.status}-empty`} className="flex min-w-0 flex-1 flex-col">{body}</FadeSwap>
         {selected && (
           <DetailDrawer
             key={githubItemKey(selected.item)}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Copy, Check, Wifi } from 'lucide-react'
+import { Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { CopyFeedbackIcon } from '@/components/ui/copy-feedback-icon'
 
 // Update this URL once you deploy VibeFlow-remote to Vercel.
 const REMOTE_APP_BASE_URL = 'https://vibe-flow-remote.vercel.app'
@@ -66,7 +67,7 @@ export function RemoteShareDialog({ roomCode, peerCount, onClose, onStop }: Prop
             onClick={handleCopy}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            <CopyFeedbackIcon copied={copied} />
             {copied ? '已複製' : '複製連結'}
           </button>
           <Button size="sm" variant="destructive" onClick={onStop}>
