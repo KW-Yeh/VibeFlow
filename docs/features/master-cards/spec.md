@@ -48,7 +48,8 @@ In Progress、再逐張看進度。需要一個**不隸屬任何 repo** 的 Agen
 ### 不做（這次）
 
 - Master 巢狀（master 底下再掛 master）。
-- Master 自動合併 slave 的 PR、自動把 slave 拉到 Done（完成仍需人確認，因為會刪 worktree）。
+- Master 自動合併 slave 的 PR、由 master 的 agent 自行把 slave 拉到 Done（完成仍需人確認，因為會刪 worktree）。
+  人在 master 的完成對話框勾選「一併完成子卡」則可以，見生命週期表。
 - Master 跨機器 / 雲端派工。
 
 ## 資料形狀（會留存 → 需要 migration 說明）
@@ -74,7 +75,7 @@ workDir?: string         // master 指定的資料夾；缺省 = VibeFlow 自建
 | 動作 | Master | Slave |
 |---|---|---|
 | 拉進 In Progress | 不 provision，直接在工作目錄啟動 agent | 照舊 provision + 啟動 |
-| 完成（Done） | 不刪 worktree（沒有），只結束 session；若仍有未完成 slave 先警告 | 照舊 |
+| 完成（Done） | 不刪 worktree（沒有），只結束 session；若仍有未完成 slave，對話框列出它們，並提供預設不勾的「一併完成執行中的子卡」 | 勾選時：In Progress 的 slave 一起移到 Done 並依序清理（同 repo 不可並行切 base）；Backlog 的 slave 保留不動 |
 | 退回 Backlog | 清 session；slave 不動 | 照舊 |
 | Diff / 決策 / PR tab | 不顯示 | 照舊 |
 

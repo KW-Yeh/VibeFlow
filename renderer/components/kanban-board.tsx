@@ -38,7 +38,7 @@ interface KanbanBoardProps {
   board: BoardState
   onBoardChange: (board: BoardState) => void
   onEditTask: (taskId: string) => void
-  onTaskDone: (taskId: string) => void
+  onTaskDone: (taskId: string) => Promise<void> | void
   onDeleteTask: (taskId: string) => void
   onOpenTaskTerminal: (taskId: string) => void
   taskTerminals: GridTerminal[]
@@ -149,6 +149,7 @@ export function KanbanBoard({
     setMounted((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)))
 
   const [confirmDone, setConfirmDone] = useState<Task | null>(null)
+  const [completeSlaves, setCompleteSlaves] = useState(false)
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
@@ -238,13 +239,38 @@ export function KanbanBoard({
 
   // Completing a card tears down the worktree that holds the work, so the user
   // confirms before anything is moved — the card stays put until they do.
-  const completeTask = (task: Task) => setConfirmDone(task)
+  const completeTask = (task: Task) => {
+    setCompleteSlaves(false)
+    setConfirmDone(task)
+  }
 
-  const confirmTaskDone = () => {
+  // Only running slaves are offered: a Backlog slave has no worktree to clean up
+  // and can still be handed to another master.
+  const runningSlaves = confirmDone?.role === 'master'
+    ? board.in_progress.filter((t) => t.masterId === confirmDone.id)
+    : []
+  const backlogSlaves = confirmDone?.role === 'master'
+    ? board.backlog.filter((t) => t.masterId === confirmDone.id)
+    : []
+
+  const confirmTaskDone = async () => {
     if (!confirmDone) return
     const task = confirmDone
+    const finishing = completeSlaves ? [task, ...runningSlaves] : [task]
     setConfirmDone(null)
-    moveTask(task, 'done')
+    if (finishing.length === 1) {
+      moveTask(task, 'done')
+      return
+    }
+    const ids = new Set(finishing.map((t) => t.id))
+    onBoardChange({
+      backlog: board.backlog,
+      in_progress: board.in_progress.filter((t) => !ids.has(t.id)),
+      done: [...finishing, ...board.done],
+    })
+    // Slaves usually share a project checkout, and cleanup switches and pulls
+    // its base branch, so they must not be cleaned up concurrently.
+    for (const t of finishing) await onTaskDone(t.id)
   }
 
   const [railCollapsed, setRailCollapsed] = useState(initialRailCollapsed)
@@ -414,6 +440,37 @@ export function KanbanBoard({
                   </p>
                 </div>
               </div>
+              {(runningSlaves.length > 0 || backlogSlaves.length > 0) && (
+                <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3">
+                  <p className="text-sm leading-5 text-muted-foreground">
+                    這張 master 還有 {runningSlaves.length + backlogSlaves.length} 張未完成的子卡
+                    {backlogSlaves.length > 0 ? `，其中 ${backlogSlaves.length} 張在 Backlog 會保留不動` : ''}。
+                  </p>
+                  {runningSlaves.length > 0 && (
+                    <>
+                      <ul className="max-h-32 space-y-1 overflow-y-auto text-sm">
+                        {runningSlaves.map((t) => (
+                          <li key={t.id} className="truncate">
+                            <span className="text-muted-foreground">執行中 · </span>
+                            {t.title}
+                          </li>
+                        ))}
+                      </ul>
+                      <label className="flex cursor-pointer items-start gap-2 text-sm leading-5">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 size-4 shrink-0 accent-primary"
+                          checked={completeSlaves}
+                          onChange={(e) => setCompleteSlaves(e.target.checked)}
+                        />
+                        <span>
+                          一併完成這 {runningSlaves.length} 張執行中的子卡（各自的 worktree、本地分支與未 commit 的變更也會一起刪除）
+                        </span>
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
@@ -427,9 +484,11 @@ export function KanbanBoard({
                   variant="destructive"
                   size="sm"
                   className="rounded-full active:scale-95 motion-reduce:transform-none"
-                  onClick={confirmTaskDone}
+                  onClick={() => void confirmTaskDone()}
                 >
-                  完成並清理
+                  {completeSlaves && runningSlaves.length > 0
+                    ? `完成並清理 ${runningSlaves.length + 1} 張`
+                    : '完成並清理'}
                 </Button>
               </div>
             </div>
