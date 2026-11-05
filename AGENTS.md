@@ -196,17 +196,22 @@ not an injected prompt.
 
 ### What a launch sends
 
-A launch's prompt is exactly the user's custom system prompt (Settings) plus the
-card's title and description — nothing else. Two exceptions: a master card, whose
+A launch's prompt is the enabled Library prompt snippets and script listing, then
+the user's custom system prompt (Settings), plus the card's title and description.
+Two exceptions: a master card, whose
 system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to dispatch, start
 and steer cards with the board CLI, following its auto mode; and a card with a
 `masterId`, which gets **only** `slaveSystemPrompt()` — not the user's custom
-system prompt: who its master is and to report there with `task send`. A Jev scout
-analysis, when there is one, follows the card text in the first prompt. The Library (`library.ts`) is storage
-only: no Library skill, prompt snippet or script is loaded or injected
-(`buildAgentCommand` adds no `--plugin-dir` and no `CODEX_HOME`). Skills the agent
-CLIs discover on their own (`~/.claude/skills`, the project's `.claude/skills`,
-`~/.codex/skills`) are the user's own setup and are untouched.
+system prompt nor Library snippets: who its master is and to report there with `task send`. A Jev scout
+analysis, when there is one, follows the card text in the first prompt. Enabled Library
+skills (`library.ts`, built-ins included) reach every card, a master's cards too: Claude
+loads them as a session-only plugin (`--plugin-dir <library>/plugin --add-dir <library>`),
+Codex through `CODEX_HOME=<library>/codex-home`, whose `skills/` merges the project's
+`.claude/skills`, `~/.codex/skills` and the Library (closer source wins) with `auth.json`
+and `config.toml` linked back. Nothing enabled → no Library flag. Skills the agent CLIs
+discover on their own (`~/.claude/skills`, the project's `.claude/skills`,
+`~/.codex/skills`) are the user's own setup and are untouched. Artifact instructions
+are not injected — `VIBEFLOW_ARTIFACTS_DIR` replaces them.
 
 ### Launch environment
 

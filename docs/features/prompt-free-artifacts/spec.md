@@ -1,5 +1,7 @@
 # Prompt-free task artifacts
 
+> 2026-11-05：Library 投遞已恢復（[pr-watch](../pr-watch/spec.md)）。下文關於 Library 不投遞、移除啟用勾選的部分已不成立；Artifact 目錄與不注入 Artifact 提示詞的部分仍然有效。
+
 ## Goal
 
 A task launch sends exactly the user's custom system prompt and the card's title and description. Artifact directory setup and file delivery belong to VibeFlow's runtime instead of an always-on instruction block, and the Library is storage only.

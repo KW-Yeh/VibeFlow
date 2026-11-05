@@ -44,7 +44,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [npm-update-notice](features/npm-update-notice/spec.md) | Check npm every two hours, show a newer-version notice, and display the running version in Settings |
 | [view-persistence](features/view-persistence/spec.md) | A reload keeps the current view, open card and tabs, work-item filters, and the 終端機 page's running shells |
 | [organize-files](features/organize-files/spec.md) | Move the root-level docs into `docs/` and add this index |
-| [builtin-skills](features/builtin-skills/spec.md) ([plan](features/builtin-skills/plan.md)) | Ship built-in skills (visual-parity, generic pr) in every user's Library; default evidence outputs to task Artifacts and temporary files to scratch |
+| [builtin-skills](features/builtin-skills/spec.md) ([plan](features/builtin-skills/plan.md)) | Ship built-in skills (visual-parity, generic pr, pr-watch, address-review) in every user's Library; default evidence outputs to task Artifacts and temporary files to scratch |
 | [spec-tab](features/spec-tab/spec.md) | The 決策 tab shows the branch's `spec.md` instead of a separate decision record |
 | [lazy-branch-provisioning](features/lazy-branch-provisioning/spec.md) | Create the branch/worktree when a card starts, not when it is created; only backlog cards are editable |
 | [task-progress](features/task-progress/spec.md) | Derive each card's progress (todo list) and token usage from the agent's own JSONL transcript instead of model-written progress files; hook-driven stage notifications with toggles |
@@ -57,7 +57,8 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [work-order-page](features/work-order-page/spec.md) ([plan](features/work-order-page/plan.md)) | Refine the shared work-item view, Jira ticket layout, project selection, links, and attachment access |
 | [jira-board-scope](features/jira-board-scope/spec.md) ([plan](features/jira-board-scope/plan.md)) | Show Jira work items in four full-width columns and filter the Jira fetch scope |
 | [terminal-grid](features/terminal-grid/spec.md) ([plan](features/terminal-grid/plan.md)) | Independent project-folder terminals in a top-level grid, with one-click card actions |
-| [prompt-free-artifacts](features/prompt-free-artifacts/spec.md) ([plan](features/prompt-free-artifacts/plan.md)) | A launch sends only the custom system prompt and the card: no Library skills, prompt snippets or Artifact text; Artifact directories are created in core and files delivered explicitly through the task CLI |
+| [prompt-free-artifacts](features/prompt-free-artifacts/spec.md) ([plan](features/prompt-free-artifacts/plan.md)) | No Artifact text in the launch prompt (Library delivery came back with pr-watch); Artifact directories are created in core and files delivered explicitly through the task CLI |
+| [pr-watch](features/pr-watch/spec.md) ([plan](features/pr-watch/plan.md)) | Built-in pr-watch skill: a script waits on a PR and wakes the agent for new review comments (address-review) or a moved base (rebase) until merge/close; Library delivery to launches restored |
 | [motion-animations](features/motion-animations/spec.md) ([plan](features/motion-animations/plan.md)) | Which motion.dev React patterns fit VibeFlow (tab indicators, card travel, rolling token counts, copy feedback, loading crossfade, stacked toasts) and which were left out |
 | [task-sheet](features/task-sheet/spec.md) ([plan](features/task-sheet/plan.md)) | Clicking a board card opens its sheet (edit a Backlog card, read the others, delete); inbox「建立卡片」opens a prefilled create sheet that only references the item and can make a master |
 
