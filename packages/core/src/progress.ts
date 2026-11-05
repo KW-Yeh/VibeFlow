@@ -19,6 +19,8 @@ export interface TokenUsage {
   cacheWrite: number
   /** Reasoning/thinking tokens — already included in `output`, shown separately. */
   reasoning: number
+  /** Messages a person or a master sent the agent. Absent in usage stored before turns were counted: read it as 0. */
+  turns?: number
 }
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed'
@@ -69,7 +71,7 @@ export interface ProgressNotification {
 }
 
 export function emptyUsage(): TokenUsage {
-  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, turns: 0 }
 }
 
 export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
@@ -79,6 +81,7 @@ export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
     cacheRead: a.cacheRead + b.cacheRead,
     cacheWrite: a.cacheWrite + b.cacheWrite,
     reasoning: a.reasoning + b.reasoning,
+    turns: (a.turns ?? 0) + (b.turns ?? 0),
   }
 }
 
@@ -92,7 +95,7 @@ export function normalizeUsage(value: unknown): TokenUsage | undefined {
   if (!value || typeof value !== 'object') return undefined
   const v = value as Record<string, unknown>
   const n = (k: string) => (typeof v[k] === 'number' && Number.isFinite(v[k]) ? (v[k] as number) : 0)
-  return { input: n('input'), output: n('output'), cacheRead: n('cacheRead'), cacheWrite: n('cacheWrite'), reasoning: n('reasoning') }
+  return { input: n('input'), output: n('output'), cacheRead: n('cacheRead'), cacheWrite: n('cacheWrite'), reasoning: n('reasoning'), turns: n('turns') }
 }
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
@@ -130,10 +133,27 @@ export interface ClaudeState {
   activity: Activity
   /** First timestamp in the file — when the session began. */
   startedAt?: number
+  turns: number
 }
 
 export function initialClaudeState(): ClaudeState {
-  return { todos: null, usageById: {}, pendingTasks: {}, activity: { state: 'unknown' } }
+  return { todos: null, usageById: {}, pendingTasks: {}, activity: { state: 'unknown' }, turns: 0 }
+}
+
+/** Text Claude Code writes as a user line on its own; versions without `origin` only tell it apart by these. */
+const CLAUDE_MACHINE_PROMPT = /^(<local-command-(stdout|stderr|caveat)>|<task-notification>|<command-name>|\[Request interrupted)/
+
+/** Whether a user line is a message someone sent the agent, rather than a tool result, injected context or a notice. */
+function isClaudePrompt(entry: Record<string, unknown>, message: Record<string, unknown>): boolean {
+  if (entry.isMeta || entry.isSidechain || entry.isCompactSummary) return false
+  const content = message.content
+  const blocks = Array.isArray(content) ? (content as Record<string, unknown>[]) : []
+  if (blocks.some((b) => b?.type === 'tool_result')) return false
+  const text = typeof content === 'string' ? content : blocks.find((b) => b?.type === 'text')?.text
+  if (typeof text !== 'string' || !text.trim()) return false
+  const origin = entry.origin as Record<string, unknown> | undefined
+  if (origin && typeof origin === 'object') return origin.kind === 'human'
+  return !CLAUDE_MACHINE_PROMPT.test(text)
 }
 
 function claudeUsage(u: Record<string, unknown>): TokenUsage {
@@ -249,6 +269,7 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
       delete pending[block.tool_use_id]
     }
     next.pendingTasks = pending
+    if (isClaudePrompt(entry, message)) next.turns = state.turns + 1
     next.activity = { state: 'working', at }
     return next
   }
@@ -257,7 +278,7 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
 }
 
 export function claudeUsageTotal(state: ClaudeState): TokenUsage {
-  return Object.values(state.usageById).reduce(addUsage, emptyUsage())
+  return { ...Object.values(state.usageById).reduce(addUsage, emptyUsage()), turns: state.turns }
 }
 
 // ---------------------------------------------------------------------------
@@ -334,12 +355,15 @@ export function reduceCodexLine(state: CodexState, line: string): CodexState {
       const total = info?.total_token_usage as Record<string, unknown> | undefined
       if (!total) return state
       const last = info?.last_token_usage as Record<string, unknown> | undefined
-      return { ...state, usage: codexUsage(total), contextTokens: last ? num(last.input_tokens) : state.contextTokens }
+      return { ...state, usage: { ...codexUsage(total), turns: state.usage.turns }, contextTokens: last ? num(last.input_tokens) : state.contextTokens }
     }
     if (payload.type === 'task_complete') {
       return { ...state, activity: { state: 'waiting', waitingFor: 'input', at } }
     }
-    if (payload.type === 'task_started' || payload.type === 'user_message') {
+    if (payload.type === 'user_message') {
+      return { ...state, usage: { ...state.usage, turns: (state.usage.turns ?? 0) + 1 }, activity: { state: 'working', at } }
+    }
+    if (payload.type === 'task_started') {
       return { ...state, activity: { state: 'working', at } }
     }
   }

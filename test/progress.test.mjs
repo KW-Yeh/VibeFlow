@@ -92,13 +92,15 @@ test('Claude usage — one count per message id even when a reply spans lines', 
     cacheRead: 485121,
     cacheWrite: 22025,
     reasoning: 907,
+    // The prompt counts; the <task-notification> a finished background agent leaves does not.
+    turns: 1,
   })
   assert.equal(state.contextTokens, 48920)
 })
 
 test('Claude sub-agent transcript — usage counted on its own', () => {
   const state = foldClaude(lines('claude-todowrite-subagent.jsonl'))
-  assert.deepEqual(claudeUsageTotal(state), { input: 18, output: 355, cacheRead: 28623, cacheWrite: 31752, reasoning: 190 })
+  assert.deepEqual(claudeUsageTotal(state), { input: 18, output: 355, cacheRead: 28623, cacheWrite: 31752, reasoning: 190, turns: 0 })
   assert.equal(state.todos, null)
 })
 
@@ -121,7 +123,7 @@ test('Codex update_plan — last plan wins; usage is the last cumulative count',
     ]
   )
   // total_token_usage: input 95820 of which 67840 cached.
-  assert.deepEqual(state.usage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19 })
+  assert.deepEqual(state.usage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19, turns: 1 })
   assert.equal(state.contextTokens, 16139)
   assert.equal(state.activity.state, 'waiting')
 })
@@ -150,9 +152,41 @@ test('broken and truncated lines are skipped, the rest still counts', () => {
   assert.deepEqual(foldCodex(['{', ...codex, '{"type":"event_msg","payload":{"type":"token_count","info":null}}']).usage, foldCodex(codex).usage)
 })
 
+test('Claude — turns count only messages someone sent the agent', () => {
+  const user = (fields, content) => JSON.stringify({ type: 'user', timestamp: '2026-10-05T14:00:00Z', ...fields, message: { role: 'user', content } })
+  const state = foldClaude([
+    user({ origin: { kind: 'human' } }, '任務標題：Fix it'),
+    user({ origin: { kind: 'human' } }, [{ type: 'text', text: '<vibeflow from="m1 Master">next</vibeflow>' }]),
+    user({ origin: { kind: 'task-notification' } }, '<task-notification>done</task-notification>'),
+    user({ isMeta: true }, 'Base directory for this skill: …'),
+    user({ isSidechain: true }, 'sub-agent prompt'),
+    user({ isCompactSummary: true }, 'This session is being continued…'),
+    user({}, [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }]),
+    // Older Claude Code writes no origin: these prefixes are what is left to tell them apart.
+    user({}, '<local-command-stdout>ok</local-command-stdout>'),
+    user({}, '<command-name>/clear</command-name>'),
+    user({}, '[Request interrupted by user]'),
+    user({}, 'typed without origin'),
+  ])
+  assert.equal(state.turns, 3)
+  assert.equal(claudeUsageTotal(state).turns, 3)
+})
+
+test('Codex — each user_message is a turn, and token_count keeps the count', () => {
+  const ev = (payload) => JSON.stringify({ type: 'event_msg', timestamp: '2026-10-05T14:00:00Z', payload })
+  const state = foldCodex([
+    ev({ type: 'user_message', message: 'one' }),
+    ev({ type: 'token_count', info: { total_token_usage: { input_tokens: 10, output_tokens: 1 } } }),
+    ev({ type: 'user_message', message: 'two' }),
+  ])
+  assert.equal(state.usage.turns, 2)
+  assert.equal(state.usage.input, 10)
+})
+
 test('usage helpers — add, total, normalize', () => {
   const a = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, reasoning: 1 }
-  assert.deepEqual(addUsage(a, a), { input: 2, output: 4, cacheRead: 6, cacheWrite: 8, reasoning: 2 })
+  assert.deepEqual(addUsage(a, a), { input: 2, output: 4, cacheRead: 6, cacheWrite: 8, reasoning: 2, turns: 0 })
+  assert.equal(addUsage(a, { ...emptyUsage(), turns: 3 }).turns, 3, 'usage stored before turns were counted reads as 0')
   assert.equal(totalTokens(a), 10)
   assert.deepEqual(normalizeUsage({ input: 5, output: 'x' }), { ...emptyUsage(), input: 5 })
   assert.equal(normalizeUsage('nope'), undefined)

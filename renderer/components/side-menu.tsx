@@ -43,18 +43,18 @@ export function SideMenu({
           <SquareKanban className="size-4" />
         </IconButton>
         <IconButton
-          aria-label="工作區"
+          aria-label="任務詳情"
           aria-current={view === 'workspace' ? 'page' : undefined}
-          title="工作區"
+          title="任務詳情"
           onClick={() => onSelectView('workspace')}
           className={cn('size-8', view === 'workspace' && 'text-primary hover:text-primary')}
         >
           <LayoutPanelLeft className="size-4" />
         </IconButton>
         <IconButton
-          aria-label="工作項目"
+          aria-label="收件匣"
           aria-current={view === 'github' ? 'page' : undefined}
-          title="工作項目"
+          title="收件匣"
           onClick={() => onSelectView('github')}
           className={cn('size-8', view === 'github' && 'text-primary hover:text-primary')}
         >

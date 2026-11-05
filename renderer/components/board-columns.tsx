@@ -263,29 +263,14 @@ function SlaveList({
 function MasterSummary({ slaves }: { slaves: SlaveEntry[] }) {
   const done = slaves.filter((s) => s.column === 'done').length
   const running = slaves.filter((s) => s.column === 'in_progress').length
-  const pct = slaves.length ? Math.round((done / slaves.length) * 100) : 0
   return (
-    <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-      <div className="flex items-center gap-2">
-        <Network className="size-3 shrink-0 text-master" />
-        <span className="min-w-0 flex-1 truncate">
-          {slaves.length === 0
-            ? '還沒有 slave 卡片'
-            : `${slaves.length} 個 slave · ${running} 執行中 · ${done} 完成`}
-        </span>
-      </div>
-      {slaves.length > 0 && (
-        <div
-          className="h-1 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={pct}
-          aria-label="Slave 完成比例"
-        >
-          <div className="h-full bg-success" style={{ width: `${pct}%` }} />
-        </div>
-      )}
+    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <Network className="size-3 shrink-0 text-master" />
+      <span className="min-w-0 flex-1 truncate">
+        {slaves.length === 0
+          ? '還沒有 slave 卡片'
+          : `${slaves.length} 個 slave · ${running} 執行中 · ${done} 完成`}
+      </span>
     </div>
   )
 }
@@ -595,7 +580,9 @@ export function BoardColumns({
   // A filter that no longer matches any task would silently empty the board.
   const activeFilter = projectFilter && projects.includes(projectFilter) ? projectFilter : null
 
-  const [collapsedMasters, setCollapsedMasters] = useState<Set<string>>(() => new Set())
+  // A finished master's cards are history: folded unless someone opens them.
+  const [masterFolded, setMasterFolded] = useState<Record<string, boolean>>({})
+  const isFolded = (id: string, column: ColumnId) => masterFolded[id] ?? column === 'done'
   const masterIds = new Set(allTasks.filter((t) => t.role === 'master').map((t) => t.id))
   const slavesOf = (masterId: string): SlaveEntry[] =>
     COLUMNS.flatMap((column) =>
@@ -613,13 +600,8 @@ export function BoardColumns({
       }
       return projectLabel(task) === activeFilter
     })
-  const toggleMaster = (id: string) =>
-    setCollapsedMasters((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const toggleMaster = (id: string, column: ColumnId) =>
+    setMasterFolded((current) => ({ ...current, [id]: !(current[id] ?? column === 'done') }))
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -659,7 +641,7 @@ export function BoardColumns({
                 <AnimatePresence initial={false} custom={allIds}>
                 {tasks.map((task) => {
                   const slaves = task.role === 'master' ? slavesOf(task.id) : undefined
-                  const collapsed = collapsedMasters.has(task.id)
+                  const collapsed = isFolded(task.id, column)
                   return (
                     <motion.div
                       key={task.id}
@@ -692,7 +674,7 @@ export function BoardColumns({
                           <button
                             type="button"
                             aria-expanded={!collapsed}
-                            onClick={() => toggleMaster(task.id)}
+                            onClick={() => toggleMaster(task.id, column)}
                             className="ml-3 mt-1 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                           >
                             <ChevronDown

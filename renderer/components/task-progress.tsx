@@ -138,6 +138,7 @@ export function TaskProgressBadge({
   if (!progress && !total) return null
   const counts = todoCounts(progress?.todos ?? null)
   const tokens = total ? usageTotal(total) : 0
+  const turns = total?.turns ?? 0
   return (
     <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
       {progress && <StatusMark {...activityMark(progress.activity)} />}
@@ -153,6 +154,11 @@ export function TaskProgressBadge({
       {tokens > 0 && (
         <span className="shrink-0 tabular-nums" title={`${tokens.toLocaleString()} tokens`}>
           <AnimatedNumber value={tokens} format={formatTokens} /> tok
+        </span>
+      )}
+      {turns > 0 && (
+        <span className="shrink-0 tabular-nums" title={`使用者送出 ${turns} 則訊息`}>
+          <AnimatedNumber value={turns} /> 輪
         </span>
       )}
     </div>
@@ -222,6 +228,12 @@ function UsageTable({ usage, contextTokens }: { usage: TokenUsage; contextTokens
         <dt>合計</dt>
         <dd className="text-right tabular-nums"><AnimatedNumber value={usageTotal(usage)} /></dd>
       </div>
+      {(usage.turns ?? 0) > 0 && (
+        <div className="contents">
+          <dt className="text-muted-foreground">輪次</dt>
+          <dd className="text-right tabular-nums text-muted-foreground"><AnimatedNumber value={usage.turns ?? 0} /></dd>
+        </div>
+      )}
       {contextTokens != null && contextTokens > 0 && (
         <div className="contents">
           <dt className="text-muted-foreground">目前 context</dt>

@@ -87,6 +87,7 @@ test('Claude — usage adds other sessions of this run and their sub-agents, not
     cacheRead: 485121 + 28623,
     cacheWrite: 22025 + 31752,
     reasoning: 907 + 190,
+    turns: 1,
   })
   assert.deepEqual(p.totalUsage, {
     input: p.runUsage.input + 1,
@@ -94,6 +95,7 @@ test('Claude — usage adds other sessions of this run and their sub-agents, not
     cacheRead: p.runUsage.cacheRead + 1,
     cacheWrite: p.runUsage.cacheWrite + 1,
     reasoning: p.runUsage.reasoning,
+    turns: 1,
   })
   // Todos still come from the executor, not the tab.
   assert.equal(p.todos.length, 3)
@@ -181,7 +183,7 @@ test('Codex — rollout matched by cwd and run start across CODEX_HOMEs', (t) =>
   t.after(() => tracker2.untrackAll())
   tracker2.track({ taskId: 'card', agent: 'codex', worktreePath: worktree, since: RUN_START })
   const p = tracker2.snapshot('card')
-  assert.deepEqual(p.runUsage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19 })
+  assert.deepEqual(p.runUsage, { input: 27980, output: 262, cacheRead: 67840, cacheWrite: 0, reasoning: 19, turns: 1 })
   assert.deepEqual(p.todos.map((t) => t.status), ['completed', 'completed'])
   assert.equal(p.activity.state, 'waiting')
   assert.equal(tracker.isTracking('card'), false)

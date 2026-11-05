@@ -8,8 +8,8 @@ export type BoardView = 'board' | 'workspace' | 'github' | 'terminals'
 
 const VIEWS: { id: BoardView; label: string }[] = [
   { id: 'board', label: '看板' },
-  { id: 'workspace', label: '工作區' },
-  { id: 'github', label: '工作項目' },
+  { id: 'workspace', label: '任務詳情' },
+  { id: 'github', label: '收件匣' },
   { id: 'terminals', label: '終端機' },
 ]
 
@@ -20,7 +20,7 @@ const VIEWS: { id: BoardView; label: string }[] = [
  */
 let lastIndicator: { left: number; width: number } | null = null
 
-/** The「看板 ｜ 工作區 ｜ 工作項目 ｜ 終端機」switch heading every page. */
+/** The「看板 ｜ 任務詳情 ｜ 收件匣 ｜ 終端機」switch heading every page. */
 export function ViewTabs({
   value,
   onChange,
