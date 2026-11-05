@@ -126,8 +126,11 @@ async function waitForTerminalLayout(page) {
   }))
 }
 
+/** One rendered row: a label split by a wrap would otherwise match the whole terminal and hover its empty middle. */
+const terminalRow = (page, label) => page.locator('.xterm-rows:visible > div').filter({ hasText: label }).first()
+
 async function clickTerminalFile(page, label, target = label) {
-  const row = page.locator('.xterm-rows:visible').getByText(label, { exact: false }).first()
+  const row = terminalRow(page, label)
   const box = await row.boundingBox()
   assert.ok(box, `${label} is visible`)
   const x = box.x + Math.min(20, box.width / 2)
@@ -140,7 +143,7 @@ async function clickTerminalFile(page, label, target = label) {
 
 /** A relative name is highlighted but neither titled nor opened: its cwd is a guess. */
 async function clickRelativeTerminalFile(page, label) {
-  const row = page.locator('.xterm-rows:visible').getByText(label, { exact: false }).first()
+  const row = terminalRow(page, label)
   const box = await row.boundingBox()
   assert.ok(box, `${label} is visible`)
   const x = box.x + Math.min(20, box.width / 2)
@@ -218,6 +221,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
         ...process.env,
         [pathKey]: `${fakeBin}${path.delimiter}${process.env[pathKey]}`,
         HOME: home,
+        USERPROFILE: home, // os.homedir() on Windows, which is what `~/` resolves against
         VIBEFLOW_WEB_DIR: webDir,
         TYPESAFE_API_KEY: '', // exercise the visible CLI-default fallback
       },
@@ -835,7 +839,8 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   const standalonePreview = path.join(projectPath, 'standalone-preview.png')
   bus.emit('pty:data', { sessionKey: starts[0].key, data: `${standalonePreview}\r\n` })
   await waitForTerminal(page, 'standalone-preview.png')
-  await clickTerminalFile(page, 'standalone-preview.png', standalonePreview)
+  // The temp dir's length decides where the path wraps; its first characters are always on the first row.
+  await clickTerminalFile(page, standalonePreview.slice(0, 12), standalonePreview)
   await page.getByRole('dialog', { name: '檔案預覽' }).locator('img').waitFor()
   await page.keyboard.press('Escape')
   assert.equal(starts.length, 3, 'preview keeps standalone sessions mounted')
