@@ -634,7 +634,10 @@ export function BoardColumns({
         <NewTaskButton onClick={onNewTask} />
       </div>
 
-      <LayoutGroup id="board-cards">
+      {/* Hidden columns have no measurable layout. Recreate their animation
+          tree on return so workspace updates cannot leave stale projections.
+          Filter and master expansion state stay in BoardColumns. */}
+      {view === 'board' && <LayoutGroup id="board-cards">
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
         {COLUMNS.map((column) => {
           const tasks = visible(column)
@@ -731,7 +734,7 @@ export function BoardColumns({
           )
         })}
       </div>
-      </LayoutGroup>
+      </LayoutGroup>}
     </div>
   )
 }

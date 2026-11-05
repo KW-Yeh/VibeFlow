@@ -710,6 +710,71 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   assert.equal(afterGithub.board.backlog[0].github.number, 112)
 })
 
+test('Web UI: board cards close gaps after completing or deleting in the workspace', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+  const browser = await launchBrowser()
+  if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
+  t.after(() => browser.close())
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-board-layout-e2e-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  setPlatform(createNodePlatform({ userDataDir: tmp }))
+  getStore().set('settings', { autoMode: true, workstationPath: path.join(tmp, 'ws') })
+  const bus = new EventBus()
+  const sessions = {
+    kind: 'pty', start: async () => ({ pid: 1, scrollback: null }), write() {}, resize() {},
+    kill: async () => {}, isAlive: async () => false, scrollback: () => null,
+    list: async () => [], shutdown() {},
+  }
+  const core = createCore({ sessions, bus, version: '9.9.9' })
+  const tasks = []
+  for (const title of ['Keep first', 'Finish second', 'Delete third', 'Keep fourth']) {
+    tasks.push((await core.handlers['vibeflow:createTask']({ title, projectPath, baseBranch: null })).task)
+  }
+  core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: tasks, done: [] })
+  const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'board-layout-e2e' })
+  t.after(async () => { core.shutdown(); await server.close(); await cleanup(); await removeDir(tmp) })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'no-preference' })
+  await page.goto(server.loginUrl())
+  const sidebar = page.locator('aside').first()
+  const card = (title) => page.getByRole('button', { name: `開啟任務：${title}`, exact: true })
+  // Check visual positions, not only DOM order: stale layout transforms leave
+  // the right cards in the DOM but paint them over empty slots or each other.
+  const expectPacked = async (heading, titles) => {
+    await page.waitForFunction(({ heading, titles }) => {
+      const section = [...document.querySelectorAll('section')].find((el) => el.querySelector('h2')?.textContent === heading)
+      if (!section) return false
+      const cards = [...section.querySelectorAll('[aria-label^="開啟任務："]')]
+      if (cards.map((card) => card.getAttribute('aria-label')).join() !== titles.map((title) => `開啟任務：${title}`).join()) return false
+      const list = cards[0].parentElement.parentElement
+      let bottom = list.getBoundingClientRect().top + parseFloat(getComputedStyle(list).paddingTop) - list.scrollTop - 8
+      return cards.every((card) => {
+        const rect = card.getBoundingClientRect()
+        const packed = Math.abs(rect.top - bottom - 8) < 1
+        bottom = rect.bottom
+        return packed
+      })
+    }, { heading, titles }, { timeout: 5000 })
+  }
+  await expectPacked('In Progress', tasks.map((task) => task.title))
+  await card('Finish second').click()
+  await page.getByRole('button', { name: '完成', exact: true }).click()
+  await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
+  await page.getByRole('navigation', { name: '進行中的任務' }).getByText('目前檢視').waitFor()
+  // Let the board update while display:none, as when the user stays in the workspace.
+  await page.waitForTimeout(1000)
+  await sidebar.getByRole('button', { name: '看板', exact: true }).click()
+  await expectPacked('In Progress', ['Keep first', 'Delete third', 'Keep fourth'])
+  await expectPacked('Done', ['Finish second'])
+
+  await card('Delete third').click()
+  await page.getByRole('button', { name: '按住刪除任務', exact: true }).click({ delay: 1400 })
+  await page.getByText('從左側選一張卡片，或建立新的任務。').waitFor()
+  await page.waitForTimeout(1000)
+  await sidebar.getByRole('button', { name: '看板', exact: true }).click()
+  await card('Delete third').waitFor({ state: 'detached' })
+  await expectPacked('In Progress', ['Keep first', 'Keep fourth'])
+  assert.deepEqual(core.handlers['vibeflow:getState']().board.in_progress.map((task) => task.title), ['Keep first', 'Keep fourth'])
+})
+
 test('Web UI: terminal grid opens the card column directory and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
   const browser = await launchBrowser()
   if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
