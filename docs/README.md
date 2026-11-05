@@ -59,6 +59,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [terminal-grid](features/terminal-grid/spec.md) ([plan](features/terminal-grid/plan.md)) | Independent project-folder terminals in a top-level grid, with one-click card actions |
 | [prompt-free-artifacts](features/prompt-free-artifacts/spec.md) ([plan](features/prompt-free-artifacts/plan.md)) | A launch sends only the custom system prompt and the card: no Library skills, prompt snippets or Artifact text; Artifact directories are created in core and files delivered explicitly through the task CLI |
 | [motion-animations](features/motion-animations/spec.md) ([plan](features/motion-animations/plan.md)) | Which motion.dev React patterns fit VibeFlow (tab indicators, card travel, rolling token counts, copy feedback, loading crossfade, stacked toasts) and which were left out |
+| [task-sheet](features/task-sheet/spec.md) ([plan](features/task-sheet/plan.md)) | Clicking a board card opens its sheet (edit a Backlog card, read the others, delete); inbox「建立卡片」opens a prefilled create sheet that only references the item and can make a master |
 
 ## Adding a document
 

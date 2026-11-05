@@ -29,6 +29,8 @@ import type {
   AgentEffort,
   AttachmentInput,
   GitInfo,
+  GithubRef,
+  JiraRef,
   RecentProjectEntry,
 } from '@/lib/types'
 
@@ -56,6 +58,20 @@ export interface NewTaskDraft {
   effort: AgentEffort
   autoMode: boolean
   attachments: AttachmentInput[]
+  /** The inbox item the card was made from. */
+  github?: GithubRef
+  jira?: JiraRef
+}
+
+/** What the form starts with when a card is made from an inbox item. */
+export interface NewTaskInitial {
+  title: string
+  description: string
+  projectPath?: string
+  branch?: string
+  baseBranch?: string
+  github?: GithubRef
+  jira?: JiraRef
 }
 
 type CardRole = 'task' | 'master'
@@ -76,6 +92,7 @@ export interface NewTaskDialogProps {
   defaultAutoMode?: boolean
   /** Workstation root, so the form can name where the worktree will land. */
   workstationPath?: string
+  initial?: NewTaskInitial
 }
 
 export function NewTaskDialog({
@@ -91,19 +108,20 @@ export function NewTaskDialog({
   masters = [],
   defaultAutoMode = true,
   workstationPath,
+  initial,
 }: NewTaskDialogProps) {
   const [role, setRole] = useState<CardRole>('task')
   const [workDir, setWorkDir] = useState('')
   const [masterId, setMasterId] = useState('')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([])
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [loadingInfo, setLoadingInfo] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
-  const [branch, setBranch] = useState('')
+  const [branch, setBranch] = useState(initial?.branch ?? '')
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
@@ -159,6 +177,11 @@ export function NewTaskDialog({
 
   const projectMissing = isProjectMissing(recentProjects, projectPath)
 
+  const initialProject = initial?.projectPath
+  useEffect(() => {
+    if (initialProject) void detectGit(initialProject)
+  }, [initialProject])
+
   const detectGit = async (path: string) => {
     setProjectPath(path)
     setGitInfo(null)
@@ -167,7 +190,8 @@ export function NewTaskDialog({
     try {
       const info = await loadGitInfo(path)
       setGitInfo(info)
-      setBaseBranch(info?.defaultBase ?? '')
+      const preferred = initial?.baseBranch
+      setBaseBranch(preferred && info?.branches.includes(preferred) ? preferred : info?.defaultBase ?? '')
     } finally {
       setLoadingInfo(false)
     }
@@ -249,6 +273,8 @@ export function NewTaskDialog({
       effort,
       autoMode,
       attachments: attachments.map(({ input }) => input),
+      ...(initial?.github ? { github: initial.github } : {}),
+      ...(initial?.jira ? { jira: initial.jira } : {}),
     }
     onSubmit(
       isMaster

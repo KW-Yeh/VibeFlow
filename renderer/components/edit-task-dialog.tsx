@@ -1,9 +1,10 @@
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { GitBranch, Loader2, Network } from 'lucide-react'
+import { GitBranch, Loader2, Network, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { fieldClass as F } from '@/components/ui/field'
+import { HoldButton } from '@/components/ui/hold-button'
 import {
   ProjectFolderPicker,
   isProjectMissing,
@@ -25,6 +26,7 @@ import type {
   AgentCli,
   AgentCliId,
   AgentEffort,
+  ColumnId,
   GitInfo,
   RecentProjectEntry,
   Task,
@@ -45,9 +47,19 @@ export interface EditTaskPayload {
   masterId?: string | null
 }
 
+const COLUMN_LABEL: Record<ColumnId, string> = {
+  backlog: 'Backlog',
+  in_progress: 'In Progress',
+  done: 'Done',
+}
+
 interface EditTaskDialogProps {
-  /** The task being edited, or null when the dialog is closed. */
+  /** The card shown, or null when the sheet is closed. */
   task: Task | null
+  /** Only a Backlog card is editable; core refuses the others. */
+  column: ColumnId
+  onDelete: () => void
+  onOpenWorkspace: () => void
   /** Board-wide Auto Mode, used for cards that carry no value of their own. */
   defaultAutoMode?: boolean
   detectAgents: () => Promise<AgentCli[]>
@@ -64,6 +76,9 @@ interface EditTaskDialogProps {
 
 export function EditTaskDialog({
   task,
+  column,
+  onDelete,
+  onOpenWorkspace,
   detectAgents,
   pickFolder,
   loadRecentProjects,
@@ -177,8 +192,9 @@ export function EditTaskDialog({
   // earlier run) gives it up when its git fields change; core refuses if it
   // holds changes.
   const hasWorktree = Boolean(displayedTask.worktreePath)
+  const readOnly = column !== 'backlog'
 
-  const isDirty =
+  const isDirty = !readOnly && (
     title !== displayedTask.title ||
     description !== (displayedTask.description ?? '') ||
     agentCli !== (displayedTask.agentCli ?? 'claude') ||
@@ -187,7 +203,7 @@ export function EditTaskDialog({
     autoMode !== (displayedTask.autoMode ?? defaultAutoMode) ||
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '') ||
-    branch.trim() !== displayedTask.branch
+    branch.trim() !== displayedTask.branch)
 
   const handleClose = () => {
     if (saving) return
@@ -237,6 +253,7 @@ export function EditTaskDialog({
     (branch.trim() !== '' && branch.trim() !== displayedTask.branch)
 
   const canSubmit =
+    !readOnly &&
     title.trim().length > 0 &&
     !saving &&
     !loadingInfo &&
@@ -284,7 +301,8 @@ export function EditTaskDialog({
         </div>
       )}
       <input
-        autoFocus
+        autoFocus={!readOnly}
+        readOnly={readOnly}
         name="edit-task-title"
         aria-label="任務標題"
         autoComplete="off"
@@ -297,6 +315,7 @@ export function EditTaskDialog({
         className="w-full rounded-sm bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       />
       <textarea
+        readOnly={readOnly}
         name="edit-task-description"
         aria-label="詳細描述"
         autoComplete="off"
@@ -324,7 +343,7 @@ export function EditTaskDialog({
           compact
           projectPath={projectPath}
           recentProjects={recentProjects}
-          disabled={saving || loadingInfo}
+          disabled={readOnly || saving || loadingInfo}
           onSelect={(path) => void selectProject(path)}
           onBrowse={() => void handleBrowse()}
         />
@@ -347,7 +366,7 @@ export function EditTaskDialog({
             aria-label="基準分支"
             value={baseBranch}
             onChange={setBaseBranch}
-            disabled={saving || loadingInfo}
+            disabled={readOnly || saving || loadingInfo}
             className={ROW_FIELD}
             options={[
               ...(baseBranch && !(gitInfo?.branches ?? []).includes(baseBranch) ? [baseBranch] : []),
@@ -363,7 +382,7 @@ export function EditTaskDialog({
           value={branch}
           onChange={(e) => setBranch(e.target.value)}
           placeholder="例如 feature/login-fix"
-          disabled={saving}
+          disabled={readOnly || saving}
           className={ROW_FIELD}
         />
       </PropertyRow>
@@ -371,9 +390,9 @@ export function EditTaskDialog({
         <PropertyNote tone="warning">
           這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
         </PropertyNote>
-      ) : (
+      ) : !readOnly ? (
         <PropertyNote>分支在卡片開始執行時才建立並推到 origin。</PropertyNote>
-      )}
+      ) : null}
       {masters.length > 0 && (
         <PropertyRow label="隸屬於">
           <Select
@@ -381,7 +400,7 @@ export function EditTaskDialog({
             aria-label="隸屬於"
             value={masterId}
             onChange={setMasterId}
-            disabled={saving}
+            disabled={readOnly || saving}
             className={ROW_FIELD}
             options={[{ value: '', label: '無' }, ...masters.map((m) => ({ value: m.id, label: m.title }))]}
           />
@@ -395,10 +414,12 @@ export function EditTaskDialog({
       {task && (
         <TaskFormDialog
           key={displayedTask.id}
-          title="編輯任務"
+          title={readOnly ? '任務詳情' : '編輯任務'}
           header={
             <>
-              <span className="text-sm text-muted-foreground">編輯任務 · Backlog</span>
+              <span className="text-sm text-muted-foreground">
+                {readOnly ? '任務詳情' : '編輯任務'} · {COLUMN_LABEL[column]}
+              </span>
               <span
                 title="建立後不能更改角色"
                 className={cn(
@@ -431,12 +452,32 @@ export function EditTaskDialog({
                 effortLevels={effortLevels}
                 autoMode={autoMode}
                 onAutoModeChange={setAutoMode}
-                disabled={saving}
+                disabled={readOnly || saving}
               />
+              {readOnly && (
+                <PropertyNote>已開始執行或已完成的卡片無法編輯，請到工作區查看進度。</PropertyNote>
+              )}
             </>
           }
           actions={
             <>
+              <HoldButton
+                onConfirm={onDelete}
+                disabled={saving}
+                aria-label={`按住刪除任務「${displayedTask.title}」`}
+                title={`按住以刪除任務「${displayedTask.title}」（清理 worktree）`}
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-sm text-destructive transition-colors motion-reduce:transition-none hover:bg-destructive/15 disabled:opacity-50"
+              >
+                <Trash2 className="size-3.5" />
+                刪除
+              </HoldButton>
+              {readOnly ? (
+                <Button size="sm" onClick={onOpenWorkspace} className="flex-1 rounded-full">
+                  <SquareArrowOutUpRight />
+                  前往工作區
+                </Button>
+              ) : (
+                <>
               <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving} className="flex-1 rounded-full">
                 取消
               </Button>
@@ -449,6 +490,8 @@ export function EditTaskDialog({
                 {saving && <Loader2 className="animate-spin" />}
                 {saving ? '儲存中…' : '儲存變更'}
               </Button>
+                </>
+              )}
             </>
           }
         />

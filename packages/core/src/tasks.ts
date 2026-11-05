@@ -234,6 +234,8 @@ async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResul
     model: input.model || undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
+    ...(input.github ? { github: input.github } : {}),
+    ...(input.jira ? { jira: input.jira } : {}),
   }
 
   try {

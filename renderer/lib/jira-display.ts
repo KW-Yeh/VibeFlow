@@ -25,10 +25,11 @@ export function boardJiraCards(tasks: Task[]): Map<string, string> {
   return cards
 }
 
+/** The create sheet's starting values for a ticket; like draftFromItem, a reference only. */
 export function draftFromTicket(ticket: JiraTicket) {
   return {
     title: `${ticket.key} ${ticket.summary}`,
-    description: [ticket.url, ticket.description].filter(Boolean).join('\n\n'),
+    description: `參考 Jira ${ticket.key}：${ticket.url}`,
     jira: { key: ticket.key, url: ticket.url, site: new URL(ticket.url).host },
   }
 }

@@ -49,6 +49,8 @@ interface KanbanBoardProps {
   selectedTaskId?: string | null
   /** Select a task and show its workspace. */
   onSelectTask: (taskId: string) => void
+  /** A click on a board card: its sheet, not the workspace. */
+  onOpenTaskSheet: (taskId: string) => void
   /** Open the new-task dialog. */
   onNewTask: () => void
   /** 'workspace' shows the task workspace; 'board' and 'github' show the board page. */
@@ -121,6 +123,7 @@ export function KanbanBoard({
   progress,
   selectedTaskId,
   onSelectTask,
+  onOpenTaskSheet,
   onNewTask,
   view,
   onViewChange,
@@ -291,7 +294,7 @@ export function KanbanBoard({
             board={board}
             progress={progress}
             selectedTaskId={selectedTaskId ?? null}
-            onSelectTask={onSelectTask}
+            onSelectTask={onOpenTaskSheet}
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onOpenTaskTerminal={onOpenTaskTerminal}

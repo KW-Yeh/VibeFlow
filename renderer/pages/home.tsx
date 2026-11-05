@@ -5,7 +5,7 @@ import { AnimatePresence } from 'motion/react'
 import { KanbanBoard } from '@/components/kanban-board'
 import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
-import { NewTaskDialog, type NewTaskDraft } from '@/components/new-task-dialog'
+import { NewTaskDialog, type NewTaskDraft, type NewTaskInitial } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
@@ -59,6 +59,7 @@ import {
 import type {
   AvailableUpdate,
   BoardState,
+  ColumnId,
   GithubItem,
   JiraTicket,
   JiraScope,
@@ -93,6 +94,13 @@ function findTask(board: BoardState, taskId: string): Task | null {
   for (const column of Object.values(board)) {
     const found = column.find((t) => t.id === taskId)
     if (found) return found
+  }
+  return null
+}
+
+function columnOf(board: BoardState, taskId: string): ColumnId | null {
+  for (const column of Object.keys(board) as ColumnId[]) {
+    if (board[column].some((t) => t.id === taskId)) return column
   }
   return null
 }
@@ -154,6 +162,8 @@ export default function HomePage() {
   gridTerminalsRef.current = gridTerminals
   const [focusedGridTerminal, setFocusedGridTerminal] = useState<string | null>(null)
   const [newTaskOpen, setNewTaskOpen] = useState(false)
+  /** Set when the sheet was opened from an inbox item. */
+  const [newTaskInitial, setNewTaskInitial] = useState<NewTaskInitial | null>(null)
 
   // Which page is shown, and what the Issues & PRs view is narrowed to.
   const [view, setView] = useState<BoardView>('board')
@@ -348,16 +358,15 @@ export default function HomePage() {
     })
   }, [])
 
-  const handleOpenNewTask = () => {
+  const openNewTaskSheet = (initial: NewTaskInitial | null) => {
     setCreateError(null)
+    setNewTaskInitial(initial)
     setNewTaskOpen(true)
   }
+  const handleOpenNewTask = () => openNewTaskSheet(null)
 
-  const handleConvertGithubItem = async (item: GithubItem, projectPath: string): Promise<string> => {
-    const result = await createTask({ baseBranch: null, ...draftFromItem(item), projectPath, autoMode })
-    if (!result) throw new Error('未連線到 VibeFlow core')
-    setBoard(result.state.board)
-    return result.task.id
+  const handleConvertGithubItem = (item: GithubItem, projectPath?: string) => {
+    openNewTaskSheet({ ...draftFromItem(item), ...(projectPath ? { projectPath } : {}) })
   }
 
   const handleSaveSettings = async (
@@ -402,7 +411,8 @@ export default function HomePage() {
       if (result) {
         setBoard(result.state.board)
         setNewTaskOpen(false)
-        openTask(result.task.id)
+        // A card made from the inbox keeps the user on the inbox.
+        if (!newTaskInitial) openTask(result.task.id)
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err))
@@ -413,10 +423,16 @@ export default function HomePage() {
 
   const handleOpenEditTask = (taskId: string) => {
     setEditError(null)
-    // Started and finished cards are read-only.
-    if (!board.backlog.some((t) => t.id === taskId)) return
     setEditTask(findTask(board, taskId))
   }
+
+  // The sheet keeps the snapshot it opened with so a board push does not wipe
+  // unsaved edits; its column follows the board, so a card started meanwhile
+  // turns read-only, and a deleted one closes it.
+  const editColumn = editTask ? columnOf(board, editTask.id) : null
+  useEffect(() => {
+    if (editTask && !editColumn) setEditTask(null)
+  }, [editTask, editColumn])
 
   const handleSaveEdit = async (payload: EditTaskPayload) => {
     if (!editTask) return
@@ -468,20 +484,10 @@ export default function HomePage() {
   const githubCards = boardGithubCards(allTasks)
   const jiraCards = boardJiraCards(allTasks)
   const currentInboxTab = inboxTab ?? (jira.inbox?.status === 'ok' ? 'jira' : 'issues')
-  const projects = Array.from(new Map([
-    ...allTasks.filter((task) => task.projectPath).map((task) => [task.projectPath!, { path: task.projectPath!, name: task.projectName ?? task.projectPath! }] as const),
-    ...recentProjects.filter((project) => !project.missing).map((project) => [project.path, { path: project.path, name: project.name }] as const),
-  ]).values()).sort((a, b) => a.name.localeCompare(b.name))
   useEffect(() => {
     if (loaded) void listRecentProjects().then(setRecentProjects)
   }, [loaded, board.backlog.length])
-  const createJiraTask = async (ticket: JiraTicket, projectPath: string): Promise<string> => {
-    const draft = draftFromTicket(ticket)
-    const result = await createTask({ ...draft, projectPath, baseBranch: null, autoMode })
-    if (!result) throw new Error('未連線到 VibeFlow core')
-    setBoard(result.state.board)
-    return result.task.id
-  }
+  const createJiraTask = (ticket: JiraTicket) => openNewTaskSheet(draftFromTicket(ticket))
 
 
   const remoteHost = useRemoteHost({
@@ -548,6 +554,7 @@ export default function HomePage() {
                 <div className={view === 'terminals' ? 'hidden' : 'h-full'}>
                 <KanbanBoard
                   onSelectTask={openTask}
+                  onOpenTaskSheet={handleOpenEditTask}
                   onNewTask={handleOpenNewTask}
                   board={board}
                   onBoardChange={handleBoardChange}
@@ -574,8 +581,6 @@ export default function HomePage() {
                       onGithubFiltersChange={(kind, filters) => setGithubFilters((previous) => ({ ...previous, [kind]: filters }))}
                       jiraCards={jiraCards}
                       githubCards={githubCards}
-                      projects={projects}
-                      onBrowseProject={pickProjectFolder}
                       onCreateJira={createJiraTask}
                       onConvertGithub={handleConvertGithubItem}
                       onOpenTask={openTask}
@@ -613,6 +618,7 @@ export default function HomePage() {
               {newTaskOpen && (
                 <NewTaskDialog
                   key="new-task-dialog"
+                  initial={newTaskInitial ?? undefined}
                   creating={creating}
                   error={createError}
                   pickFolder={pickProjectFolder}
@@ -632,6 +638,17 @@ export default function HomePage() {
             </AnimatePresence>
             <EditTaskDialog
               task={editTask}
+              column={editColumn ?? 'backlog'}
+              onDelete={() => {
+                if (!editTask) return
+                setEditTask(null)
+                void handleDeleteTask(editTask.id)
+              }}
+              onOpenWorkspace={() => {
+                if (!editTask) return
+                setEditTask(null)
+                openTask(editTask.id)
+              }}
               defaultAutoMode={autoMode}
               detectAgents={detectAgents}
               pickFolder={pickProjectFolder}

@@ -468,8 +468,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(fs.existsSync(task.worktreePath), false)
 
   if (canFakeGh) {
-    // Work items: a project whose origin is on GitHub lists its Issues; one
-    // creates a Backlog card directly from the detail modal.
+    // Work items: a project whose origin is on GitHub lists its Issues; the
+    // detail modal opens the create sheet prefilled with a reference to the item.
     const gh = await makeRepo({ withRemote: false })
     t.after(gh.cleanup)
     await git(gh.projectPath, 'remote', 'add', 'origin', 'https://github.com/e2e/VibeFlow.git')
@@ -489,13 +489,21 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     // clcom-frontend has no board card; global search still discovers it.
     await page.getByRole('button', { name: /#431/ }).click()
     await page.getByRole('dialog').waitFor()
-    assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
-    await page.getByLabel('建立到專案').waitFor()
-    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '建立卡片' }).click()
+    const unmatched = page.getByRole('dialog', { name: '新增任務' })
+    await unmatched.waitFor()
+    assert.equal(await unmatched.getByRole('button', { name: '建立任務' }).isDisabled(), true, 'no local project yet')
+    await unmatched.getByRole('button', { name: '取消' }).click()
+    await unmatched.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: /#112/ }).click()
     await page.getByRole('dialog').waitFor()
     await page.getByRole('button', { name: '建立卡片' }).click()
-    await page.getByText('已建立到 Backlog').waitFor()
+    const fromIssue = page.getByRole('dialog', { name: '新增任務' })
+    assert.equal(await fromIssue.getByLabel('任務標題').inputValue(), '側邊欄搜尋在中文輸入法組字時會閃爍')
+    assert.equal(await fromIssue.getByLabel('詳細描述').inputValue(), '參考 GitHub Issue e2e/VibeFlow#112：https://github.com/e2e/VibeFlow/issues/112')
+    await fromIssue.getByRole('button', { name: '建立任務' }).click()
+    await fromIssue.waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: /#112/ }).click()
     await page.getByRole('button', { name: '前往卡片' }).waitFor()
     const converted = (await page.evaluate(() => window.vibeflow.getState())).board.backlog.find(
       (c) => c.github?.number === 112
@@ -685,21 +693,19 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
     'https://example.atlassian.net/rest/api/3/attachment/content/12345',
   ])
   assert.equal(await page.getByRole('button', { name: '在 Jira 開啟' }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: '建立卡片' }).isDisabled(), true)
-  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
-  await page.waitForTimeout(100)
-  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), '')
-  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
-  await page.waitForFunction((path) => document.querySelector('[role="combobox"][aria-label="建立到專案"]')?.dataset.value === path, newProjectPath)
-  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), newProjectPath)
-  await page.getByRole('button', { name: '從資料夾選擇專案' }).click()
-  await page.waitForTimeout(100)
-  assert.equal(await selectValue(page.getByRole('combobox', { name: '建立到專案' })), newProjectPath)
   await page.getByRole('button', { name: '建立卡片' }).click()
-  await page.getByText('已建立到 Backlog').waitFor()
+  const fromTicket = page.getByRole('dialog', { name: '新增任務' })
+  await fromTicket.waitFor()
+  assert.equal(await fromTicket.getByLabel('詳細描述').inputValue(), '參考 Jira WR-5729：https://example.atlassian.net/browse/WR-5729')
+  // The first folder pick is canceled, the second returns the project.
+  await fromTicket.getByRole('button', { name: '從資料夾選擇專案' }).click()
+  await fromTicket.getByRole('button', { name: '從資料夾選擇專案' }).click()
+  await fromTicket.getByRole('button', { name: '建立任務' }).click({ timeout: 10_000 })
+  await fromTicket.waitFor({ state: 'detached' })
   const state = await page.evaluate(() => window.vibeflow.getState())
   assert.equal(state.board.backlog[0].jira.key, 'WR-5729')
   assert.equal(state.board.backlog[0].projectPath, newProjectPath)
+  await page.getByRole('button', { name: /WR-5729/ }).click()
   await page.setViewportSize({ width: 375, height: 780 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true)
   await page.getByRole('button', { name: '前往卡片' }).click()
@@ -709,7 +715,9 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.getByRole('button', { name: /#112/ }).click()
   await page.getByRole('dialog').waitFor()
   await page.getByRole('button', { name: '建立卡片' }).click()
-  await page.getByText('已建立到 Backlog').waitFor()
+  const fromIssue = page.getByRole('dialog', { name: '新增任務' })
+  await fromIssue.getByRole('button', { name: '建立任務' }).click({ timeout: 10_000 })
+  await fromIssue.waitFor({ state: 'detached' })
   const afterGithub = await page.evaluate(() => window.vibeflow.getState())
   assert.equal(afterGithub.board.backlog[0].github.number, 112)
 })
@@ -760,6 +768,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   }
   await expectPacked('In Progress', tasks.map((task) => task.title))
   await card('Finish second').click()
+  await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await page.getByRole('button', { name: '完成', exact: true }).click()
   await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
   await page.getByRole('navigation', { name: '進行中的任務' }).getByText('目前檢視').waitFor()
@@ -770,6 +779,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await expectPacked('Done', ['Finish second'])
 
   await card('Delete third').click()
+  await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await page.getByRole('button', { name: '按住刪除任務', exact: true }).click({ delay: 1400 })
   await page.getByText('從左側選一張卡片，或建立新的任務。').waitFor()
   await page.waitForTimeout(1000)
@@ -777,6 +787,21 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await card('Delete third').waitFor({ state: 'detached' })
   await expectPacked('In Progress', ['Keep first', 'Keep fourth'])
   assert.deepEqual(core.handlers['vibeflow:getState']().board.in_progress.map((task) => task.title), ['Keep first', 'Keep fourth'])
+
+  // A Backlog card opens an editable sheet over the board; saving and
+  // deleting happen there without leaving the board.
+  await core.handlers['vibeflow:createTask']({ title: 'Sheet card', projectPath, baseBranch: null })
+  await page.reload()
+  await card('Sheet card').click()
+  const sheet = page.getByRole('dialog', { name: '編輯任務' })
+  await sheet.getByLabel('任務標題').fill('Sheet card renamed')
+  await sheet.getByRole('button', { name: '儲存變更' }).click()
+  await sheet.waitFor({ state: 'detached' })
+  assert.equal(await sidebar.getByRole('button', { name: '看板', exact: true }).getAttribute('aria-current'), 'page')
+  await card('Sheet card renamed').click()
+  await sheet.getByRole('button', { name: /^按住刪除任務/ }).click({ delay: 1400 })
+  await card('Sheet card renamed').waitFor({ state: 'detached' })
+  assert.equal(core.handlers['vibeflow:getState']().board.backlog.length, 0)
 })
 
 test('Web UI: terminal grid opens the card column directory and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
@@ -946,6 +971,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   // A done card opened from the board is listed on top as the card being viewed.
   await menu.getByRole('button', { name: '看板' }).click()
   await page.getByRole('button', { name: '開啟任務：Done terminal' }).click()
+  await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await running.getByText('目前檢視').waitFor()
   assert.equal(await running.getByRole('button', { name: /Done terminal/ }).getAttribute('aria-current'), 'page')
   await running.getByRole('button', { name: /Running terminal/ }).click()

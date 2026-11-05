@@ -102,6 +102,16 @@ test('a master can run in any existing folder, git or not', async (t) => {
   )
 })
 
+test('a master made from an inbox item keeps its GitHub or Jira link', async (t) => {
+  const { core } = setup(t)
+  const github = { kind: 'pr', repo: 'acme/web', number: 12, url: 'https://github.com/acme/web/pull/12' }
+  const jira = { key: 'WEB-7', url: 'https://acme.atlassian.net/browse/WEB-7', site: 'acme.atlassian.net' }
+  const { task: fromPr } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Review #12', github })
+  const { task: fromTicket } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'WEB-7', jira })
+  assert.deepEqual(findCard(core, fromPr.id).task.github, github)
+  assert.deepEqual(findCard(core, fromTicket.id).task.jira, jira)
+})
+
 test('a card belongs to at most one master, and only to a master', async (t) => {
   const { core } = setup(t)
   const projectPath = await slaveRepo(t)

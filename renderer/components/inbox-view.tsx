@@ -3,7 +3,7 @@ import { LayoutGroup } from 'motion/react'
 import { TabIndicator } from '@/components/ui/tab-indicator'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { GithubView } from '@/components/github-view'
-import { JiraPanel, type JiraProject } from '@/components/jira-panel'
+import { JiraPanel } from '@/components/jira-panel'
 import type { GithubFilters } from '@/lib/github-filter'
 import type { GithubInbox, GithubItem, JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
 import { NewTaskButton } from '@/components/new-task-button'
@@ -14,7 +14,7 @@ const TABS: { id: InboxTab; label: string }[] = [
   { id: 'jira', label: 'Jira' }, { id: 'issues', label: 'Issues' }, { id: 'prs', label: 'Pull Requests' },
 ]
 
-export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, githubFilters, onGithubFiltersChange, jiraCards, githubCards, projects, onBrowseProject, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings, onNewTask }: {
+export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, githubFilters, onGithubFiltersChange, jiraCards, githubCards, onCreateJira, onConvertGithub, onOpenTask, onOpenSettings, onNewTask }: {
   view: BoardView
   onViewChange: (view: BoardView) => void
   tab: InboxTab
@@ -25,10 +25,8 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
   onGithubFiltersChange: (kind: 'issues' | 'prs', filters: GithubFilters) => void
   jiraCards: Map<string, string>
   githubCards: Map<string, string>
-  projects: JiraProject[]
-  onBrowseProject: () => Promise<string | null>
-  onCreateJira: (ticket: JiraTicket, projectPath: string) => Promise<string>
-  onConvertGithub: (item: GithubItem, projectPath: string) => Promise<string>
+  onCreateJira: (ticket: JiraTicket) => void
+  onConvertGithub: (item: GithubItem, projectPath?: string) => void
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
   onNewTask: () => void
@@ -59,10 +57,10 @@ export function InboxView({ view, onViewChange, tab, onTabChange, jira, github, 
       </button>)}
     </div></LayoutGroup>
     {tab === 'jira' ? <JiraPanel {...jira} onRefresh={jira.refresh}
-      boardCards={jiraCards} projects={projects} onBrowseProject={onBrowseProject} onCreate={onCreateJira} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings} />
+      boardCards={jiraCards} onCreate={onCreateJira} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings} />
       : <GithubView view={view} onViewChange={onViewChange} inbox={github.inbox} loading={github.loading} error={github.error}
         onRefresh={github.refresh} filters={githubFilters[tab]} onFiltersChange={(filters) => onGithubFiltersChange(tab, filters)}
         boardCards={githubCards} onConvert={onConvertGithub} onOpenTask={onOpenTask} onOpenSettings={onOpenSettings}
-        projects={projects} onBrowseProject={onBrowseProject} sourceKind={tab} embedded />}
+        sourceKind={tab} embedded />}
   </div>
 }

@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'motion/react'
-import { CircleDot, ExternalLink, FolderOpen, Loader2, Paperclip, Plus, RefreshCw, SquareArrowOutUpRight } from 'lucide-react'
+import { CircleDot, ExternalLink, Paperclip, Plus, RefreshCw, SquareArrowOutUpRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
@@ -13,17 +13,7 @@ import { cn } from '@/lib/utils'
 import type { JiraInbox, JiraTicket, JiraScope } from '@/lib/types'
 import { FadeSwap } from '@/components/ui/fade-swap'
 
-export interface JiraProject { path: string; name: string }
-
-/** Options for a "create into project" picker; a chosen path not in the list still shows. */
-export function projectSelectOptions(projects: JiraProject[], projectPath: string) {
-  const listed = projects.map((project) => ({ value: project.path, label: `${project.name} · ${project.path}`, title: project.path }))
-  return projectPath && !projects.some((project) => project.path === projectPath)
-    ? [{ value: projectPath, label: projectPath, title: projectPath }, ...listed]
-    : listed
-}
-
-export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefresh, boardCards, projects, onBrowseProject, onCreate, onOpenTask, onOpenSettings }: {
+export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefresh, boardCards, onCreate, onOpenTask, onOpenSettings }: {
   inbox: JiraInbox | null
   loading: boolean
   error: string | null
@@ -31,49 +21,27 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
   onScopeChange: (scope: JiraScope) => void
   onRefresh: () => void
   boardCards: Map<string, string>
-  projects: JiraProject[]
-  onBrowseProject: () => Promise<string | null>
-  onCreate: (ticket: JiraTicket, projectPath: string) => Promise<string>
+  /** Opens the create sheet for the ticket. */
+  onCreate: (ticket: JiraTicket) => void
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [projectPath, setProjectPath] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [duplicate, setDuplicate] = useState(false)
   const tickets = inbox?.tickets ?? []
   const columns = jiraStatusColumns(tickets)
   const selected = tickets.find((ticket) => ticket.key === selectedKey)
-  const boardTaskId = selected ? boardCards.get(selected.key) : undefined
-  const taskId = createdTaskId ?? boardTaskId
+  const taskId = selected ? boardCards.get(selected.key) : undefined
 
   useEffect(() => {
     if (selectedKey && inbox?.status === 'ok' && !selected) setSelectedKey(null)
   }, [selectedKey, selected, inbox?.status])
 
-  const choose = (key: string) => {
-    setSelectedKey(key)
-    setProjectPath('')
-    setCreateError(null)
-    setCreatedTaskId(null)
-    setDuplicate(false)
-  }
+  const choose = (key: string) => setSelectedKey(key)
 
-  const create = async () => {
-    if (!selected || !projectPath || creating) return
-    setCreating(true)
-    setCreateError(null)
-    try {
-      const id = await onCreate(selected, projectPath)
-      setCreatedTaskId(id)
-      setDuplicate(false)
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setCreating(false)
-    }
+  const create = () => {
+    if (!selected) return
+    setSelectedKey(null)
+    onCreate(selected)
   }
 
   const notice = (text: string, settings = false) => (
@@ -138,27 +106,14 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
           </div>
         </div>}
     </FadeSwap>
-    <AnimatePresence>{selected && <DialogShell key={selected.key} title={`${selected.key} ${selected.summary}`} showHeader saving={creating}
+    <AnimatePresence>{selected && <DialogShell key={selected.key} title={`${selected.key} ${selected.summary}`} showHeader saving={false}
       description={`${selected.issueType} · ${selected.status.name}`} onClose={() => setSelectedKey(null)}
       contentClassName="max-w-3xl" bodyClassName="min-h-0"
       footer={<div className="flex w-full flex-wrap items-center gap-2">
-        {createdTaskId && <span className="text-sm text-success">已建立到 Backlog</span>}
-        {taskId && !duplicate ? <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" title="已經有對應卡片，仍可再建一張" onClick={() => { setDuplicate(true); setCreatedTaskId(null); setProjectPath('') }}>再建一張</Button>
+        {taskId ? <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" title="已經有對應卡片，仍可再建一張" onClick={create}>再建一張</Button>
           <Button size="sm" onClick={() => { setSelectedKey(null); onOpenTask(taskId) }}><SquareArrowOutUpRight />前往卡片</Button>
-        </div> : <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Select aria-label="建立到專案" value={projectPath} onChange={setProjectPath} disabled={creating}
-            placeholder="選擇專案…" className="h-9 w-auto max-w-56 px-2 text-sm"
-            options={projectSelectOptions(projects, projectPath)} />
-          <IconButton aria-label="從資料夾選擇專案" title="從資料夾選擇專案" disabled={creating}
-            className="rounded-md border border-border p-2"
-            onClick={() => void onBrowseProject().then((path) => { if (path) setProjectPath(path) })}>
-            <FolderOpen className="size-4" />
-          </IconButton>
-          <Button size="sm" disabled={!projectPath || creating} title={!projectPath ? '先選擇要建立到哪個專案' : undefined} onClick={() => void create()}>
-            {creating ? <Loader2 className="animate-spin" /> : <Plus />}{creating ? '建立中…' : '建立卡片'}
-          </Button>
-        </div>}
+        </div> : <Button size="sm" className="ml-auto" onClick={create}><Plus />建立卡片</Button>}
       </div>}>
       <div className="space-y-4">
         <dl className="grid grid-cols-[90px_minmax(0,1fr)] gap-2 text-sm">
@@ -184,7 +139,6 @@ export function JiraPanel({ inbox, loading, error, scope, onScopeChange, onRefre
             {attachment.size !== null && <span className="shrink-0 text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>}
           </li>)}</ul>
         </section>}
-        {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
       </div>
     </DialogShell>}</AnimatePresence>
   </div>

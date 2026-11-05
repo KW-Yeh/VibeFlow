@@ -1,10 +1,8 @@
 import {
   CircleDot,
   ExternalLink,
-  FolderOpen,
   GitPullRequest,
   GitPullRequestDraft,
-  Loader2,
   Plus,
   RefreshCw,
   SquareArrowOutUpRight,
@@ -15,12 +13,10 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { GithubFilterMenu } from '@/components/github-filter-menu'
-import { projectSelectOptions, type JiraProject } from '@/components/jira-panel'
 import { MarkdownContent } from '@/components/markdown-content'
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
-import { Select } from '@/components/ui/select'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { openExternal } from '@/lib/api'
@@ -59,9 +55,8 @@ export interface GithubViewProps {
   onFiltersChange: (next: GithubFilters) => void
   /** Board card already made from an Issue/PR, keyed by `repo#number`. */
   boardCards: Map<string, string>
-  projects: JiraProject[]
-  onBrowseProject: () => Promise<string | null>
-  onConvert: (item: GithubItem, projectPath: string) => Promise<string>
+  /** Opens the create sheet for the item, in its local project when one matched. */
+  onConvert: (item: GithubItem, projectPath?: string) => void
   onOpenTask: (taskId: string) => void
   onOpenSettings: () => void
   sourceKind?: 'issues' | 'prs'
@@ -220,60 +215,28 @@ function MetaRow({ label, children }: { label: string; children: ReactNode }) {
 function DetailDrawer({
   entry,
   taskId,
-  projects,
-  onBrowseProject,
   onClose,
   onConvert,
   onOpenTask,
 }: {
   entry: GithubEntry
   taskId: string | undefined
-  projects: JiraProject[]
-  onBrowseProject: () => Promise<string | null>
   onClose: () => void
-  onConvert: (projectPath: string) => Promise<string>
+  onConvert: () => void
   onOpenTask: (taskId: string) => void
 }) {
   const { item } = entry
   const users = (list: GithubUser[]) => (list.length ? list.map((u) => u.login).join('、') : '—')
-  const [createdId, setCreatedId] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [projectPath, setProjectPath] = useState(entry.projectPath ?? '')
-  const create = async () => {
-    if (creating || !projectPath) return
-    setCreating(true)
-    setCreateError(null)
-    try { setCreatedId(await onConvert(projectPath)) }
-    catch (err) { setCreateError(err instanceof Error ? err.message : String(err)) }
-    finally { setCreating(false) }
-  }
-  const linkedId = createdId ?? taskId
 
   return (
     <DialogShell title={item.title} description={`${item.repo} · ${item.kind === 'issue' ? 'Issue' : 'PR'} #${item.number}`}
-      showHeader saving={creating} onClose={onClose} contentClassName="max-w-3xl"
+      showHeader saving={false} onClose={onClose} contentClassName="max-w-3xl"
       footer={<div className="flex w-full flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => void openExternal(item.url)}><ExternalLink />在 GitHub 開啟</Button>
-        {createdId && <span className="text-sm text-success">已建立到 Backlog</span>}
-        {!entry.projectPath && <div className="ml-auto flex items-center gap-1">
-          <Select aria-label="建立到專案" value={projectPath} onChange={setProjectPath} disabled={creating}
-            placeholder="選擇本機專案…" className="h-9 w-auto max-w-56 px-2 text-sm"
-            options={projectSelectOptions(projects, projectPath)} />
-          <IconButton aria-label="從資料夾選擇專案" title="從資料夾選擇專案" disabled={creating}
-            onClick={() => void onBrowseProject().then((path) => { if (path) setProjectPath(path) })}>
-            <FolderOpen className="size-4" />
-          </IconButton>
-        </div>}
-        {linkedId ? <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => void create()} disabled={creating || !projectPath} title="已經有對應卡片，仍可再建一張">再建一張</Button>
-          <Button size="sm" onClick={() => onOpenTask(linkedId)}><SquareArrowOutUpRight />前往卡片</Button>
-        </div> : <div className="ml-auto flex items-center gap-2 text-sm">
-          {entry.projectPath && <span className="text-muted-foreground">建立到：{entry.projectName}</span>}
-          <Button size="sm" onClick={() => void create()} disabled={creating || !projectPath}>
-            {creating ? <Loader2 className="animate-spin" /> : <Plus />}{creating ? '建立中…' : '建立卡片'}
-          </Button>
-        </div>}
+        {taskId ? <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onConvert} title="已經有對應卡片，仍可再建一張">再建一張</Button>
+          <Button size="sm" onClick={() => onOpenTask(taskId)}><SquareArrowOutUpRight />前往卡片</Button>
+        </div> : <Button size="sm" className="ml-auto" onClick={onConvert}><Plus />建立卡片</Button>}
       </div>}>
       <div className="space-y-4">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -332,7 +295,6 @@ function DetailDrawer({
         )}
       </div>
 
-      {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
       </div>
     </DialogShell>
   )
@@ -397,8 +359,6 @@ export function GithubView({
   filters,
   onFiltersChange,
   boardCards,
-  projects,
-  onBrowseProject,
   onConvert,
   onOpenTask,
   onOpenSettings,
@@ -548,10 +508,11 @@ export function GithubView({
             key={githubItemKey(selected.item)}
             entry={selected}
             taskId={boardCards.get(githubItemKey(selected.item))}
-            projects={projects}
-            onBrowseProject={onBrowseProject}
             onClose={() => setSelectedKey(null)}
-            onConvert={(projectPath) => onConvert(selected.item, projectPath)}
+            onConvert={() => {
+              setSelectedKey(null)
+              onConvert(selected.item, selected.projectPath ?? undefined)
+            }}
             onOpenTask={onOpenTask}
           />
         )}

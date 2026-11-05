@@ -62,12 +62,15 @@ export function initials(login: string): string {
   return login.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
 }
 
-/** The card a converted Issue/PR becomes. */
+/**
+ * The create sheet's starting values for an Issue/PR. The description only
+ * points at the item: the agent reads it itself, and a PR card is usually a
+ * review, which its body does not describe.
+ */
 export function draftFromItem(item: GithubItem) {
-  const description = [item.url, item.body.trim()].filter(Boolean).join('\n\n')
   return {
     title: item.title,
-    description,
+    description: `參考 GitHub ${item.kind === 'pr' ? 'PR' : 'Issue'} ${item.repo}#${item.number}：${item.url}`,
     ...(item.kind === 'pr' ? { branch: item.headRefName, baseBranch: item.baseRefName } : {}),
     github: githubRefOf(item),
   }
