@@ -52,7 +52,7 @@ export function StandaloneTerminal({
       if (disposed || !hostRef.current) return
       const instance = new Terminal({
         fontSize: 12,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontFamily: '"Google Sans Code", Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
         theme: { background: '#191919', foreground: '#e6e6e6', cursor: '#4c9bf5' },
         linkHandler: {

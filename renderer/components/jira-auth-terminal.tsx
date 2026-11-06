@@ -22,6 +22,7 @@ export function JiraAuthTerminal({ output, active }: { output: string; active: b
         convertEol: true,
         cursorBlink: true,
         fontSize: 12,
+        fontFamily: '"Google Sans Code", Menlo, Monaco, "Courier New", monospace',
         rows: 12,
         theme: { background: '#111827' },
         linkHandler: {

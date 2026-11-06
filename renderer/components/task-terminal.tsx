@@ -286,7 +286,7 @@ export function TaskTerminal({
 
       const term = new Terminal({
         fontSize: 12,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontFamily: '"Google Sans Code", Menlo, Monaco, "Courier New", monospace',
         cursorBlink: true,
         disableStdin: readOnlyRef.current,
         // Option+drag selects in xterm itself even while tmux or the agent owns the mouse.
