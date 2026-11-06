@@ -30,7 +30,7 @@ export interface SessionBackend {
   readonly kind: 'pty' | 'tmux'
   /**
    * Start a session, replacing any running one for `key`. With no `command`
-   * and no `fresh`, a backend whose sessions outlive core re-attaches instead.
+   * and no `fresh`, a running session is re-attached instead, never ended.
    */
   start(key: string, options: SessionStartOptions): Promise<StartResult>
   write(key: string, data: string): void

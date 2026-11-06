@@ -630,8 +630,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     let fresh = p.fresh === true
     if (p.launch) {
       const intent = obj<LaunchIntent>(p.launch, 'launch')
-      // An agent that is still running (tmux kept it through a restart) is
-      // re-attached, not restarted with --resume on top of itself.
+      // An agent that is still running is re-attached, not restarted with
+      // --resume on top of itself.
       if (intent.resume && (await sessions.isAlive(key))) {
         fresh = false
       } else {
