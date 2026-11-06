@@ -4,7 +4,7 @@ import {
   useAnimationControls,
   useReducedMotion,
 } from 'motion/react'
-import { AlertTriangle, Plus } from 'lucide-react'
+import { AlertTriangle, Loader2, Plus } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
@@ -19,6 +19,7 @@ import {
   resetTaskRun,
   termSessionExists,
 } from '@/lib/api'
+import { cardMove } from '@/lib/board-moves'
 import { createEnterVariants } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import {
@@ -51,6 +52,9 @@ interface KanbanBoardProps {
   onSelectTask: (taskId: string) => void
   /** A click on a board card: its sheet, not the workspace. */
   onOpenTaskSheet: (taskId: string) => void
+  /** A Backlog card to start, staying on the current page; null once taken. */
+  startRequest: string | null
+  onStartRequest: (taskId: string | null) => void
   /** Open the new-task dialog. */
   onNewTask: () => void
   /** 'workspace' shows the task workspace; 'board' and 'github' show the board page. */
@@ -69,6 +73,38 @@ interface LaunchEntry {
 
 /** Below this width the task rail starts folded: open beside a docked inspector, it would leave the terminal narrower than its toolbar. */
 const RAIL_ROOMY_QUERY = '(min-width: 1280px)'
+
+/** A drag backwards, waiting for the user to accept what it costs. */
+interface PullBack {
+  task: Task
+  from: ColumnId
+  to: ColumnId
+}
+
+function pullBackCopy({ task, from, to }: PullBack) {
+  if (from === 'in_progress') {
+    return {
+      title: `退回「${task.title}」到 Backlog？`,
+      body: '這會停止 Agent，並捨棄這張卡在本地的 commit、未 commit 的變更、artifacts 與對話（遠端分支不動）。此操作無法復原。',
+      confirm: '退回 Backlog',
+      destructive: true,
+    }
+  }
+  if (to === 'backlog') {
+    return {
+      title: `把「${task.title}」移回 Backlog？`,
+      body: '卡片回到 Backlog 後可以再編輯。之後開始時會重新建立 worktree，並重新跑一次任務。',
+      confirm: '移回 Backlog',
+      destructive: false,
+    }
+  }
+  return {
+    title: `重新執行「${task.title}」？`,
+    body: '這會重新建立 worktree，並用同樣的標題與描述重新啟動 Agent。',
+    confirm: '重新執行',
+    destructive: false,
+  }
+}
 
 function initialRailCollapsed(): boolean {
   if (typeof window === 'undefined') return false
@@ -124,6 +160,8 @@ export function KanbanBoard({
   selectedTaskId,
   onSelectTask,
   onOpenTaskSheet,
+  startRequest,
+  onStartRequest,
   onNewTask,
   view,
   onViewChange,
@@ -153,6 +191,9 @@ export function KanbanBoard({
 
   const [confirmDone, setConfirmDone] = useState<Task | null>(null)
   const [completeSlaves, setCompleteSlaves] = useState(false)
+  const [pullBack, setPullBack] = useState<PullBack | null>(null)
+  const [pullingBack, setPullingBack] = useState(false)
+  const [pullBackError, setPullBackError] = useState<string | null>(null)
 
   const wasLaunched = (task: Task) => task.launchedAt != null
 
@@ -216,6 +257,13 @@ export function KanbanBoard({
     void armLaunch(withStamp)
   }
 
+  useEffect(() => {
+    if (!startRequest) return
+    const task = board.backlog.find((t) => t.id === startRequest)
+    if (task) startTask(task)
+    onStartRequest(null)
+  }, [startRequest]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Send a running card back to Backlog instead of relaunching it on the spot.
   // Everything the run produced is thrown away — code, artifacts,
   // conversation — so the later 開始 starts over from the base branch. The
@@ -276,6 +324,33 @@ export function KanbanBoard({
     for (const t of finishing) await onTaskDone(t.id)
   }
 
+  const dropCard = (task: Task, from: ColumnId, to: ColumnId) => {
+    const move = cardMove(from, to)
+    if (move === 'start') startTask(task)
+    else if (move === 'complete') completeTask(task)
+    else if (move) {
+      setPullBackError(null)
+      setPullBack({ task, from, to })
+    }
+  }
+
+  const confirmPullBack = async () => {
+    if (!pullBack) return
+    setPullingBack(true)
+    setPullBackError(null)
+    try {
+      await resetTaskBackToBacklog(pullBack.task)
+      if (pullBack.to === 'in_progress') onStartRequest(pullBack.task.id)
+      setPullBack(null)
+    } catch (err) {
+      setPullBackError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPullingBack(false)
+    }
+  }
+
+  const pullBackText = pullBack ? pullBackCopy(pullBack) : null
+
   const [railCollapsed, setRailCollapsed] = useState(initialRailCollapsed)
   const changeRailCollapsed = (collapsed: boolean) => {
     setRailCollapsed(collapsed)
@@ -295,6 +370,7 @@ export function KanbanBoard({
             progress={progress}
             selectedTaskId={selectedTaskId ?? null}
             onSelectTask={onOpenTaskSheet}
+            onDropCard={dropCard}
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onOpenTaskTerminal={onOpenTaskTerminal}
@@ -492,6 +568,58 @@ export function KanbanBoard({
                   {completeSlaves && runningSlaves.length > 0
                     ? `完成並清理 ${runningSlaves.length + 1} 張`
                     : '完成並清理'}
+                </Button>
+              </div>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {pullBack && pullBackText && (
+          <DialogShell
+            key="confirm-pull-back-dialog"
+            title="移動任務"
+            saving={pullingBack}
+            onClose={() => setPullBack(null)}
+            contentClassName="max-w-md rounded-lg p-5"
+          >
+            <div className="space-y-5">
+              <div className="flex items-start gap-3">
+                {pullBackText.destructive && (
+                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+                    <AlertTriangle className="size-5" />
+                  </span>
+                )}
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-lg font-semibold tracking-tight">{pullBackText.title}</h2>
+                  <p className="text-base leading-6 text-muted-foreground">{pullBackText.body}</p>
+                </div>
+              </div>
+              {pullBackError && (
+                <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                  {pullBackError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={pullingBack}
+                  onClick={() => setPullBack(null)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant={pullBackText.destructive ? 'destructive' : 'default'}
+                  size="sm"
+                  className="rounded-full active:scale-95 motion-reduce:transform-none"
+                  disabled={pullingBack}
+                  onClick={() => void confirmPullBack()}
+                >
+                  {pullingBack && <Loader2 className="animate-spin" />}
+                  {pullBackText.confirm}
                 </Button>
               </div>
             </div>

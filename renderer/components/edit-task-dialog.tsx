@@ -1,6 +1,6 @@
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { GitBranch, Loader2, Network, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
+import { GitBranch, Loader2, Network, Play, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { fieldClass as F } from '@/components/ui/field'
@@ -71,6 +71,8 @@ interface EditTaskDialogProps {
   /** Master cards an ordinary card can be put under. */
   masters?: Array<{ id: string; title: string }>
   onSubmit: (payload: EditTaskPayload) => void
+  /** Start a Backlog card; `edits` are saved first when the form holds any. */
+  onStart: (edits: EditTaskPayload | null) => void
   onClose: () => void
 }
 
@@ -88,6 +90,7 @@ export function EditTaskDialog({
   defaultAutoMode = true,
   masters = [],
   onSubmit,
+  onStart,
   onClose,
 }: EditTaskDialogProps) {
   const [masterId, setMasterId] = useState('')
@@ -203,7 +206,8 @@ export function EditTaskDialog({
     autoMode !== (displayedTask.autoMode ?? defaultAutoMode) ||
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '') ||
-    branch.trim() !== displayedTask.branch)
+    branch.trim() !== displayedTask.branch ||
+    masterId !== (displayedTask.masterId ?? ''))
 
   const handleClose = () => {
     if (saving) return
@@ -262,19 +266,23 @@ export function EditTaskDialog({
 
   const isMaster = displayedTask?.role === 'master'
 
-  const handleSubmit = () => {
-    if (!canSubmit) return
+  const editsPayload = (): EditTaskPayload => {
     const shared = { title: title.trim(), description: description.trim(), agentCli, model, effort, autoMode }
-    if (isMaster) {
-      onSubmit(shared)
-      return
-    }
-    onSubmit({
+    if (isMaster) return shared
+    return {
       ...shared,
       ...(projectPath ? { projectPath, baseBranch: baseBranch || null } : {}),
       branch: branch.trim(),
       ...(masterId !== (displayedTask?.masterId ?? '') ? { masterId: masterId || null } : {}),
-    })
+    }
+  }
+
+  const handleSubmit = () => {
+    if (canSubmit) onSubmit(editsPayload())
+  }
+
+  const handleStart = () => {
+    if (canSubmit) onStart(isDirty ? editsPayload() : null)
   }
 
   const content = (
@@ -478,17 +486,25 @@ export function EditTaskDialog({
                 </Button>
               ) : (
                 <>
-              <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving} className="flex-1 rounded-full">
-                取消
-              </Button>
               <Button
+                variant="outline"
                 size="sm"
                 onClick={handleSubmit}
                 disabled={!canSubmit}
-                className={cn('flex-[2] rounded-full', saving && 'opacity-80')}
+                className={cn('flex-1 rounded-full', saving && 'opacity-80')}
               >
                 {saving && <Loader2 className="animate-spin" />}
                 {saving ? '儲存中…' : '儲存變更'}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleStart}
+                disabled={!canSubmit}
+                title={isDirty ? '儲存變更並開始執行' : '開始執行'}
+                className="flex-1 rounded-full"
+              >
+                <Play />
+                開始
               </Button>
                 </>
               )}

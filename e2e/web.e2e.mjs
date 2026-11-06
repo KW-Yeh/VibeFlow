@@ -546,6 +546,30 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     assert.deepEqual(await listed(), [107, 105, 103])
   }
 
+  // Dragging a card starts its real agent; opening the card afterwards keeps
+  // that same process rather than replacing it with a shell.
+  await page.evaluate(
+    (projectPath) => window.vibeflow.createTask({ title: 'Drag starts agent', projectPath, baseBranch: null }),
+    projectPath
+  )
+  await page.reload()
+  await sidebar.getByRole('button', { name: '看板', exact: true }).click()
+  const draggedCard = page.getByRole('button', { name: '開啟任務：Drag starts agent', exact: true })
+  await draggedCard.getByTitle('拖拉以移動卡片').dragTo(page.locator('section[data-column="in_progress"]'))
+  await page.waitForFunction(async () => {
+    const { board } = await window.vibeflow.getState()
+    return board.in_progress.some((task) => task.title === 'Drag starts agent' && task.worktreePath)
+  })
+  assert.equal(await sidebar.getByRole('button', { name: '看板', exact: true }).getAttribute('aria-current'), 'page')
+  await page.waitForFunction(() => document.querySelectorAll('[aria-label="開啟任務：Drag starts agent"]').length === 1)
+  await draggedCard.click()
+  await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
+  await waitForTerminal(page, 'fake-claude ready')
+  await page.locator('.xterm-helper-textarea:visible').last().focus()
+  await page.keyboard.type('still-the-agent')
+  await page.keyboard.press('Enter')
+  await waitForTerminal(page, 'got:still-the-agent')
+
   // Another origin cannot open the socket, even from the same browser.
   const other = await browser.newPage()
   await other.goto('about:blank')
@@ -799,9 +823,69 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await sheet.waitFor({ state: 'detached' })
   assert.equal(await sidebar.getByRole('button', { name: '看板', exact: true }).getAttribute('aria-current'), 'page')
   await card('Sheet card renamed').click()
+  assert.equal(await sheet.getByRole('button', { name: '取消' }).count(), 0)
   await sheet.getByRole('button', { name: /^按住刪除任務/ }).click({ delay: 1400 })
   await card('Sheet card renamed').waitFor({ state: 'detached' })
   assert.equal(core.handlers['vibeflow:getState']().board.backlog.length, 0)
+
+  // 開始 in the sheet saves pending edits and starts the card; the board stays.
+  await core.handlers['vibeflow:createTask']({ title: 'Start from sheet', projectPath, baseBranch: null })
+  await page.reload()
+  await card('Start from sheet').click()
+  await sheet.getByLabel('任務標題').fill('Started from sheet')
+  await sheet.getByRole('button', { name: '開始', exact: true }).click()
+  await sheet.waitFor({ state: 'detached' })
+  const columnOf = (title) => {
+    const { board } = core.handlers['vibeflow:getState']()
+    return Object.keys(board).find((column) => board[column].some((task) => task.title === title))
+  }
+  const waitForColumn = async (title, column) => {
+    for (let i = 0; i < 100 && columnOf(title) !== column; i += 1) await page.waitForTimeout(100)
+    assert.equal(columnOf(title), column, `${title} ends up in ${column}`)
+    // The copy it left behind animates out; it must not linger as a second card.
+    for (let i = 0; i < 50 && await card(title).count() !== 1; i += 1) await page.waitForTimeout(100)
+    assert.equal(await card(title).count(), 1)
+  }
+  await waitForColumn('Started from sheet', 'in_progress')
+  assert.equal(await sidebar.getByRole('button', { name: '看板', exact: true }).getAttribute('aria-current'), 'page')
+
+  // Only the grip drags, and only the allowed columns take the card.
+  const drag = (title, column) => card(title).getByTitle('拖拉以移動卡片')
+    .dragTo(page.locator(`section[data-column="${column}"]`))
+  await core.handlers['vibeflow:createTask']({ title: 'Dragged card', projectPath, baseBranch: null })
+  await page.reload()
+  await card('Dragged card').waitFor()
+  await drag('Dragged card', 'done')
+  assert.equal(columnOf('Dragged card'), 'backlog')
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  await drag('Dragged card', 'in_progress')
+  await waitForColumn('Dragged card', 'in_progress')
+
+  // Backwards costs the run, so it waits for a yes.
+  await drag('Dragged card', 'backlog')
+  const moveDialog = page.getByRole('dialog', { name: '移動任務' })
+  await moveDialog.getByRole('button', { name: '取消' }).click()
+  await moveDialog.waitFor({ state: 'detached' })
+  assert.equal(columnOf('Dragged card'), 'in_progress')
+  await drag('Dragged card', 'backlog')
+  await moveDialog.getByRole('button', { name: '退回 Backlog' }).click()
+  await waitForColumn('Dragged card', 'backlog')
+
+  // Forward to Done is the 完成 flow; back from Done needs a yes too.
+  await drag('Dragged card', 'in_progress')
+  await waitForColumn('Dragged card', 'in_progress')
+  await drag('Dragged card', 'done')
+  await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
+  await waitForColumn('Dragged card', 'done')
+  await drag('Dragged card', 'in_progress')
+  await moveDialog.getByRole('button', { name: '重新執行' }).click()
+  await waitForColumn('Dragged card', 'in_progress')
+  await drag('Dragged card', 'done')
+  await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
+  await waitForColumn('Dragged card', 'done')
+  await drag('Dragged card', 'backlog')
+  await moveDialog.getByRole('button', { name: '移回 Backlog' }).click()
+  await waitForColumn('Dragged card', 'backlog')
 })
 
 test('Web UI: terminal grid opens the card column directory and selected folders, keeps and closes sessions', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {

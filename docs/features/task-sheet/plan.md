@@ -11,3 +11,6 @@
 5. Inbox: `draftFromItem` / `draftFromTicket` build a reference description;
    GitHub detail and Jira detail「建立卡片」/「再建一張」open the sheet.
 6. e2e (`e2e/web.e2e.mjs`) follows the new flows; docs/README.md lists this.
+7. Backlog sheet: 取消 → 開始 (`onStart`, saves pending edits first).
+8. Board: grip on each card, `cardMove` rules, column drop targets, confirm
+   dialog for backward drags; e2e drags every allowed move and the refused one.

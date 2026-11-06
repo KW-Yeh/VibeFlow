@@ -6,6 +6,7 @@ import {
   GitBranch,
   GitPullRequest,
   GitPullRequestDraft,
+  GripVertical,
   Layers,
   Loader2,
   MoreHorizontal,
@@ -23,6 +24,7 @@ import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { openExternal } from '@/lib/api'
+import { cardMove } from '@/lib/board-moves'
 import { GITHUB_STATE_CLASS, GITHUB_STATE_LABEL } from '@/lib/github-display'
 import { cn } from '@/lib/utils'
 import type {
@@ -288,6 +290,8 @@ function TaskCard({
   terminals,
   onShowTerminal,
   slaves,
+  onDragStart,
+  onDragEnd,
 }: {
   task: Task
   column: ColumnId
@@ -302,6 +306,8 @@ function TaskCard({
   onOpenTerminal: () => void
   terminals: GridTerminal[]
   onShowTerminal: (sessionKey: string) => void
+  onDragStart: () => void
+  onDragEnd: () => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(
@@ -340,6 +346,21 @@ function TaskCard({
     >
       {/* Header: keep the terminal and menu actions in fixed positions. */}
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          draggable
+          title="拖拉以移動卡片"
+          onClick={(event) => event.stopPropagation()}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData('text/plain', task.id)
+            if (cardRef.current) event.dataTransfer.setDragImage(cardRef.current, 12, 12)
+            onDragStart()
+          }}
+          onDragEnd={onDragEnd}
+          className="-my-1 -ml-1 flex shrink-0 cursor-grab touch-none items-center rounded-xs py-1 text-muted-foreground/60 transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-3.5" />
+        </span>
         {isMaster ? (
           <Network className="size-3 shrink-0 text-master" />
         ) : (
@@ -525,6 +546,7 @@ export interface BoardColumnsProps {
   progress: Record<string, TaskProgress>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
+  onDropCard: (task: Task, from: ColumnId, to: ColumnId) => void
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onOpenTaskTerminal: (taskId: string) => void
@@ -544,6 +566,7 @@ export function BoardColumns({
   taskLinks,
   selectedTaskId,
   onSelectTask,
+  onDropCard,
   onEditTask,
   onDeleteTask,
   onOpenTaskTerminal,
@@ -551,6 +574,12 @@ export function BoardColumns({
   onShowTaskTerminal,
   onNewTask,
 }: BoardColumnsProps) {
+  const [dragging, setDragging] = useState<{ task: Task; from: ColumnId } | null>(null)
+  const [dropTarget, setDropTarget] = useState<ColumnId | null>(null)
+  const endDrag = () => {
+    setDragging(null)
+    setDropTarget(null)
+  }
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
 
@@ -623,8 +652,35 @@ export function BoardColumns({
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
         {COLUMNS.map((column) => {
           const tasks = visible(column)
+          const droppable = dragging !== null && cardMove(dragging.from, column) !== null
           return (
-            <section key={column} className="flex min-h-0 flex-col gap-2">
+            <section
+              key={column}
+              data-column={column}
+              onDragOver={(event) => {
+                if (!droppable) return
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+                if (dropTarget !== column) setDropTarget(column)
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setDropTarget((current) => (current === column ? null : current))
+                }
+              }}
+              onDrop={(event) => {
+                if (!droppable || !dragging) return
+                event.preventDefault()
+                onDropCard(dragging.task, dragging.from, column)
+                endDrag()
+              }}
+              className={cn(
+                'flex min-h-0 flex-col gap-2 rounded-md transition-[background-color,opacity,box-shadow] motion-reduce:transition-none',
+                droppable && 'bg-accent/30',
+                dropTarget === column && 'bg-accent/60 shadow-[0_0_0_2px] shadow-primary/40',
+                dragging && !droppable && dragging.from !== column && 'opacity-40'
+              )}
+            >
               <div className="flex shrink-0 items-center gap-2 px-1">
                 <span
                   className={cn('size-1.5 shrink-0 rounded-full', COLUMN_DOT[column])}
@@ -668,6 +724,8 @@ export function BoardColumns({
                         onOpenTerminal={() => onOpenTaskTerminal(task.id)}
                         terminals={taskTerminals.filter((terminal) => terminal.taskId === task.id)}
                         onShowTerminal={onShowTaskTerminal}
+                        onDragStart={() => setDragging({ task, from: column })}
+                        onDragEnd={endDrag}
                       />
                       {slaves && slaves.length > 0 && (
                         <>

@@ -67,6 +67,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card |
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
+| `board-moves.test.mjs` | `renderer/lib/board-moves.ts` | which column drops are allowed and what each means |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
 | `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, master ↔ card messages, VibeFlow's notes to a master |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |

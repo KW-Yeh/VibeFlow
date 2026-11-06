@@ -22,7 +22,7 @@ the project folder is chosen **per task** at creation time (there is no global
 - **Sessions**: tmux (`tmux -L vibeflow`, sessions outlive core) or `node-pty` (Windows / no tmux)
 - **Renderer**: Next.js 16 (Pages Router) + React 19 + TypeScript, static export (`output: 'export'`)
 - **Styling**: Tailwind CSS v4 + shadcn/ui foundation (`cn`, `Button`, design tokens, `components.json`)
-- **Kanban DnD**: `@hello-pangea/dnd`
+- **Kanban DnD**: native HTML5 drag from the card's grip (`renderer/lib/board-moves.ts` holds the allowed moves); `@hello-pangea/dnd` is an unused leftover in `package.json`
 - **Terminal**: `@xterm/xterm` + `@xterm/addon-fit` (renderer) ↔ WebSocket ↔ core (`node-pty`, native)
 - **Persistence**: core's own `JsonStore` (`packages/core/src/json-store.ts`) — same `vibeflow-state.json` the former Electron app's electron-store wrote
 - **Diff viewer**: `react-diff-viewer-continued`

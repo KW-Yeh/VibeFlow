@@ -149,6 +149,8 @@ export default function HomePage() {
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  // A card to start once the board that holds its latest state has rendered.
+  const [startRequest, setStartRequest] = useState<string | null>(null)
 
   // Remote share state
   const [remoteShareOpen, setRemoteShareOpen] = useState(false)
@@ -434,8 +436,8 @@ export default function HomePage() {
     if (editTask && !editColumn) setEditTask(null)
   }, [editTask, editColumn])
 
-  const handleSaveEdit = async (payload: EditTaskPayload) => {
-    if (!editTask) return
+  const saveEdit = async (payload: EditTaskPayload): Promise<boolean> => {
+    if (!editTask) return false
     setSavingEdit(true)
     setEditError(null)
     try {
@@ -453,12 +455,24 @@ export default function HomePage() {
         masterId: payload.masterId,
       })
       if (state) setBoard(state.board)
-      setEditTask(null)
+      return true
     } catch (err) {
       setEditError(err instanceof Error ? err.message : String(err))
+      return false
     } finally {
       setSavingEdit(false)
     }
+  }
+
+  const handleSaveEdit = async (payload: EditTaskPayload) => {
+    if (await saveEdit(payload)) setEditTask(null)
+  }
+
+  const handleStartFromSheet = async (edits: EditTaskPayload | null) => {
+    if (!editTask) return
+    if (edits && !(await saveEdit(edits))) return
+    setEditTask(null)
+    setStartRequest(editTask.id)
   }
 
   const handleTaskDone = async (taskId: string) => {
@@ -555,6 +569,8 @@ export default function HomePage() {
                 <KanbanBoard
                   onSelectTask={openTask}
                   onOpenTaskSheet={handleOpenEditTask}
+                  startRequest={startRequest}
+                  onStartRequest={setStartRequest}
                   onNewTask={handleOpenNewTask}
                   board={board}
                   onBoardChange={handleBoardChange}
@@ -660,6 +676,7 @@ export default function HomePage() {
                 .filter((t) => t.role === 'master')
                 .map((t) => ({ id: t.id, title: t.title }))}
               onSubmit={handleSaveEdit}
+              onStart={(edits) => void handleStartFromSheet(edits)}
               onClose={() => setEditTask(null)}
             />
             <SettingsDialog
