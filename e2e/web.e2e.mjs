@@ -439,6 +439,16 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.setViewportSize({ width: 1280, height: 800 })
   await waitForTerminalLayout(page)
 
+  // A reload opens the running agent again: same process, its output replayed.
+  await page.reload()
+  await sidebar.getByRole('button', { name: '任務詳情' }).click()
+  await runningList.getByRole('button', { name: /E2E card/ }).click()
+  await waitForTerminal(page, 'got:spanning-paths')
+  await page.locator('.xterm-helper-textarea').first().focus()
+  await page.keyboard.type('after-reload')
+  await page.keyboard.press('Enter')
+  await waitForTerminal(page, 'got:after-reload')
+
   // Diff: the file the agent wrote shows up.
   await page.getByRole('tab', { name: 'Git diff' }).click()
   await page.getByText('fake-agent-output.txt').first().waitFor({ timeout: 20_000 })

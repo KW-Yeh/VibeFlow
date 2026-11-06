@@ -63,13 +63,19 @@ export function shellArgs(shell: string, command?: string): string[] {
   return ['-NoProfile']
 }
 
+interface PtySession {
+  proc: nodePty.IPty
+  cwd: string
+  onExit?: () => void
+}
+
 /**
  * Sessions owned by this process: node-pty children of core. They end when
  * core ends. This is the only backend on Windows, where there is no tmux.
  */
 export class PtyBackend implements SessionBackend {
   readonly kind = 'pty' as const
-  private readonly sessions = new Map<string, nodePty.IPty>()
+  private readonly sessions = new Map<string, PtySession>()
   /**
    * Scrollback ring buffer. It survives `kill` so a remounting terminal can
    * replay what happened before it unmounted, and is cleared when a new
@@ -91,6 +97,13 @@ export class PtyBackend implements SessionBackend {
 
   async start(key: string, options: SessionStartOptions): Promise<StartResult> {
     const { cwd, command, onExit, cols = 80, rows = 24, fresh = false } = options
+    const running = this.sessions.get(key)
+    if (running && !command && !fresh && running.cwd === cwd) {
+      running.onExit = onExit
+      if (options.cols && options.rows) this.resize(key, options.cols, options.rows)
+      return { pid: running.proc.pid, scrollback: this.scrollback(key), attached: true }
+    }
+
     // Capture scrollback before the old PTY is killed. A new command means a new
     // phase (planning → execution), and an explicitly fresh interactive shell
     // is a new terminal session. Both start with an empty buffer; ordinary
@@ -109,7 +122,8 @@ export class PtyBackend implements SessionBackend {
       cols,
       rows,
     })
-    this.sessions.set(key, proc)
+    const session: PtySession = { proc, cwd, onExit }
+    this.sessions.set(key, session)
 
     proc.onData((data) => {
       this.appendScrollback(key, data)
@@ -122,9 +136,9 @@ export class PtyBackend implements SessionBackend {
       // Guard against a stale exit: a kill-and-restart replaces the map entry
       // before the old process's exit event fires, and that old event must not
       // deregister (or fire callbacks for) the new session.
-      if (this.sessions.get(key) === proc) {
+      if (this.sessions.get(key) === session) {
         this.sessions.delete(key)
-        onExit?.()
+        session.onExit?.()
       }
     })
 
@@ -132,19 +146,19 @@ export class PtyBackend implements SessionBackend {
   }
 
   write(key: string, data: string): void {
-    this.sessions.get(key)?.write(data)
+    this.sessions.get(key)?.proc.write(data)
   }
 
   resize(key: string, cols: number, rows: number): void {
     try {
-      this.sessions.get(key)?.resize(Math.max(cols, 1), Math.max(rows, 1))
+      this.sessions.get(key)?.proc.resize(Math.max(cols, 1), Math.max(rows, 1))
     } catch {
       // resize can throw if the pty already exited — safe to ignore
     }
   }
 
   private killNow(key: string): void {
-    const proc = this.sessions.get(key)
+    const proc = this.sessions.get(key)?.proc
     if (!proc) return
     intentionalKills.add(proc)
     try {
