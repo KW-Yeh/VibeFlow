@@ -7,7 +7,14 @@ import { spawn } from 'node:child_process'
 const files = process.argv.slice(2)
 const child = spawn(
   process.execPath,
-  ['--test', ...(files.length ? files : ['./test/**/*.test.mjs'])],
+  [
+    '--test',
+    // A node-pty session on Windows holds handles after it ends, so a finished
+    // test file would never exit (see check-node-pty.mjs). Elsewhere a file that
+    // does not exit is a real leak and should stay visible.
+    ...(process.platform === 'win32' ? ['--test-force-exit'] : []),
+    ...(files.length ? files : ['./test/**/*.test.mjs']),
+  ],
   {
     stdio: 'inherit',
     env: {

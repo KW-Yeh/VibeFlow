@@ -58,7 +58,10 @@ jobs:
           npx tsc --noEmit -p tsconfig.json
           npx tsc --noEmit -p renderer/tsconfig.json
 
+      # Normally under 2 minutes; without a limit a hung test file holds the job
+      # for the runner's 6 hours.
       - name: Unit, integration and security tests
+        timeout-minutes: 10
         run: npm test
 
       # Runners have no Turbopack-friendly IPC; build with webpack.
