@@ -7,6 +7,7 @@
  */
 import type { AgentCliId } from './agents'
 import type { BoardCliLaunchInfo } from './board-cli'
+import type { LibraryLaunchInfo } from './library'
 import type { Task } from './store'
 
 /**
@@ -372,6 +373,13 @@ export interface LaunchOptions {
    * read-only for the agent.
    */
   boardCli?: BoardCliLaunchInfo
+  /**
+   * VibeFlow's own skill / prompt / script library for this launch. Claude
+   * loads it as a session-only plugin; Codex gets a CODEX_HOME whose `skills/`
+   * VibeFlow assembled, since Codex discovers skills only from there. Absent →
+   * nothing is enabled and no library flag is added.
+   */
+  library?: LibraryLaunchInfo
   /** Jev's scout analysis for this run; added to the first prompt only. */
   preface?: LaunchPreface
   /**
@@ -417,7 +425,14 @@ function assembleCommand(
       : ''
     const modelFlag = model ? ` --model ${model}` : ''
     const effortFlag = effort && effort !== 'auto' ? ` --effort ${effort}` : ''
-    const flags = `--chrome${claudePermissionFlag(opts?.autoMode)}${modelFlag}${effortFlag}${settings}${addDir}`
+    // Library skills ride in as a session-only plugin; --add-dir is what makes
+    // its scripts readable and runnable from inside the worktree.
+    const library = opts?.library
+    const libraryFlags = library
+      ? ` --plugin-dir ${shellQuote(toShellPath(library.pluginDir))}` +
+        ` --add-dir ${shellQuote(toShellPath(library.libraryDir))}`
+      : ''
+    const flags = `--chrome${claudePermissionFlag(opts?.autoMode)}${modelFlag}${effortFlag}${settings}${addDir}${libraryFlags}`
     const sysFlag = systemPrompt
       ? ` --append-system-prompt ${shellQuote(systemPrompt)}`
       : ''
@@ -441,7 +456,12 @@ function assembleCommand(
       model ? `--model ${model}` : '',
       combined ? shellQuote(combined) : '',
     ].filter(Boolean)
-    cmd = `${['codex', ...args].join(' ')}\r`
+    // Codex discovers skills only from $CODEX_HOME/skills, so the library is
+    // delivered by pointing the launch at the home VibeFlow assembled.
+    const codexHome = opts?.library
+      ? `CODEX_HOME=${shellQuote(toShellPath(opts.library.codexHome))} `
+      : ''
+    cmd = `${codexHome}${['codex', ...args].join(' ')}\r`
   }
   // ponytail: warn at 200KB — macOS ARG_MAX is 1MB but prompts can grow
   if (cmd.length > 200_000) console.warn(`[VibeFlow] launch command is ${cmd.length} bytes — approaching ARG_MAX`)
@@ -509,7 +529,10 @@ export function buildAgentCommand(
 ): string {
   const agent = taskAgent(task)
   const model = taskModel(task)
-  const custom = resolveSystemPrompt(systemPrompt)
+  // Enabled Library prompt snippets come before the user's own system prompt.
+  const custom = [opts?.library?.promptText?.trim(), resolveSystemPrompt(systemPrompt)]
+    .filter(Boolean)
+    .join('\n\n')
   const canWrite = Boolean(opts?.boardCli?.cliPath)
   const role = task.role === 'master'
     ? masterSystemPrompt({ canWrite, autoMode: opts?.autoMode === true })
@@ -517,7 +540,7 @@ export function buildAgentCommand(
       ? slaveSystemPrompt({ canWrite })
       : null
   // A master's card answers to the master alone, so the user's custom prompt
-  // (written for cards the user drives) is left out.
+  // and Library snippets (written for cards the user drives) are left out.
   const sys = task.masterId && task.role !== 'master'
     ? role ?? ''
     : role ? [custom, role].filter(Boolean).join('\n\n') : custom

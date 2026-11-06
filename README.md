@@ -28,7 +28,7 @@ vibeflow
 - **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
 - **Jira 工作收件匣**：安裝 [Atlassian CLI（Windows）](https://developer.atlassian.com/cloud/acli/guides/install-windows/) 或 [Atlassian CLI（macOS）](https://developer.atlassian.com/cloud/acli/guides/install-macos/)，再到設定登入，就能在「收件匣」的 Jira 分頁以固定四欄查看指派給自己的 ticket、選擇抓取範圍、開啟附件，並選擇本機專案建立 Backlog 卡片。
 - **GitHub Issues 與 PRs**：使用已登入的 `gh` 跨所有相關 repo 顯示 open 項目，即使該 repo 尚未出現在看板；建卡時可選擇本機專案資料夾。
-- **內建 skill，可自行調整**：每個人的 Library（設定 → Library）都附帶 `visual-parity`、`pr` 兩個 skill，可以直接編輯或刪除，隨時能還原成 VibeFlow 出貨的版本；沒改過的會跟著 VibeFlow 升級更新。Library 只負責保存，啟動任務時不會載入任何 Library 項目——agent 只收到你在設定填的 system prompt 與卡片內容。`visual-parity` 需要 Python 與 `pip install playwright && playwright install chromium`。
+- **內建 skill，可自行調整**：每個人的 Library（設定 → Library）都附帶 `visual-parity`、`pr`、`pr-watch`、`address-review` 四個 skill，可以直接編輯、停用或刪除，隨時能還原成 VibeFlow 出貨的版本；沒改過的會跟著 VibeFlow 升級更新。啟用的 Library 項目會在啟動任務時投遞給 Claude 與 Codex。`pr-watch`：在卡片裡說「監聽這個 PR」，agent 會在背景等 PR 有新 review comment（交給 `address-review` 處理）或 base branch 前進（rebase）時才動作，PR merged／closed 就停止；需要 `gh` 已登入。`visual-parity` 需要 Python 與 `pip install playwright && playwright install chromium`。
 - **也能用指令操作**：`vibeflow task create` 不開 UI 直接建卡；agent 自己也能在看板上建立後續的卡片。
 
 ---

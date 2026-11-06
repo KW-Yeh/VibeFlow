@@ -51,7 +51,15 @@ test('buildAgentCommand — the card prompt is not swallowed by the variadic --a
   assert.match(cmd, /--add-dir '\/workspace\/project' -- '任務標題：修復登入流程/)
 })
 
-test('buildAgentCommand — sends only the custom system prompt and the card, no Library', () => {
+const LIBRARY = {
+  promptText: 'LIBRARY_MARKER',
+  pluginDir: '/tmp/library/plugin',
+  libraryDir: '/tmp/library',
+  codexHome: '/tmp/library/codex-home',
+  scripts: [],
+}
+
+test('buildAgentCommand — no enabled Library entry adds no Library flag', () => {
   const claude = buildAgentCommand(TASK, 'CUSTOM_MARKER', undefined, '/workspace/project')
   assert.ok(claude.includes(`--append-system-prompt 'CUSTOM_MARKER'`))
   assert.ok(claude.includes('任務標題：修復登入流程'))
@@ -60,6 +68,26 @@ test('buildAgentCommand — sends only the custom system prompt and the card, no
   assert.ok(codex.startsWith('codex '))
   assert.ok(!codex.includes('CODEX_HOME'))
   assert.ok(codex.includes('CUSTOM_MARKER'))
+})
+
+test('buildAgentCommand — Claude loads the Library as a plugin, prompts before the custom one', () => {
+  const cmd = buildAgentCommand(TASK, 'CUSTOM_MARKER', { library: LIBRARY }, '/workspace/project')
+  assert.ok(cmd.includes(`--plugin-dir '/tmp/library/plugin' --add-dir '/tmp/library'`))
+  assert.ok(cmd.indexOf('LIBRARY_MARKER') < cmd.indexOf('CUSTOM_MARKER'))
+  assert.ok(cmd.indexOf('--plugin-dir') < cmd.indexOf(' -- '), 'the prompt stays after the variadic --add-dir')
+})
+
+test('buildAgentCommand — Codex gets the Library CODEX_HOME and its prompts', () => {
+  const cmd = buildAgentCommand(CODEX_TASK, '', { library: LIBRARY }, '/workspace/project')
+  assert.ok(cmd.startsWith(`CODEX_HOME='/tmp/library/codex-home' codex `))
+  assert.ok(cmd.includes('LIBRARY_MARKER'))
+})
+
+test('buildAgentCommand — a master\'s card gets Library skills but not its prompts', () => {
+  const cmd = buildAgentCommand({ ...TASK, masterId: 'm1234567' }, 'CUSTOM_MARKER', { library: LIBRARY }, '/workspace/project')
+  assert.ok(cmd.includes('--plugin-dir'))
+  assert.ok(!cmd.includes('LIBRARY_MARKER'))
+  assert.ok(!cmd.includes('CUSTOM_MARKER'))
 })
 
 test('buildAgentCommand — Codex receives only card content without a custom prompt', () => {

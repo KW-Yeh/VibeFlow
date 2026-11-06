@@ -55,7 +55,8 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
-| `library.test.mjs` | `packages/core/src/library.ts` | library entries: naming, frontmatter, per-kind storage |
+| `library.test.mjs` | `packages/core/src/library.ts` | library entries: naming, frontmatter, per-kind storage; delivery (plugin dir, CODEX_HOME, prompt text) |
+| `builtin-pr-skills.test.mjs` | `builtin-skills/pr-watch/scripts/*.mjs`, `builtin-skills/address-review/scripts/*.mjs` | unanswered-item detection via the reply marker, watcher event priority/backoff/state, both scripts run against a fake `gh` |
 | `lock.test.mjs` | `packages/core/src/lock.ts` | one host per machine: takeover of dead locks, port, file mode |
 | `mailbox.test.mjs` | `packages/core/src/mailbox.ts` | typing for someone else: bracketed paste + Enter, no typing into a permission dialog, waits for a person to stop typing, never splits a delivery, sender tag |
 | `notifier.test.mjs` | `packages/core/src/notifier.ts` | what a master's card cannot say itself (permission dialog, launch failure, session end, unreported turn) reaches its master once, waits while it cannot take it, dropped once it is done |

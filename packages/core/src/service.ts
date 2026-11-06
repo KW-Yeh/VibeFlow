@@ -74,6 +74,7 @@ import {
   createEntry as createLibraryEntry,
   deleteEntry as deleteLibraryEntry,
   importEntry as importLibraryEntry,
+  libraryLaunchInfo,
   libraryPaths,
   libraryRoot,
   listLibrary,
@@ -317,8 +318,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const terminalDirectories = new Map<string, string>()
 
   // Codex writes rollouts under whichever CODEX_HOME the launch used: the
-  // user's, or the one the library assembled for runs started before launches
-  // stopped delivering Library skills. Resolved once, in the background.
+  // user's, or the one the library assembles. Resolved once, in the background.
   let libraryCodexHome: string | null = null
   void libraryRoot()
     .then((root) => { libraryCodexHome = libraryPaths(root).codexHome })
@@ -492,6 +492,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
   async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
     const settings = getSettings()
+    const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
     let route = settledRoute(task)
     const needsRoute = !taskModel(task) || task.effort === 'auto'
@@ -532,6 +533,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       {
         resume: intent.resume === true,
         includeTaskPrompt: intent.includeTaskPrompt !== false,
+        library: library ?? undefined,
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
         preface,
