@@ -17,6 +17,9 @@ async function until(check, what) {
   assert.fail(`timed out waiting for ${what}`)
 }
 
+// A killed session on Windows holds its folder until the process is gone.
+const removeFolder = (folder) => fs.rm(folder, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+
 async function setup(t) {
   // Keeps the user's shell rc files, and whatever they print, out of the test.
   const shell = process.env.SHELL
@@ -35,7 +38,7 @@ async function setup(t) {
     backend.shutdown()
     if (shell === undefined) delete process.env.SHELL
     else process.env.SHELL = shell
-    await fs.rm(cwd, { recursive: true, force: true })
+    await removeFolder(cwd)
   })
   return { backend, cwd, exits, output: () => output, clear: () => { output = '' } }
 }
@@ -65,7 +68,7 @@ test('opening a running session again joins it instead of replacing it', { skip 
 test('a fresh start, a new command or another folder still replaces the session', { skip }, async (t) => {
   const { backend, cwd, exits, output, clear } = await setup(t)
   const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-pty-other-'))
-  t.after(() => fs.rm(elsewhere, { recursive: true, force: true }))
+  t.after(() => removeFolder(elsewhere))
 
   const replacements = [
     ['fresh', { cwd, fresh: true }],
