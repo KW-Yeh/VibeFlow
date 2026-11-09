@@ -1,6 +1,6 @@
 ---
 name: visual-parity
-description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改版驗收），跑互動 E2E 流程並蒐集 console 與 network 錯誤，以及在 375/768/1440 三種寬度檢查 RWD 與水平溢出。當使用者提到「新舊頁面長得不一樣」「跟測試環境比對」「像素比對」「樣式對不上」「visual diff」「RWD 檢查」「開 dev server 驗收」「E2E 驗收」時使用。比對與驗收的結果寫進檔案，只回傳壓縮過的落差表。
+description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改版驗收）與 OpenCV 像素落差，跑互動 E2E 流程並蒐集 console 與 network 錯誤，以及在 375/768/1440 三種寬度檢查 RWD 與水平溢出。當使用者提到「新舊頁面長得不一樣」「跟測試環境比對」「像素比對」「樣式對不上」「visual diff」「RWD 檢查」「開 dev server 驗收」「E2E 驗收」時使用。比對與驗收的結果寫進檔案，只回傳壓縮過的落差表。
 ---
 
 # Visual Parity
@@ -17,13 +17,15 @@ description: 比對兩個已渲染網頁的樣式落差（新舊版對照 / 改�
 2. **不要把報告全文讀進 context。** stdout 的摘要已含「最常出現的落差屬性」；需要細節時用 `grep` 撈特定屬性或 selector，不要 `Read` 整份。
 3. **不要逐項修。** 先看 stdout 的 top differing properties——落差通常是少數幾條系統性規則（一條 `margin-bottom`、一組 token）造成的，不是幾十個獨立問題。
 4. **改完重跑一次全量比對**，而不是只驗剛改的那一項。
-5. **先選輸出目錄。** 在 VibeFlow 中，驗收證據預設寫入 `VIBEFLOW_ARTIFACTS_DIR` 的子目錄，暫存工作檔寫入 `VIBEFLOW_SCRATCH_DIR`；不要留在 agent scratchpad，也不要 commit 截圖或影片。
+5. **不要直接看截圖。** 要知道「畫面上哪裡不一樣」就跑 `pixel`，讀它的表；只有表裡標成 `pixel-only` 又看不懂的區域，才開那一張 montage。不要 Read 整頁截圖：長頁送進來會被縮小，1–2px 的落差根本看不到。
+6. **先選輸出目錄。** 在 VibeFlow 中，驗收證據預設寫入 `VIBEFLOW_ARTIFACTS_DIR` 的子目錄，暫存工作檔寫入 `VIBEFLOW_SCRATCH_DIR`；不要留在 agent scratchpad，也不要 commit 截圖或影片。
 
 ## 前置
 
 - `<skill-dir>` 是本 SKILL.md 所在的目錄；script 在 `<skill-dir>/scripts/parity.py`。
 - 下文指令寫 `python`；macOS / Linux 沒有 `python` 時改用 `python3`。
 - 需要 `pip install playwright && playwright install chromium`（macOS / Linux 用 `pip3` 或 `python3 -m pip`）；錄 `.mp4` 才需要 ffmpeg（選配）。
+- `pixel` 另外需要 `pip install opencv-python-headless numpy`；沒裝時只有 `pixel` 會停下並提示，其他模式照常。
 - 受測頁面要先跑起來。server 已經在跑就直接呼叫 `parity.py`；自簽憑證已預設接受（`ignore_https_errors`）。
 - 頁面需要登入或一次性 token 時，`--ref` / `--local` 直接給帶 token 的完整 URL，或先用 `flow` 的步驟登入。
   打到登入頁或拒絕頁時比對結果毫無意義——`matched` 異常地少就先檢查這個。
@@ -79,7 +81,7 @@ stdout 會回報四個數字：
 
 其他參數：`--width` / `--widths`、`--wait-selector`（等內容渲染完）、`--extra-wait`（動畫或延遲載入）。
 Exit code 1 表示有落差，0 表示完全一致。
-此模式比對 DOM／computed styles，不產生像素 diff 圖；需要像素級比對時另行執行，將兩張截圖及 diff 圖同樣存入 `PARITY_OUT`。
+此模式比對 DOM／computed styles，不產生像素 diff 圖；像素級比對用下面的 `pixel`。
 
 ### --map：手動指定對照
 
@@ -94,6 +96,35 @@ DOM 結構差太多時（舊 iframe vs 新 SSR），用 JSON 補：
 ```
 
 左邊是 ref 的 selector、右邊是 local 的。支援尾綴比對，不必寫完整路徑。
+
+## pixel — 畫面上真正看得到的落差
+
+```bash
+TMPDIR="$PARITY_SCRATCH" python "<skill-dir>/scripts/parity.py" pixel \
+  --ref "<ref-URL>" --local "<local-URL>" \
+  --mask "#clock" --mask ".ad-slot" \
+  --out "$PARITY_OUT/parity-pixel.md"
+```
+
+用 OpenCV 比對兩邊的整頁截圖，並和 computed style 交叉比對：
+
+- **對齊靠元素配對**（與 `diff` 相同，`--map` 同樣有效）。新頁上方多一塊 banner、某一欄多一張卡片時，只有那一塊會被回報，下面和旁邊的內容不會跟著全部變成落差。各欄位各自對齊。
+- **每個落差區域都有類型**：`shift`（附位移量，例如 `local moved +12,+0px`）、`color`（附前後顏色，例如 `#333333→#cc0000`）、`content`、`added`、`removed`。
+- **交叉比對的結果**（這是準確度的來源）：
+  - 區域旁列出「那裡有哪些 computed style 不同」→ 找到原因了，照那個屬性修。
+  - `pixel-only` → 畫面不同，但比對的 style 都相同：通常是圖片、SVG、pseudo-element、字型沒載入。只有這類才需要開 montage。
+  - 「style diffs with no visible pixel change」→ style 不同但畫面一樣，通常可以忽略，不要去修。
+- `layout drift` 列出每個新位移量第一次出現在哪個元素；整片往下移時，原因就在那附近。
+- `added locally` 是本地新增、舊頁沒有的內容。
+
+輸出：報告寫進 `--out`；`<out>-ref.png`、`<out>-local.png` 是兩邊的截圖，`<out>-montage.png` 是前 `--top` 個區域的「舊｜新｜差異」拼圖。stdout 只印摘要與前 10 個區域。
+Exit code 1 表示有看得到的落差。
+
+參數：`--mask <selector>`（可重複，把時鐘、廣告、頭像這類每次會變的元素遮掉）、`--threshold`（色差門檻，CIE76 ΔE，預設 3，約為人眼剛好分辨得出的差異）、`--min-area`（變動像素少於這個數的區域忽略，預設 6）、`--width`、`--max-height`（截圖高度上限，預設 10000）。
+
+- 兩邊必須在**同一台機器、同一個瀏覽器**截圖；字型渲染因作業系統而異，跨機器比對會到處是雜訊。
+- 截圖前已自動關閉動畫與 transition、隱藏游標，並等字型載入完成。
+- 出現 `rows map below the end of the local page` 警告時，代表內容被推出固定高度的版面（或超過 `--max-height`），那些列沒有比對到。
 
 ## responsive — 三種寬度 + 水平溢出
 
@@ -161,4 +192,4 @@ TMPDIR="$PARITY_SCRATCH" python "<skill-dir>/scripts/parity.py" flow \
 
 ## 維護
 
-改過 `parity.py` 後跑 `TMPDIR="$PARITY_SCRATCH" python "<skill-dir>/scripts/parity.py" selftest`，會用內建 fixture 驗證配對與 diff 邏輯仍正確。
+改過 `parity.py` 後跑 `TMPDIR="$PARITY_SCRATCH" python "<skill-dir>/scripts/parity.py" selftest`，會用內建 fixture 驗證配對與 diff 邏輯仍正確；有安裝 OpenCV 時也驗證 `pixel` 的對齊、分類與遮罩，沒裝則略過並註明。
