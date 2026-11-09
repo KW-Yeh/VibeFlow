@@ -53,6 +53,14 @@
   scrollbar-width: thin;
 }
 
+/* Every terminal cell is a fixed width, so fullwidth punctuation must keep
+   one width wherever it sits. Chrome trims 「」，。 by context, while xterm
+   sizes each glyph alone, which pushed rows mixing CJK and brackets past
+   the right edge. */
+.xterm {
+  text-spacing-trim: space-all;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -59,6 +59,8 @@ async function readOptions(trigger) {
 const FAKE_AGENT = `#!/bin/sh
 if [ "$1" = "-p" ]; then NODE_OPTIONS= exec "${process.execPath}" "${path.join(root, 'e2e', 'fake-claude-models.mjs')}"; fi
 echo "fake-claude ready"
+echo 'cjk-row:你「你」你「你」你「你」你「你」你「你」你「你」'
+echo 'cjk-row:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 echo "https://example.com/plain-link"
 printf '\\033]8;;https://example.com/osc-link\\033\\\\OSC link\\033]8;;\\033\\\\\\n'
 echo "written by the fake agent" > fake-agent-output.txt
@@ -321,6 +323,16 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // Start: core builds the launch; the fake agent runs in the worktree.
   await page.getByRole('button', { name: '開始' }).click()
   await waitForTerminal(page, 'fake-claude ready')
+  // Both rows span 56 cells, so CJK beside brackets must render as wide as ASCII.
+  const [cjkWidth, asciiWidth] = await page.evaluate(() =>
+    ['cjk-row:你', 'cjk-row:x'].map((prefix) => {
+      const row = [...document.querySelectorAll('.xterm-rows > div')].find((el) => el.textContent.startsWith(prefix))
+      const range = document.createRange()
+      range.selectNodeContents(row)
+      return range.getBoundingClientRect().width
+    })
+  )
+  assert.ok(Math.abs(cjkWidth - asciiWidth) <= 2, `CJK row ${cjkWidth}px matches ASCII row ${asciiWidth}px`)
   // The started card joins the running list; leaving for the board and coming
   // back keeps the same terminal on screen.
   const runningList = page.getByRole('navigation', { name: '進行中的任務' })
