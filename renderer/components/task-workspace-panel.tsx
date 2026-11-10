@@ -63,7 +63,6 @@ import {
   stabilizeDiffEntries,
 } from '@/lib/diff-state'
 import {
-  getSpecs,
   getDiff,
   getDiffEntries,
   getDiffFile,
@@ -83,29 +82,23 @@ import type {
   DiffFile,
   Task,
   TaskArtifact,
-  TaskSpec,
   TaskOutcome,
   LaunchIntent,
   TaskProgress,
 } from '@/lib/types'
 
-/**
- * The aside's views of a running card. The spec tab shows only once the
- * task's branch carries a spec.md — a task that wrote none has no decisions
- * to show.
- */
-type TaskTab = 'slaves' | 'task' | 'spec' | 'artifacts' | 'diff'
+/** The aside's views of a running card. */
+type TaskTab = 'slaves' | 'task' | 'artifacts' | 'diff'
 
 const TAB_LABEL: Record<TaskTab, string> = {
   slaves: 'Slaves',
   task: '任務',
-  spec: '決策',
   artifacts: 'Artifacts',
   diff: 'Git diff',
 }
 
-const TASK_TABS: readonly TaskTab[] = ['task', 'spec', 'artifacts', 'diff']
-/** A master has no branch, so no decisions or diff; what it has is its slaves. */
+const TASK_TABS: readonly TaskTab[] = ['task', 'artifacts', 'diff']
+/** A master has no branch, so no diff; what it has is its slaves. */
 const MASTER_TABS: readonly TaskTab[] = ['slaves', 'task', 'artifacts']
 
 const STATUS_LABEL: Record<string, string> = {
@@ -170,7 +163,6 @@ const RAIL_WIDTH = 44
 const TAB_ICON: Record<TaskTab, typeof Info> = {
   slaves: Network,
   task: Info,
-  spec: FileText,
   artifacts: ImageIcon,
   diff: FileDiff,
 }
@@ -588,73 +580,6 @@ function TaskInfo({
       <TaskProgressDetail progress={progress} usage={task.usage} />
 
       {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}
-    </div>
-  )
-}
-
-/**
- * The task's specs — the high-level decisions the feature-spec-plan skill
- * records in spec.md. Polled at the panel rather than here, because whether
- * this tab is offered at all depends on there being one. `live` keeps polling
- * while the task runs, so a spec the agent is still writing stays current.
- */
-export function useTaskSpecs(taskId: string, enabled: boolean, live: boolean): TaskSpec[] {
-  const [specs, setSpecs] = useState<TaskSpec[]>([])
-
-  useEffect(() => {
-    setSpecs([])
-    if (!enabled) return
-    let active = true
-    let timer: ReturnType<typeof setTimeout> | undefined
-
-    // Idle while a dialog covers the panel: adopting fresh data behind one
-    // only resizes a scroll container nobody can see, and macOS flashes that
-    // container's overlay scrollbar through the translucent backdrop. The first
-    // load is exempt so a view opened under a dialog still fills in.
-    let loaded = false
-    const tick = async () => {
-      if (loaded && isModalOpen()) {
-        if (active && live) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
-        return
-      }
-      loaded = true
-      try {
-        const next = await getSpecs(taskId)
-        if (active) setSpecs(next)
-      } catch {
-        // a failed read just leaves the previous snapshot in place
-      } finally {
-        if (active && live) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
-      }
-    }
-
-    void tick()
-    return () => {
-      active = false
-      if (timer) clearTimeout(timer)
-    }
-  }, [taskId, enabled, live])
-
-  return specs
-}
-
-export function SpecContent({ specs }: { specs: TaskSpec[] }) {
-  return (
-    <div className="space-y-6">
-      {specs.map((spec) => (
-        <section key={spec.path} className="space-y-2">
-          <p className="break-all font-mono text-xs text-muted-foreground">{spec.path}</p>
-          <MarkdownContent source={spec.markdown} className="bg-transparent p-0" />
-          {spec.truncated && (
-            <p className="text-xs text-muted-foreground">內容過長，僅顯示前段。</p>
-          )}
-          {spec.updatedAt != null && (
-            <p className="text-xs text-muted-foreground tabular-nums">
-              更新於 {new Date(spec.updatedAt).toLocaleString()}
-            </p>
-          )}
-        </section>
-      ))}
     </div>
   )
 }
@@ -1371,7 +1296,9 @@ function useTaskDiff(taskId: string, enabled: boolean) {
 
     let loaded = false
     const tick = async (withFetch: boolean) => {
-      // See useTaskSpecs: a poll behind a dialog only churns the layout.
+      // Idle while a dialog covers the panel: fresh data behind one only resizes
+      // a scroll container nobody can see. The first load is exempt so a view
+      // opened under a dialog still fills in.
       if (loaded && isModalOpen()) {
         if (active) timer = setTimeout(() => void tick(false), POLL_INTERVAL_MS)
         return
@@ -1634,7 +1561,6 @@ export function TaskWorkspacePanel({
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
   const diff = useTaskDiff(task.id, !isMaster)
-  const specs = useTaskSpecs(task.id, !isMaster, true)
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
@@ -1648,7 +1574,7 @@ export function TaskWorkspacePanel({
 
     let loaded = false
     const tick = async () => {
-      // See useTaskSpecs: a poll behind a dialog only churns the layout.
+      // See useTaskDiff: a poll behind a dialog only churns the layout.
       if (loaded && isModalOpen()) {
         if (active) timer = setTimeout(() => void tick(), POLL_INTERVAL_MS)
         return
@@ -1674,9 +1600,8 @@ export function TaskWorkspacePanel({
   const launchCommand = launch?.launch
   const launchNonce = launch?.nonce ?? 0
 
-  // The spec tab comes and goes with the spec file, so clamp rather than
-  // store — an out-of-set tab falls back to the first one.
-  const tabs = (isMaster ? MASTER_TABS : TASK_TABS).filter((tab) => tab !== 'spec' || specs.length > 0)
+  // A tab outside this card's set (a master's tab on a plain card) falls back to the first one.
+  const tabs = isMaster ? MASTER_TABS : TASK_TABS
   const activeTab = activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
 
   const tabBadge = (tab: TaskTab) =>
@@ -1693,8 +1618,6 @@ export function TaskWorkspacePanel({
       <SlavesContent slaves={slaves} progressById={progressById} onSelectTask={onSelectTask} />
     ) : activeTab === 'task' ? (
       <TaskInfo task={task} progress={progress} master={master} onSelectTask={onSelectTask} />
-    ) : activeTab === 'spec' ? (
-      <SpecContent specs={specs} />
     ) : activeTab === 'artifacts' ? (
       <ArtifactsContent taskId={task.id} artifacts={artifacts} artifactsDir={artifactsDir} />
     ) : (

@@ -6,24 +6,23 @@ import type { SlaveEntry } from '@/components/board-columns'
 import { MarkdownContent } from '@/components/markdown-content'
 import { TaskFormDialog, PropertyGroup, PropertyNote } from '@/components/task-form-layout'
 import { TaskProgressDetail } from '@/components/task-progress'
-import { SlavesContent, SpecContent, TaskOutcomeSection, useTaskSpecs } from '@/components/task-workspace-panel'
+import { SlavesContent, TaskOutcomeSection } from '@/components/task-workspace-panel'
 import { HoldButton } from '@/components/ui/hold-button'
 import { TabIndicator } from '@/components/ui/tab-indicator'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/lib/types'
 
-type DoneTab = 'spec' | 'task' | 'slaves'
+type DoneTab = 'task' | 'slaves'
 
 const TAB_LABEL: Record<DoneTab, string> = {
-  spec: '決策',
   task: '任務與成果',
   slaves: 'Slaves',
 }
 
 /**
- * A finished card's account of the work: its decisions, its prompt and what it
- * came to. The worktree and artifacts are gone by now, so everything here is
- * read from the stored card and its branch's spec.md.
+ * A finished card's account of the work: its prompt and what it came to. The
+ * worktree and artifacts are gone by now, so everything here is read from the
+ * stored card.
  */
 export function DoneTaskSheet({
   task,
@@ -73,15 +72,10 @@ function DoneTaskSheetBody({
   onClose: () => void
 }) {
   const isMaster = task.role === 'master'
-  const specs = useTaskSpecs(task.id, !isMaster, false)
   const [picked, setPicked] = useState<DoneTab | null>(null)
   const tabBaseId = useId()
 
-  // Once the work is finished its decisions say more than the prompt that
-  // started it, so a card that wrote a spec opens on it.
-  const tabs: DoneTab[] = isMaster
-    ? slaves.length > 0 ? ['slaves', 'task'] : ['task']
-    : specs.length > 0 ? ['spec', 'task'] : ['task']
+  const tabs: DoneTab[] = isMaster && slaves.length > 0 ? ['slaves', 'task'] : ['task']
   const activeTab = picked && tabs.includes(picked) ? picked : tabs[0]
 
   const content = (
@@ -120,9 +114,7 @@ function DoneTaskSheetBody({
         aria-labelledby={`${tabBaseId}-${activeTab}`}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        {activeTab === 'spec' ? (
-          <SpecContent specs={specs} />
-        ) : activeTab === 'slaves' ? (
+        {activeTab === 'slaves' ? (
           <SlavesContent slaves={slaves} progressById={{}} onSelectTask={onSelectTask} />
         ) : (
           <div className="space-y-4">

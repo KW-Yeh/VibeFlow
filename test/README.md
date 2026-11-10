@@ -48,7 +48,6 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `diff-state.test.mjs` | `renderer/lib/diff-state.ts` | diff polling keeps references and bodies stable |
 | `env.test.mjs` | `packages/core/src/env.ts` | PATH augmentation + memoisation |
 | `folder-dialog.test.mjs` | `packages/core/src/folder-dialog.ts` | per-OS folder-dialog commands (user text never in a script), cancel detection, output parsing |
-| `specs.test.mjs` | `packages/core/src/specs.ts` | which `spec.md` files belong to a task, from the worktree and from the branch after completion |
 | `github-filter.test.mjs` | `renderer/lib/github-filter.ts` | Issues & PRs filters: OR within a filter, AND across, unassigned, options (ticked values kept), project-then-number order, one column per repo |
 | `github.test.mjs` | `packages/core/src/github.ts` | remote → `owner/repo`, `gh` issue/PR listing and merging (fake runner, no network), `issueType` fallback, per-repo cache and errors, card ↔ Issue/PR link resolution |
 | `jira.test.mjs`, `jira-adf.test.mjs`, `jira-columns.test.mjs` | Jira core and renderer helpers | acli JQL/JSON conversion, attachment metadata, ADF Markdown, auth status, cache, status columns and due-date sorting |

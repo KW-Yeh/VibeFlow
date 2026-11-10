@@ -1,6 +1,6 @@
 # Spec：決策 tab 改顯示 spec.md
 
-- 狀態：已實作
+- 狀態：已移除（2026-11-10，見 [commit-diff](../commit-diff/spec.md)：決策分頁與 `specs.ts` 已拿掉）
 - Ticket：尚無
 - 需求來源：使用者要求「把 feature-spec-plan 產生的 spec.md 直接替換進目前的『決策』tab 顯示，沒有 spec.md 就不要顯示該 tab」
 - 更新日期：2026-10-05

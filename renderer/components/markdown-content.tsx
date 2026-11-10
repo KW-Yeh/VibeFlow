@@ -8,8 +8,8 @@ const MarkdownBody = lazy(() => import('@/components/markdown-body'))
  * Rendered GFM markdown on a muted card. The `prose` chrome and the highlight.js
  * palette are bound to the app's tokens in styles/globals.css.
  *
- * Used for anything the agent wrote for a human to read — task descriptions,
- * specs, and `.md` artifacts. Verbatim text (logs and non-markdown artifacts)
+ * Used for anything the agent wrote for a human to read — task descriptions
+ * and `.md` artifacts. Verbatim text (logs and non-markdown artifacts)
  * stays in a <pre> so whitespace and copied text match the source.
  */
 export function MarkdownContent({

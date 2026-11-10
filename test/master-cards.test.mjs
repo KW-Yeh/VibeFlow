@@ -84,7 +84,6 @@ test('a master needs no project and gets a folder of its own only when it runs',
   assert.equal(await exists(path.join(running.worktreePath, '.git')), false)
   assert.deepEqual(await core.handlers['git:getDiffEntries'](task.id, { fetch: false }), [])
   assert.deepEqual(await core.handlers['git:getDiff'](task.id), [])
-  assert.deepEqual(await core.handlers['task:getSpecs'](task.id), [])
   assert.equal(await core.handlers['git:getPrStatus'](task.id), null)
 })
 

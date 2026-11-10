@@ -64,7 +64,6 @@ import { assertMasterRef, createTaskFromInput, provisionTaskWorktree } from './t
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
 import { decisionsKey, deleteDecisions } from './decisions'
-import { readBranchSpecs, readWorktreeSpecs } from './specs'
 import { agentArtifactsPath, deleteArtifacts, ensureTaskArtifactDirs, listArtifacts, readArtifact } from './artifacts'
 import { resetSubAgents, unwatchAllSubAgents, unwatchSubAgents, watchSubAgents } from './subagents'
 import { cancelAllChatSends, cancelChatSend, startChatSend } from './chat-session'
@@ -1243,24 +1242,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const dir = agentArtifactsPath(task.workspacePath, task.worktreePath)
       if (!fs.existsSync(dir)) return 'artifacts directory does not exist yet'
       return getPlatform().openPath(dir)
-    },
-
-    'task:getSpecs': async (taskId) => {
-      const task = requireTask(taskId)
-      const base = task.baseBranch ?? 'main'
-      if (isMasterTask(task)) return []
-      if (task.worktreePath) return readWorktreeSpecs(task.worktreePath, base)
-      // Never provisioned: the branch is only a name, there is nothing to read.
-      // Cards from before provisionedAt existed: an app card was provisioned
-      // when it launched; a CLI card in a later column at creation, which is
-      // what a recorded `pushed` (set only by provisioning) says happened.
-      const since =
-        task.provisionedAt ??
-        task.launchedAt ??
-        (task.pushed !== undefined ? task.createdAt : undefined)
-      if (!task.projectPath || !since) return []
-      const changed = task.outcome?.files.filter((f) => f.status !== 'D').map((f) => f.path)
-      return readBranchSpecs(task.projectPath, task.branch, base, changed, since)
     },
 
     'board:getCliLaunchInfo': () => boardCliLaunchInfo(),

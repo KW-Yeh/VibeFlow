@@ -38,7 +38,6 @@ import type {
   Task,
   TaskArtifact,
   TaskProgress,
-  TaskSpec,
   VibeFlowState,
   LaunchIntent,
   StartResult,
@@ -322,12 +321,6 @@ export async function readArtifact(
 export async function openArtifactsDir(taskId: string): Promise<string> {
   const b = bridge()
   return b ? b.openArtifactsDir(taskId) : 'bridge unavailable'
-}
-
-/** The task's spec.md files; empty without the bridge. */
-export async function getSpecs(taskId: string): Promise<TaskSpec[]> {
-  const b = bridge()
-  return b ? b.getSpecs(taskId) : []
 }
 
 export async function pickLibrarySource(kind: LibraryKind): Promise<string | null> {

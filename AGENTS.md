@@ -268,7 +268,6 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── tasks.ts           create / update a card (UI and CLI share it)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
-│   ├── specs.ts           a task's spec.md files (the 決策 tab), from worktree or branch
 │   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
@@ -291,8 +290,8 @@ renderer/                  Next.js app (Pages Router)
 │   ├── task-form-layout.tsx create/edit frame: content column + property sidebar (fits half height)
 │   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
-│   ├── task-workspace-panel.tsx  a running card's workspace: terminal + task/決策 (spec.md)/artifacts/diff
-│   ├── done-task-sheet.tsx a done card's sheet from the board: 決策, description + outcome, usage
+│   ├── task-workspace-panel.tsx  a running card's workspace: terminal + task/artifacts/diff
+│   ├── done-task-sheet.tsx a done card's sheet from the board: description + outcome, usage
 │   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
@@ -423,19 +422,10 @@ docs/                      everything that is not code (index: docs/README.md)
   are cached per repo for 5 minutes; the view's refresh button forces one. A card converted from an
   Issue/PR stores it in `Task.github`; other cards find their PR by branch
   (`github:taskLinks`). No token is stored — `gh`'s login is the only credential.
-- **The 決策 tab shows the task's `spec.md`** (`packages/core/src/specs.ts`):
-  every file named `spec.md` that the card's branch added or changed against its
-  base — the feature-spec-plan skill writes high-level decisions there. No such
-  file, no tab. While the worktree exists it is read from the working tree.
-  Completion deletes the local branch, so a done card falls back, in order, to
-  the local branch (if still there), `origin/<branch>`, and finally the base's
-  GitHub "Merge pull request #N from <owner>/<branch>" commit (its second
-  parent is the branch as merged; squash/rebase merges cannot be recovered).
-  `outcome.files` is preferred for the list because a merged branch has an
-  empty merge-base diff. Only In Progress cards open in the workspace; a done card shows this in its
-  board sheet (`done-task-sheet.tsx`) and opens on it when it has one. The old
-  `<worktree-dir>.DECISIONS.md` is no longer written or read; `decisions.ts`
-  only deletes leftovers with their card.
+- **No spec/decision tab.** VibeFlow does not display a branch's `spec.md`
+  (removed in `docs/features/commit-diff/`); the feature-spec-plan skill still
+  commits it to the repo. `decisions.ts` only deletes `<worktree-dir>.DECISIONS.md`
+  leftovers from older versions with their card.
 - **Markdown renders in the renderer** through
   `components/markdown-content.tsx` → `markdown-body.tsx`. Raw HTML is disabled.
   Verbatim text (sub-agent prompts, logs, non-`.md` artifacts) stays in a `<pre>`.

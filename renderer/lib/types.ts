@@ -27,7 +27,6 @@ export type {
   TaskArtifact,
 } from '../../packages/core/src/artifacts'
 export type { BoardCliLaunchInfo } from '../../packages/core/src/board-cli'
-export type { TaskSpec } from '../../packages/core/src/specs'
 export type {
   RecentProject,
   RecentProjectEntry,

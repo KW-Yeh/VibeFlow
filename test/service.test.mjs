@@ -705,41 +705,6 @@ test('dialog:pickFolder reports unsupported when the host has no dialog', async 
   assert.deepEqual(await core.handlers['dialog:pickFolder'](), { unsupported: true })
 })
 
-test('a CLI card that never launched still shows its spec after its PR is merged and the branch deleted', async (t) => {
-  const repo = await makeRepo()
-  t.after(repo.cleanup)
-  const { projectPath, remotePath, root } = repo
-  const core = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
-  t.after(() => core.shutdown())
-  const { task } = await createTaskFromInput({
-    projectPath,
-    title: 'CLI card',
-    branch: 'feature/cli-card',
-    status: 'in_progress',
-  })
-  assert.equal(task.launchedAt, undefined)
-  assert.equal(typeof task.provisionedAt, 'number')
-
-  await writeFile(task.worktreePath, 'docs/features/cli/spec.md', '# cli decisions\n')
-  await git(task.worktreePath, 'add', '-A')
-  await git(task.worktreePath, 'commit', '-m', 'spec')
-  await git(task.worktreePath, 'push', 'origin', 'feature/cli-card')
-  await core.handlers['vibeflow:cleanupTask'](task.id)
-  assert.equal(await git(projectPath, 'branch', '--list', 'feature/cli-card'), '')
-
-  const other = path.join(root, 'merger')
-  await git(root, 'clone', remotePath, other)
-  await git(other, 'config', 'user.email', 'qa@vibeflow.test')
-  await git(other, 'config', 'user.name', 'VibeFlow QA')
-  await git(other, 'merge', '--no-ff', '-m', 'Merge pull request #3 from acme/feature/cli-card', 'origin/feature/cli-card')
-  await git(other, 'push', 'origin', 'main')
-  await git(other, 'push', 'origin', '--delete', 'feature/cli-card')
-  await git(projectPath, 'fetch', '--prune', 'origin')
-
-  const specs = await core.handlers['task:getSpecs'](task.id)
-  assert.deepEqual(specs.map((s) => s.markdown.trim()), ['# cli decisions'])
-})
-
 // --- progress ---
 
 const PROGRESS_FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'progress', 'claude-todowrite.jsonl')
