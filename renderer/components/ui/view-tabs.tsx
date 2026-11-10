@@ -1,16 +1,18 @@
 import { useLayoutEffect, useRef } from 'react'
 import { animate, motion, useMotionValue, useReducedMotion, type AnimationPlaybackControls } from 'motion/react'
+import { Inbox, LayoutPanelLeft, SquareKanban, Terminal, type LucideIcon } from 'lucide-react'
 
 import { MOTION_SPRING } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 
 export type BoardView = 'board' | 'workspace' | 'github' | 'terminals'
 
-const VIEWS: { id: BoardView; label: string }[] = [
-  { id: 'board', label: '看板' },
-  { id: 'workspace', label: '任務詳情' },
-  { id: 'github', label: '收件匣' },
-  { id: 'terminals', label: '終端機' },
+// Same icons as the side menu, so a page reads the same in both places.
+const VIEWS: { id: BoardView; label: string; icon: LucideIcon }[] = [
+  { id: 'board', label: '看板', icon: SquareKanban },
+  { id: 'workspace', label: '任務詳情', icon: LayoutPanelLeft },
+  { id: 'github', label: '收件匣', icon: Inbox },
+  { id: 'terminals', label: '終端機', icon: Terminal },
 ]
 
 /**
@@ -86,10 +88,11 @@ export function ViewTabs({
             aria-selected={active}
             onClick={() => onChange(view.id)}
             className={cn(
-              'flex items-center px-1 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              'flex items-center gap-1.5 px-1 text-sm font-medium outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
               active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
             )}
           >
+            <view.icon aria-hidden="true" className="size-4 shrink-0" />
             {view.label}
           </button>
         )

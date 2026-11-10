@@ -4,6 +4,8 @@ import { AnimatePresence } from 'motion/react'
 
 import { KanbanBoard } from '@/components/kanban-board'
 import { TerminalGrid, type GridTerminal } from '@/components/terminal-grid'
+import type { SlaveEntry } from '@/components/board-columns'
+import { DoneTaskSheet } from '@/components/done-task-sheet'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { NewTaskDialog, type NewTaskDraft, type NewTaskInitial } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
@@ -98,6 +100,12 @@ function findTask(board: BoardState, taskId: string): Task | null {
   return null
 }
 
+function slavesOf(board: BoardState, masterId: string): SlaveEntry[] {
+  return (['in_progress', 'backlog', 'done'] as const).flatMap((column) =>
+    board[column].filter((t) => t.masterId === masterId).map((task) => ({ task, column }))
+  )
+}
+
 function columnOf(board: BoardState, taskId: string): ColumnId | null {
   for (const column of Object.keys(board) as ColumnId[]) {
     if (board[column].some((t) => t.id === taskId)) return column
@@ -147,6 +155,7 @@ export default function HomePage() {
 
   // Edit dialog state
   const [editTask, setEditTask] = useState<Task | null>(null)
+  const [doneTaskId, setDoneTaskId] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   // A card to start once the board that holds its latest state has rendered.
@@ -249,9 +258,10 @@ export default function HomePage() {
     }
   }, [runningIds])
 
-  // A card deleted here, by the CLI or by another writer leaves nothing selected.
+  // The workspace only shows running cards: one that leaves In Progress (done,
+  // sent back, deleted) or a stale one restored from the URL leaves nothing selected.
   useEffect(() => {
-    const ids = new Set(Object.values(board).flat().map((t) => t.id))
+    const ids = new Set(board.in_progress.map((t) => t.id))
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
 
@@ -305,7 +315,13 @@ export default function HomePage() {
     void persistBoard(next)
   }
 
+  // Only a running card opens in the workspace; any other card opens its sheet.
   const openTask = (taskId: string) => {
+    if (!board.in_progress.some((t) => t.id === taskId)) {
+      handleOpenEditTask(taskId)
+      return
+    }
+    setDoneTaskId(null)
     setSelectedTaskId(taskId)
     setView('workspace')
   }
@@ -413,8 +429,6 @@ export default function HomePage() {
       if (result) {
         setBoard(result.state.board)
         setNewTaskOpen(false)
-        // A card made from the inbox keeps the user on the inbox.
-        if (!newTaskInitial) openTask(result.task.id)
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : String(err))
@@ -423,10 +437,18 @@ export default function HomePage() {
     }
   }
 
+  // A done card opens its read-only account; the others open the edit sheet.
   const handleOpenEditTask = (taskId: string) => {
+    if (columnOf(board, taskId) === 'done') {
+      setEditTask(null)
+      setDoneTaskId(taskId)
+      return
+    }
+    setDoneTaskId(null)
     setEditError(null)
     setEditTask(findTask(board, taskId))
   }
+  const doneTask = doneTaskId ? board.done.find((t) => t.id === doneTaskId) ?? null : null
 
   // The sheet keeps the snapshot it opened with so a board push does not wipe
   // unsaved edits; its column follows the board, so a card started meanwhile
@@ -678,6 +700,18 @@ export default function HomePage() {
               onSubmit={handleSaveEdit}
               onStart={(edits) => void handleStartFromSheet(edits)}
               onClose={() => setEditTask(null)}
+            />
+            <DoneTaskSheet
+              task={doneTask}
+              slaves={doneTask?.role === 'master' ? slavesOf(board, doneTask.id) : []}
+              master={doneTask?.masterId ? findTask(board, doneTask.masterId) : null}
+              onSelectTask={openTask}
+              onDelete={() => {
+                if (!doneTask) return
+                setDoneTaskId(null)
+                void handleDeleteTask(doneTask.id)
+              }}
+              onClose={() => setDoneTaskId(null)}
             />
             <SettingsDialog
               open={settingsOpen}

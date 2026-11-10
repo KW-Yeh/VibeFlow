@@ -38,7 +38,6 @@ import {
   Network,
   RefreshCw,
   PanelRightClose,
-  Pencil,
   Pin,
   Play,
   Trash2,
@@ -80,7 +79,6 @@ import { HoldButton } from '@/components/ui/hold-button'
 import type {
   ArtifactContent,
   ArtifactKind,
-  ColumnId,
   DiffEntry,
   DiffFile,
   Task,
@@ -92,10 +90,9 @@ import type {
 } from '@/lib/types'
 
 /**
- * The aside's views. Which ones a task offers depends on its column: a done
- * task has no live terminal, artifacts, or worktree to diff. The spec tab is
- * on both sets, but only once the task's branch carries a spec.md — a task
- * that wrote none has no decisions to show.
+ * The aside's views of a running card. The spec tab shows only once the
+ * task's branch carries a spec.md — a task that wrote none has no decisions
+ * to show.
  */
 type TaskTab = 'slaves' | 'task' | 'spec' | 'artifacts' | 'diff'
 
@@ -107,16 +104,9 @@ const TAB_LABEL: Record<TaskTab, string> = {
   diff: 'Git diff',
 }
 
-const ACTIVE_TASK_TABS: readonly TaskTab[] = ['task', 'spec', 'artifacts', 'diff']
-const DONE_TASK_TABS: readonly TaskTab[] = ['task', 'spec']
-// A backlog card has not run yet: nothing has been decided, produced or changed.
-const BACKLOG_TASK_TABS: readonly TaskTab[] = ['task']
-
+const TASK_TABS: readonly TaskTab[] = ['task', 'spec', 'artifacts', 'diff']
 /** A master has no branch, so no decisions or diff; what it has is its slaves. */
-function masterTabs(column: ColumnId, hasSlaves: boolean): readonly TaskTab[] {
-  if (column === 'in_progress') return ['slaves', 'task', 'artifacts']
-  return hasSlaves ? ['slaves', 'task'] : ['task']
-}
+const MASTER_TABS: readonly TaskTab[] = ['slaves', 'task', 'artifacts']
 
 const STATUS_LABEL: Record<string, string> = {
   A: '新增',
@@ -312,17 +302,14 @@ interface LaunchEntry {
   nonce: number
 }
 
+/** The workspace of a running card; other columns open as a sheet from the board. */
 interface TaskWorkspacePanelProps {
   task: Task
-  column: ColumnId
-  /** Live progress (running cards only); done cards show their stored usage. */
   progress?: TaskProgress | null
   launch?: LaunchEntry
-  onStart: (task: Task) => void
   onReturnToBacklog: (task: Task) => Promise<boolean>
   onLaunchAgent: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
-  onEdit: (taskId: string) => void
   onDelete: (taskId: string) => void
   /** This workspace is the one on screen (selected, on the workspace page). */
   active?: boolean
@@ -387,7 +374,7 @@ const PR_STATE_CLASS: Record<string, string> = {
  * card's account of the work once the worktree, artifacts and branch are gone,
  * so it renders from the stored snapshot alone and never reaches for git.
  */
-function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
+export function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
   const [showBody, setShowBody] = useState(false)
   const { pr, commits, files } = outcome
 
@@ -501,18 +488,17 @@ function TaskOutcomeSection({ outcome }: { outcome: TaskOutcome }) {
 
 function TaskInfo({
   task,
-  column,
   progress,
   master,
   onSelectTask,
-}: Pick<TaskWorkspacePanelProps, 'task' | 'column' | 'progress' | 'master' | 'onSelectTask'>) {
+}: Pick<TaskWorkspacePanelProps, 'task' | 'progress' | 'master' | 'onSelectTask'>) {
   const isMaster = task.role === 'master'
   return (
     <div className="space-y-4 text-base">
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <span className="rounded-xs bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">
-            {column === 'in_progress' ? 'In Progress' : column === 'done' ? 'Done' : 'Backlog'}
+            In Progress
           </span>
           {isMaster && (
             <span className="flex items-center gap-1 rounded-xs bg-master/15 px-1.5 py-0.5 text-xs font-medium text-master">
@@ -525,14 +511,6 @@ function TaskInfo({
           {task.title}
         </h3>
       </div>
-
-      {column === 'backlog' && task.launchError && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm">
-          上次開始執行時無法建立分支，卡片已退回 Backlog：{task.launchError}
-          <br />
-          <span className="text-muted-foreground">可以編輯分支名稱或基準分支後再開始。</span>
-        </p>
-      )}
 
       {task.jevRoute?.status === 'routing' && (
         <div className="flex items-center gap-2 rounded-md bg-muted/30 p-2.5 text-sm text-muted-foreground" role="status">
@@ -593,11 +571,7 @@ function TaskInfo({
           <GitBranch className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 break-all">
             {task.branch}
-            {column !== 'done' && !task.worktreePath && (
-              <span className="text-muted-foreground/70">
-                {column === 'backlog' ? '（開始執行時建立）' : '（建立中…）'}
-              </span>
-            )}
+            {!task.worktreePath && <span className="text-muted-foreground/70">（建立中…）</span>}
           </span>
         </div>
         {task.baseBranch && (
@@ -611,9 +585,7 @@ function TaskInfo({
 
       {task.description && <MarkdownContent source={task.description} />}
 
-      {column !== 'backlog' && (
-        <TaskProgressDetail progress={column === 'in_progress' ? progress : null} usage={task.usage} />
-      )}
+      <TaskProgressDetail progress={progress} usage={task.usage} />
 
       {task.outcome && <TaskOutcomeSection outcome={task.outcome} />}
     </div>
@@ -626,7 +598,7 @@ function TaskInfo({
  * this tab is offered at all depends on there being one. `live` keeps polling
  * while the task runs, so a spec the agent is still writing stays current.
  */
-function useTaskSpecs(taskId: string, enabled: boolean, live: boolean): TaskSpec[] {
+export function useTaskSpecs(taskId: string, enabled: boolean, live: boolean): TaskSpec[] {
   const [specs, setSpecs] = useState<TaskSpec[]>([])
 
   useEffect(() => {
@@ -666,7 +638,7 @@ function useTaskSpecs(taskId: string, enabled: boolean, live: boolean): TaskSpec
   return specs
 }
 
-function SpecContent({ specs }: { specs: TaskSpec[] }) {
+export function SpecContent({ specs }: { specs: TaskSpec[] }) {
   return (
     <div className="space-y-6">
       {specs.map((spec) => (
@@ -1041,7 +1013,7 @@ function ArtifactsContent({
 }
 
 /** A master's cards: where each stands, what it is doing now, and a way into it. */
-function SlavesContent({
+export function SlavesContent({
   slaves,
   progressById,
   onSelectTask,
@@ -1631,14 +1603,11 @@ function DiffContent({ taskId, diff }: { taskId: string; diff: TaskDiff }) {
 
 export function TaskWorkspacePanel({
   task,
-  column,
   progress,
   launch,
-  onStart,
   onReturnToBacklog,
   onLaunchAgent,
   onComplete,
-  onEdit,
   onDelete,
   active = true,
   slaves = [],
@@ -1656,7 +1625,7 @@ export function TaskWorkspacePanel({
   // A master has no project; before its first run, the folder it will get stands in.
   const cwd = task.worktreePath ?? task.projectPath ?? (isMaster ? task.workDir ?? task.workspacePath : undefined) ?? null
   const provisionNotice =
-    column !== 'in_progress' || task.worktreePath
+    task.worktreePath
       ? null
       : isMaster
         ? '正在準備 master 的工作資料夾，完成後 agent 會自動啟動…'
@@ -1664,21 +1633,16 @@ export function TaskWorkspacePanel({
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
-  const diff = useTaskDiff(task.id, column === 'in_progress' && !isMaster)
-  const specs = useTaskSpecs(task.id, column !== 'backlog' && !isMaster, column === 'in_progress' && !isMaster)
+  const diff = useTaskDiff(task.id, !isMaster)
+  const specs = useTaskSpecs(task.id, !isMaster, true)
   // Badge counts verification screenshots only — a count that included the
   // agent's scripts and logs said nothing about whether there was anything to see.
   const shotCount = artifacts.filter(isVerificationShot).length
 
   // Polled here rather than inside ArtifactsContent so the tab's count stays
-  // live while the tab is closed. A completed task has no artifacts left (the
-  // directory is cleaned with its worktree) and a backlog one has not produced
-  // any, so only a running task is polled.
+  // live while the tab is closed.
   useEffect(() => {
-    if (column !== 'in_progress') {
-      setArtifacts([])
-      return
-    }
+    setArtifacts([])
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -1705,36 +1669,15 @@ export function TaskWorkspacePanel({
       active = false
       if (timer) clearTimeout(timer)
     }
-  }, [task.id, column])
+  }, [task.id])
 
-  const canLaunch = column === 'backlog'
   const launchCommand = launch?.launch
   const launchNonce = launch?.nonce ?? 0
 
-  const requestLaunch = () => {
-    onStart(task)
-  }
-
-  const selectTaskTab = (tab: TaskTab) => {
-    setActiveTaskTab(tab)
-  }
-
-  // Completing a task swaps the tab set under the selection, so clamp rather
-  // than store — an out-of-set tab falls back to the column's default. A done
-  // task opens on its decisions: once the work is finished they say more than
-  // the prompt that started it.
-  const tabs = (
-    isMaster
-      ? masterTabs(column, slaves.length > 0)
-      : column === 'done'
-        ? DONE_TASK_TABS
-        : column === 'backlog'
-          ? BACKLOG_TASK_TABS
-          : ACTIVE_TASK_TABS
-  ).filter((tab) => tab !== 'spec' || specs.length > 0)
-  const defaultTab = column === 'done' && tabs.includes('spec') ? 'spec' : tabs[0]
-  const activeTab =
-    activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : defaultTab
+  // The spec tab comes and goes with the spec file, so clamp rather than
+  // store — an out-of-set tab falls back to the first one.
+  const tabs = (isMaster ? MASTER_TABS : TASK_TABS).filter((tab) => tab !== 'spec' || specs.length > 0)
+  const activeTab = activeTaskTab && tabs.includes(activeTaskTab) ? activeTaskTab : tabs[0]
 
   const tabBadge = (tab: TaskTab) =>
     tab === 'artifacts'
@@ -1745,50 +1688,11 @@ export function TaskWorkspacePanel({
           ? slaves.length
           : 0
 
-  const tabStrip = (
-    <LayoutGroup id={`${tabGroup}-strip`}>
-    <div
-      role="tablist"
-      aria-label="任務檢視"
-      className="flex min-w-0 rounded-md border border-border/70 p-0.5"
-    >
-      {tabs.map((tab) => {
-        const badge = tabBadge(tab)
-        return (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            id={tabId(tab)}
-            aria-selected={activeTab === tab}
-            aria-controls={tabPanelId}
-            onClick={() => selectTaskTab(tab)}
-            className={cn(
-              'relative isolate shrink-0 rounded-sm px-2 py-0.5 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              activeTab === tab
-                ? 'text-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {activeTab === tab && (
-              <TabIndicator layoutId="task-tab" className="inset-0 -z-10 rounded-sm bg-primary/15" />
-            )}
-            {TAB_LABEL[tab]}
-            {badge > 0 && (
-              <span className="ml-1 tabular-nums text-muted-foreground/80">{badge}</span>
-            )}
-          </button>
-        )
-      })}
-    </div>
-    </LayoutGroup>
-  )
-
   const activeContent =
     activeTab === 'slaves' ? (
       <SlavesContent slaves={slaves} progressById={progressById} onSelectTask={onSelectTask} />
     ) : activeTab === 'task' ? (
-      <TaskInfo task={task} column={column} progress={progress} master={master} onSelectTask={onSelectTask} />
+      <TaskInfo task={task} progress={progress} master={master} onSelectTask={onSelectTask} />
     ) : activeTab === 'spec' ? (
       <SpecContent specs={specs} />
     ) : activeTab === 'artifacts' ? (
@@ -1994,182 +1898,134 @@ export function TaskWorkspacePanel({
     </HoldButton>
   )
 
-  // A running task has no header: its title is the tab above, and its
-  // actions share one toolbar with the terminal they act on.
-  if (column === 'in_progress') {
-    return (
-      <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-        <main ref={splitAreaRef} className="flex min-h-0 flex-1 overflow-hidden">
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            <div
-              className="flex min-h-0 flex-1 flex-col"
-              onPointerDown={() => setDrawerOpen(false)}
-            >
-              <TaskTerminal
-                taskId={task.id}
-                cwd={cwd}
-                launchCommand={launchCommand}
-                launchNonce={launchNonce}
-                provisionNotice={provisionNotice}
-                readOnly={false}
-                onReturnToBacklog={() => onReturnToBacklog(task)}
-                onLaunchAgent={() => onLaunchAgent(task)}
-                active={active}
-                toolbarStart={
-                  <>
-                    {isMaster ? (
-                      <span className="flex min-w-0 items-center gap-1.5 rounded-xs bg-master/15 px-1.5 py-0.5 text-xs font-medium text-master">
-                        <Network className="size-3 shrink-0" />
-                        Master
-                      </span>
-                    ) : (
-                      <span
-                        className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
-                        title={task.branch}
-                      >
-                        <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{task.branch}</span>
-                      </span>
-                    )}
-                    {task.baseBranch && (
-                      <span
-                        className="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
-                        title={`基準分支：${task.baseBranch}`}
-                      >
-                        ← {task.baseBranch}
-                      </span>
-                    )}
-                    <IconButton
-                      aria-label={
-                        pathCopy === 'copied'
-                          ? '已複製 worktree 路徑'
-                          : pathCopy === 'error'
-                            ? '複製 worktree 路徑失敗'
-                            : '複製 worktree 路徑'
-                      }
-                      title={cwd ?? undefined}
-                      className="p-1"
-                      disabled={!cwd}
-                      onClick={copyPath}
-                    >
-                      <CopyFeedbackIcon copied={pathCopy === 'copied'} />
-                    </IconButton>
-                    <TaskProgressChip progress={progress} />
-                  </>
-                }
-                toolbarEnd={
-                  <>
-                    <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
-                    <Button
-                      size="sm"
-                      className="h-7 shrink-0 px-2.5 text-xs"
-                      onClick={() => {
-                        onComplete(task)
-                      }}
-                      title="標記完成後會清理 PTY 與 worktree"
-                    >
-                      <Check className="size-3.5" />
-                      完成
-                    </Button>
-                    {deleteControl}
-                  </>
-                }
-              />
-            </div>
-            {!docked && drawerOpen && (
-              <aside
-                aria-label={TAB_LABEL[activeTab]}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape' && !isModalOpen()) setDrawerOpen(false)
-                }}
-                className="absolute bottom-0 right-0 top-10 z-20 flex w-[min(var(--vf-workspace-aside,24rem),calc(100%-2rem))] flex-col border-l border-border bg-card shadow-xl xl:w-[min(var(--vf-workspace-aside,27rem),calc(100%-2rem))]"
-              >
-                {inspector}
-              </aside>
-            )}
-          </div>
-
-          {docked && (
-            <>
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="調整終端機與側邊面板的寬度"
-                tabIndex={0}
-                onPointerDown={onSplitterDown}
-                onPointerMove={onSplitterMove}
-                onPointerUp={onSplitterUp}
-                onPointerCancel={onSplitterUp}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowLeft') {
-                    event.preventDefault()
-                    nudgeSplitter(24)
-                  } else if (event.key === 'ArrowRight') {
-                    event.preventDefault()
-                    nudgeSplitter(-24)
-                  }
-                }}
-                className="flex w-2.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <span className="h-12 w-0.5 rounded-full bg-input" />
-              </div>
-              <aside
-                ref={asideRef}
-                className="flex min-h-0 w-[var(--vf-workspace-aside,24rem)] min-w-0 max-w-[calc(100%-23.375rem)] shrink-0 flex-col bg-card/40 xl:w-[var(--vf-workspace-aside,27rem)]"
-              >
-                {inspector}
-              </aside>
-            </>
-          )}
-
-          {rail}
-        </main>
-      </div>
-    )
-  }
-
+  // No header: the title is the rail entry, and the actions share one
+  // toolbar with the terminal they act on.
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {isMaster ? (
-              <Network className="size-3.5 shrink-0 text-master" />
-            ) : (
-              <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span className="min-w-0 truncate text-base font-semibold">{task.title}</span>
+      <main ref={splitAreaRef} className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            onPointerDown={() => setDrawerOpen(false)}
+          >
+            <TaskTerminal
+              taskId={task.id}
+              cwd={cwd}
+              launchCommand={launchCommand}
+              launchNonce={launchNonce}
+              provisionNotice={provisionNotice}
+              readOnly={false}
+              onReturnToBacklog={() => onReturnToBacklog(task)}
+              onLaunchAgent={() => onLaunchAgent(task)}
+              active={active}
+              toolbarStart={
+                <>
+                  {isMaster ? (
+                    <span className="flex min-w-0 items-center gap-1.5 rounded-xs bg-master/15 px-1.5 py-0.5 text-xs font-medium text-master">
+                      <Network className="size-3 shrink-0" />
+                      Master
+                    </span>
+                  ) : (
+                    <span
+                      className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                      title={task.branch}
+                    >
+                      <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{task.branch}</span>
+                    </span>
+                  )}
+                  {task.baseBranch && (
+                    <span
+                      className="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
+                      title={`基準分支：${task.baseBranch}`}
+                    >
+                      ← {task.baseBranch}
+                    </span>
+                  )}
+                  <IconButton
+                    aria-label={
+                      pathCopy === 'copied'
+                        ? '已複製 worktree 路徑'
+                        : pathCopy === 'error'
+                          ? '複製 worktree 路徑失敗'
+                          : '複製 worktree 路徑'
+                    }
+                    title={cwd ?? undefined}
+                    className="p-1"
+                    disabled={!cwd}
+                    onClick={copyPath}
+                  >
+                    <CopyFeedbackIcon copied={pathCopy === 'copied'} />
+                  </IconButton>
+                  <TaskProgressChip progress={progress} />
+                </>
+              }
+              toolbarEnd={
+                <>
+                  <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+                  <Button
+                    size="sm"
+                    className="h-7 shrink-0 px-2.5 text-xs"
+                    onClick={() => {
+                      onComplete(task)
+                    }}
+                    title="標記完成後會清理 PTY 與 worktree"
+                  >
+                    <Check className="size-3.5" />
+                    完成
+                  </Button>
+                  {deleteControl}
+                </>
+              }
+            />
           </div>
+          {!docked && drawerOpen && (
+            <aside
+              aria-label={TAB_LABEL[activeTab]}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && !isModalOpen()) setDrawerOpen(false)
+              }}
+              className="absolute bottom-0 right-0 top-10 z-20 flex w-[min(var(--vf-workspace-aside,24rem),calc(100%-2rem))] flex-col border-l border-border bg-card shadow-xl xl:w-[min(var(--vf-workspace-aside,27rem),calc(100%-2rem))]"
+            >
+              {inspector}
+            </aside>
+          )}
         </div>
 
-        {canLaunch && (
-          <Button size="sm" variant="outline" onClick={requestLaunch} disabled={!cwd}>
-            <Play className="size-3.5" />
-            開始
-          </Button>
+        {docked && (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="調整終端機與側邊面板的寬度"
+              tabIndex={0}
+              onPointerDown={onSplitterDown}
+              onPointerMove={onSplitterMove}
+              onPointerUp={onSplitterUp}
+              onPointerCancel={onSplitterUp}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault()
+                  nudgeSplitter(24)
+                } else if (event.key === 'ArrowRight') {
+                  event.preventDefault()
+                  nudgeSplitter(-24)
+                }
+              }}
+              className="flex w-2.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border bg-card outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <span className="h-12 w-0.5 rounded-full bg-input" />
+            </div>
+            <aside
+              ref={asideRef}
+              className="flex min-h-0 w-[var(--vf-workspace-aside,24rem)] min-w-0 max-w-[calc(100%-23.375rem)] shrink-0 flex-col bg-card/40 xl:w-[var(--vf-workspace-aside,27rem)]"
+            >
+              {inspector}
+            </aside>
+          </>
         )}
-        {column === 'backlog' && (
-          <IconButton
-            aria-label="編輯任務"
-            title="編輯任務"
-            onClick={() => {
-              onEdit(task.id)
-            }}
-          >
-            <Pencil className="size-4" />
-          </IconButton>
-        )}
-        {deleteControl}
-      </header>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card/40">
-        {column === 'backlog' && tabs.length === 1 ? (
-          <InfoSection title={TAB_LABEL.task}>
-            <TaskInfo task={task} column={column} progress={progress} master={master} onSelectTask={onSelectTask} />
-          </InfoSection>
-        ) : (
-          <InfoSection heading={tabStrip}>{activePanel}</InfoSection>
-        )}
+        {rail}
       </main>
     </div>
   )

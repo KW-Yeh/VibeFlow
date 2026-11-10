@@ -291,7 +291,8 @@ renderer/                  Next.js app (Pages Router)
 │   ├── task-form-layout.tsx create/edit frame: content column + property sidebar (fits half height)
 │   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
-│   ├── task-workspace-panel.tsx  selected task workspace: terminal + task/決策 (spec.md)/artifacts/diff
+│   ├── task-workspace-panel.tsx  a running card's workspace: terminal + task/決策 (spec.md)/artifacts/diff
+│   ├── done-task-sheet.tsx a done card's sheet from the board: 決策, description + outcome, usage
 │   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
@@ -431,7 +432,8 @@ docs/                      everything that is not code (index: docs/README.md)
   GitHub "Merge pull request #N from <owner>/<branch>" commit (its second
   parent is the branch as merged; squash/rebase merges cannot be recovered).
   `outcome.files` is preferred for the list because a merged branch has an
-  empty merge-base diff. A done card opens on this tab when it has one. The old
+  empty merge-base diff. Only In Progress cards open in the workspace; a done card shows this in its
+  board sheet (`done-task-sheet.tsx`) and opens on it when it has one. The old
   `<worktree-dir>.DECISIONS.md` is no longer written or read; `decisions.ts`
   only deletes leftovers with their card.
 - **Markdown renders in the renderer** through

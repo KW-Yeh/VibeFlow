@@ -169,8 +169,8 @@ export function KanbanBoard({
   taskLinks,
 }: KanbanBoardProps) {
   // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
-  // the DOM (just hidden) so PTY state survives switching tasks and pages; a
-  // card that is not in progress keeps it only while selected.
+  // the DOM (just hidden) while the card is in progress, so PTY state survives
+  // switching tasks and pages.
   const [mounted, setMounted] = useState<Set<string>>(new Set())
   // Per-task armed terminal launch command; bumping `nonce` fires a new launch.
   const [terminalLaunch, setTerminalLaunch] = useState<Record<string, LaunchEntry>>({})
@@ -401,15 +401,13 @@ export function KanbanBoard({
         ]
 
         const selected = selectedTaskId
-          ? allTasks.find(({ task }) => task.id === selectedTaskId)
+          ? allTasks.find(({ task, column }) => column === 'in_progress' && task.id === selectedTaskId)
           : null
 
-        // A mounted panel stays in the DOM (hidden when not selected) so its
-        // PTY survives switching tasks or pages. Only an in-progress card keeps
-        // it once deselected — an agent may still be working in that terminal;
-        // any other card's panel is dropped, which kills its shell and stops
-        // the two 3s pollers every panel runs. Scrollback is kept by core
-        // (killSession leaves it), so reselecting replays the history.
+        // The workspace is for running cards only. A mounted panel stays in the
+        // DOM (hidden when not selected) so its PTY survives switching tasks or
+        // pages; a card that leaves In Progress drops its panel, which kills its
+        // shell and stops the pollers every panel runs.
         const renderIds = new Set<string>()
         for (const taskId of mounted) {
           const entry = allTasks.find(({ task }) => task.id === taskId)
@@ -441,7 +439,6 @@ export function KanbanBoard({
                   <WorkspaceSurface key={taskId} active={isSelected}>
                     <TaskWorkspacePanel
                       task={entry.task}
-                      column={entry.column}
                       active={isSelected && onWorkspace}
                       progress={progress[entry.task.id] ?? null}
                       progressById={progress}
@@ -457,11 +454,9 @@ export function KanbanBoard({
                       }
                       onSelectTask={onSelectTask}
                       launch={terminalLaunch[taskId]}
-                      onStart={startTask}
                       onReturnToBacklog={returnTaskToBacklog}
                       onLaunchAgent={launchAgentOnly}
                       onComplete={completeTask}
-                      onEdit={onEditTask}
                       onDelete={onDeleteTask}
                     />
                   </WorkspaceSurface>
@@ -477,7 +472,9 @@ export function KanbanBoard({
                 >
                   <div className="flex flex-col items-center gap-3 text-center">
                     <p className="text-base text-muted-foreground">
-                      從左側選一張卡片，或建立新的任務。
+                      {board.in_progress.length > 0
+                        ? '從左側選一張執行中的卡片。'
+                        : '目前沒有執行中的卡片，到看板開始一個任務，或建立新的任務。'}
                     </p>
                     <Button size="sm" onClick={onNewTask} className="rounded-full px-4">
                       <Plus />

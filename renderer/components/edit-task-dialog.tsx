@@ -463,7 +463,7 @@ export function EditTaskDialog({
                 disabled={readOnly || saving}
               />
               {readOnly && (
-                <PropertyNote>已開始執行或已完成的卡片無法編輯，請到工作區查看進度。</PropertyNote>
+<PropertyNote>執行中的卡片無法編輯，請到工作區查看進度。</PropertyNote>
               )}
             </>
           }
