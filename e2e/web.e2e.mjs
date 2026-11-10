@@ -576,10 +576,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     assert.equal(await sidebar.getByRole('button', { name: '收件匣' }).getAttribute('aria-current'), 'page')
     await convertedSheet.getByRole('button', { name: '關閉編輯任務' }).click()
     await convertedSheet.waitFor({ state: 'detached' })
-    // Closing the sheet goes back to the Issue it was opened from.
-    const issueDetail = page.getByRole('dialog', { name: '側邊欄搜尋在中文輸入法組字時會閃爍' })
-    await issueDetail.getByRole('button', { name: '關閉側邊欄搜尋在中文輸入法組字時會閃爍' }).click()
-    await issueDetail.waitFor({ state: 'detached' })
+    // 前往卡片 closed the Issue detail, as the Jira one does: only the sheet was open.
+    assert.equal(await page.getByRole('dialog').count(), 0)
     await sidebar.getByRole('button', { name: '看板' }).click()
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
 

@@ -513,7 +513,10 @@ export function GithubView({
               setSelectedKey(null)
               onConvert(selected.item, selected.projectPath ?? undefined)
             }}
-            onOpenTask={onOpenTask}
+            onOpenTask={(taskId) => {
+              setSelectedKey(null)
+              onOpenTask(taskId)
+            }}
           />
         )}
       </div>
