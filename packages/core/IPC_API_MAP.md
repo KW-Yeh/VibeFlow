@@ -98,6 +98,11 @@ are.
 | `git:getDiff` | core | `getDiff(id)` | | |
 | `git:getDiffEntries` | core | `getDiffEntries(id, opts)` | | |
 | `git:getDiffFile` | core | `getDiffFile(id, file)` | | `file` is relative to the worktree. Keep the containment check |
+| `git:listCommits` | core | `listCommits(id)` | | `base..HEAD` commits (≤50) + uncommitted summary; local only, safe to poll |
+| `git:getCommitEntries` | core | `getCommitEntries(id, ref)` | | `ref` = hex sha of a `base..HEAD` commit, or `'working'`; anything else → null / invalid |
+| `git:getCommitFile` | core | `getCommitFile(id, ref, file)` | | `file` must be one of that commit's entries |
+| `git:getDoneCommitDiff` | core | `getDoneCommitDiff(id, sha)` | | `sha` must be in `task.outcome.commits`. Project base first (fetches base), else the PR via `gh api` |
+| `git:getDoneCommitFile` | core | `getDoneCommitFile(id, sha, file)` | | Only for a commit the base contains |
 | `git:approve` | core | `approve(id, message)` | | |
 | `git:generateCommitMessage` | core | `generateCommitMessage(id)` | | |
 | `git:getPrStatus` | core | `getPrStatus(id)` | | |

@@ -19,6 +19,7 @@ import type {
   PrStatus,
 } from './git'
 import type { ArtifactContent, TaskArtifact } from './artifacts'
+import type { BranchCommits, CommitDiff } from './commit-diff'
 import type { BoardCliLaunchInfo } from './board-cli'
 import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
@@ -211,6 +212,19 @@ export function createBridge(t: BridgeTransport) {
   /** Content for one changed file, loaded when its row is expanded. */
   getDiffFile: (taskId: string, filePath: string): Promise<DiffFile | null> =>
     t.invoke('git:getDiffFile', taskId, filePath),
+  /** A running card's commits and its uncommitted summary; null without a worktree. */
+  listCommits: (taskId: string): Promise<BranchCommits | null> =>
+    t.invoke('git:listCommits', taskId),
+  /** Files of one branch commit, or of `'working'` (the uncommitted changes). */
+  getCommitEntries: (taskId: string, ref: string): Promise<DiffEntry[] | null> =>
+    t.invoke('git:getCommitEntries', taskId, ref),
+  getCommitFile: (taskId: string, ref: string, filePath: string): Promise<DiffFile | null> =>
+    t.invoke('git:getCommitFile', taskId, ref, filePath),
+  /** One commit a done card recorded: from the base, else from its PR via gh. */
+  getDoneCommitDiff: (taskId: string, sha: string): Promise<CommitDiff> =>
+    t.invoke('git:getDoneCommitDiff', taskId, sha),
+  getDoneCommitFile: (taskId: string, sha: string, filePath: string): Promise<DiffFile | null> =>
+    t.invoke('git:getDoneCommitFile', taskId, sha, filePath),
   /** Temporary artifacts the agent wrote for this task (metadata only). */
   listArtifacts: (taskId: string): Promise<TaskArtifact[]> =>
     t.invoke('task:listArtifacts', taskId),

@@ -60,6 +60,15 @@ import {
   resetWorktreeToBase,
   syncBaseBranch,
 } from './git'
+import {
+  WORKING_CHANGES,
+  getBranchCommits,
+  getCommitEntries,
+  getCommitFile,
+  getDoneCommitDiff,
+  getDoneCommitFile,
+  isCommitSha,
+} from './commit-diff'
 import { assertMasterRef, createTaskFromInput, provisionTaskWorktree } from './tasks'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
@@ -212,6 +221,21 @@ function coded(code: string, message: string): Error {
 
 function invalid(message: string): never {
   throw new InvalidRequestError(message)
+}
+
+/** A commit of the card's branch, or the uncommitted changes — never a ref name or range. */
+function commitRef(value: unknown): string {
+  if (value === WORKING_CHANGES || isCommitSha(value)) return value
+  invalid('ref must be a commit sha or "working"')
+}
+
+/** A sha the done card recorded in its outcome; nothing else of the project is readable this way. */
+function outcomeCommit(task: Task, value: unknown): string {
+  if (isMasterTask(task)) invalid('a master card has no commits')
+  if (!isCommitSha(value) || !task.outcome?.commits.some((c) => c.sha === value)) {
+    invalid('sha is not one of this card\'s commits')
+  }
+  return value
 }
 
 function str(value: unknown, name: string): string {
@@ -1218,6 +1242,50 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const worktree = gitWorktree(task)
       if (!worktree) return null
       return getWorktreeDiffFile(worktree, task.baseBranch ?? 'HEAD', str(filePath, 'filePath'))
+    },
+
+    /** A running card's commits (`base..HEAD`) plus a summary of what is uncommitted. Local only. */
+    'git:listCommits': (taskId) => {
+      const task = requireTask(taskId)
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getBranchCommits(worktree, task.baseBranch ?? 'HEAD')
+    },
+
+    'git:getCommitEntries': (taskId, ref) => {
+      const task = requireTask(taskId)
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getCommitEntries(worktree, task.baseBranch ?? 'HEAD', commitRef(ref))
+    },
+
+    'git:getCommitFile': (taskId, ref, filePath) => {
+      const task = requireTask(taskId)
+      const worktree = gitWorktree(task)
+      if (!worktree) return null
+      return getCommitFile(worktree, task.baseBranch ?? 'HEAD', commitRef(ref), str(filePath, 'filePath'))
+    },
+
+    /**
+     * One commit of a finished card: from the project's base, else from its PR
+     * through `gh`. Only commits the card recorded in its outcome are read.
+     */
+    'git:getDoneCommitDiff': (taskId, sha) => {
+      const task = requireTask(taskId)
+      const commit = outcomeCommit(task, sha)
+      return getDoneCommitDiff({
+        projectPath: task.projectPath || undefined,
+        baseBranch: task.baseBranch ?? 'main',
+        sha: commit,
+        prUrl: task.outcome?.pr?.url,
+      })
+    },
+
+    'git:getDoneCommitFile': (taskId, sha, filePath) => {
+      const task = requireTask(taskId)
+      const commit = outcomeCommit(task, sha)
+      if (!task.projectPath) return null
+      return getDoneCommitFile(task.projectPath, task.baseBranch ?? 'main', commit, str(filePath, 'filePath'))
     },
 
     'task:listArtifacts': (taskId) => {

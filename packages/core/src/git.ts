@@ -923,7 +923,7 @@ const MAX_BYTES = 1024 * 1024 // per-side content cap for the diff viewer
 /** Cap on files reported per diff. Exported so the UI can flag truncation. */
 export const MAX_DIFF_FILES = 80
 
-function clip(content: string): { value: string; truncated: boolean } {
+export function clip(content: string): { value: string; truncated: boolean } {
   if (content.length > MAX_BYTES) {
     return { value: content.slice(0, MAX_BYTES) + '\n… (truncated)', truncated: true }
   }
@@ -950,7 +950,7 @@ export async function resolveBaseRef(
 }
 
 /** `git fetch origin <base>` so the diff is against the latest remote. */
-async function fetchBase(worktreePath: string, baseBranch: string): Promise<void> {
+export async function fetchBase(worktreePath: string, baseBranch: string): Promise<void> {
   try {
     await git(worktreePath, ['fetch', 'origin', baseBranch])
   } catch {
@@ -959,16 +959,19 @@ async function fetchBase(worktreePath: string, baseBranch: string): Promise<void
 }
 
 /**
- * Changed files in a worktree vs `baseRef`, without reading any blob content.
- * Committed changes first, then working-tree changes (which override, so the
- * newest state wins), then untracked files.
+ * How to list one set of changed files. `nameStatus` runs in order, later runs
+ * overriding earlier ones for the same path; `numstat` fills line counts for
+ * the paths found.
  */
-export async function collectDiffEntries(
-  worktreePath: string,
-  baseRef: string
-): Promise<DiffEntry[]> {
-  // Use a Map so dirty-status entries (working tree) override committed entries
-  // for the same file — giving priority to the most up-to-date state.
+interface EntryQuery {
+  nameStatus: string[][]
+  numstat: string[]
+  untracked: boolean
+  /** Fixed revision label for every entry; absent = fingerprint the working tree. */
+  revision?: string
+}
+
+async function buildDiffEntries(cwd: string, query: EntryQuery): Promise<DiffEntry[]> {
   const entryMap = new Map<string, DiffEntry>()
 
   function parseNameStatus(output: string): void {
@@ -999,39 +1002,18 @@ export async function collectDiffEntries(
     }
   }
 
-  // 1. Committed changes on the feature branch vs base (merge-base diff).
-  parseNameStatus(
-    await git(worktreePath, ['diff', '--name-status', `${baseRef}...HEAD`]).catch(() => '')
-  )
+  for (const args of query.nameStatus) {
+    parseNameStatus(await git(cwd, args).catch(() => ''))
+  }
+  parseNumstat(await git(cwd, query.numstat).catch(() => ''))
 
-  // 2. Working-tree changes not yet committed (staged + unstaged).
-  //    These override committed entries so the viewer shows the latest content.
-  parseNameStatus(
-    await git(worktreePath, ['diff', '--name-status', 'HEAD']).catch(() => '')
-  )
-
-  // 3. Line counts, base → working tree (two-dot, so uncommitted edits count).
-  //    That is exactly the range the diff viewer renders, so the numbers match
-  //    the content shown. Runs after both name-status passes, which reset them.
-  parseNumstat(
-    await git(worktreePath, ['diff', '--numstat', baseRef]).catch(() => '')
-  )
-
-  // 4. Untracked files (not yet added). git reports no numstat for these.
-  const untracked = await git(worktreePath, [
-    'ls-files',
-    '--others',
-    '--exclude-standard',
-  ]).catch(() => '')
-  for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    if (!entryMap.has(p)) {
-      entryMap.set(p, {
-        path: p,
-        status: '?',
-        additions: 0,
-        deletions: 0,
-        revision: '',
-      })
+  if (query.untracked) {
+    // git reports no numstat for untracked files.
+    const untracked = await git(cwd, ['ls-files', '--others', '--exclude-standard']).catch(() => '')
+    for (const p of untracked.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      if (!entryMap.has(p)) {
+        entryMap.set(p, { path: p, status: '?', additions: 0, deletions: 0, revision: '' })
+      }
     }
   }
 
@@ -1043,10 +1025,15 @@ export async function collectDiffEntries(
       )
   )
 
+  if (query.revision !== undefined) {
+    for (const entry of entries) entry.revision = `${query.revision}:${entry.path}`
+    return entries
+  }
+
   await Promise.all(
     entries.map(async (entry) => {
       try {
-        const stat = await fs.stat(path.join(worktreePath, entry.path))
+        const stat = await fs.stat(path.join(cwd, entry.path))
         entry.revision = `${stat.mtimeMs}:${stat.size}`
       } catch {
         // Deleted files have no working-tree stat. Their git metadata above is
@@ -1059,27 +1046,72 @@ export async function collectDiffEntries(
   return entries
 }
 
-/** Old/new content for one entry, clipped to MAX_BYTES per side. */
-async function readDiffFile(
-  worktreePath: string,
-  baseRef: string,
+/**
+ * Changed files in a worktree vs `baseRef`, without reading any blob content.
+ * Committed changes first, then working-tree changes (which override, so the
+ * newest state wins), then untracked files. Line counts are base → working
+ * tree (two-dot), exactly the range the diff viewer renders.
+ */
+export function collectDiffEntries(worktreePath: string, baseRef: string): Promise<DiffEntry[]> {
+  return buildDiffEntries(worktreePath, {
+    nameStatus: [
+      ['diff', '--name-status', `${baseRef}...HEAD`],
+      ['diff', '--name-status', 'HEAD'],
+    ],
+    numstat: ['diff', '--numstat', baseRef],
+    untracked: true,
+  })
+}
+
+/** Changes not committed yet: working tree (staged + unstaged) vs HEAD, plus untracked files. */
+export function collectWorkingEntries(worktreePath: string): Promise<DiffEntry[]> {
+  return buildDiffEntries(worktreePath, {
+    nameStatus: [['diff', '--name-status', 'HEAD']],
+    numstat: ['diff', '--numstat', 'HEAD'],
+    untracked: true,
+  })
+}
+
+/** A commit's first parent; a root commit has none, and its files all read as added. */
+export async function firstParent(cwd: string, sha: string): Promise<string> {
+  return git(cwd, ['rev-parse', '--verify', '--quiet', `${sha}^1`]).catch(() => `${sha}^1`)
+}
+
+/** What one commit changed against its first parent (a merge reads as what it brought in). */
+export function collectCommitEntries(cwd: string, sha: string): Promise<DiffEntry[]> {
+  const show = ['show', '--format=', '--diff-merges=first-parent']
+  return buildDiffEntries(cwd, {
+    nameStatus: [[...show, '--name-status', sha]],
+    numstat: [...show, '--numstat', sha],
+    untracked: false,
+    revision: sha,
+  })
+}
+
+/**
+ * Old/new content for one entry, clipped to MAX_BYTES per side. `newRef` null
+ * reads the working tree, falling back to HEAD for files absent on disk.
+ */
+export async function readEntryFile(
+  cwd: string,
+  oldRef: string,
+  newRef: string | null,
   entry: DiffEntry
 ): Promise<DiffFile> {
   let oldValue = ''
   if (entry.status !== 'A' && entry.status !== '?') {
-    oldValue = await git(worktreePath, [
-      'show',
-      `${baseRef}:${entry.path}`,
-    ]).catch(() => '')
+    oldValue = await git(cwd, ['show', `${oldRef}:${entry.path}`]).catch(() => '')
   }
   let newValue = ''
   if (entry.status !== 'D') {
-    // Prefer working-tree content so uncommitted modifications are visible.
-    // Fall back to HEAD for files that exist in git but are absent on disk.
-    try {
-      newValue = await fs.readFile(path.join(worktreePath, entry.path), 'utf8')
-    } catch {
-      newValue = await git(worktreePath, ['show', `HEAD:${entry.path}`]).catch(() => '')
+    if (newRef) {
+      newValue = await git(cwd, ['show', `${newRef}:${entry.path}`]).catch(() => '')
+    } else {
+      try {
+        newValue = await fs.readFile(path.join(cwd, entry.path), 'utf8')
+      } catch {
+        newValue = await git(cwd, ['show', `HEAD:${entry.path}`]).catch(() => '')
+      }
     }
   }
   const oldClip = clip(oldValue)
@@ -1090,6 +1122,10 @@ async function readDiffFile(
     newValue: newClip.value,
     truncated: oldClip.truncated || newClip.truncated,
   }
+}
+
+function readDiffFile(worktreePath: string, baseRef: string, entry: DiffEntry): Promise<DiffFile> {
+  return readEntryFile(worktreePath, baseRef, null, entry)
 }
 
 /**

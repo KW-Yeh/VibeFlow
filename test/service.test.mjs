@@ -594,6 +594,32 @@ test('the branch is cut from the base as it is at launch, then pushed', async (t
   assert.match(await git(remotePath, 'branch', '--list', branch), new RegExp(branch))
 })
 
+test('commit diff handlers read the branch\'s own commits and refuse anything else', async (t) => {
+  const { core, task } = await coreWithRemoteTask(t)
+  assert.equal(await core.handlers['git:listCommits'](task.id), null)
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { worktreePath } = cardIn(core, 'backlog', task.id)
+  await fs.writeFile(path.join(worktreePath, 'feature.txt'), 'f\n')
+  await git(worktreePath, 'add', 'feature.txt')
+  await git(worktreePath, 'commit', '-m', 'feature')
+  const sha = await git(worktreePath, 'rev-parse', 'HEAD')
+  await fs.writeFile(path.join(worktreePath, 'draft.txt'), 'd\n')
+
+  const listed = await core.handlers['git:listCommits'](task.id)
+  assert.deepEqual(listed.commits.map((c) => c.subject), ['feature'])
+  assert.equal(listed.working.fileCount, 1)
+  assert.deepEqual((await core.handlers['git:getCommitEntries'](task.id, sha)).map((e) => e.path), ['feature.txt'])
+  assert.deepEqual((await core.handlers['git:getCommitEntries'](task.id, 'working')).map((e) => e.path), ['draft.txt'])
+  assert.equal((await core.handlers['git:getCommitFile'](task.id, sha, 'feature.txt')).newValue, 'f')
+
+  for (const ref of ['HEAD', 'main..HEAD', '--all', 7]) {
+    await assert.rejects(async () => core.handlers['git:getCommitEntries'](task.id, ref), { code: 'INVALID_REQUEST' })
+  }
+  // A done-card read only takes shas the card recorded in its outcome.
+  await assert.rejects(async () => core.handlers['git:getDoneCommitDiff'](task.id, sha.slice(0, 7)), { code: 'INVALID_REQUEST' })
+  await assert.rejects(async () => core.handlers['git:getDoneCommitFile'](task.id, sha.slice(0, 7), 'feature.txt'), { code: 'INVALID_REQUEST' })
+})
+
 test('two launches at once provision one worktree', async (t) => {
   const { core, sessions, task } = await coreWithRemoteTask(t)
   await Promise.all([
