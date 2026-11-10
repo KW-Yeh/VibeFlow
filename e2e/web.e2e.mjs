@@ -300,9 +300,9 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await newTask.getByLabel('任務標題').fill('E2E card')
   await newTask.getByRole('button', { name: '建立任務' }).click()
   await newTask.waitFor({ state: 'detached' })
-  // A new card opens on the workspace page, listed as the card being viewed.
-  await page.getByRole('navigation', { name: '進行中的任務' }).getByRole('button', { name: /E2E card/ }).waitFor()
-  assert.match(page.url(), /[?&]view=workspace/)
+  // A new card opens on the workspace page; a Backlog card is not listed with the running cards.
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('view') === 'workspace')
+  assert.equal(await page.getByRole('navigation', { name: '進行中的任務' }).getByRole('button', { name: /E2E card/ }).count(), 0)
   await sidebar.getByRole('button', { name: '看板' }).click()
   await page.getByText('E2E card').first().waitFor()
 
@@ -337,7 +337,6 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // back keeps the same terminal on screen.
   const runningList = page.getByRole('navigation', { name: '進行中的任務' })
   await runningList.getByRole('button', { name: /E2E card/ }).waitFor()
-  assert.equal(await runningList.getByText('目前檢視').count(), 0)
   await sidebar.getByRole('button', { name: '看板' }).click()
   await page.locator('.xterm').first().waitFor({ state: 'hidden' })
   await page.getByText('Jev：CLI 預設模型 · 模型預設 effort').first().waitFor()
@@ -817,7 +816,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await page.getByRole('button', { name: '完成', exact: true }).click()
   await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
-  await page.getByRole('navigation', { name: '進行中的任務' }).getByText('目前檢視').waitFor()
+  await page.getByRole('navigation', { name: '進行中的任務' }).getByRole('button', { name: /Finish second/ }).waitFor({ state: 'detached' })
   // Let the board update while display:none, as when the user stays in the workspace.
   await page.waitForTimeout(1000)
   await sidebar.getByRole('button', { name: '看板', exact: true }).click()
@@ -1074,14 +1073,13 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   assert.equal(await running.getByRole('button', { name: /Running terminal/ }).getAttribute('aria-current'), 'page')
   const where = () => Object.fromEntries(new URL(page.url()).searchParams)
   assert.deepEqual(where(), { view: 'workspace', task: second.task.id })
-  // A done card opened from the board is listed on top as the card being viewed.
+  // A done card opened from the board shows in the workspace but is never listed with the running cards.
   await menu.getByRole('button', { name: '看板' }).click()
   await page.getByRole('button', { name: '開啟任務：Done terminal' }).click()
   await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
-  await running.getByText('目前檢視').waitFor()
-  assert.equal(await running.getByRole('button', { name: /Done terminal/ }).getAttribute('aria-current'), 'page')
+  await page.waitForFunction((id) => new URL(location.href).searchParams.get('task') === id, third.task.id)
+  assert.equal(await running.getByRole('button', { name: /Done terminal/ }).count(), 0)
   await running.getByRole('button', { name: /Running terminal/ }).click()
-  await running.getByText('目前檢視').waitFor({ state: 'detached' })
   // The folded list survives a reload.
   await running.getByRole('button', { name: '收合任務清單' }).click()
   await page.reload()
@@ -1090,6 +1088,6 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await page.getByRole('button', { name: '展開任務清單' }).click()
   // An address from before the split (a bare card) opens that card's workspace.
   await page.goto(new URL(`?task=${first.task.id}`, page.url()).href)
-  await running.getByText('目前檢視').waitFor()
+  await page.waitForFunction((id) => new URL(location.href).searchParams.get('view') === 'workspace' && new URL(location.href).searchParams.get('task') === id, first.task.id)
   assert.deepEqual(where(), { view: 'workspace', task: first.task.id })
 })

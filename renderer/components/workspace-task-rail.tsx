@@ -1,34 +1,20 @@
-import { Eye, Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { TaskId } from '@/components/board-columns'
 import { activityMark, StatusMark, TaskProgressChip } from '@/components/task-progress'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { cn } from '@/lib/utils'
-import type { ColumnId, Task, TaskProgress } from '@/lib/types'
+import type { Task, TaskProgress } from '@/lib/types'
 
 interface WorkspaceTaskRailProps {
   /** The In Progress column, in board order. */
   running: Task[]
-  /** The selected card when it is not running: shown on top until another card is picked. */
-  viewing: { task: Task; column: ColumnId } | null
   selectedTaskId: string | null
   progress: Record<string, TaskProgress>
   onSelect: (taskId: string) => void
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
-}
-
-const COLUMN_NAME: Record<ColumnId, string> = {
-  backlog: 'Backlog',
-  in_progress: 'In Progress',
-  done: 'Done',
-}
-
-function statusMark(progress: TaskProgress | undefined, column: ColumnId) {
-  if (column === 'backlog') return { dot: 'bg-muted-foreground/60', label: COLUMN_NAME.backlog }
-  if (column === 'done') return { dot: 'bg-success', label: COLUMN_NAME.done }
-  return activityMark(progress?.activity)
 }
 
 type Branch = 'none' | 'middle' | 'last'
@@ -65,7 +51,6 @@ function TreeLine({ branch }: { branch: Exclude<Branch, 'none'> }) {
 
 export function WorkspaceTaskRail({
   running,
-  viewing,
   selectedTaskId,
   progress,
   onSelect,
@@ -88,8 +73,7 @@ export function WorkspaceTaskRail({
         >
           <PanelLeftOpen className="size-4" />
         </IconButton>
-        {[...(viewing ? [{ task: viewing.task, column: viewing.column }] : []),
-          ...rows.map(({ task }) => ({ task, column: 'in_progress' as const }))].map(({ task, column }) => {
+        {rows.map(({ task }) => {
           const selected = task.id === selectedTaskId
           return (
             <button
@@ -104,7 +88,7 @@ export function WorkspaceTaskRail({
                 selected ? 'bg-primary/15' : 'hover:bg-accent'
               )}
             >
-              <StatusMark {...statusMark(progress[task.id], column)} className="size-2" />
+              <StatusMark {...activityMark(progress[task.id]?.activity)} className="size-2" />
             </button>
           )
         })}
@@ -112,7 +96,7 @@ export function WorkspaceTaskRail({
     )
   }
 
-  const row = (task: Task, column: ColumnId, branch: Branch) => {
+  const row = (task: Task, branch: Branch) => {
     const selected = task.id === selectedTaskId
     const isMaster = task.role === 'master'
     const button = (
@@ -134,7 +118,7 @@ export function WorkspaceTaskRail({
             <Network className="size-3.5 shrink-0 text-master" />
           ) : (
             <span className="flex w-3.5 shrink-0 justify-center">
-              <StatusMark {...statusMark(progress[task.id], column)} />
+              <StatusMark {...activityMark(progress[task.id]?.activity)} />
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{task.title}</span>
@@ -142,9 +126,9 @@ export function WorkspaceTaskRail({
         </span>
         <span className="flex min-w-0 items-center gap-2 pl-[22px] text-xs">
           <span className="min-w-0 truncate">
-            {column === 'in_progress' ? (isMaster ? 'Master' : task.projectName ?? '') : COLUMN_NAME[column]}
+            {isMaster ? 'Master' : task.projectName ?? ''}
           </span>
-          {column === 'in_progress' && <TaskProgressChip progress={progress[task.id]} mark={isMaster} />}
+          <TaskProgressChip progress={progress[task.id]} mark={isMaster} />
         </span>
       </button>
     )
@@ -177,16 +161,7 @@ export function WorkspaceTaskRail({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
-        {viewing && (
-          <div className="mb-2 space-y-1 border-b border-border pb-2">
-            <p className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-              <Eye className="size-3" />
-              目前檢視
-            </p>
-            {row(viewing.task, viewing.column, 'none')}
-          </div>
-        )}
-        {rows.map(({ task, branch }) => row(task, 'in_progress', branch))}
+        {rows.map(({ task, branch }) => row(task, branch))}
         {rows.length === 0 && (
           <p className="px-2 py-3 text-sm text-muted-foreground">目前沒有進行中的任務</p>
         )}
