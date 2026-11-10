@@ -114,6 +114,17 @@ async function waitForTerminal(page, needle, timeout = 30_000) {
   )
 }
 
+/** The edit sheet fills its fields after it opens, so read the title once it has landed. */
+async function waitForSheetTitle(page, dialogName, title) {
+  const input = page.getByRole('dialog', { name: dialogName }).getByLabel('任務標題')
+  let value = await input.inputValue()
+  for (let attempt = 0; value !== title && attempt < 50; attempt++) {
+    await page.waitForTimeout(100)
+    value = await input.inputValue()
+  }
+  assert.equal(value, title)
+}
+
 /** Hover targets are only stable once the terminal's debounced refit after a viewport change has landed. */
 async function waitForTerminalLayout(page) {
   await page.evaluate(() => new Promise((resolve) => {
@@ -300,11 +311,10 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await newTask.getByLabel('任務標題').fill('E2E card')
   await newTask.getByRole('button', { name: '建立任務' }).click()
   await newTask.waitFor({ state: 'detached' })
-  // A new card opens on the workspace page; a Backlog card is not listed with the running cards.
-  await page.waitForFunction(() => new URL(location.href).searchParams.get('view') === 'workspace')
-  assert.equal(await page.getByRole('navigation', { name: '進行中的任務' }).getByRole('button', { name: /E2E card/ }).count(), 0)
-  await sidebar.getByRole('button', { name: '看板' }).click()
-  await page.getByText('E2E card').first().waitFor()
+  // A new Backlog card stays on the board: only running cards open in the workspace.
+  await page.getByRole('button', { name: '開啟任務：E2E card', exact: true }).waitFor()
+  assert.equal(await sidebar.getByRole('button', { name: '看板' }).getAttribute('aria-current'), 'page')
+  assert.equal(new URL(page.url()).searchParams.get('view'), null)
 
   // The card's extra shell is independent of its not-yet-provisioned worktree.
   await page.getByRole('button', { name: '在專案目錄開啟 Terminal：E2E card' }).click()
@@ -318,10 +328,17 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.ok(fs.existsSync(path.join(projectPath, 'vf-grid-pwd.txt')), 'the shell wrote in the project root')
   await page.getByRole('button', { name: /關閉 Terminal/ }).click()
   await page.getByRole('dialog', { name: '關閉 Terminal' }).getByRole('button', { name: '確認關閉' }).click()
-  await page.getByRole('tab', { name: '任務詳情' }).click()
 
-  // Start: core builds the launch; the fake agent runs in the worktree.
-  await page.getByRole('button', { name: '開始' }).click()
+  // Start: the Backlog card's sheet starts it on the board; core builds the
+  // launch and the fake agent runs in the worktree, shown in the workspace.
+  await page.getByRole('tab', { name: '看板' }).click()
+  await page.getByRole('button', { name: '開啟任務：E2E card', exact: true }).click()
+  const startSheet = page.getByRole('dialog', { name: '編輯任務' })
+  await startSheet.getByRole('button', { name: '開始', exact: true }).click()
+  await startSheet.waitFor({ state: 'detached' })
+  assert.equal(await sidebar.getByRole('button', { name: '看板' }).getAttribute('aria-current'), 'page')
+  await sidebar.getByRole('button', { name: '任務詳情' }).click()
+  await page.locator('.xterm').first().waitFor({ state: 'visible' })
   await waitForTerminal(page, 'fake-claude ready')
   // Both rows span 56 cells, so CJK beside brackets must render as wide as ASCII.
   const [cjkWidth, asciiWidth] = await page.evaluate(() =>
@@ -552,8 +569,17 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     })
     assert.equal(converted.projectPath, gh.projectPath)
     assert.equal(converted.title, '側邊欄搜尋在中文輸入法組字時會閃爍')
+    // The converted card is in Backlog, so 前往卡片 opens its sheet over the inbox.
     await page.getByRole('button', { name: '前往卡片' }).click()
-    assert.equal(await sidebar.getByRole('button', { name: '任務詳情' }).getAttribute('aria-current'), 'page')
+    const convertedSheet = page.getByRole('dialog', { name: '編輯任務' })
+    await waitForSheetTitle(page, '編輯任務', '側邊欄搜尋在中文輸入法組字時會閃爍')
+    assert.equal(await sidebar.getByRole('button', { name: '收件匣' }).getAttribute('aria-current'), 'page')
+    await convertedSheet.getByRole('button', { name: '關閉編輯任務' }).click()
+    await convertedSheet.waitFor({ state: 'detached' })
+    // Closing the sheet goes back to the Issue it was opened from.
+    const issueDetail = page.getByRole('dialog', { name: '側邊欄搜尋在中文輸入法組字時會閃爍' })
+    await issueDetail.getByRole('button', { name: '關閉側邊欄搜尋在中文輸入法組字時會閃爍' }).click()
+    await issueDetail.waitFor({ state: 'detached' })
     await sidebar.getByRole('button', { name: '看板' }).click()
     await page.getByRole('button', { name: '在 GitHub 開啟 Issue #112' }).waitFor()
 
@@ -768,8 +794,13 @@ test('Web UI: update notice, version, Jira status columns, attachment links and 
   await page.getByRole('button', { name: /WR-5729/ }).click()
   await page.setViewportSize({ width: 375, height: 780 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true)
+  // The new card is in Backlog, so 前往卡片 opens its sheet over the inbox.
   await page.getByRole('button', { name: '前往卡片' }).click()
-  assert.equal(await page.locator('aside').first().getByRole('button', { name: '任務詳情' }).getAttribute('aria-current'), 'page')
+  const ticketSheet = page.getByRole('dialog', { name: '編輯任務' })
+  await waitForSheetTitle(page, '編輯任務', state.board.backlog[0].title)
+  assert.equal(await page.locator('aside').first().getByRole('button', { name: '收件匣' }).getAttribute('aria-current'), 'page')
+  await ticketSheet.getByRole('button', { name: '關閉編輯任務' }).click()
+  await ticketSheet.waitFor({ state: 'detached' })
   await page.locator('aside').first().getByRole('button', { name: '收件匣' }).click()
   await page.getByRole('tab', { name: /Issues/ }).last().click()
   await page.getByRole('button', { name: /#112/ }).click()
@@ -841,7 +872,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await card('Delete third').click()
   await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await page.getByRole('button', { name: '按住刪除任務', exact: true }).click({ delay: 1400 })
-  await page.getByText('從左側選一張卡片，或建立新的任務。').waitFor()
+  await page.getByText('從左側選一張執行中的卡片。').waitFor()
   await page.waitForTimeout(1000)
   await sidebar.getByRole('button', { name: '看板', exact: true }).click()
   await card('Delete third').waitFor({ state: 'detached' })
@@ -1088,11 +1119,16 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   assert.equal(await running.getByRole('button', { name: /Running terminal/ }).getAttribute('aria-current'), 'page')
   const where = () => Object.fromEntries(new URL(page.url()).searchParams)
   assert.deepEqual(where(), { view: 'workspace', task: second.task.id })
-  // A done card opened from the board shows in the workspace but is never listed with the running cards.
+  // A done card opened from the board shows its read-only sheet, not the workspace.
   await menu.getByRole('button', { name: '看板' }).click()
   await page.getByRole('button', { name: '開啟任務：Done terminal' }).click()
-  await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
-  await page.waitForFunction((id) => new URL(location.href).searchParams.get('task') === id, third.task.id)
+  const doneSheet = page.getByRole('dialog', { name: '任務詳情' })
+  await doneSheet.getByText('任務詳情 · Done').waitFor()
+  assert.equal(await doneSheet.getByRole('button', { name: '前往工作區' }).count(), 0)
+  assert.equal(await menu.getByRole('button', { name: '看板' }).getAttribute('aria-current'), 'page')
+  await doneSheet.getByRole('button', { name: '關閉任務詳情' }).click()
+  await doneSheet.waitFor({ state: 'detached' })
+  await menu.getByRole('button', { name: '任務詳情' }).click()
   assert.equal(await running.getByRole('button', { name: /Done terminal/ }).count(), 0)
   await running.getByRole('button', { name: /Running terminal/ }).click()
   // The folded list survives a reload.
@@ -1102,7 +1138,12 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   assert.equal(await running.getByRole('button', { name: 'Running terminal' }).getAttribute('aria-current'), 'page')
   await page.getByRole('button', { name: '展開任務清單' }).click()
   // An address from before the split (a bare card) opens that card's workspace.
+  await page.goto(new URL(`?task=${second.task.id}`, page.url()).href)
+  await page.waitForFunction((id) => new URL(location.href).searchParams.get('view') === 'workspace' && new URL(location.href).searchParams.get('task') === id, second.task.id)
+  assert.deepEqual(where(), { view: 'workspace', task: second.task.id })
+  // One naming a card that is not running leaves nothing selected.
   await page.goto(new URL(`?task=${first.task.id}`, page.url()).href)
-  await page.waitForFunction((id) => new URL(location.href).searchParams.get('view') === 'workspace' && new URL(location.href).searchParams.get('task') === id, first.task.id)
-  assert.deepEqual(where(), { view: 'workspace', task: first.task.id })
+  await page.waitForFunction(() => !new URL(location.href).searchParams.has('task'))
+  assert.deepEqual(where(), { view: 'workspace' })
+  await page.getByText('從左側選一張執行中的卡片。').waitFor()
 })
