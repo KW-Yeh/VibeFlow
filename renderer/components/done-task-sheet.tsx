@@ -6,23 +6,25 @@ import type { SlaveEntry } from '@/components/board-columns'
 import { MarkdownContent } from '@/components/markdown-content'
 import { TaskFormDialog, PropertyGroup, PropertyNote } from '@/components/task-form-layout'
 import { TaskProgressDetail } from '@/components/task-progress'
+import { DoneCommitDiffContent } from '@/components/commit-diff'
 import { SlavesContent, TaskOutcomeSection } from '@/components/task-workspace-panel'
 import { HoldButton } from '@/components/ui/hold-button'
 import { TabIndicator } from '@/components/ui/tab-indicator'
 import { cn } from '@/lib/utils'
 import type { Task } from '@/lib/types'
 
-type DoneTab = 'task' | 'slaves'
+type DoneTab = 'task' | 'slaves' | 'diff'
 
 const TAB_LABEL: Record<DoneTab, string> = {
   task: '任務與成果',
   slaves: 'Slaves',
+  diff: 'Git diff',
 }
 
 /**
- * A finished card's account of the work: its prompt and what it came to. The
- * worktree and artifacts are gone by now, so everything here is read from the
- * stored card.
+ * A finished card's account of the work: its prompt, what it came to and its
+ * commits. The worktree and artifacts are gone by now, so everything here is
+ * read from the stored card; a commit's changes are fetched only when opened.
  */
 export function DoneTaskSheet({
   task,
@@ -75,7 +77,10 @@ function DoneTaskSheetBody({
   const [picked, setPicked] = useState<DoneTab | null>(null)
   const tabBaseId = useId()
 
-  const tabs: DoneTab[] = isMaster && slaves.length > 0 ? ['slaves', 'task'] : ['task']
+  const commits = isMaster ? [] : (task.outcome?.commits ?? [])
+  const tabs: DoneTab[] = isMaster
+    ? slaves.length > 0 ? ['slaves', 'task'] : ['task']
+    : commits.length > 0 ? ['task', 'diff'] : ['task']
   const activeTab = picked && tabs.includes(picked) ? picked : tabs[0]
 
   const content = (
@@ -103,6 +108,7 @@ function DoneTaskSheetBody({
                 )}
                 {TAB_LABEL[tab]}
                 {tab === 'slaves' && <span className="ml-1 tabular-nums text-muted-foreground/80">{slaves.length}</span>}
+                {tab === 'diff' && <span className="ml-1 tabular-nums text-muted-foreground/80">{commits.length}</span>}
               </button>
             ))}
           </div>
@@ -114,7 +120,9 @@ function DoneTaskSheetBody({
         aria-labelledby={`${tabBaseId}-${activeTab}`}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        {activeTab === 'slaves' ? (
+        {activeTab === 'diff' ? (
+          <DoneCommitDiffContent taskId={task.id} commits={commits} prNumber={task.outcome?.pr?.number} />
+        ) : activeTab === 'slaves' ? (
           <SlavesContent slaves={slaves} progressById={{}} onSelectTask={onSelectTask} />
         ) : (
           <div className="space-y-4">

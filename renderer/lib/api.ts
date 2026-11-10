@@ -28,6 +28,8 @@ import type {
   JiraRef,
   JiraScope,
   JevKeyStatus,
+  BranchCommits,
+  CommitDiff,
   GithubTaskLinks,
   LibraryEntry,
   LibraryKind,
@@ -302,6 +304,39 @@ export async function getDiffFile(
 ): Promise<DiffFile | null> {
   const b = bridge()
   return b ? b.getDiffFile(taskId, filePath) : null
+}
+
+export async function listCommits(taskId: string): Promise<BranchCommits | null> {
+  const b = bridge()
+  return b ? b.listCommits(taskId) : null
+}
+
+export async function getCommitEntries(taskId: string, ref: string): Promise<DiffEntry[] | null> {
+  const b = bridge()
+  return b ? b.getCommitEntries(taskId, ref) : null
+}
+
+export async function getCommitFile(
+  taskId: string,
+  ref: string,
+  filePath: string
+): Promise<DiffFile | null> {
+  const b = bridge()
+  return b ? b.getCommitFile(taskId, ref, filePath) : null
+}
+
+export async function getDoneCommitDiff(taskId: string, sha: string): Promise<CommitDiff> {
+  const b = bridge()
+  return b ? b.getDoneCommitDiff(taskId, sha) : { source: 'none', reason: 'bridge unavailable' }
+}
+
+export async function getDoneCommitFile(
+  taskId: string,
+  sha: string,
+  filePath: string
+): Promise<DiffFile | null> {
+  const b = bridge()
+  return b ? b.getDoneCommitFile(taskId, sha, filePath) : null
 }
 
 export async function listArtifacts(taskId: string): Promise<TaskArtifact[]> {

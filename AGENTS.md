@@ -267,6 +267,7 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── store.ts           VibeFlowState, Task, board mutators (LAZY init)
 │   ├── tasks.ts           create / update a card (UI and CLI share it)
 │   ├── git.ts             git via child_process: info / worktree / diff / commit+push
+│   ├── commit-diff.ts     diff by commit: a running card's base..HEAD, a done card's commits (base, then gh)
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
@@ -291,7 +292,9 @@ renderer/                  Next.js app (Pages Router)
 │   ├── github-view.tsx    Issues & PRs view (top pane): cards, detail drawer, convert to Backlog
 │   ├── project-folder-picker.tsx recent-projects select + typed path; flags lost paths
 │   ├── task-workspace-panel.tsx  a running card's workspace: terminal + task/artifacts/diff
-│   ├── done-task-sheet.tsx a done card's sheet from the board: description + outcome, usage
+│   ├── done-task-sheet.tsx a done card's sheet from the board: description + outcome, usage, Git diff by commit
+│   ├── diff-file.tsx      shared diff pieces: file viewer, modal, layout toggles, entry row
+│   ├── commit-diff.tsx    the Git diff tab grouped by commit (running) and a done card's commit view
 │   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
@@ -422,6 +425,14 @@ docs/                      everything that is not code (index: docs/README.md)
   are cached per repo for 5 minutes; the view's refresh button forces one. A card converted from an
   Issue/PR stores it in `Task.github`; other cards find their PR by branch
   (`github:taskLinks`). No token is stored — `gh`'s login is the only credential.
+- **Git diff by commit** (`packages/core/src/commit-diff.ts`, spec:
+  `docs/features/commit-diff/`). A running card's tab switches between every
+  changed file and `base..HEAD` commits (plus "uncommitted"); the choice is a
+  per-viewer pref in `DiffViewPrefs.groupBy`. A done card lists the commits its
+  outcome recorded and reads one only when opened: from the project's base when
+  it contains the commit (merge / fast-forward), else from `outcome.pr` via
+  `gh api` (unified patch only), else a reason. Handlers take hex shas or
+  `'working'` only; a done card reads only shas in its outcome.
 - **No spec/decision tab.** VibeFlow does not display a branch's `spec.md`
   (removed in `docs/features/commit-diff/`); the feature-spec-plan skill still
   commits it to the repo. `decisions.ts` only deletes `<worktree-dir>.DECISIONS.md`

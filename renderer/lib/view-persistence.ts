@@ -96,12 +96,18 @@ export interface DiffViewPrefs {
   split: boolean
   /** Show every unchanged line instead of folding them around the changes. */
   fullContext: boolean
+  /** The Git diff tab's list: every changed file, or the branch's commits. */
+  groupBy: 'all' | 'commit'
 }
 
 export function readDiffView(): DiffViewPrefs {
   const value = read(DIFF_VIEW_KEY)
   const prefs = value && typeof value === 'object' ? (value as Partial<DiffViewPrefs>) : {}
-  return { split: prefs.split === true, fullContext: prefs.fullContext === true }
+  return {
+    split: prefs.split === true,
+    fullContext: prefs.fullContext === true,
+    groupBy: prefs.groupBy === 'commit' ? 'commit' : 'all',
+  }
 }
 
 export const writeDiffView = (prefs: DiffViewPrefs) => write(DIFF_VIEW_KEY, prefs)

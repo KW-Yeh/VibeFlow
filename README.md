@@ -23,7 +23,7 @@ vibeflow
 - **看板式管理多個 agent**：Backlog → In Progress → Done。把卡片拖進 In Progress，agent 就在它的 worktree 裡開始工作。
 - **即時終端機**：每張卡都有自己的互動式終端機，agent 要你確認時直接在畫面上回答。
 - **關掉也不會中斷**：裝了 tmux 時，agent 跑在背景 session 裡；關掉瀏覽器甚至 VibeFlow 本身，任務都會繼續，重新開啟就接回來。
-- **看得到 agent 做了什麼**：每張卡有 diff 檢視、artifacts，以及「決策」分頁：顯示這張卡的分支新增或修改的 `spec.md`（agent 做了哪些決定、為什麼）。卡片完成後打開時預設顯示決策；本地分支刪掉後，會改從 `origin/<branch>` 或 GitHub PR 的 merge commit 讀回合併當時的內容（squash／rebase merge 的卡片讀不回來）。
+- **看得到 agent 做了什麼**：每張卡有 diff 檢視（可切換成依 commit 檢視）與 artifacts；完成的卡片也能依 commit 回看變更：commit 已合併進 base 就從本地讀，否則透過 `gh` 從 PR 抓回。
 - **選你要的 agent**：Claude Code 或 Codex，每張卡可以各自指定 model、推理強度（effort）與 Auto Mode（是否免確認執行）。未指定 model 時由 Jev 依任務複雜度挑選；Jev 判斷不了時，會先讓最強的模型唯讀讀過 repo 補充 context，再交給 Jev 決定，這份分析也會附給執行的 agent。Effort 預設為 `auto`，同樣由 Jev 選擇模型支援的級距。在「設定 → Jev 自動選擇模型與 effort」輸入 TypeSafe Jev API key，或在啟動 VibeFlow 的環境設定 `TYPESAFE_API_KEY`。若沒有金鑰或 Jev 暫時無法使用，會顯示原因並使用 CLI 預設模型與模型預設的 effort。
 - **Web UI 與終端機 UI 共用同一個看板**：習慣瀏覽器用 Web UI，習慣終端機用 `vibeflow tui`。
 - **Jira 工作收件匣**：安裝 [Atlassian CLI（Windows）](https://developer.atlassian.com/cloud/acli/guides/install-windows/) 或 [Atlassian CLI（macOS）](https://developer.atlassian.com/cloud/acli/guides/install-macos/)，再到設定登入，就能在「收件匣」的 Jira 分頁以固定四欄查看指派給自己的 ticket、選擇抓取範圍、開啟附件，並選擇本機專案建立 Backlog 卡片。
@@ -61,7 +61,7 @@ VibeFlow 會在本機啟動，並自動用瀏覽器開啟看板。第一次啟�
 3. 寫下標題與你要 agent 做的事，選 agent，按建立。
 4. 把卡片拖到 **In Progress**，agent 就開始工作；點開卡片就能看到它的即時終端機。
 5. 做完之後在卡片上檢查 diff；要留下的變更請讓 agent commit、push 或開 PR。
-6. 把卡片移到 **Done**：VibeFlow 會刪掉這張卡的 worktree 與本地分支。**尚未 commit 的變更會一起消失**，移動前會再跟你確認一次。已 push 的 `spec.md` 之後仍會顯示在卡片的「決策」分頁。
+6. 把卡片移到 **Done**：VibeFlow 會刪掉這張卡的 worktree 與本地分支。**尚未 commit 的變更會一起消失**，移動前會再跟你確認一次。已 push 的 commit 之後仍可在卡片的「Git diff」分頁回看。
 
 有問題時先跑：
 

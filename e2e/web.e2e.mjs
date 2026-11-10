@@ -481,12 +481,27 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(approved.result.pushed, true, JSON.stringify(approved.result))
   assert.match(await git(remotePath, 'log', '--oneline', task.branch), /e2e: fake agent change/)
 
+  // Diff grouped by commit: the approved commit lists its file; the choice survives a reload.
+  await page.getByRole('radio', { name: '依 commit' }).click()
+  await page.getByRole('button', { name: 'e2e: fake agent change' }).click({ timeout: 20_000 })
+  await page.getByRole('button', { name: /檢視 fake-agent-output\.txt/ }).waitFor()
+  await page.reload()
+  await runningList.getByRole('button', { name: /E2E card/ }).click()
+  await page.getByRole('tab', { name: /Git diff/ }).click()
+  assert.equal(await page.getByRole('radio', { name: '依 commit' }).getAttribute('aria-checked'), 'true')
+  await page.getByRole('radio', { name: '全部' }).click()
+
   // Finish: cleanup removes the worktree and keeps what the work amounted to.
   const done = await page.evaluate((id) => window.vibeflow.cleanupTask(id), task.id)
   const finished = [...done.board.in_progress, ...done.board.done, ...done.board.backlog].find((x) => x.id === task.id)
   assert.equal(finished.worktreePath, undefined)
   assert.ok(finished.outcome?.files.some((f) => f.path === 'fake-agent-output.txt'))
   assert.equal(fs.existsSync(task.worktreePath), false)
+  // Its commit was pushed but never merged and the card has no PR: a reason, not an error.
+  const recorded = finished.outcome.commits[0]
+  assert.match(recorded.subject, /e2e: fake agent change/)
+  const doneDiff = await page.evaluate(([id, sha]) => window.vibeflow.getDoneCommitDiff(id, sha), [task.id, recorded.sha])
+  assert.equal(doneDiff.source, 'none', JSON.stringify(doneDiff))
 
   if (canFakeGh) {
     // Work items: a project whose origin is on GitHub lists its Issues; the

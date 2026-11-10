@@ -1,6 +1,6 @@
 # Plan：Git diff 依 commit 分類
 
-- 狀態：已確認
+- 狀態：已實作
 - 對應 Spec：[spec.md](./spec.md)
 - Spec 確認依據：2026-11-10 使用者確認整份 Spec；同日追加「移除決策分頁」與 UI 設計稿確認
 - 更新日期：2026-11-10
@@ -156,4 +156,31 @@ Spec 已排除；outcome 格式不動，避免 migration。
 
 ## 實作與驗證紀錄
 
-（尚未實作）
+2026-11-10，branch `feat/commit-diff`。
+
+### 完成內容
+
+- 移除決策分頁：UI、`task:getSpecs`、`specs.ts`、相關測試與文件（獨立 commit）。
+- core：`commit-diff.ts`（branch commit 清單、單一 commit／未 commit 的檔案與內容、Done 卡 base → gh → none）；`git.ts` 的 entry 解析抽成共用 builder。5 個 handler：`git:listCommits`、`git:getCommitEntries`、`git:getCommitFile`、`git:getDoneCommitDiff`、`git:getDoneCommitFile`（Plan 原列 4 個，Done 卡單檔內容另開一個 handler 以分開驗證 outcome sha）。
+- UI：共用 diff 元件抽到 `diff-file.tsx`；`commit-diff.tsx` 提供「全部／依 commit」切換、live commit 檢視與 Done 卡 Git diff 分頁。
+- 與 Plan 的差異：root commit 改用 `git show --diff-merges=first-parent` 取得變更，不寫死 empty-tree hash（commit 時 secret scanner 會誤判）。
+
+### 驗證結果
+
+| 檢查 | 結果 |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | 通過 |
+| `npx tsc --noEmit -p renderer/tsconfig.json` | 通過 |
+| `npm test` | 574 / 574 通過（新增 `test/commit-diff.test.mjs` 13 個、`service.test.mjs` 1 個） |
+| `npm run build:web` | 通過 |
+| `npm run test:e2e` | **4 / 4 失敗，與本次無關**：在 main 的乾淨 worktree 上同樣 4 個在同一行失敗（第一個停在 `web.e2e.mjs:304`「建立卡片後應跳到 workspace」，為 30dbd08 改動後 e2e 未同步）。因此新增的 e2e 步驟（依 commit 切換與重整保留、Done 卡 `none`）**尚未實際跑到**。 |
+| Live 實測（AC-1、AC-2） | 暫存 store + CLI 建的 In Progress 卡（2 commit + 1 修改 + 1 untracked）：清單、點 commit、點檔開 modal 皆正確；重整後仍為「依 commit」。 |
+| Done 實測（AC-3） | 指向本 repo、PR #121 的 commit（merge commit 合併）：來源顯示「本地 git」，檔案 modal 有完整前後內容。 |
+| Done 實測（AC-4） | 同一組 commit、專案路徑不存在 → 走 gh：來源「GitHub #121」，patch 上色正確。真實 squash merge 的卡未測，以單元測試的 fake gh 覆蓋。 |
+| Done 實測（AC-5） | 沒 PR、專案路徑不存在：顯示「此卡沒有 PR，且 base 中找不到這個 commit。」 |
+| 惰性載入（AC-6、AC-8） | 攔截 WebSocket：開 Done sheet、切到 Git diff 分頁都沒有 `getDoneCommit*`／`getSpecs` 呼叫；點 commit 才發出。 |
+| Console | 無錯誤 |
+
+### 已知限制
+
+- `git show` 讀出的內容會被 trim（沿用既有 `git()` helper），所以 commit 檢視的檔尾換行不會顯示差異；既有「全部」檢視的 base 端也有同樣行為。

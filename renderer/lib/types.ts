@@ -22,6 +22,13 @@ export type {
   PrStatus,
 } from '../../packages/core/src/git'
 export type {
+  BranchCommits,
+  CommitDiff,
+  CommitSummary,
+  PatchFile,
+  WorkingSummary,
+} from '../../packages/core/src/commit-diff'
+export type {
   ArtifactContent,
   ArtifactKind,
   TaskArtifact,
