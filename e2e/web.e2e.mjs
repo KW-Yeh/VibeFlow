@@ -501,7 +501,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // Diff grouped by commit: the approved commit lists its file; the choice survives a reload.
   await page.getByRole('radio', { name: '依 commit' }).click()
   await page.getByRole('button', { name: 'e2e: fake agent change' }).click({ timeout: 20_000 })
-  await page.getByRole('button', { name: /檢視 fake-agent-output\.txt/ }).waitFor()
+  await page.getByTitle('檢視 fake-agent-output.txt 的 diff').waitFor()
   await page.reload()
   await runningList.getByRole('button', { name: /E2E card/ }).click()
   await page.getByRole('tab', { name: /Git diff/ }).click()
