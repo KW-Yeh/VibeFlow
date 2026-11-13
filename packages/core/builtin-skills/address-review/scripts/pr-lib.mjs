@@ -45,6 +45,7 @@ const PR_QUERY = `query($owner:String!,$repo:String!,$number:Int!){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
       number title state merged headRefName headRefOid baseRefName
+      mergeable mergeStateStatus
       isCrossRepository
       reviews(last:50){nodes{databaseId author{login} state body createdAt}}
       comments(last:100){nodes{databaseId author{login} body createdAt}}

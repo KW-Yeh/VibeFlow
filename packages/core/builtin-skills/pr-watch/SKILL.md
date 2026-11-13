@@ -1,6 +1,6 @@
 ---
 name: pr-watch
-description: Watch a GitHub pull request until it is merged or closed, waking only when it needs work — new review comments are handled with address-review, a base branch that moved ahead is rebased onto. Use when the user asks to watch, monitor, follow or babysit a PR, or says "監聽 PR", "盯著 PR", "看著這個 PR", "PR 有 comment 就處理", "watch the PR", "keep an eye on the PR".
+description: Watch a GitHub pull request until it is merged or closed, waking only when it needs work — new review comments are handled with address-review, a PR that conflicts with its base or must catch up with it is rebased. Use when the user asks to watch, monitor, follow or babysit a PR, or says "監聽 PR", "盯著 PR", "看著這個 PR", "PR 有 comment 就處理", "watch the PR", "keep an eye on the PR".
 ---
 
 # Watch a PR
@@ -32,21 +32,27 @@ node "<skill>/scripts/pr-watch.mjs" --pr <n>
 Options: `--interval <sec>` (default 60, min 20); `--since-now` to skip items that are
 already there when watching starts (by default they are reported on the first poll, so a
 backlog gets handled first); `--state <file>` (default: under `$VIBEFLOW_SCRATCH_DIR`, or
-the system temp dir).
+the system temp dir); `--rebase-on-any-base-change` to also wake for every new commit on
+the base branch the PR lacks (default off: a base that merely moved ahead is ignored).
+
+By default the watcher wakes for the base branch only when GitHub reports the PR conflicts
+with it (`mergeable: CONFLICTING`) or branch protection requires catching up
+(`mergeStateStatus: BEHIND`). While GitHub is still computing (`UNKNOWN`) it waits for the
+next poll. Each base commit is reported once.
 
 ## 2. On exit
 
 | Exit | Event | Do |
 | --- | --- | --- |
 | 10 | `comments` | Run the **address-review** skill for this PR. |
-| 11 | `base` | Rebase (step 3). |
+| 11 | `base` | Read `reason`: `behind` → rebase (step 3). `conflict` → step 3 to find the conflicting files, then report them and stop watching. |
 | 0 | `merged` / `closed` | Report and stop. Do not restart. |
 | 3 | `timeout` | Restart the watcher as it was. |
 | 2 | `error` | Report the message and stop. |
 
-After handling `comments` or `base`, restart the watcher with the same options unless
-the handling stopped (see below). The watcher remembers what it already reported, so a
-restart never re-reports the same comments or the same base commit.
+After handling `comments` or a `behind` event, restart the watcher with the same options
+unless the handling stopped (see below). The watcher remembers what it already reported, so
+a restart never re-reports the same comments or the same base commit.
 
 Whether to stop for the user follows `VIBEFLOW_AUTO_MODE`:
 
@@ -58,14 +64,19 @@ Whether to stop for the user follows `VIBEFLOW_AUTO_MODE`:
 
 ## 3. Rebase
 
+The event's `reason` decides what happens on a conflict: `behind` means the rebase is
+expected to be clean; `conflict` means GitHub says it is not, so the rebase below is run
+to name the conflicting files (if it does finish clean, carry on as for `behind`).
+
 ```bash
 git status --porcelain            # must be empty; otherwise stop and tell the user
 git fetch origin <base>
 git rebase origin/<base>
 ```
 
-- Conflict → `git rebase --abort`, report the conflicting files, and **stop watching**,
-  whatever the auto mode. Never resolve conflicts unattended.
+- Conflict (the rebase stops) → `git rebase --abort`, report the
+  conflicting files, and **stop watching**, whatever the auto mode. Never resolve conflicts
+  unattended.
 - Clean → run the project's affected checks (typecheck, tests). A failure stops watching
   and is reported; nothing is pushed.
 - Passed → `git push --force-with-lease`, then restart the watcher.
