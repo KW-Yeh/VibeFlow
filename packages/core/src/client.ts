@@ -188,6 +188,14 @@ export function createBridge(t: BridgeTransport) {
   /** Move a Backlog card to In Progress and start its agent on the host. */
   startTask: (taskId: string): Promise<{ state: VibeFlowState; task: Task }> =>
     t.invoke('vibeflow:startTask', taskId),
+  /**
+   * Carry a running card on in a new agent session. It starts from a brief core
+   * builds from the card's own facts, not from the old conversation; `force`
+   * interrupts an agent that is still working. Refusals carry a code
+   * (`NOT_IN_PROGRESS`, `NOT_LAUNCHED`, `NO_WORKTREE`, `AGENT_BUSY`, `ALREADY_CONTINUING`).
+   */
+  continueTask: (payload: { taskId: string; force?: boolean }): Promise<{ state: VibeFlowState; task: Task }> =>
+    t.invoke('vibeflow:continueTask', payload),
   /** Cards as a master sees them; filter by master or a single card. */
   taskSummaries: (filter?: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> =>
     t.invoke('task:summaries', filter),

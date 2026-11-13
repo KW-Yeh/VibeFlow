@@ -451,3 +451,27 @@ test('a running agent nobody re-attached since a host restart is attached before
   assert.equal(reattach.command, undefined, 're-attached, not relaunched')
   assert.ok(sessions.writes.some((w) => w.key === dev.id && w.data.includes('hello')))
 })
+
+test('continuing a master lists its cards instead of git; continuing a card keeps it a master\'s slave', async (t) => {
+  const { core, sessions, master, dev, qa, stray } = await masterWithCards(t)
+  const started = (card) => core.handlers['vibeflow:startTask'](card.id).then((r) => r.task)
+  await started(master)
+  await started(dev)
+
+  const startsBefore = sessions.starts.length
+  await core.handlers['vibeflow:continueTask']({ taskId: master.id, force: true })
+  const { command: masterCommand } = sessions.starts[startsBefore]
+  assert.ok(masterCommand.includes('## 底下的卡片'), masterCommand)
+  assert.ok(masterCommand.includes(dev.id) && masterCommand.includes(qa.id), 'both of its cards are listed')
+  assert.ok(!masterCommand.includes(stray.id), "another master's card is not")
+  assert.ok(!masterCommand.includes('## 分支與程式碼'), 'a master has no git to report')
+  assert.ok(masterCommand.includes('你是 VibeFlow 的 Master agent'), 'the master instructions come back with the new session')
+
+  await core.handlers['vibeflow:continueTask']({ taskId: dev.id, force: true })
+  const { command: slaveCommand } = sessions.starts.at(-1)
+  assert.ok(slaveCommand.includes('## 分支與程式碼'), slaveCommand)
+  assert.ok(slaveCommand.includes('--append-system-prompt'), slaveCommand)
+  assert.ok(slaveCommand.includes(master.id), 'it still reports to its master')
+  assert.ok(!slaveCommand.includes('你是 VibeFlow 的 Master agent'), 'a card never gets the master instructions')
+  assert.equal(findCard(core, dev.id).task.masterId, master.id)
+})

@@ -10,6 +10,7 @@ import { claudeLastReply, type TodoItem } from './progress'
  */
 
 export const MAX_BRIEF_CHARS = 8_000
+export const MAX_REPLY_CHARS = 2_000
 /** The card text is the task itself, so it keeps most of the budget; only an extreme description is cut. */
 const MAX_DESCRIPTION_CHARS = 4_000
 /** How much of a transcript's end is read to find the last reply. */
@@ -76,7 +77,7 @@ interface Limits {
 
 /** Tried in order until the brief fits: the reply goes first, then the long lists. */
 const LIMITS: Limits[] = [
-  { reply: 2_000, commits: 20, files: 30, todos: 40, cards: 30 },
+  { reply: MAX_REPLY_CHARS, commits: 20, files: 30, todos: 40, cards: 30 },
   { reply: 800, commits: 10, files: 15, todos: 25, cards: 20 },
   { reply: 0, commits: 5, files: 8, todos: 15, cards: 10 },
   { reply: 0, commits: 0, files: 0, todos: 8, cards: 5 },
