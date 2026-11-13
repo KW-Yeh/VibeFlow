@@ -125,6 +125,47 @@ test('decide — an up-to-date head or a fork PR never asks for a rebase', () =>
   assert.equal(decide(makePr(), null, EMPTY_STATE).event, null)
 })
 
+test('decide — a base that only moved ahead does not wake the agent', () => {
+  const base = { oid: 'b2', behindBy: 3 }
+  assert.equal(decide(makePr({ mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' }), base, EMPTY_STATE).event, null)
+  assert.equal(decide(makePr({ mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED' }), base, EMPTY_STATE).event, null)
+  assert.equal(decide(makePr(), base, EMPTY_STATE).event, null, 'fields missing')
+})
+
+test('decide — CONFLICTING reports a conflict, BEHIND reports a catch-up', () => {
+  const base = { oid: 'b2', behindBy: 1 }
+  const conflict = decide(makePr({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), base, EMPTY_STATE)
+  assert.deepEqual(conflict.event, { event: 'base', reason: 'conflict', pr: 7, base: 'main', sha: 'b2', behindBy: 1 })
+  const behind = decide(makePr({ mergeable: 'MERGEABLE', mergeStateStatus: 'BEHIND' }), base, EMPTY_STATE)
+  assert.equal(behind.event.reason, 'behind')
+  const both = decide(makePr({ mergeable: 'CONFLICTING', mergeStateStatus: 'BEHIND' }), base, EMPTY_STATE)
+  assert.equal(both.event.reason, 'conflict')
+})
+
+test('decide — UNKNOWN is no event, and a head that is not behind never asks for a rebase', () => {
+  const base = { oid: 'b2', behindBy: 1 }
+  assert.equal(decide(makePr({ mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }), base, EMPTY_STATE).event, null)
+  assert.equal(decide(makePr({ mergeable: 'CONFLICTING' }), { oid: 'b2', behindBy: 0 }, EMPTY_STATE).event, null)
+  assert.equal(decide(makePr({ mergeStateStatus: 'BEHIND' }), null, EMPTY_STATE).event, null)
+})
+
+test('decide — --rebase-on-any-base-change restores waking on every new base commit', () => {
+  const opts = { rebaseOnAnyBaseChange: true }
+  const pr = makePr({ mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' })
+  const first = decide(pr, { oid: 'b2', behindBy: 1 }, EMPTY_STATE, opts)
+  assert.equal(first.event.reason, 'behind')
+  assert.equal(decide(pr, { oid: 'b2', behindBy: 1 }, first.state, opts).event, null)
+  assert.equal(decide(pr, { oid: 'b3', behindBy: 2 }, first.state, opts).event.sha, 'b3')
+  assert.equal(parseArgs(['--rebase-on-any-base-change']).rebaseOnAnyBaseChange, true)
+  assert.equal(parseArgs([]).rebaseOnAnyBaseChange, false)
+})
+
+test('baseline — a base that would not wake the agent is not recorded as reported', () => {
+  const quiet = makePr({ mergeStateStatus: 'CLEAN' })
+  assert.equal(baseline(quiet, { oid: 'b1', behindBy: 3 }).baseOid, null)
+  assert.equal(baseline(quiet, { oid: 'b1', behindBy: 3 }, { rebaseOnAnyBaseChange: true }).baseOid, 'b1')
+})
+
 test('baseline — --since-now treats what is already there as reported', () => {
   const pr = makePr({ mergeStateStatus: 'BEHIND', comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] } })
   const state = baseline(pr, { oid: 'b1', behindBy: 3 })
