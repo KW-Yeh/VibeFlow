@@ -70,6 +70,12 @@ task update options:
 task start / list / show / send (need the running VibeFlow host):
   start --task <id>      Move a Backlog card to In Progress and start its agent,
                          the same as dragging it in the app
+  start --task <id> --new-session [--force]
+                         An In Progress card that has run carries on in a NEW agent
+                         session: it starts from a short brief (card text, branch and
+                         PR state, todos, the last reply), not the old conversation,
+                         and its usage so far is kept. Nothing the card produced is
+                         touched. --force interrupts an agent that is still working
   list [--master <id>]   Every card, or one master's cards, with column, whether
                          its agent is running, todo progress, activity and PR
   show --task <id>       The same summary for one card
@@ -171,6 +177,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         text:          { type: 'string' },
         from:          { type: 'string' },
         force:         { type: 'boolean' },
+        'new-session': { type: 'boolean' },
         'store-path':  { type: 'string' },
         profile:       { type: 'string' },
         help:          { type: 'boolean', short: 'h' },
@@ -204,6 +211,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     if (!task) fail('TASK_NOT_FOUND', `Task not found: ${taskId}`)
     return { taskId, path: addTaskArtifact(task, values.file) }
   }
+
+  if (values['new-session'] && sub !== 'start') fail('INVALID_ARGUMENT', '--new-session only goes with task start')
+  if (sub === 'start' && values.force && !values['new-session']) fail('INVALID_ARGUMENT', '--force goes with task start --new-session')
 
   if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath)
 
@@ -309,7 +319,7 @@ const HOST_COMMANDS = ['start', 'list', 'show', 'send']
  */
 async function hostCommand(
   sub: string,
-  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean },
+  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean; 'new-session'?: boolean },
   storePath: string
 ): Promise<Record<string, unknown>> {
   if (sub !== 'list' && !values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
@@ -321,6 +331,16 @@ async function hostCommand(
   if (!lock) fail('HOST_NOT_RUNNING', `No VibeFlow host is running for ${storePath}. Start it with \`vibeflow\` first.`)
   const remote = connectToHost(lock)
   try {
+    if (sub === 'start' && values['new-session']) {
+      try {
+        const { task } = await remote.api.continueTask({ taskId: values.task!, force: values.force === true })
+        return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null }, newSession: true }
+      } catch (err) {
+        // The caller acts on why it was refused (not running, busy, …).
+        const e = err as { code?: string; message?: string }
+        fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
+      }
+    }
     if (sub === 'start') {
       const { task } = await remote.api.startTask(values.task!)
       return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null } }
