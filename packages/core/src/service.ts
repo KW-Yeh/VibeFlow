@@ -70,6 +70,7 @@ import {
   isCommitSha,
 } from './commit-diff'
 import { assertMasterRef, createTaskFromInput, provisionTaskWorktree } from './tasks'
+import type { TitleTranslator } from './branch-name'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
 import { decisionsKey, deleteDecisions } from './decisions'
@@ -310,6 +311,8 @@ export interface CoreOptions {
   modelCatalog?: ModelCatalog
   /** Injectable Jev routing for tests. */
   jevRouter?: JevRouter
+  /** Translates a non-English card title into a branch slug. The host passes the real one; without it no card title is ever translated. */
+  titleTranslator?: TitleTranslator
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -333,7 +336,7 @@ export interface Core {
  * take ids; a standalone shell may take a selected folder when no task exists.
  * No channel accepts a client-supplied shell command. Events use one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
   const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
@@ -904,7 +907,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         attachments: p.attachments,
         github: p.github,
         jira: p.jira,
-      })
+      }, { translateTitle: titleTranslator })
       return { state: getState(), task }
     },
 

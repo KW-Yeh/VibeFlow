@@ -8,8 +8,10 @@ import { runAgentPrint } from './agent-print'
  *   1. eBug code in the title/description (e.g. WCL260522-0002) → `fix/<code>`
  *   2. Jira ticket key (e.g. WR-4832)                           → `feature/<key>`
  *   3. Card title → short English slug → `feature/<slug>` (or `fix/<slug>`
- *      when the wording hints at a bug fix). Non-English titles are
- *      translated via a headless `claude -p` call when available.
+ *      when the wording hints at a bug fix). A title with non-ASCII letters
+ *      is translated by the injected translator (the host passes
+ *      `claudeTitleTranslator`, a headless `claude -p` call); with none
+ *      injected nothing is translated.
  *   4. Anything else falls back to the legacy `vf-<taskId>` (caller's job).
  */
 
@@ -72,12 +74,18 @@ export function buildCandidateBranch(
   return null
 }
 
+/** Turns a title into a slug, or null when it cannot. Never throws. */
+export type TitleTranslator = (title: string) => Promise<string | null>
+
+/** Only text the local slug cannot read is worth an LLM call. */
+const NON_ASCII_LETTER_RE = /(?![\x00-\x7F])\p{L}/u
+
 /**
  * Translate a (typically Chinese) title into an English slug via a headless
  * `claude -p` call. Best-effort: returns null on missing CLI, timeout, or
  * unusable output — task creation must never fail because of this step.
  */
-async function translateTitleToSlug(title: string): Promise<string | null> {
+export const claudeTitleTranslator: TitleTranslator = async (title) => {
   const prompt =
     'Translate this software task title into a short English git branch slug: ' +
     '2-6 lowercase words joined by hyphens, no prefix, no quotes, no explanation. ' +
@@ -109,14 +117,23 @@ async function translateTitleToSlug(title: string): Promise<string | null> {
  */
 export async function generateBranchName(
   title: string,
-  description?: string
+  description?: string,
+  translate?: TitleTranslator
 ): Promise<string | null> {
   const local = buildCandidateBranch(title, description)
   if (local) return local
 
-  // Title has no usable ASCII (e.g. pure Chinese) — ask claude to translate.
-  const translated = await translateTitleToSlug(title)
-  if (translated) return `${branchPrefix(title, description)}/${translated}`
+  // A short or letterless ASCII title has nothing to translate: paying an LLM
+  // call for it only yields noise, so it takes the `vf-<taskId>` fallback.
+  if (!translate || !NON_ASCII_LETTER_RE.test(title)) return null
 
+  try {
+    const translated = await translate(title)
+    // Never trust a translator's output as a git ref component.
+    const slug = translated ? slugify(translated) : null
+    if (slug) return `${branchPrefix(title, description)}/${slug}`
+  } catch {
+    // Task creation must never fail because of naming.
+  }
   return null
 }

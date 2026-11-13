@@ -41,7 +41,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `effort.test.mjs` | `packages/core/src/effort.ts` | effort levels, per-model allowed levels, lowering an unsupported effort |
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
 | `attachments.test.mjs` | `packages/core/src/attachments.ts` | writing task attachments safely; CLI `--attach` mime inference |
-| `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input |
+| `branch-name.test.mjs` | `packages/core/src/branch-name.ts` | slug/ticket derivation, edge & malformed input, the injected title translator (only non-ASCII titles reach it; failures fall back) |
 | `claude.test.mjs` | `packages/core/src/launch.ts` | launch prompt assembly: custom system prompt, artifact environment paths, the `--settings` hooks |
 | `claude-chrome.test.mjs` | `packages/core/src/launch.ts` | the Chrome flag on Claude launches only |
 | `core-boundary.test.mjs` | `packages/core/src/**` | static guard — no electron / react / next imports, no reaching outside core, types-only renderer imports, erasable TypeScript only |

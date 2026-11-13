@@ -819,6 +819,25 @@ test('progress — restart and completion fold the run into Task.usage', async (
   assert.equal(await core.handlers['progress:get'](task.id), null)
 })
 
+test('createTask names a Chinese title through the injected translator, and only then', async (t) => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  const calls = []
+  const titleTranslator = async (title) => { calls.push(title); return 'login-flow' }
+  const translating = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9', titleTranslator })
+  const plain = createCore({ sessions: fakeSessions(), bus: new EventBus(), version: '9.9.9' })
+  t.after(() => { translating.shutdown(); plain.shutdown() })
+  const create = (core, title) => core.handlers['vibeflow:createTask']({ title, projectPath, baseBranch: null })
+
+  assert.equal((await create(translating, '登入流程')).task.branch, 'feature/login-flow')
+  assert.equal((await create(translating, 'QA')).task.branch.startsWith('vf-'), true)
+  assert.deepEqual(calls, ['登入流程'])
+
+  // A core built without a translator (tests, e2e) never starts one.
+  assert.equal((await create(plain, '登入流程')).task.branch.startsWith('vf-'), true)
+  assert.deepEqual(calls, ['登入流程'])
+})
+
 test('a card converted from GitHub keeps its source ref; a ref outside github.com is refused', async (t) => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)

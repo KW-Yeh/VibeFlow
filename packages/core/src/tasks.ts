@@ -9,7 +9,7 @@ import {
   type ColumnId,
   type Task,
 } from './store'
-import { generateBranchName } from './branch-name'
+import { generateBranchName, type TitleTranslator } from './branch-name'
 import {
   assertBranchAvailable,
   fallbackBranchName,
@@ -87,7 +87,15 @@ async function assertDirectory(dir: string): Promise<void> {
   }
 }
 
-export async function createTaskFromInput(input: CreateTaskInput): Promise<CreateTaskResult> {
+export interface CreateTaskOptions {
+  /** Translates a non-English title into a branch slug. Without one a card is never translated. */
+  translateTitle?: TitleTranslator
+}
+
+export async function createTaskFromInput(
+  input: CreateTaskInput,
+  options: CreateTaskOptions = {}
+): Promise<CreateTaskResult> {
   if (input.role === 'master') return createMasterTask(input)
   const projectPath = input.projectPath
   if (!projectPath) throw taskError('尚未選擇專案資料夾', 'PROJECT_NOT_FOUND')
@@ -126,12 +134,12 @@ export async function createTaskFromInput(input: CreateTaskInput): Promise<Creat
 
   // Vet the user's name now so a bad one surfaces as its own error at creation,
   // not later at launch. Generating a name is skipped entirely when one was
-  // given — it can cost a headless `claude -p` call.
+  // given — translating a title can cost a headless `claude -p` call.
   if (explicitBranch) {
     await assertBranchAvailable(projectPath, workspacePath, explicitBranch)
   }
   const branch =
-    explicitBranch ?? (await generateBranchName(input.title, input.description))
+    explicitBranch ?? (await generateBranchName(input.title, input.description, options.translateTitle))
 
   const draft: Task = {
     id: taskId,
