@@ -1425,12 +1425,15 @@ export async function generateCommitMessage(
     'Output ONLY the commit message text, nothing else. Start directly with [What].',
   ].join('\n')
 
-  const cliFlags: Record<string, string[]> = {
-    claude: ['-p'],
-    codex: ['-p'],
+  // The model only sees the diff stat and commit titles, so the cheapest model
+  // is enough. Codex's `-p` is `--profile` (it needs a value), not print mode,
+  // so Codex runs `exec` with the prompt on stdin, as the Jev scout does.
+  const cliArgs: Record<string, string[]> = {
+    claude: ['-p', '--model', 'haiku'],
+    codex: ['exec', '--model', 'gpt-5.6-luna', '--sandbox', 'read-only', '-'],
   }
 
-  const flags = cliFlags[agentCli] ?? ['-p']
+  const flags = cliArgs[agentCli] ?? ['-p']
   const bin = agentCli
 
   const stdout = await runAgentPrint(bin, flags, prompt, { cwd: worktreePath })

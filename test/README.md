@@ -36,6 +36,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `jev-router.test.mjs` | `packages/core/src/jev-router.ts` | current-model effort selection, supported-level validation, credential and model-default fallback |
 | `jev-credentials.test.mjs` | `packages/core/src/jev-credentials.ts` | host-only key file under a macOS-style data path, environment fallback, permissions and validation |
 | `agent-print.test.mjs` | `packages/core/src/agent-print.ts` | one-shot agent CLI runs: stdin prompt, exit codes, missing CLI |
+| `commit-message.test.mjs` | `packages/core/src/git.ts` (`generateCommitMessage`) | per-CLI headless argv (Claude `haiku`, Codex `exec` on a low-cost model) with fake `claude` / `codex` on PATH |
 | `agents.test.mjs` | `packages/core/src/agents.ts` | agent registry, default model, default task effort |
 | `effort.test.mjs` | `packages/core/src/effort.ts` | effort levels, per-model allowed levels, lowering an unsupported effort |
 | `artifacts.test.mjs` | `packages/core/src/artifacts.ts` | artifact dir path, listing and file classification |
