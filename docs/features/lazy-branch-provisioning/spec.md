@@ -12,6 +12,8 @@
    仍然做「讀」的檢查（路徑存在、是 git repo、分支名合法且本地未佔用），讓錯誤早點出現。
 2. **分支名稱在建卡時決定並存在卡片上**（沒填就照舊用 `generateBranchName` 產生）。
    卡片一建立就看得到分支名。
+   產生名稱時，只有標題含非 ASCII 文字才會翻譯（`claude -p`，由 host 與 `task create` 注入）；
+   太短或沒有字母的 ASCII 標題、以及沒注入翻譯的 core（測試、e2e）直接用 `vf-<taskId>`。
 3. **佈建點 = 開始執行**：卡片第一次啟動 agent（移入 In Progress 自動啟動，Web UI 與 TUI 皆同）時，
    core 在 `pty:start` 解析 cwd 之前佈建：fetch base → 建分支 + worktree（起點是**當下的** `origin/<base>`）→ push。
    佈建失敗：卡片退回 Backlog、清掉 `launchedAt`，原因存在卡片的 `launchError`（Backlog 卡片與詳情顯示，下次成功開始或編輯時清除）。

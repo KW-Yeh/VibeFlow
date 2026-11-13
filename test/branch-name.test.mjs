@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   slugify,
   buildCandidateBranch,
+  generateBranchName,
 } from '../packages/core/src/branch-name.ts'
 
 test('slugify — happy path', () => {
@@ -105,4 +106,53 @@ test('buildCandidateBranch — null when nothing meaningful is derivable', () =>
   assert.equal(buildCandidateBranch('修復登入'), null)
   assert.equal(buildCandidateBranch(''), null)
   assert.equal(buildCandidateBranch('!!!'), null)
+})
+
+/** A translator that records its calls and answers with `answer` (or throws it). */
+function spyTranslator(answer) {
+  const calls = []
+  const translate = async (title) => {
+    calls.push(title)
+    if (answer instanceof Error) throw answer
+    return answer
+  }
+  return { translate, calls }
+}
+
+test('generateBranchName — short or letterless ASCII titles never reach the translator', async () => {
+  const { translate, calls } = spyTranslator('some-slug')
+  for (const title of ['S', 'QA', 'A', 'B', 'T', 'x', 'M', 'v1', '', '   ', '12345', '!@#']) {
+    assert.equal(await generateBranchName(title, undefined, translate), null, JSON.stringify(title))
+  }
+  assert.deepEqual(calls, [])
+})
+
+test('generateBranchName — a Chinese title is translated and the result applied', async () => {
+  const { translate, calls } = spyTranslator('login-flow')
+  assert.equal(await generateBranchName('登入流程', undefined, translate), 'feature/login-flow')
+  assert.equal(await generateBranchName('修復登入流程', undefined, translate), 'fix/login-flow')
+  assert.deepEqual(calls, ['登入流程', '修復登入流程'])
+})
+
+test('generateBranchName — a title the local slug can read is not translated', async () => {
+  const { translate, calls } = spyTranslator('unused')
+  assert.equal(await generateBranchName('新增 dark mode 切換', undefined, translate), 'feature/dark-mode')
+  assert.deepEqual(calls, [])
+})
+
+test('generateBranchName — a failed or unusable translation falls back', async () => {
+  for (const answer of [null, '', '  ', '!!', 'a', '12', new Error('claude not found')]) {
+    const { translate, calls } = spyTranslator(answer)
+    assert.equal(await generateBranchName('登入流程', undefined, translate), null, String(answer))
+    assert.equal(calls.length, 1)
+  }
+})
+
+test('generateBranchName — a translation is re-sanitized before it becomes a ref', async () => {
+  const { translate } = spyTranslator('Login Flow; rm -rf /')
+  assert.equal(await generateBranchName('登入流程', undefined, translate), 'feature/login-flow-rm-rf')
+})
+
+test('generateBranchName — without a translator nothing is translated', async () => {
+  assert.equal(await generateBranchName('登入流程'), null)
 })
