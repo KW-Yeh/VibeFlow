@@ -678,7 +678,7 @@ export function TaskTerminal({
             )}
             {onContinueSession && (
               <HoldButton
-                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'size-6 shrink-0 p-0')}
+                className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'size-6')}
                 fillClassName="bg-primary/25"
                 onConfirm={() => void continueSession()}
                 disabled={!cwd || isContinuing || isLaunchingAgent || isReturningToBacklog}

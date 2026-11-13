@@ -75,9 +75,9 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
 | `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks |
-| `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it |
+| `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it; a replacement keeps the old size unless it brings its own |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
-| `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, exit status, kill vs. detach |
+| `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, a replacement keeping the old client's size, exit status, kill vs. detach |
 | `tui.test.mjs` | `packages/tui/src/index.ts` | TUI board moves and selection |
 | `tui-task-form.test.mjs` | `packages/tui/src/task-form.ts` | TUI new/edit task form defaults and validation |
 | `update-command.test.mjs` | `packages/cli/src/update-command.ts`, `main.ts` | global npm update command, source/local/npx/link refusal, npm failure and CLI dispatch |

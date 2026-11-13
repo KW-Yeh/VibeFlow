@@ -526,6 +526,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
     return { overflow: bar.scrollWidth - bar.clientWidth, clipped }
   })
   assert.deepEqual(toolbarFit, { overflow: 0, clipped: [] }, 'every terminal toolbar control stays inside the toolbar at 1280 wide')
+  const icon = await page.getByRole('button', { name: /新 Session 接續/ }).locator('svg').boundingBox()
+  assert.deepEqual([Math.round(icon.width), Math.round(icon.height)], [12, 12], 'the icon-only button keeps its whole icon')
 
   // New session: holding the button swaps the agent for a fresh one whose first
   // message is a brief of the card's state, not the old conversation.
