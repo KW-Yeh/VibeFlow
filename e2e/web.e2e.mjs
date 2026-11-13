@@ -513,6 +513,20 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   assert.equal(await page.getByRole('radio', { name: '依 commit' }).getAttribute('aria-checked'), 'true')
   await page.getByRole('radio', { name: '全部' }).click()
 
+  // The new button must not push another toolbar control out of reach at the default window size.
+  const toolbarFit = await page.getByRole('button', { name: /新 Session 接續/ }).evaluate((button) => {
+    const bar = button.closest('div.border-b')
+    const box = bar.getBoundingClientRect()
+    const clipped = [...bar.querySelectorAll('button')]
+      .filter((control) => {
+        const rect = control.getBoundingClientRect()
+        return rect.left < box.left - 0.5 || rect.right > box.right + 0.5
+      })
+      .map((control) => control.getAttribute('aria-label') ?? control.textContent.trim())
+    return { overflow: bar.scrollWidth - bar.clientWidth, clipped }
+  })
+  assert.deepEqual(toolbarFit, { overflow: 0, clipped: [] }, 'every terminal toolbar control stays inside the toolbar at 1280 wide')
+
   // New session: holding the button swaps the agent for a fresh one whose first
   // message is a brief of the card's state, not the old conversation.
   const launches = () => fs.readFileSync(argvLog, 'utf8').split('=== launch\n').slice(1)

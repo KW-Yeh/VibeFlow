@@ -678,14 +678,14 @@ export function TaskTerminal({
             )}
             {onContinueSession && (
               <HoldButton
-                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-6 shrink-0 px-2 text-xs')}
+                className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'size-6 shrink-0 p-0')}
                 fillClassName="bg-primary/25"
                 onConfirm={() => void continueSession()}
                 disabled={!cwd || isContinuing || isLaunchingAgent || isReturningToBacklog}
+                aria-label={isContinuing ? '接續中…' : '按住新 Session 接續'}
                 title="按住以換新 session 接續：結束目前的 Agent，改開一個新的 session，只帶卡片內容、分支與 PR 狀態、todo 和上一個 session 的最後回覆，不帶整段對話。程式碼、分支與 artifacts 都不動，用量照常累計"
               >
                 <RefreshCw className={cn('size-3', isContinuing && 'animate-spin')} />
-                {isContinuing ? '接續中…' : '按住新 Session 接續'}
               </HoldButton>
             )}
           </div>
