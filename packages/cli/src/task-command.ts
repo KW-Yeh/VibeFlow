@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { claudeTitleTranslator } from '../../core/src/branch-name'
 import { createTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
 import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
@@ -279,7 +280,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     autoMode: values['auto-mode'] ? values['auto-mode'] === 'on' : undefined,
     attachments,
     storePath,
-  })
+  }, { translateTitle: claudeTitleTranslator })
   return {
     storePath: resolvedPath,
     task: {
