@@ -2,9 +2,16 @@
 // Wait, silently, until a PR needs the agent: prints ONE JSON line and exits.
 //
 //   node pr-watch.mjs [--pr N] [--interval 60] [--state FILE] [--since-now] [--max-wait SEC] [--once]
+//                     [--rebase-on-any-base-change]
 //
 // exit 10 {"event":"comments",...}  review items nobody answered and not reported before
-// exit 11 {"event":"base",...}      the base branch has commits the PR head lacks
+// exit 11 {"event":"base","reason":"conflict"|"behind",...}
+//                                   the head lacks base commits AND GitHub says the PR conflicts
+//                                   (mergeable CONFLICTING) or must catch up (mergeStateStatus BEHIND).
+//                                   A base that merely moved ahead is silent, and so is UNKNOWN
+//                                   (GitHub still computing); --rebase-on-any-base-change reports
+//                                   every new base commit the head lacks, as "behind" unless conflicting.
+//                                   One report per base commit.
 // exit 0  {"event":"merged"|"closed",...}
 // exit 3  {"event":"timeout"}       --max-wait passed (or --once found nothing); run it again
 // exit 2  {"event":"error",...}     setup failed, or GitHub kept failing
@@ -20,7 +27,7 @@ const MAX_BACKOFF = 300
 const MAX_FAILURES = 10
 
 export function parseArgs(argv) {
-  const opts = { interval: 60, sinceNow: false, once: false }
+  const opts = { interval: 60, sinceNow: false, once: false, rebaseOnAnyBaseChange: false }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     const value = () => {
@@ -34,6 +41,7 @@ export function parseArgs(argv) {
     else if (arg === '--max-wait') opts.maxWait = Number(value())
     else if (arg === '--since-now') opts.sinceNow = true
     else if (arg === '--once') opts.once = true
+    else if (arg === '--rebase-on-any-base-change') opts.rebaseOnAnyBaseChange = true
     else throw new Error(`unknown option ${arg}`)
   }
   return opts
@@ -61,13 +69,28 @@ export function writeState(file, state) {
 }
 
 /**
+ * Why the base branch needs the agent now: 'conflict' when GitHub reports the
+ * PR cannot merge, 'behind' when branch protection requires catching up, null
+ * otherwise. Both require the head to actually lack base commits, since
+ * GitHub's status lags a push. UNKNOWN (still computing) is not an answer, so
+ * it waits for the next poll. With rebaseOnAnyBaseChange every lacked base
+ * commit counts.
+ */
+export function baseReason(pr, base, opts = {}) {
+  if (!base || !(base.behindBy > 0)) return null
+  if (pr.mergeable === 'CONFLICTING') return 'conflict'
+  if (pr.mergeStateStatus === 'BEHIND' || opts.rebaseOnAnyBaseChange) return 'behind'
+  return null
+}
+
+/**
  * What one poll means, given what was already reported. A finished PR wins,
  * then comments (answering them before a rebase keeps their line anchors
- * meaningful), then a base branch the head has fallen behind. A base already
+ * meaningful), then a base the PR must act on (see baseReason). A base already
  * reported at this commit is not reported again, so a rebase the agent could
  * not finish does not wake it in a loop.
  */
-export function decide(pr, base, state) {
+export function decide(pr, base, state, opts = {}) {
   if (pr.merged) return { event: { event: 'merged', pr: pr.number }, state }
   if (pr.state === 'CLOSED') return { event: { event: 'closed', pr: pr.number }, state }
 
@@ -80,9 +103,10 @@ export function decide(pr, base, state) {
       state: { ...state, seen: [...state.seen, ...keys] },
     }
   }
-  if (base && base.behindBy > 0 && base.oid !== state.baseOid) {
+  const reason = baseReason(pr, base, opts)
+  if (reason && base.oid !== state.baseOid) {
     return {
-      event: { event: 'base', pr: pr.number, base: pr.baseRefName, sha: base.oid, behindBy: base.behindBy },
+      event: { event: 'base', reason, pr: pr.number, base: pr.baseRefName, sha: base.oid, behindBy: base.behindBy },
       state: { ...state, baseOid: base.oid },
     }
   }
@@ -90,8 +114,8 @@ export function decide(pr, base, state) {
 }
 
 /** Mark everything already there as reported, for --since-now. */
-export function baseline(pr, base) {
-  return { seen: pendingItems(pr).map(itemKey), baseOid: base?.behindBy > 0 ? base.oid : null }
+export function baseline(pr, base, opts = {}) {
+  return { seen: pendingItems(pr).map(itemKey), baseOid: baseReason(pr, base, opts) ? base.oid : null }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -133,10 +157,10 @@ export async function watch(opts, deps = {}) {
     }
     if (polled) {
       if (!state) {
-        state = opts.sinceNow ? baseline(polled.pr, polled.base) : { seen: [], baseOid: null }
+        state = opts.sinceNow ? baseline(polled.pr, polled.base, opts) : { seen: [], baseOid: null }
         writeState(file, state)
       }
-      const result = decide(polled.pr, polled.base, state)
+      const result = decide(polled.pr, polled.base, state, opts)
       if (result.event) {
         writeState(file, result.state)
         return { code: EXIT[result.event.event] ?? EXIT.done, event: result.event }

@@ -108,12 +108,13 @@ test('decide — a finished PR wins over everything else', () => {
 })
 
 test('decide — comments come before a moved base, and are reported once', () => {
-  const pr = makePr({ comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] } })
+  const pr = makePr({ mergeStateStatus: 'BEHIND', comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] } })
   const base = { oid: 'b2', behindBy: 1 }
   const first = decide(pr, base, EMPTY_STATE)
   assert.deepEqual(first.event, { event: 'comments', pr: 7, count: 1, items: ['conversation:1'] })
   const second = decide(pr, base, first.state)
   assert.equal(second.event.event, 'base')
+  assert.equal(second.event.reason, 'behind')
   assert.equal(second.event.sha, 'b2')
   assert.equal(decide(pr, base, second.state).event, null, 'the same base commit is not reported twice')
   assert.equal(decide(pr, { oid: 'b3', behindBy: 2 }, second.state).event.event, 'base', 'a newer base commit is')
@@ -125,7 +126,7 @@ test('decide — an up-to-date head or a fork PR never asks for a rebase', () =>
 })
 
 test('baseline — --since-now treats what is already there as reported', () => {
-  const pr = makePr({ comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] } })
+  const pr = makePr({ mergeStateStatus: 'BEHIND', comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] } })
   const state = baseline(pr, { oid: 'b1', behindBy: 3 })
   assert.equal(decide(pr, { oid: 'b1', behindBy: 3 }, state).event, null)
 })
@@ -253,10 +254,10 @@ function fakeGh(t, pr) {
 }
 
 test('pr-watch.mjs — prints one JSON line and exits with the event code', (t) => {
-  const { env, calls } = fakeGh(t, makePr())
+  const { env, calls } = fakeGh(t, makePr({ mergeable: 'MERGEABLE', mergeStateStatus: 'BEHIND' }))
   const run = spawnSync(process.execPath, [WATCH_SCRIPT, '--pr', '7'], { env, encoding: 'utf8' })
   assert.equal(run.status, EXIT.base, run.stderr)
-  assert.deepEqual(JSON.parse(run.stdout.trim()), { event: 'base', pr: 7, base: 'main', sha: 'b9', behindBy: 2 })
+  assert.deepEqual(JSON.parse(run.stdout.trim()), { event: 'base', reason: 'behind', pr: 7, base: 'main', sha: 'b9', behindBy: 2 })
   assert.equal(run.stdout.trim().split('\n').length, 1)
   const graphql = calls().filter((c) => c[0] === 'api' && c[1] === 'graphql')
   assert.equal(graphql.length, 2, 'one poll is the PR query plus the base comparison')
