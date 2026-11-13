@@ -178,11 +178,18 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   turn that ended without a `task send` to its master — `notifier.ts` tells the master,
   once each, batched, held while the master is on a dialog or not running, dropped
   once it leaves In Progress. Pending notes live in host memory only.
-- **Everything typed into an agent goes through `mailbox.ts`**, a person's keys
-  (`pty:input`) included: one bracketed paste + Enter, never into a permission dialog
-  unless forced (`TARGET_BLOCKED`), only after the person stopped typing for
-  `VIBEFLOW_QUIET_MS` (3 s), and never split by another write. Codex reports no
-  permission dialog, so for Codex that guard and the blocked note do not apply.
+- **Everything handed to an agent goes through `mailbox.ts`**, a person's keys
+  (`pty:input`) included. A message must never be sent along with text the person
+  typed but has not sent (a draft lasts until Enter / Ctrl+C / Ctrl+U).
+  A Claude card whose session's `SessionStart` hook marked `<worktree>/.vibeflow-inbox/.ready`
+  gets messages through its inbox (`inbox.ts`): `PostToolUse` / `UserPromptSubmit`
+  hooks add them as context and `Stop` keeps the agent going with them, so nothing
+  is typed (`via: 'queued'` / `'hook'`). Only an idle agent with an empty input box and
+  no direct tmux client is woken by typing. Everywhere else (Codex, sessions launched
+  before the inbox): one bracketed paste + Enter, never into a permission dialog unless
+  forced (`TARGET_BLOCKED`), only once the person has no draft and stopped typing for
+  `VIBEFLOW_QUIET_MS` (3 s), never split by another write. Codex reports no permission
+  dialog, so for Codex that guard and the blocked note do not apply.
 
 ### CLI artifact delivery
 

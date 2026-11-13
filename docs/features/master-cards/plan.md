@@ -51,3 +51,37 @@
 - 舊版 app 讀到含 master 的 store 會壞（無 `projectPath`）— release note 說明。
 - `branch` 改可選波及面廣，Phase 1 先用 typecheck 列出所有使用端再改。
 - tmux 不在時（Windows pty）headless 起 session 也要可用，`startTask` 測試用 fake backend 覆蓋。
+
+## Phase 6 — 訊息改走 hook 旁路（已實作）
+
+**問題**：`mailbox.ts` 等使用者停手 3 秒後，把訊息 bracketed paste 進 agent 輸入框再按 Enter。
+輸入框裡如果有使用者還沒送出的草稿，草稿會跟著訊息一起送出。訊息本來就不經過網頁（host 直接寫 pty），
+問題在於它和使用者共用同一個輸入框。
+
+**做法**：Claude 卡的訊息不再打字，改放進該卡的 inbox，由 Claude Code hook 帶進對話；
+只有 agent 已經閒置、非叫醒不可時才打字，而且輸入框必須是空的。
+
+1. **Inbox**（core，新檔 `inbox.ts`）：`<worktree>/.vibeflow-inbox/`，一則訊息一個檔（tmp + rename 原子寫入），
+   比照 `.vibeflow-events/` 排除在 git 與 diff 之外。
+2. **Hook**（`launch.ts` `buildClaudeSettings`）：
+   - `PostToolUse`（所有工具）→ `hookSpecificOutput.additionalContext`：工作中途插話，不碰輸入框。
+   - `UserPromptSubmit` → `additionalContext`：使用者送出自己的訊息時順帶附上。
+   - `Stop` → `{"decision":"block","reason":…}`：agent 要停下時還有信，就接著處理。
+   - 先用 shell 判斷 inbox 是否為空，有信才啟動 `node -e` 認領（`mv` 原子認領）並輸出 JSON，平時零成本。
+3. **投遞**（`mailbox.deliver`）：Claude 卡 → 寫 inbox，host 監看檔案被認領即視為送達。
+   agent 已閒置（Stop 之後、等輸入）且沒有草稿 → 才走原本的 paste + Enter 叫醒；有草稿就留在 inbox，
+   等使用者送出時由 `UserPromptSubmit` 帶上。Claude 卡不再需要 `TARGET_BLOCKED`：權限對話框期間信在 inbox 等。
+4. **草稿判斷**：mailbox 已經看到所有 `pty:input`，記錄「上次 Enter／Ctrl+C／Ctrl+U 之後有沒有輸入可見字元」。
+   保守：刪光重打也算有草稿，直到 Enter。
+5. **Codex**：沒有 hook，維持打字，但加上第 4 點的草稿保護（有草稿就等，逾時回報失敗）。
+6. **契約變動**：`vibeflow:sendMessage` / `task send` 回傳加 `via: 'hook' | 'typed' | 'queued'`；`queued` 代表已進 inbox、
+   下一個 hook 會帶上，`task send` 不再為此阻塞 120 秒。session 是否讀 inbox 由 `SessionStart` hook 寫的
+   `.ready` 判斷（每次 launch 先清掉），舊版啟動、存活在 tmux 裡的 session 因此仍走打字。inbox 內放 `.gitignore`（`*`），
+   早於此功能建立的 worktree 也不會 commit 到它。notifier 的 host note 同樣走 inbox。
+   更新 `IPC_API_MAP.md`、AGENTS.md「Masters and their cards」段、spec D2。
+7. **測試**：`mailbox.test.mjs`（草稿追蹤、有草稿不打字）、新 `inbox.test.mjs`（寫入／認領／hook 腳本輸出 JSON）、
+   `launch` 設定含三個 hook、`service.test.mjs` sendMessage 走 inbox。執行期：暫存 store 跑一個 master + slave，
+   在 slave 輸入框留草稿時 `task send`，確認草稿沒被送出、訊息在下一個 hook 抵達。
+
+**已知限制**：TUI 用 tmux attach 直接打字時繞過 mailbox，草稿判斷看不到 — 有外部 tmux client 時一律不打字，
+信只經 hook 抵達。使用者留著草稿不送、agent 又閒置時，信會一直在 inbox 等到使用者送出。

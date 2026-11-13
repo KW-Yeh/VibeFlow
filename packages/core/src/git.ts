@@ -3,7 +3,7 @@ import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs/promises'
 import { SUBAGENTS_DIR } from './subagents'
-import { PROGRESS_EVENTS_DIR } from './launch'
+import { INBOX_DIR, PROGRESS_EVENTS_DIR } from './launch'
 import { execEnv } from './env'
 import { parseGithubRepo } from './github'
 import { runAgentPrint } from './agent-print'
@@ -374,7 +374,7 @@ async function resolveBranchName(
  * live in `.git/info/exclude` (see `ensureLocalExclude`), so `git ls-files
  * --ignored` would otherwise happily include them.
  */
-const RUNTIME_ARTIFACT_DENYLIST = new Set([SUBAGENTS_DIR, PROGRESS_EVENTS_DIR])
+const RUNTIME_ARTIFACT_DENYLIST = new Set([SUBAGENTS_DIR, PROGRESS_EVENTS_DIR, INBOX_DIR])
 const MAX_IGNORED_COPY_BYTES = 10 * 1024 * 1024
 const MAX_IGNORED_COPY_FILES = 200
 
@@ -1020,7 +1020,7 @@ async function buildDiffEntries(cwd: string, query: EntryQuery): Promise<DiffEnt
   // The sub-agent event log is VibeFlow metadata, not a change to review.
   const entries = Array.from(entryMap.values()).filter(
     (e) =>
-      ![SUBAGENTS_DIR, PROGRESS_EVENTS_DIR].some(
+      ![SUBAGENTS_DIR, PROGRESS_EVENTS_DIR, INBOX_DIR].some(
         (dir) => e.path === dir || e.path.startsWith(`${dir}/`)
       )
   )

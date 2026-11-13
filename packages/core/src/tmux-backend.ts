@@ -300,6 +300,13 @@ export class TmuxBackend implements SessionBackend {
     return this.clients.has(key)
   }
 
+  async hasForeignClients(key: string): Promise<boolean> {
+    const { code, stdout } = await this.tmux('list-clients', '-t', `=${this.sessionName(key)}`, '-F', '#{client_pid}')
+    if (code !== 0) return false
+    const own = this.clients.get(key)?.proc.pid
+    return stdout.split('\n').some((line) => line.trim() && Number(line) !== own)
+  }
+
   resize(key: string, cols: number, rows: number): void {
     try {
       this.clients.get(key)?.proc.resize(Math.max(cols, 1), Math.max(rows, 1))

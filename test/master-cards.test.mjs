@@ -335,6 +335,22 @@ test('cards outside one master relationship cannot message each other', async (t
   assert.equal(sessions.writes.length, 0)
 })
 
+test('a message for a card whose session reads its inbox waits there instead of joining the unsent draft', async (t) => {
+  const { core, sessions, master, dev, send } = await masterWithCards(t)
+  const { task: started } = await core.handlers['vibeflow:startTask'](master.id)
+  const inbox = path.join(started.worktreePath, '.vibeflow-inbox')
+  assert.equal(await exists(path.join(inbox, '.gitignore')), true, 'launch prepares the inbox, never to be committed')
+  assert.equal(await exists(path.join(inbox, '.ready')), false, 'until the session itself says it reads it')
+  await fs.writeFile(path.join(inbox, '.ready'), '')
+  sessions.writes.length = 0
+  core.handlers['pty:input']({ sessionKey: master.id, data: 'half a thou' })
+  const result = await send(dev, master, 'done: PR #12')
+  assert.equal(result.via, 'queued')
+  assert.deepEqual(sessions.writes, [{ key: master.id, data: 'half a thou' }], 'nothing typed on top of the draft')
+  const [waiting] = (await fs.readdir(inbox)).filter((n) => !n.startsWith('.'))
+  assert.ok((await fs.readFile(path.join(inbox, waiting), 'utf8')).includes(`from="${dev.id} Dev"`))
+})
+
 test("a person's keys reach the agent untagged", async (t) => {
   const { core, sessions, dev } = await masterWithCards(t)
   core.handlers['pty:input']({ sessionKey: dev.id, data: 'y' })

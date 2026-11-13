@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { PROGRESS_EVENTS_DIR } from './launch'
+import { INBOX_DIR, PROGRESS_EVENTS_DIR } from './launch'
 import { SUBAGENTS_DIR } from './subagents'
 import { defaultGhRunner, type GhRunner } from './github'
 import {
@@ -72,7 +72,7 @@ export type CommitDiff =
   | { source: 'none'; reason: string }
 
 const isMetadataPath = (p: string): boolean =>
-  [SUBAGENTS_DIR, PROGRESS_EVENTS_DIR].some((dir) => p === dir || p.startsWith(`${dir}/`))
+  [SUBAGENTS_DIR, PROGRESS_EVENTS_DIR, INBOX_DIR].some((dir) => p === dir || p.startsWith(`${dir}/`))
 
 /** NUL-separated fields after a \x01 record mark, so subjects cannot split a record. */
 const COMMIT_LOG_FORMAT = '%x01%H%x00%h%x00%s%x00%at%x00%P'

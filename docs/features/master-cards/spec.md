@@ -90,7 +90,11 @@ workDir?: string         // master 指定的資料夾；缺省 = VibeFlow 自建
   bracketed paste ＋ Enter 打進對方 terminal，包上 `<vibeflow from="…">` 標記；不打進權限對話框、等使用者
   停手 3 秒、同一 terminal 的寫入不交錯（`mailbox.ts`、`notifier.ts`）。只允許 master ↔ 自己的卡傳話，卡與卡
   之間經 master 轉傳；master 工作中照樣送（當插話），在權限對話框或 session 不在時排隊；佇列只在 host 記憶體。
-  Codex 沒有 hook，偵測不到權限對話框，所以這兩項保護對 Codex 不生效。PR 由 master 交代開發卡用 `pr` skill 開。
+  Codex 沒有 hook，偵測不到權限對話框，所以這兩項保護對 Codex 不生效。
+  **修訂（Phase 6）**：打字會把使用者還沒送出的草稿一起送出，所以 Claude 卡改走 inbox：訊息放進
+  `<worktree>/.vibeflow-inbox/`，由 agent 自己的 hook（PostToolUse／UserPromptSubmit 帶入、Stop 讓它接著做）讀取，
+  不碰輸入框；只有 agent 閒置、輸入框沒有草稿、沒有人直接 tmux attach 時才打字叫醒。Codex 與沒有 inbox hook
+  的舊 session 仍打字，但等到沒有草稿才送。PR 由 master 交代開發卡用 `pr` skill 開。
   原本第一階段的做法如下，保留作紀錄：第一階段由 master 自行輪詢 `task list --master`；
   「slave 狀態變化時 host 把事件推進 master terminal」列為第二階段。
 - **D3 派工後是否啟動（已定）**：跟著 master 卡片的 auto mode。開 → master 直接

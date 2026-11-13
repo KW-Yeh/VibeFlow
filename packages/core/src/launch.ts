@@ -169,6 +169,38 @@ const SUBAGENTS_DIR = '.vibeflow-subagents'
  */
 export const PROGRESS_EVENTS_DIR = '.vibeflow-events'
 
+/**
+ * Messages waiting for a card's agent, relative to the worktree: one file per
+ * message. Must match the host side in inbox.ts.
+ */
+export const INBOX_DIR = '.vibeflow-inbox'
+
+/** Present once the running session's hooks proved they read the inbox. */
+export const INBOX_READY_FILE = '.ready'
+
+/**
+ * Reads every waiting message and answers the hook with it: Stop keeps the
+ * agent going, the others add it to what the agent sees next. A rename is the
+ * claim, so a message the host takes back to type is never read twice.
+ */
+const INBOX_READER = [
+  'const fs=require("fs"),path=require("path");',
+  'const [dir,event]=process.argv.slice(1);const out=[];',
+  'for(const name of fs.readdirSync(dir).filter((n)=>!n.startsWith(".")).sort()){',
+  'const claimed=path.join(dir,".hook-"+name);',
+  'try{fs.renameSync(path.join(dir,name),claimed)}catch{continue}',
+  'out.push(fs.readFileSync(claimed,"utf8"));fs.rmSync(claimed,{force:true})}',
+  'if(out.length){const text=out.join("\\n\\n");',
+  'process.stdout.write(JSON.stringify(event==="Stop"?{decision:"block",reason:text}',
+  ':{hookSpecificOutput:{hookEventName:event,additionalContext:text}}))}',
+].join('')
+
+/** The hook command that hands waiting messages to the agent; spawns node only when one waits. */
+export function inboxHookCommand(inboxDir: string, event: 'PostToolUse' | 'UserPromptSubmit' | 'Stop'): string {
+  const dir = toShellPath(inboxDir)
+  return `if ls "${dir}" 2>/dev/null | grep -q .; then node -e '${INBOX_READER}' "${dir}" ${event}; fi; exit 0`
+}
+
 /** Claude tools whose call changes the todo list the card's progress is read from. */
 const TODO_TOOLS = 'TodoWrite|TaskCreate|TaskUpdate'
 
@@ -193,6 +225,12 @@ const TODO_TOOLS = 'TodoWrite|TaskCreate|TaskUpdate'
  * and report what the transcript cannot (a permission prompt); progress itself
  * is always read from the transcript. They end in `exit 0` so a failed write
  * can never block a Stop.
+ *
+ * Inbox hooks are the one exception to being passive: messages from other
+ * cards reach the agent through them instead of being typed into the input
+ * box the user may be writing in. SessionStart marks the inbox as read by
+ * this session, so the host never leaves a message for a session that has no
+ * such hook.
  */
 function buildClaudeSettings(worktreePath?: string): string {
   // Card progress is read from the todo tools, which Claude Code withholds from
@@ -212,12 +250,19 @@ function buildClaudeSettings(worktreePath?: string): string {
     const progress = {
       hooks: [{ type: 'command', command: `mkdir -p "${eventsDir}" && cat > "${eventsDir}/$(date +%s)-$$-$RANDOM.json"; exit 0` }],
     }
+    const inboxDir = `${toShellPath(worktreePath)}/${INBOX_DIR}`
+    const inbox = (event: 'PostToolUse' | 'UserPromptSubmit' | 'Stop') => ({
+      hooks: [{ type: 'command', command: inboxHookCommand(inboxDir, event) }],
+    })
     settings.hooks = {
       PreToolUse: [taskHook],
-      PostToolUse: [taskHook, { matcher: TODO_TOOLS, ...progress }],
-      Stop: [progress],
+      PostToolUse: [taskHook, { matcher: TODO_TOOLS, ...progress }, inbox('PostToolUse')],
+      Stop: [progress, inbox('Stop')],
       Notification: [progress],
-      UserPromptSubmit: [progress],
+      UserPromptSubmit: [progress, inbox('UserPromptSubmit')],
+      SessionStart: [{
+        hooks: [{ type: 'command', command: `mkdir -p "${inboxDir}" && : > "${inboxDir}/${INBOX_READY_FILE}"; exit 0` }],
+      }],
     }
   }
   return JSON.stringify(settings)
@@ -297,7 +342,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
     '   這些訊息以 <vibeflow from="…"> 包住、直接出現在你的輸入裡。不要輪詢 task list；要看細節時才用 VF task show --store-path "$VIBEFLOW_STORE_DIR" --task <id>。',
     '5. 調度：用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對自己的卡下指示；卡與卡之間不能直接傳話，一律經過你。',
     '   需要獨立驗收時另開一張驗收卡。驗收回報問題時，把具體問題與重現步驟整理好轉給負責開發的卡修正，修完再請驗收卡複驗，直到通過。',
-    '   task send 回 TARGET_BLOCKED 代表對方卡在權限確認，請使用者到那張卡處理。',
+    '   task send 回 via: "queued" 代表訊息已排進對方的收件匣，對方下一次動作或使用者送出訊息時就會看到，不必重送；回 TARGET_BLOCKED 代表對方卡在權限確認，請使用者到那張卡處理。',
     '6. PR：驗收通過後，交代開發卡用 pr skill 開 PR（環境裡沒有這個 skill 就用 gh pr create），並回報 PR 連結給你。',
     '7. 使用者主要只跟你溝通：主動向使用者回報整體進度與需要使用者決定的事。你不會把卡片移到 Done、不會合併 PR；全部完成後整理每張卡的結果與 PR 連結，交給使用者做最後確認。',
     '   跟使用者提到任何一張卡時，一律寫成 <id>「<標題>」——卡片上看得到 id，使用者靠它對上是哪一張。'

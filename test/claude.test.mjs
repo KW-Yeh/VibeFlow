@@ -1,5 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execSync } from 'node:child_process'
 import {
   buildAgentCommand,
   executorSessionId,
@@ -328,7 +332,7 @@ test('buildAgentCommand — Claude --settings adds passive progress hooks next t
   // Progress: todo tools, end of turn, prompts, and the user's replies.
   assert.equal(hooks.PostToolUse[1].matcher, 'TodoWrite|TaskCreate|TaskUpdate')
   for (const event of ['Stop', 'Notification', 'UserPromptSubmit']) {
-    assert.equal(hooks[event].length, 1, event)
+    assert.equal(hooks[event].length, event === 'Notification' ? 1 : 2, event)
     assert.equal(hooks[event][0].matcher, undefined, `${event} has no matcher`)
   }
   const command = hooks.Stop[0].hooks[0].command
@@ -353,4 +357,36 @@ test('buildAgentCommand — Claude launches turn on the todo tools card progress
   const resumed = buildAgentCommand(TASK, undefined, { resume: true })
   assert.equal(resumed.match(/CLAUDE_CODE_ENABLE_TODO_TOOLS/g)?.length, 2, 'both resume branches')
   assert.ok(!buildAgentCommand(CODEX_TASK).includes('CLAUDE_CODE_ENABLE_TODO_TOOLS'))
+})
+
+test('buildAgentCommand — Claude inbox hooks hand waiting messages to the agent, then empty the inbox', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-inbox-hook-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const hooks = claudeSettings(buildAgentCommand({ ...TASK, worktreePath: root })).hooks
+  const inbox = path.join(root, '.vibeflow-inbox')
+  const run = (entry, event) => {
+    const command = entry.hooks[0].command
+    assert.match(command, /exit 0$/, `${event} never fails the agent`)
+    return execSync(command, { shell: '/bin/sh' }).toString()
+  }
+  const [postTool] = hooks.PostToolUse.slice(-1)
+  const [stop] = hooks.Stop.slice(-1)
+  const [prompt] = hooks.UserPromptSubmit.slice(-1)
+  assert.equal(postTool.matcher, undefined, 'every tool call can carry a message')
+
+  run(hooks.SessionStart[0], 'SessionStart')
+  assert.ok(fs.existsSync(path.join(inbox, '.ready')), 'the session marks that it reads the inbox')
+  assert.equal(run(postTool, 'PostToolUse'), '', 'an empty inbox says nothing')
+
+  fs.writeFileSync(path.join(inbox, '0001'), 'first "quoted"\nline')
+  fs.writeFileSync(path.join(inbox, '0002'), "it's second")
+  assert.deepEqual(JSON.parse(run(postTool, 'PostToolUse')), {
+    hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: 'first "quoted"\nline\n\nit\'s second' },
+  })
+  assert.deepEqual(fs.readdirSync(inbox).filter((n) => !n.startsWith('.')), [], 'read once')
+
+  fs.writeFileSync(path.join(inbox, '0003'), 'keep going')
+  assert.deepEqual(JSON.parse(run(stop, 'Stop')), { decision: 'block', reason: 'keep going' })
+  fs.writeFileSync(path.join(inbox, '0004'), 'with your prompt')
+  assert.equal(JSON.parse(run(prompt, 'UserPromptSubmit')).hookSpecificOutput.additionalContext, 'with your prompt')
 })

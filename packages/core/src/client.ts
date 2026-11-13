@@ -23,6 +23,7 @@ import type { BranchCommits, CommitDiff } from './commit-diff'
 import type { BoardCliLaunchInfo } from './board-cli'
 import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
+import type { DeliveryVia } from './mailbox'
 import type { ProgressNotification, TaskProgress } from './progress'
 import type { ChatAttachment, Conversation } from './chat-store'
 import type { AttachmentInput } from './attachments'
@@ -191,7 +192,7 @@ export function createBridge(t: BridgeTransport) {
   taskSummaries: (filter?: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> =>
     t.invoke('task:summaries', filter),
   /** Type a message into another card's agent: a master to its cards, a card to its master. */
-  sendMessage: (payload: { from: string; to: string; text: string; force?: boolean }): Promise<{ delivered: true; queuedMs: number }> =>
+  sendMessage: (payload: { from: string; to: string; text: string; force?: boolean }): Promise<{ delivered: true; queuedMs: number; via: DeliveryVia }> =>
     t.invoke('vibeflow:sendMessage', payload),
   /** Clear prior execution state and prepare a fresh run of this task. */
   resetTaskRun: (

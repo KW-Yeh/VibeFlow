@@ -39,6 +39,11 @@ export interface SessionBackend {
    * after a host restart, before anything re-attached): a write would be lost.
    */
   isAttached?(key: string): boolean
+  /**
+   * Whether someone types into the session through a client of their own (a
+   * direct tmux attach), whose keys core never sees.
+   */
+  hasForeignClients?(key: string): Promise<boolean>
   resize(key: string, cols: number, rows: number): void
   /** End the session. */
   kill(key: string): Promise<void>

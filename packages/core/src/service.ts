@@ -96,6 +96,7 @@ import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './l
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
 import { createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
+import { inboxDir, inboxReady, prepareInbox } from './inbox'
 import { createNotifier } from './notifier'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
@@ -355,6 +356,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       bus.emit('progress:update', { taskId, progress: value })
       notifier.activity(taskId, value.activity)
       notifier.retry(taskId)
+      mailbox.poke(taskId)
     },
     onNotify: (taskId, list) => {
       const prefs = resolveNotificationSettings(getSettings())
@@ -377,6 +379,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   const mailbox = createMailbox({
     write: (key, data) => sessions.write(key, data),
     activity: agentActivity,
+    inbox: (key) => {
+      const worktree = findTask(key)?.worktreePath
+      if (!worktree) return null
+      const dir = inboxDir(worktree)
+      return inboxReady(dir) ? dir : null
+    },
+    typedElsewhere: async (key) => (await sessions.hasForeignClients?.(key)) ?? false,
   })
 
   const notifier = createNotifier({
@@ -661,6 +670,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         fresh = false
       } else {
         command = (await launchCommand(task, intent)).replace(/\r$/, '')
+        // Until this launch's hooks say they read the inbox, messages are typed.
+        if (key === task.id) prepareInbox(inboxDir(cwd))
       }
     }
     if (p.launch) ensureTaskArtifactDirs(task)
@@ -1085,8 +1096,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       // Counted when asked, not when typed: the turn may end while this waits for quiet.
       if (isMasterTask(to)) notifier.reported(from.id)
       await attachAgent(to.id)
-      const { queuedMs } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
-      return { delivered: true, queuedMs }
+      const { queuedMs, via } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
+      return { delivered: true, queuedMs, via }
     },
 
     'terminal:start': async (payload) => {
