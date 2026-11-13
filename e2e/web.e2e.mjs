@@ -58,6 +58,7 @@ async function readOptions(trigger) {
  */
 const FAKE_AGENT = `#!/bin/sh
 if [ "$1" = "-p" ]; then NODE_OPTIONS= exec "${process.execPath}" "${path.join(root, 'e2e', 'fake-claude-models.mjs')}"; fi
+if [ -n "$FAKE_AGENT_ARGV_LOG" ]; then { echo '=== launch'; printf '%s\\n' "$@"; } >> "$FAKE_AGENT_ARGV_LOG"; fi
 echo "fake-claude ready"
 echo 'cjk-row:你「你」你「你」你「你」你「你」你「你」你「你」'
 echo 'cjk-row:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -192,6 +193,9 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   // A private HOME: the user's shell rc cannot reorder PATH, and nothing
   // touches their real ~/.claude.
   const home = path.join(tmp, 'home')
+  // Every launch of the fake agent appends its arguments here.
+  const argvLog = path.join(tmp, 'agent-argv.log')
+  fs.writeFileSync(argvLog, '')
   for (const d of [storeDir, workstation, fakeBin, home]) fs.mkdirSync(d, { recursive: true })
   fs.writeFileSync(path.join(fakeBin, 'claude'), FAKE_AGENT, { mode: 0o755 })
   if (canFakeGh) {
@@ -236,6 +240,7 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
         HOME: home,
         USERPROFILE: home, // os.homedir() on Windows, which is what `~/` resolves against
         VIBEFLOW_WEB_DIR: webDir,
+        FAKE_AGENT_ARGV_LOG: argvLog,
         TYPESAFE_API_KEY: '', // exercise the visible CLI-default fallback
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -507,6 +512,29 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.getByRole('tab', { name: /Git diff/ }).click()
   assert.equal(await page.getByRole('radio', { name: '依 commit' }).getAttribute('aria-checked'), 'true')
   await page.getByRole('radio', { name: '全部' }).click()
+
+  // New session: holding the button swaps the agent for a fresh one whose first
+  // message is a brief of the card's state, not the old conversation.
+  const launches = () => fs.readFileSync(argvLog, 'utf8').split('=== launch\n').slice(1)
+  const launchedBefore = launches().length
+  const runBefore = (await page.evaluate(() => window.vibeflow.getState())).board.in_progress[0].runId
+  await page.getByRole('button', { name: /新 Session 接續/ }).click({ delay: 1500 })
+  for (let attempt = 0; launches().length === launchedBefore && attempt < 100; attempt++) await page.waitForTimeout(100)
+  assert.equal(launches().length, launchedBefore + 1, 'the host started one new agent')
+  const brief = launches().at(-1)
+  assert.match(brief, /--session-id/)
+  assert.match(brief, /任務標題：E2E card/)
+  assert.match(brief, /e2e: fake agent change/, 'the commit made so far is in the brief')
+  assert.match(brief, /## 接續指示/)
+  await waitForTerminal(page, 'fake-claude ready')
+  const continued = (await page.evaluate(() => window.vibeflow.getState())).board.in_progress[0]
+  assert.notEqual(continued.runId, runBefore)
+  assert.equal(continued.worktreePath, task.worktreePath, 'the same worktree carries on')
+  assert.equal(await page.locator('.xterm-rows').first().evaluate((rows) => rows.textContent.includes('got:after-reload')), false, 'the old session\'s screen is gone')
+  await page.locator('.xterm-helper-textarea').first().focus()
+  await page.keyboard.type('after-continue')
+  await page.keyboard.press('Enter')
+  await waitForTerminal(page, 'got:after-continue')
 
   // Finish: cleanup removes the worktree and keeps what the work amounted to.
   const done = await page.evaluate((id) => window.vibeflow.cleanupTask(id), task.id)

@@ -108,4 +108,33 @@
 
 ## 實作與驗證紀錄
 
-尚未實作。
+### 實作（2026-11-13，依「實作順序」六個階段，各自 commit）
+
+1. 簡報純邏輯：`progress.ts` 的 `claudeLastReply`、`continuation.ts`、`test/fixtures/progress/claude-last-reply.jsonl`、`test/continuation.test.mjs`。
+2. `launch.ts` 的 `LaunchOptions.continuation`（優先於 `buildPrompt`，不與 `resume` 並用）＋`test/claude.test.mjs`。
+3. `vibeflow:continueTask`（`service.ts`）、`client.ts`、`IPC_API_MAP.md`；測試在 `test/service.test.mjs`、`test/master-cards.test.mjs`。
+4. CLI `task start --new-session [--force]`、`TASK_USAGE`、`AGENTS.md`；測試在 `test/task-cli.test.mjs`。
+5. Web UI：`renderer/lib/api.ts`、`task-terminal.tsx`（按住確認的按鈕）、`task-workspace-panel.tsx`、`kanban-board.tsx`。
+6. `e2e/web.e2e.mjs` 新步驟、`test/README.md`。
+
+與計劃的差異（皆不改變 spec 行為）：
+- 新增 `CoreOptions.prStatus` 測試接縫，讓測試不呼叫真的 `gh`。
+- 接續失敗時 handler 會把 `runId`／`launchedAt`／`usage` 還原；UI 在失敗時重新 attach 舊 session 並補回畫面。
+- UI 的按鈕只對 `launchedAt` 有值的卡片顯示。
+
+### 驗證結果（最終的程式樹上）
+
+| 檢查 | 命令 | 結果 |
+| --- | --- | --- |
+| 型別（core） | `npx tsc --noEmit -p tsconfig.json` | exit 0 |
+| 型別（renderer） | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | exit 0 |
+| 單元／handler 測試 | `npm test` | 606 項全過（含 `ui-consistency`、`core-boundary`） |
+| 建置 | `npm run build:web` | 成功 |
+| E2E | `npm run test:e2e` | 全部 4 項過；6 次完整執行中有 1 次「board cards close gaps after completing or deleting in the workspace」失敗（訊息未保留），之後該項單獨跑 5 次、完整套件再跑 4 次都過；該項的卡片沒有 `launchedAt`，不會出現新按鈕，不確定是否本來就不穩，未查證 |
+| 清理 | `rm -rf app renderer/.next` | 已刪除 |
+
+### 尚未驗證（交給驗收階段）
+
+- AC-6：真實 Claude 卡跑完一輪後接續的 context 量測（舊 session 最後一次呼叫 vs 新 session 第一次呼叫）。
+- AC-5 的 CLI 對真實 host 的完整流程（單元測試只涵蓋旗標檢查與 `HOST_NOT_RUNNING`）。
+- UI 的像素比對、RWD 與錄影；tmux backend 上取代 session 的實際行為。
