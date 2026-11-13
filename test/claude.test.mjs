@@ -203,6 +203,34 @@ test('buildAgentCommand — Claude resume adds no new message or system prompt',
   assert.ok(!cmd.includes('使用者無法登入'))
 })
 
+test('buildAgentCommand — a continuation sends its brief instead of the card text, on a fresh pinned session', () => {
+  const runId = '33333333-3333-4333-8333-333333333333'
+  const brief = '任務標題：修復登入流程\n\n## 接續指示\n先確認 git status'
+  const cmd = buildAgentCommand({ ...TASK, runId }, '', { continuation: brief }, '/workspace/project')
+  assert.ok(cmd.includes(`--session-id ${executorSessionId(TASK.id, runId)}`), cmd)
+  assert.ok(!cmd.includes('--resume'), cmd)
+  assert.ok(cmd.includes('## 接續指示'), cmd)
+  assert.ok(!cmd.includes('使用者無法登入'), 'the card text comes from the brief alone')
+
+  const codex = buildAgentCommand({ ...CODEX_TASK, runId }, 'sys', { continuation: brief })
+  assert.ok(codex.includes('## 接續指示'), codex)
+  assert.ok(codex.includes('sys'), 'the system prompt still leads for Codex')
+  assert.ok(!codex.includes('使用者無法登入'), codex)
+})
+
+test('buildAgentCommand — a continuation keeps the role prompts', () => {
+  const brief = 'brief'
+  const slave = buildAgentCommand({ ...TASK, masterId: 'mmmm1111' }, 'custom prompt', { continuation: brief, boardCli: undefined })
+  assert.ok(!slave.includes('custom prompt'), 'a master\'s card still ignores the user prompt')
+  assert.ok(slave.includes('--append-system-prompt'), slave)
+  const master = buildAgentCommand({ ...TASK, role: 'master' }, '', { continuation: brief })
+  assert.ok(master.includes('Master agent'), master)
+})
+
+test('buildAgentCommand — without a continuation the card text is sent as before', () => {
+  assert.ok(buildAgentCommand(TASK, '', undefined, '/workspace/project').includes('使用者無法登入'))
+})
+
 test('executorSessionId — is valid, stable, and unique per run', () => {
   const first = executorSessionId('abcd1234', '11111111-1111-4111-8111-111111111111')
   const second = executorSessionId('abcd1234', '22222222-2222-4222-8222-222222222222')

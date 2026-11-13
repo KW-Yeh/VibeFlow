@@ -428,6 +428,12 @@ export interface LaunchOptions {
   /** Jev's scout analysis for this run; added to the first prompt only. */
   preface?: LaunchPreface
   /**
+   * The first message of a session that carries on a card another session
+   * worked on (continuation.ts). It stands in for the card text, which it
+   * already contains. Never combined with `resume`.
+   */
+  continuation?: string
+  /**
    * The card's Auto Mode: whether the agent may act without asking for
    * approval. ON gives Claude `--permission-mode auto` and Codex
    * `--dangerously-bypass-approvals-and-sandbox`; OFF leaves both in the
@@ -593,7 +599,7 @@ export function buildAgentCommand(
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
   const prompt = includeTaskPrompt && !opts?.resume
-    ? buildPrompt(task, opts?.preface)
+    ? opts?.continuation ?? buildPrompt(task, opts?.preface)
     : ''
   // An agent-only launch is intentionally independent from the task's pinned
   // conversation. Claude creates a fresh interactive session of its own.
