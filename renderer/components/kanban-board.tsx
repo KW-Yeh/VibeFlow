@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import {
   resetTaskRun,
+  continueTask,
   termSessionExists,
 } from '@/lib/api'
 import { cardMove } from '@/lib/board-moves'
@@ -288,6 +289,13 @@ export function KanbanBoard({
     await armLaunch(task, { includeTaskPrompt: false })
   }
 
+  // The control that calls this is held to confirm, so a working agent is
+  // interrupted on purpose; core builds the new session's brief itself.
+  const continueTaskSession = async (task: Task) => {
+    const result = await continueTask({ taskId: task.id, force: true })
+    if (!result) throw new Error('未連線到 VibeFlow core')
+  }
+
   // Completing a card tears down the worktree that holds the work, so the user
   // confirms before anything is moved — the card stays put until they do.
   const completeTask = (task: Task) => {
@@ -456,6 +464,7 @@ export function KanbanBoard({
                       launch={terminalLaunch[taskId]}
                       onReturnToBacklog={returnTaskToBacklog}
                       onLaunchAgent={launchAgentOnly}
+                      onContinueSession={continueTaskSession}
                       onComplete={completeTask}
                       onDelete={onDeleteTask}
                     />
