@@ -47,3 +47,14 @@ test('task send needs a running host and says so', async () => {
   assert.equal(missing.error.code, 'MISSING_ARGUMENT')
   await fs.rm(storeDir, { recursive: true, force: true })
 })
+
+test('task start --new-session needs a running host; a misplaced flag fails before it', async (t) => {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  t.after(() => fs.rm(storeDir, { recursive: true, force: true }))
+  const store = ['--store-path', storeDir]
+  assert.equal((await task(['start', '--task', 'abc', '--new-session', ...store])).error.code, 'HOST_NOT_RUNNING')
+  assert.equal((await task(['start', '--task', 'abc', '--new-session', '--force', ...store])).error.code, 'HOST_NOT_RUNNING')
+  assert.equal((await task(['start', '--task', 'abc', '--force', ...store])).error.code, 'INVALID_ARGUMENT', '--force alone has nothing to force')
+  assert.equal((await task(['send', '--task', 'abc', '--text', 'x', '--new-session', ...store], { VIBEFLOW_TASK_ID: 'def' })).error.code, 'INVALID_ARGUMENT')
+  assert.equal((await task(['start', '--new-session', ...store])).error.code, 'MISSING_ARGUMENT')
+})

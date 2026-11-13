@@ -281,6 +281,27 @@ export function claudeUsageTotal(state: ClaudeState): TokenUsage {
   return { ...Object.values(state.usageById).reduce(addUsage, emptyUsage()), turns: state.turns }
 }
 
+/**
+ * The newest text the executor itself wrote, from transcript lines in file
+ * order. Sub-agents write into the same file marked `isSidechain`; what they
+ * say is not the card's own account of its work.
+ */
+export function claudeLastReply(lines: readonly string[]): string | undefined {
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const entry = parseLine(lines[i])
+    if (!entry || entry.type !== 'assistant' || entry.isSidechain) continue
+    const message = entry.message as Record<string, unknown> | undefined
+    const content = Array.isArray(message?.content) ? (message!.content as Record<string, unknown>[]) : []
+    const text = content
+      .filter((b) => b?.type === 'text' && typeof b.text === 'string')
+      .map((b) => (b.text as string).trim())
+      .filter(Boolean)
+      .join('\n\n')
+    if (text) return text
+  }
+  return undefined
+}
+
 // ---------------------------------------------------------------------------
 // Codex
 // ---------------------------------------------------------------------------

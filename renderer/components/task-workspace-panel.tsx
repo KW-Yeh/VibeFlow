@@ -252,6 +252,7 @@ interface TaskWorkspacePanelProps {
   launch?: LaunchEntry
   onReturnToBacklog: (task: Task) => Promise<boolean>
   onLaunchAgent: (task: Task) => Promise<void>
+  onContinueSession: (task: Task) => Promise<void>
   onComplete: (task: Task) => void
   onDelete: (taskId: string) => void
   /** This workspace is the one on screen (selected, on the workspace page). */
@@ -1262,6 +1263,7 @@ export function TaskWorkspacePanel({
   launch,
   onReturnToBacklog,
   onLaunchAgent,
+  onContinueSession,
   onComplete,
   onDelete,
   active = true,
@@ -1568,6 +1570,7 @@ export function TaskWorkspacePanel({
               readOnly={false}
               onReturnToBacklog={() => onReturnToBacklog(task)}
               onLaunchAgent={() => onLaunchAgent(task)}
+              onContinueSession={task.launchedAt != null ? () => onContinueSession(task) : undefined}
               active={active}
               toolbarStart={
                 <>

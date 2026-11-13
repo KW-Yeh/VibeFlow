@@ -53,6 +53,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `github.test.mjs` | `packages/core/src/github.ts` | remote → `owner/repo`, `gh` issue/PR listing and merging (fake runner, no network), `issueType` fallback, per-repo cache and errors, card ↔ Issue/PR link resolution |
 | `jira.test.mjs`, `jira-adf.test.mjs`, `jira-columns.test.mjs` | Jira core and renderer helpers | acli JQL/JSON conversion, attachment metadata, ADF Markdown, auth status, cache, status columns and due-date sorting |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
+| `pr-status.test.mjs` | `packages/core/src/git.ts` (`getPrStatus`) | a PR lookup that runs out of time is killed instead of left running with the worktree as its cwd (a fake `gh` on PATH; skipped on Windows) |
 | `commit-diff.test.mjs` | `packages/core/src/commit-diff.ts` | a branch's commits and per-commit files; done-card reads from a merged base, a squash (gh fallback with a fake runner), and the no-PR reason |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |
@@ -61,22 +62,23 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `lock.test.mjs` | `packages/core/src/lock.ts` | one host per machine: takeover of dead locks, port, file mode |
 | `mailbox.test.mjs` | `packages/core/src/mailbox.ts` | typing for someone else: bracketed paste + Enter, no typing into a permission dialog, waits for a person to stop typing, never splits a delivery, sender tag |
 | `notifier.test.mjs` | `packages/core/src/notifier.ts` | what a master's card cannot say itself (permission dialog, launch failure, session end, unreported turn) reaches its master once, waits while it cannot take it, dropped once it is done |
+| `continuation.test.mjs` | `packages/core/src/continuation.ts`, `progress.ts` | the brief a card's new session starts from: parts and their order, omission of what could not be read, size caps, the master variant, and the transcript's last reply (`fixtures/progress/claude-last-reply.jsonl`) |
 | `progress.test.mjs` | `packages/core/src/progress.ts` | transcript reducers against recorded fixtures (`fixtures/progress/`): todo lists, usage de-duplication, activity, hook events, notification diffs |
 | `progress-tracker.test.mjs` | `packages/core/src/progress-tracker.ts` | finding a card's transcripts under a temp home: incremental reads, run filtering, Codex cwd matching, hook event files, no back-filled notifications |
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
 | `pty-helper.test.mjs` | `packages/core/src/pty-helper.ts` | node-pty `spawn-helper` executable bit and its fix command |
 | `recent-projects.test.mjs` | `packages/core/src/recent-projects.ts` | recent-project ordering, replacement and lost-folder flags |
-| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card |
+| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card, `continueTask` (usage folded once, brief as the first message, busy / duplicate / failed-start handling) |
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `board-moves.test.mjs` | `renderer/lib/board-moves.ts` | which column drops are allowed and what each means |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
-| `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, master ↔ card messages, VibeFlow's notes to a master |
+| `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
-| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors |
-| `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it |
+| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks |
+| `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it; a replacement keeps the old size unless it brings its own |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
-| `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, exit status, kill vs. detach |
+| `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, a replacement keeping the old client's size, exit status, kill vs. detach |
 | `tui.test.mjs` | `packages/tui/src/index.ts` | TUI board moves and selection |
 | `tui-task-form.test.mjs` | `packages/tui/src/task-form.ts` | TUI new/edit task form defaults and validation |
 | `update-command.test.mjs` | `packages/cli/src/update-command.ts`, `main.ts` | global npm update command, source/local/npx/link refusal, npm failure and CLI dispatch |

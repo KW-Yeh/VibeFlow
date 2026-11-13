@@ -188,7 +188,12 @@ export class TmuxBackend implements SessionBackend {
   }
 
   async start(key: string, options: SessionStartOptions): Promise<StartResult> {
-    const { cwd, command, onExit, cols = 80, rows = 24, fresh = false } = options
+    const { cwd, command, onExit, fresh = false } = options
+    // A replacement without a size of its own keeps the old one: nothing tells the
+    // frontend's terminal to resize just because the program behind it changed.
+    const previous = this.clients.get(key)?.proc
+    const cols = options.cols ?? previous?.cols ?? 80
+    const rows = options.rows ?? previous?.rows ?? 24
     this.ensureFiles()
     const name = this.sessionName(key)
     const alive = await this.isAlive(key)

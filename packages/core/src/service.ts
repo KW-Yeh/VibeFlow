@@ -44,6 +44,7 @@ import { createJiraService, DEFAULT_POINT_FIELDS, isJiraRef, type JiraRef } from
 import { cancelJiraLogin, getJiraAuthStatus, inputJiraLogin, logoutJira, startJiraLogin, type AcliRunner, type JiraAuthStatus } from './jira-auth'
 import {
   captureTaskOutcome,
+  collectWorkingEntries,
   commitAndPush,
   deleteBranch,
   fallbackBranchName,
@@ -58,7 +59,9 @@ import {
   initRepository,
   removeWorktree,
   resetWorktreeToBase,
+  runGit,
   syncBaseBranch,
+  type PrStatus,
 } from './git'
 import {
   WORKING_CHANGES,
@@ -95,7 +98,8 @@ import {
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
-import { createProgressTracker, type ProgressTarget } from './progress-tracker'
+import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
+import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
 import { inboxDir, inboxReady, prepareInbox } from './inbox'
 import { createNotifier } from './notifier'
@@ -250,6 +254,10 @@ function obj<T>(value: unknown, name: string): T {
   return value as T
 }
 
+/** A PR lookup that takes longer than this is stopped and reported as unknown instead of holding the new session back. */
+const PR_LOOKUP_MS = 5_000
+const lookUpPr = (worktreePath: string): Promise<PrStatus | null> => getPrStatus(worktreePath, PR_LOOKUP_MS)
+
 const LIBRARY_KINDS = ['skill', 'prompt', 'script']
 const AGENT_IDS = ['claude', 'codex']
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
@@ -313,6 +321,8 @@ export interface CoreOptions {
   jevRouter?: JevRouter
   /** Translates a non-English card title into a branch slug. The host passes the real one; without it no card title is ever translated. */
   titleTranslator?: TitleTranslator
+  /** Stand-in for the PR lookup behind a continuation brief; tests override it. */
+  prStatus?: (worktreePath: string) => Promise<PrStatus | null>
 }
 
 export type CoreHandler = (...args: unknown[]) => unknown
@@ -336,7 +346,7 @@ export interface Core {
  * take ids; a standalone shell may take a selected folder when no task exists.
  * No channel accepts a client-supplied shell command. Events use one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator, prStatus = lookUpPr }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
   const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
@@ -446,6 +456,112 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return snapshot?.totalUsage ?? task.usage
   }
 
+  /** Cards whose new session is starting: a second request would start a second one. */
+  const continuing = new Set<string>()
+
+  /** The card's executor transcript, under the worktree path as stored or with symlinks resolved. */
+  function executorTranscript(task: Task): string | undefined {
+    if (!task.worktreePath) return undefined
+    const file = `${executorSessionId(task.id, task.runId)}.jsonl`
+    let resolved = task.worktreePath
+    try {
+      resolved = fs.realpathSync(task.worktreePath)
+    } catch {
+      // The worktree is gone; the stored spelling is all there is.
+    }
+    for (const cwd of new Set([task.worktreePath, resolved])) {
+      const candidate = path.join(claudeProjectDir(home, cwd), file)
+      if (fs.existsSync(candidate)) return candidate
+    }
+    return undefined
+  }
+
+  /** What the next session needs to know about the card; a fact that cannot be read is left out. */
+  async function continuationFacts(task: Task): Promise<ContinuationFacts> {
+    trackProgress(task)
+    const todos = progress.snapshot(task.id)?.todos
+    const transcript = taskAgent(task) === 'claude' ? executorTranscript(task) : undefined
+    const lastReply = transcript ? readLastClaudeReply(transcript, MAX_REPLY_CHARS) : undefined
+    const facts: ContinuationFacts = {
+      title: task.title,
+      description: task.description,
+      ...(todos?.length ? { todos } : {}),
+      ...(lastReply ? { lastReply } : {}),
+    }
+    if (isMasterTask(task)) {
+      facts.cards = (await summarizeTasks({ masterId: task.id })).map((c) => ({
+        id: c.id,
+        title: c.title,
+        column: c.column,
+        running: c.running,
+        ...(c.todos ? { todos: { done: c.todos.done, total: c.todos.total } } : {}),
+        ...(c.pr ? { pr: { number: c.pr.number, state: c.pr.state } } : {}),
+      }))
+      return facts
+    }
+    const worktree = gitWorktree(task)
+    if (!worktree) return facts
+    const [commits, uncommitted, unpushed, pr] = await Promise.all([
+      getBranchCommits(worktree, task.baseBranch ?? 'main').catch(() => null),
+      collectWorkingEntries(worktree).catch(() => null),
+      runGit(worktree, ['rev-list', '--count', '@{u}..HEAD']).then((n) => Number.parseInt(n, 10) || 0, () => null),
+      prStatus(worktree).catch(() => null),
+    ])
+    if (commits || uncommitted) {
+      facts.git = {
+        branch: task.branch,
+        ...(task.baseBranch ? { baseBranch: task.baseBranch } : {}),
+        commits: (commits?.commits ?? []).map((c) => ({ shortSha: c.shortSha, subject: c.subject })),
+        uncommitted: (uncommitted ?? []).map((e) => ({ path: e.path, status: e.status })),
+        unpushed,
+      }
+    }
+    facts.pr = pr
+    return facts
+  }
+
+  /**
+   * Replace a running card's agent session with a new one that starts from a
+   * brief instead of the old conversation. Nothing the card produced is
+   * touched; its usage so far moves into Task.usage.
+   */
+  async function continueTask(taskId: string, force: boolean): Promise<{ state: VibeFlowState; task: Task }> {
+    const task = requireTask(taskId)
+    if (continuing.has(task.id)) throw coded('ALREADY_CONTINUING', '這張卡正在換新 session')
+    const column = columnOf(task.id)
+    if (column !== 'in_progress') throw coded('NOT_IN_PROGRESS', `只有 In Progress 的卡片可以換新 session（目前在 ${column}）`)
+    if (!task.launchedAt) throw coded('NOT_LAUNCHED', '這張卡還沒有執行過，請直接啟動')
+    if (!task.worktreePath) throw coded('NO_WORKTREE', '這張卡沒有 worktree')
+    continuing.add(task.id)
+    try {
+      if (!force && (await sessions.isAlive(task.id))) {
+        trackProgress(task)
+        const activity = agentActivity(task.id)
+        if (activity?.state === 'working' || isBlocked(activity)) {
+          throw coded('AGENT_BUSY', 'agent 正在執行或等待權限確認；加上 force 才會中斷它並換新 session')
+        }
+      }
+      const brief = buildContinuationPrompt(await continuationFacts(task))
+      const usage = usageThroughCurrentRun(task)
+      updateTask(task.id, { runId: randomUUID(), launchedAt: Date.now(), ...(usage ? { usage } : {}) })
+      resetSubAgents(task.worktreePath)
+      bus.emit('subagents:update', { taskId: task.id, subAgents: [] })
+      const next = requireTask(task.id)
+      try {
+        await startTaskSession(next, next.id, { taskId: next.id, launch: {} }, brief)
+      } catch (err) {
+        updateTask(task.id, { runId: task.runId, launchedAt: task.launchedAt, usage: task.usage })
+        trackProgress(findTask(task.id) ?? task)
+        bus.emit('state:changed', getState())
+        throw err
+      }
+      bus.emit('state:changed', getState())
+      return { state: getState(), task: findTask(task.id) ?? next }
+    } finally {
+      continuing.delete(task.id)
+    }
+  }
+
   // Cards already running when the host starts (tmux kept them alive, or an
   // agent finished while nothing watched) are followed without a frontend.
   try {
@@ -525,12 +641,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return task.jevRoute?.status === 'routing' ? undefined : task.jevRoute
   }
 
-  async function launchCommand(task: Task, intent: LaunchIntent): Promise<string> {
+  async function launchCommand(task: Task, intent: LaunchIntent, continuation?: string): Promise<string> {
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
     let route = settledRoute(task)
-    const needsRoute = !taskModel(task) || task.effort === 'auto'
+    // A continuation keeps the model and effort the card's run already settled on.
+    const needsRoute = !continuation && (!taskModel(task) || task.effort === 'auto')
     if (needsRoute && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
@@ -572,6 +689,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         boardCli,
         autoMode: task.autoMode ?? settings.autoMode,
         preface,
+        continuation,
       },
       task.workspacePath
     )
@@ -655,7 +773,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     pointFields: () => getSettings().jira?.storyPointsFields?.length ? getSettings().jira!.storyPointsFields! : DEFAULT_POINT_FIELDS,
   })
 
-  async function startTaskSession(requested: Task, key: string, p: PtyStartPayload) {
+  async function startTaskSession(requested: Task, key: string, p: PtyStartPayload, continuation?: string) {
     // Only a launch provisions; a shell asked for meanwhile waits for it. A
     // shell must never fall back to the project checkout — work done there
     // would land on whatever branch the project has out.
@@ -672,7 +790,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (intent.resume && (await sessions.isAlive(key))) {
         fresh = false
       } else {
-        command = (await launchCommand(task, intent)).replace(/\r$/, '')
+        command = (await launchCommand(task, intent, continuation)).replace(/\r$/, '')
         // Until this launch's hooks say they read the inbox, messages are typed.
         if (key === task.id) prepareInbox(inboxDir(cwd))
       }
@@ -1071,6 +1189,15 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       bus.emit('state:changed', getState())
       await startTaskSession(started, task.id, { taskId: task.id, launch: {} })
       return { state: getState(), task: findTask(task.id) ?? started }
+    },
+
+    // A running card carries on in a new agent session: same worktree and branch,
+    // nothing discarded, first message built by core from the card's own facts.
+    // Only an id and `force` come from the client — never the brief's text.
+    'vibeflow:continueTask': async (payload) => {
+      const p = obj<{ taskId: unknown; force?: unknown }>(payload, 'payload')
+      if (p.force !== undefined && typeof p.force !== 'boolean') invalid('force must be a boolean')
+      return continueTask(str(p.taskId, 'taskId'), p.force === true)
     },
 
     // Every card on the board, or one master's cards, as the CLI and a master's

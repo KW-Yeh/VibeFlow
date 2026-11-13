@@ -152,6 +152,7 @@ them and follows them through the board CLI. A card dispatched by one carries
 npm run vibeflow -- task create --role master --title "…" --prompt "…" [--work-dir <dir>]
 npm run vibeflow -- task create --project <repo> --title "…" --prompt "…" --master <masterId>
 npm run vibeflow -- task start --task <id>          # Backlog → In Progress + agent starts
+npm run vibeflow -- task start --task <id> --new-session [--force]   # In Progress → carry on in a new agent session
 npm run vibeflow -- task list [--master <id>]       # column, running, todos x/y, activity, PR
 npm run vibeflow -- task show --task <id>
 npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a message into that card's agent
@@ -169,6 +170,13 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   `VIBEFLOW_STORE_DIR`.
 - `vibeflow:startTask` does what dragging a card into In Progress does, headlessly.
   A frontend that later opens the card re-attaches to the running session.
+- `task start --new-session` (`vibeflow:continueTask`, spec: `docs/features/fresh-session-continuation/`)
+  replaces an In Progress card's agent session with a new one that starts from a
+  brief core builds (`continuation.ts`: card text, branch / PR state, todos, the last
+  reply; a master gets its cards instead of git), so the context stops growing. It
+  folds the usage so far into `Task.usage` and swaps `runId` / `launchedAt`; worktree,
+  branch and artifacts stay. A working agent is refused (`AGENT_BUSY`) unless `--force`.
+  The client sends only the id and `force`, never the brief's text.
 - `task create` run from a master's shell (`VIBEFLOW_TASK_ID` is a master) puts the
   new card under it without `--master`.
 - **Masters and their cards talk through the host, not by polling.** `task send`
@@ -210,7 +218,8 @@ system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to dispatch, s
 and steer cards with the board CLI, following its auto mode; and a card with a
 `masterId`, which gets **only** `slaveSystemPrompt()` — not the user's custom
 system prompt nor Library snippets: who its master is and to report there with `task send`. A Jev scout
-analysis, when there is one, follows the card text in the first prompt. Enabled Library
+analysis, when there is one, follows the card text in the first prompt. A continuation
+(`task start --new-session`) sends the brief instead, and never routes again. Enabled Library
 skills (`library.ts`, built-ins included) reach every card, a master's cards too: Claude
 loads them as a session-only plugin (`--plugin-dir <library>/plugin --add-dir <library>`),
 Codex through `CODEX_HOME=<library>/codex-home`, whose `skills/` merges the project's

@@ -63,6 +63,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [pr-watch](features/pr-watch/spec.md) ([plan](features/pr-watch/plan.md)) | Built-in pr-watch skill: a script waits on a PR and wakes the agent for new review comments (address-review) or a moved base (rebase) until merge/close; Library delivery to launches restored |
 | [motion-animations](features/motion-animations/spec.md) ([plan](features/motion-animations/plan.md)) | Which motion.dev React patterns fit VibeFlow (tab indicators, card travel, rolling token counts, copy feedback, loading crossfade, stacked toasts) and which were left out |
 | [task-sheet](features/task-sheet/spec.md) ([plan](features/task-sheet/plan.md)) | Clicking a board card opens its sheet (edit a Backlog card, read the others, delete); inbox「建立卡片」opens a prefilled create sheet that only references the item and can make a master |
+| [fresh-session-continuation](features/fresh-session-continuation/spec.md) ([plan](features/fresh-session-continuation/plan.md)) | Continue an In Progress card in a new agent session (UI hold button, `task start --new-session`) that starts from a core-built brief — card text, branch/PR state, todos, the last reply — instead of the whole history; usage is folded into the card |
 
 ## Adding a document
 

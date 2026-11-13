@@ -272,6 +272,15 @@ export async function updateTask(payload: {
   return b ? b.updateTask(payload) : null
 }
 
+/** Carry a running card on in a new agent session; null without a bridge. */
+export async function continueTask(payload: {
+  taskId: string
+  force?: boolean
+}): Promise<{ state: VibeFlowState; task: Task } | null> {
+  const b = bridge()
+  return b ? b.continueTask(payload) : null
+}
+
 export async function resetTaskRun(
   taskId: string
 ): Promise<{ state: VibeFlowState; task: Task } | null> {

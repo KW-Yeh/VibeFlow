@@ -1,0 +1,169 @@
+# Plan：卡片換新 session 接續
+
+- 狀態：已確認
+- 對應 Spec：[spec.md](./spec.md)
+- Spec 確認依據：2026-11-13 使用者回覆「繼續」，視為接受 spec 的建議預設
+- 更新日期：2026-11-13
+- 確認紀錄：2026-11-13 使用者回覆「確認 plan，開始實作」，授權依本計畫實作。
+
+## 現有程式碼調查
+
+| 檔案或專案 | 現有行為、可重用模式與調查依據 |
+| --- | --- |
+| `packages/core/src/launch.ts` | `executorSessionId(taskId, runId)`（382 行）以 `runId` 決定 Claude session id；`buildAgentCommand`（554 行）在 `resume` 時不送 prompt，否則送 `buildPrompt()`。Claude 無 resume 時用 `--session-id`；Codex 分支沒有 session id，也沒有 resume（`resume` 只是不送 prompt）。slave 卡只帶 `slaveSystemPrompt()`。 |
+| `packages/core/src/service.ts` | `startTaskSession`（655 行）：`sessions.start(key, {command})` 會取代同 key 的舊 session，舊 session 的 `onExit` 不會觸發（`pty.ts` 134–143 行以 `this.sessions.get(key) === session` 判斷；`tmux-backend.ts` 以 `killed` 標記 `intentional`）。`launchCommand`（525 行）在 `needsRoute && !resume && includeTaskPrompt` 時呼叫 Jev，需要略過。`resetTaskRun`（922 行）已示範「折入用量 → 換 `runId`／`launchedAt`」；`usageThroughCurrentRun`（436 行）可直接重用。`vibeflow:startTask`（1057 行）示範「無 frontend 啟動」。`coded()`、`obj()`、`requireTask()`、`columnOf()`、`summarizeTasks()` 可重用。`homeDir` 選項讓測試把 transcript 放在 temp home。 |
+| `packages/core/src/progress-tracker.ts` | Claude：executor 檔永遠計入，其他 session 只在 `startedAt >= since - 5s` 時加入用量（209–227 行）→ 折入後更新 `launchedAt`，舊 session 即被排除，不會重複計。`track()` 的 `sameTarget` 比對 `sessionId`／`since`／`priorUsage`，換 run 會自動重新基線。`claudeProjectDir(home, cwd)` 可算 transcript 目錄。 |
+| `packages/core/src/progress.ts` | `reduceClaudeLine` 只讀少數欄位，`contextTokens = input + cacheRead + cacheWrite`（238 行，驗收量測沿用此定義）。目前沒有讀 assistant 文字；新增一個純函式讀 `message.content[].text`，並以 `test/fixtures/progress/` 釘住格式。 |
+| `packages/core/src/commit-diff.ts`、`git.ts` | `getBranchCommits(worktree, base)`（136 行，本地、不連網）給 `base..HEAD` commit；`collectWorkingEntries(worktree)`（1067 行）給未 commit 檔案；`getPrStatus(worktree)`（1339 行）用 `gh pr view` 給 PR，無 PR 或無 `gh` 回 null（沒有 timeout，需要在呼叫端加）；`runGit` 可查 upstream 領先數。 |
+| `packages/core/src/inbox.ts`、`mailbox.ts` | inbox 在 worktree 內（`.vibeflow-inbox`），不綁 session；`prepareInbox` 只清 `.ready`，不刪訊息 → 未讀訊息自然留給新 session 的 hook。`mailbox.forget` 只清輸入狀態，不取消進行中的 `deliver`。 |
+| `packages/core/src/notifier.ts`、`service.ts` 的 `onExit` | `notifier.exited(task.id)` 只在 `onExit` 觸發；被新 session 取代時不會觸發 → 不需要特別處理，只要「不先 kill 再開」。 |
+| `packages/core/src/client.ts`、`renderer/lib/api.ts`、`packages/core/IPC_API_MAP.md` | handler 加法順序已寫在 AGENTS.md：service → client → api → IPC map。`startTask`／`resetTaskRun` 是現成樣板。 |
+| `packages/cli/src/task-command.ts` | `parseArgs` strict；`HOST_COMMANDS = ['start','list','show','send']`；`hostCommand` 的 `start` 呼叫 `remote.api.startTask`；`send` 用 `err.code` 轉 `fail(code, message)`；`--force` 已是 boolean 選項。`TASK_USAGE` 文字要同步。 |
+| `renderer/components/task-terminal.tsx`、`task-workspace-panel.tsx`、`kanban-board.tsx` | 工具列已有 `HoldButton`（退回 Backlog）與「啟動 Agent」；`launchAgentOnly` 示範 `term.reset()/clear()` → 呼叫 → `focus()`；`onLaunchAgent`／`onReturnToBacklog` 自 `kanban-board.tsx`（457 行）經 `task-workspace-panel.tsx`（1569 行）傳入。 |
+| `test/` 與 `e2e/` | `test/service.test.mjs` 有 `fakeSessions()`、`coreWithTask`、`coreWithProgress`（transcript 在 temp home）；`test/claude.test.mjs` 測 `buildAgentCommand`；`test/task-cli.test.mjs` 測 CLI；`e2e/web.e2e.mjs` 用 `FAKE_AGENT` shell script 取代 `claude`；`test/ui-consistency.test.mjs` 掃 renderer class 慣例。 |
+
+## 方案與取捨
+
+**採用：** 新 handler `vibeflow:continueTask({ taskId, force? })`，UI 與 CLI 共用；不新增 `LaunchIntent` 欄位。流程（同一張卡以 per-card in-flight 鎖序列化）：
+
+1. 檢查：在 In Progress、`launchedAt` 有值、有 `worktreePath`；有存活 session 且 activity 為 `working`／等權限時，沒有 `force` 就回 `AGENT_BUSY`。
+2. 在更換 `runId` **之前**蒐集事實並組簡報（舊 executor 的 transcript 路徑還算得出來）：card 文字、git（commits、未 commit 檔案、upstream 領先數）、PR（`getPrStatus` 加 5 秒 timeout）、todos（`progress.snapshot`）、最後回覆（僅 Claude）；master 改用 `summarizeTasks({ masterId })`。每一項各自 try/catch，失敗就省略該段。
+3. 折入用量：`usage = usageThroughCurrentRun(task)`；`updateTask(id, { runId: randomUUID(), launchedAt: Date.now(), usage })`；保留 `jevRoute`；`resetSubAgents` 並 emit `subagents:update`。
+4. 內部呼叫 `startTaskSession(task, task.id, { taskId, launch: {} }, { continuation: brief })`：`launchCommand` 看到 `continuation` 就略過 Jev、把簡報當第一則訊息（`buildAgentCommand` 的新選項 `LaunchOptions.continuation`，優先於 `buildPrompt`）。取代舊 session 由 `sessions.start` 完成，不另外 kill。
+5. emit `state:changed`，回傳 `{ state, task }`。
+
+**簡報組裝**放在新檔 `packages/core/src/continuation.ts`：純函式 `buildContinuationPrompt(facts)`（段落、上限、省略規則集中一處，容易單元測試）＋ `readLastClaudeReply(file, maxChars)`（只讀檔尾 256 KB）。`progress.ts` 新增純函式 `claudeLastReply(lines)`。
+
+**替代方案與捨棄理由：**
+- 讓舊 agent 寫交接檔：多一輪 180k+ context 的呼叫、agent 卡住時不可用、與 task-progress「不靠模型寫進度」的原則相左（spec 已定案）。
+- 用 `LaunchIntent.newSession` 走 `pty:start`：client 送的 `LaunchIntent` 沒有嚴格欄位驗證，要塞簡報文字就得開洞；改由 core 內部參數傳簡報，沒有新的 client 可控文字入口。
+- 不折用量、只換 `runId`：舊 transcript 超過 Claude 保存期限後總用量會變小；折入沿用 `resetTaskRun`／`cleanupTask` 已有的規則。
+
+## 預計修改
+
+| 檔案 | 修改內容 | 對應驗收條件 |
+| --- | --- | --- |
+| `packages/core/src/progress.ts` | 新增 `claudeLastReply(lines)`：取最後一則 assistant 的 text block | AC-2 |
+| `test/fixtures/progress/claude-last-reply.jsonl`（新增） | 合成 transcript：多則 assistant、結尾是 tool_use、含 text | AC-2 |
+| `packages/core/src/continuation.ts`（新增） | `ContinuationFacts`、`buildContinuationPrompt`、`readLastClaudeReply`；上限：commits 20、檔案 30、最後回覆 2,000 字、總長 8,000 字（超過先裁最後回覆再裁 commit） | AC-2 |
+| `packages/core/src/launch.ts` | `LaunchOptions.continuation?: string`；`buildAgentCommand` 有它時 `prompt = continuation`（Claude 與 Codex 皆然），不與 `resume` 並用 | AC-2、AC-4 |
+| `packages/core/src/service.ts` | `vibeflow:continueTask` handler；`prepareContinuation`（檢查、事實、折用量）；`startTaskSession`／`launchCommand` 接受內部 `continuation` 參數並略過 Jev；per-card in-flight 鎖；錯誤碼 `NOT_IN_PROGRESS`／`NOT_LAUNCHED`／`NO_WORKTREE`／`AGENT_BUSY`／`ALREADY_CONTINUING` | AC-1、AC-3、AC-4 |
+| `packages/core/src/client.ts` | `continueTask(payload)` | AC-5 |
+| `packages/core/IPC_API_MAP.md` | 新增 `vibeflow:continueTask` 一列 | AC-7 |
+| `renderer/lib/api.ts` | `continueTask` wrapper（無 bridge 回 null） | AC-5 |
+| `packages/cli/src/task-command.ts` | `--new-session` boolean；`start` 搭配它時呼叫 `continueTask`，`--force` 傳入；`--force` 只允許用在 `send` 或 `start --new-session`；錯誤用 `err.code`；更新 `TASK_USAGE` | AC-3、AC-5 |
+| `renderer/components/task-terminal.tsx` | 新增 `onContinue` prop 與按住確認的「新 Session 接續」按鈕（`HoldButton`，只有圖示，aria-label 為「按住新 Session 接續」；工具列在 1280 寬已沒有空間再放文字按鈕）；仿 `launchAgentOnly` 的 `reset/clear/focus`，並維持 `runningCommandRef` 讓結束文字正確 | AC-5 |
+| `renderer/components/task-workspace-panel.tsx`、`renderer/components/kanban-board.tsx` | 傳遞 `onContinue`，只對 In Progress、`launchedAt` 有值的卡片提供；呼叫 `continueTask({ taskId, force: true })`（按住即確認） | AC-5 |
+| `test/continuation.test.mjs`（新增） | 簡報段落、上限與裁切順序、省略規則、master 版；`claudeLastReply` 對 fixture | AC-2 |
+| `test/claude.test.mjs`、`test/service.test.mjs`、`test/master-cards.test.mjs`、`test/task-cli.test.mjs` | 見驗證計畫 | AC-1～AC-4 |
+| `packages/core/src/pty.ts`、`packages/core/src/tmux-backend.ts`（驗收後新增） | `start` 取代既有 session 且沒給 cols／rows 時，沿用被取代 session 的尺寸；明確給的尺寸優先。修正同頁接續後新 pty 停在 80x24 的問題 | AC-5 |
+| `test/pty-backend.test.mjs`、`test/tmux-backend.test.mjs`（驗收後新增） | 取代時沿用尺寸、明確尺寸優先、沒有可取代的 session 時用預設尺寸 | AC-5 |
+| `e2e/web.e2e.mjs` | 新增步驟：卡片跑起來後按住「新 Session 接續」，終端機再次出現 fake agent 輸出；fake agent 把 argv 寫到 `$FAKE_AGENT_ARGV_LOG`，斷言有新的 `--session-id` 與簡報文字；按下前斷言工具列內每顆按鈕都在工具列範圍內、按鈕內圖示為 12×12 | AC-5 |
+| `AGENTS.md` | CLI 說明加上 `task start --new-session`；「What a launch sends」加一句續接簡報 | AC-7 |
+| `docs/README.md`、`test/README.md` | 新增 feature 列與 `continuation.test.mjs` 列 | AC-7 |
+
+## 實作順序
+
+每階段：通過該階段驗證 → 任務標 completed → commit，再做下一階段。
+
+1. **簡報純邏輯**：`claudeLastReply`＋fixture、`continuation.ts`、`test/continuation.test.mjs`。驗證：`npx tsc --noEmit -p tsconfig.json`；`node scripts/run-tests.mjs ./test/continuation.test.mjs ./test/progress.test.mjs`。
+2. **啟動指令**：`launch.ts` 的 `continuation` 選項＋`test/claude.test.mjs` 案例。驗證：tsc；`node scripts/run-tests.mjs ./test/claude.test.mjs`。
+3. **handler**：`service.ts`、`client.ts`、`IPC_API_MAP.md`＋`test/service.test.mjs`／`test/master-cards.test.mjs` 案例。驗證：tsc；兩個測試檔；`npm test`。
+4. **CLI**：`task-command.ts`、`TASK_USAGE`、`AGENTS.md` CLI 段＋`test/task-cli.test.mjs`。驗證：tsc；`node scripts/run-tests.mjs ./test/task-cli.test.mjs`。
+5. **Web UI**：`renderer/lib/api.ts`、`task-terminal.tsx`、`task-workspace-panel.tsx`、`kanban-board.tsx`。驗證：`npx tsc --noEmit -p renderer/tsconfig.json`；`npm test`（含 `ui-consistency`）；`npm run build:web`。
+6. **e2e 與文件**：`e2e/web.e2e.mjs`、`test/README.md`、`docs/README.md`。驗證：完整 DoD（兩個 tsc、`npm test`、`npm run build:web`、`npm run test:e2e`）。
+7. **驗收**：全新 context 的 sub-agent 依「驗證計畫」執行並回報，不改程式碼；有問題回到對應階段修，再重跑受影響的驗收。
+
+## 風險與依賴
+
+- **Claude transcript 格式非公開**：`claudeLastReply` 只讀 `type`、`message.content[].type/text`；讀不到就省略該段，不讓接續失敗；fixture 釘住格式。
+- **`gh` 慢或離線**：5 秒 timeout（`getPrStatus` 的 `timeout` 會殺掉子行程，不讓它留著以 worktree 為 cwd），回「PR 狀態未知」。
+- **打斷執行中的 agent**：`AGENT_BUSY` 擋 CLI／master；UI 靠按住確認。activity 讀數可能過時，所以保留 `--force`。
+- **兩次同時接續**：per-card 鎖，第二次 `ALREADY_CONTINUING`。
+- **進行中的 `mailbox.deliver`**：沒有 inbox 的路徑（Codex）仍在排隊的輸入會在新 session 啟動期間被貼進去，行為與任何一次重啟相同，不另外處理，列為已知限制。
+- **重複計用量的 5 秒 slack**：舊 session 啟動後 5 秒內接續可能被重複計入；極小機率，記錄不處理。
+- **xterm 狀態**：UI 不走 `armLaunch`，需在瀏覽器實測 `reset/clear`、結束文字與重新聚焦。
+- **tmux 與 pty 兩種 backend**：取代 session 的路徑與「啟動 Agent」相同；驗收用實際 host（有 tmux 就走 tmux）。
+- **Store 資料形狀**：不新增欄位 → 不需要 migration；驗證舊 store（沒有 `runId` 的卡片）接續成功（`test/service.test.mjs` 案例）。
+- **契約檢查**：新增 handler 與 client 方法是加法；`buildAgentCommand` 新選項為 optional，既有呼叫端行為不變（`test/claude.test.mjs` 既有案例回歸）。
+
+## 驗證計畫
+
+| 檢查 | 命令或操作 | 對應驗收條件 |
+| --- | --- | --- |
+| 型別（core） | `npx tsc --noEmit -p tsconfig.json` | 工程品質 |
+| 型別（renderer） | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | 工程品質 |
+| 單元／handler 測試 | `npm test`。新增案例：①接續後 `runId`／`launchedAt` 更新、`usage` 折入、worktree 不動；②`sessions.killed` 為空、`starts` 多一筆、指令含新 `--session-id` 與簡報；③Backlog／Done／無 worktree／未執行被拒且狀態不變；④`AGENT_BUSY` 與 `force`；⑤沒有存活 session 可接續；⑥同時兩次 → `ALREADY_CONTINUING`；⑦完成卡片後總用量不重複；⑧未讀 inbox 訊息保留、`notifier` 無 session 結束通知；⑨slave 只帶 `slaveSystemPrompt()`；⑩master 簡報含卡片表、無 git／PR；⑪Codex 簡報併入 prompt；⑫沒有 `runId` 的舊卡片可接續 | AC-1～AC-4 |
+| CLI | `test/task-cli.test.mjs`：`--new-session` 流程、`--force` 單獨使用被拒、錯誤碼輸出 | AC-3、AC-5 |
+| 建置 | `npm run build:web`（受限環境加 `-- --webpack`） | 工程品質 |
+| E2E | `npm run test:e2e` | AC-5 |
+| UI 實測與像素比對 | `npm start -- --store-path <tmp> --no-open --port 47831`，開啟帶 token 的 URL；用 `visual-parity` skill 比對按鈕所在工具列與基準（改動前的 build）的差異；Playwright 錄影按住按鈕到新 session 出現的過程；檢查 console／network 錯誤與 375／768／1440 寬度 | AC-5 |
+| 量測 context | 丟棄式 `--store-path` 起 host，真實 Claude 卡（throwaway repo）讀入夠多檔案讓舊 session 最後一次呼叫 ≥ 80k，再 `task start --task <id> --new-session`；取舊 session 最後一則、新 session 第一則 assistant 訊息的 `usage`，以 `input + cache_read + cache_creation` 計，回報兩個數字、檔案與行號、比值（目標 ≤ 50%）；同時回報簡報字數 | AC-6 |
+| 文件 | 檢視 `docs/README.md`、`IPC_API_MAP.md`、`AGENTS.md`、`test/README.md` 的新增列 | AC-7 |
+| 清理 | `rm -rf app renderer/.next`；刪驗收產生的 temp store／repo／worktree／錄影以外的暫存檔 | 工程品質 |
+
+驗收由全新 context 的 sub-agent 執行上表中的「UI 實測」「量測 context」與 DoD 指令，只回報結果，不改程式碼；結束後刪除它建立的暫存檔案與資料夾。
+
+## 待確認事項
+
+無。
+
+## 實作與驗證紀錄
+
+### 實作（2026-11-13，依「實作順序」六個階段，各自 commit）
+
+1. 簡報純邏輯：`progress.ts` 的 `claudeLastReply`、`continuation.ts`、`test/fixtures/progress/claude-last-reply.jsonl`、`test/continuation.test.mjs`。
+2. `launch.ts` 的 `LaunchOptions.continuation`（優先於 `buildPrompt`，不與 `resume` 並用）＋`test/claude.test.mjs`。
+3. `vibeflow:continueTask`（`service.ts`）、`client.ts`、`IPC_API_MAP.md`；測試在 `test/service.test.mjs`、`test/master-cards.test.mjs`。
+4. CLI `task start --new-session [--force]`、`TASK_USAGE`、`AGENTS.md`；測試在 `test/task-cli.test.mjs`。
+5. Web UI：`renderer/lib/api.ts`、`task-terminal.tsx`（按住確認的按鈕）、`task-workspace-panel.tsx`、`kanban-board.tsx`。
+6. `e2e/web.e2e.mjs` 新步驟、`test/README.md`。
+
+與計劃的差異（皆不改變 spec 行為）：
+- 新增 `CoreOptions.prStatus` 測試接縫，讓測試不呼叫真的 `gh`。
+- 接續失敗時 handler 會把 `runId`／`launchedAt`／`usage` 還原；UI 在失敗時重新 attach 舊 session 並補回畫面。
+- UI 的按鈕只對 `launchedAt` 有值的卡片顯示。
+
+驗收階段與 PR 的 CI 發現並修正四個缺陷（皆不改變 spec 行為，commit 各自獨立）：
+- **接續後 pty 尺寸沒同步**（`9301daa`）：`continueTask` 在 core 啟動新 session 而不帶 cols／rows，pty 停在 80x24，真實 Claude 的 TUI 與瀏覽器終端機尺寸不符而疊字。修在 core：`PtyBackend`／`TmuxBackend` 的 `start` 取代既有 session 時沿用舊尺寸，所以 UI 接續與「CLI 接續而瀏覽器開著」兩種情況都對；前端不需改。原本的 e2e fake agent 不是全螢幕 TUI，抓不到。
+- **工具列溢出**（`f10be10`）：帶文字的按鈕（150px）讓 1280 寬的工具列溢出 40px，「完成」與「按住刪除任務」被擠出而點不到。改成只有圖示（24px），文字說明留在 `aria-label` 與 `title`；e2e 加斷言。
+- **圖示被擠成 4×12px**（`2052dfc`）：`buttonVariants` 的 `size: 'sm'` 帶 `has-[>svg]:px-2.5`，`p-0` 蓋不掉。改用 `size: 'icon'`；e2e 加斷言。
+- **查 PR 逾時沒有殺子行程**（PR #125 的 Windows CI 發現）：原本只讓呼叫端不再等，`gh pr view` 仍以 worktree 為 cwd 繼續跑，Windows 上會讓目錄無法刪除（`master-cards` 測試的清理 `EBUSY`），正式環境裡 `gh` 卡住也會讓之後的完成清理失敗。`getPrStatus` 加上選用的 `timeoutMs`（`execFile` 的 `timeout` 會殺掉子行程），接續流程改用它並移除 `withTimeout`；`service.test.mjs` 與 `master-cards.test.mjs` 的 helper 預設注入 `prStatus`，測試不再執行真的 `gh`；新增 `test/pr-status.test.mjs`。
+- 這些缺陷的新斷言與測試都先在未修正的版本確認會失敗（`actual: [4, 12]`、`overflow: 40`、`80` 對 `130`、等了 30 秒才逾時），再確認修正後通過。
+
+### 驗證結果（rebase 到 origin/main `d8fa300` 之後的最終程式樹；程式碼的最後一個 commit 為 `2052dfc`）
+
+| 檢查 | 命令 | 結果 |
+| --- | --- | --- |
+| 型別（core） | `npx tsc --noEmit -p tsconfig.json` | exit 0 |
+| 型別（renderer） | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | exit 0 |
+| 單元／handler 測試 | `npm test` | 624 項全過（含 `ui-consistency`、`core-boundary`，以及 base 新增的測試） |
+| 建置 | `npm run build:web` | 成功 |
+| E2E | `npm run test:e2e` | 全部 4 項過。驗收階段在不同工作樹上連跑 8 次完整套件（第一輪 3 次、第二輪 3 次、第三輪 2 次）都 4/4。實作階段 6 次完整執行中有 1 次「board cards close gaps after completing or deleting in the workspace」失敗（訊息未保留），之後都沒有重現；該項的卡片沒有 `launchedAt`，不會出現新按鈕，不確定是否本來就不穩，未查證 |
+| 清理 | `rm -rf app renderer/.next` | 已刪除 |
+
+### 驗收結果（三輪，皆由全新 context 的 sub-agent 執行，只回報不改程式碼）
+
+三輪都跑在 rebase 之前的樹（base 為 main `14bd56e`）。之後 origin/main 新增 3 個 commit（pr-watch skill、commit message 模型、測試不再呼叫 `claude -p` 翻譯分支名），rebase 時 `service.ts` 與 `test/service.test.mjs` 有衝突，兩邊各加一段，保留雙方；rebase 後只重跑了上表的 DoD 指令，沒有重跑實機驗收。
+
+- **AC-1～AC-4**（fake agent、throwaway repo 與 store、`--backend pty`，對真實 host 與 CLI）：`runId` 換新、`launchedAt` 更新、worktree／分支／未 commit 檔案不變；用量折入且完成卡片後不重複；簡報各段齊全且 ≤ 8,000 字（實測 563～860 字；壓力測試 6,446 字，描述被截斷）、不含舊對話；`NOT_IN_PROGRESS`／`NOT_LAUNCHED`／`INVALID_ARGUMENT` 與 `ALREADY_CONTINUING`（3 個並行只有 1 個成功）正確，`AGENT_BUSY` 與 `--force` 在第一輪的實機驗證（偽造 transcript 令 activity 為 working）正確；接續 slave 後 master 收到 0 則通知，對照組殺掉 agent 則會收到；`.vibeflow-inbox/` 未讀訊息保留。
+- **AC-5**：按鈕只出現在已執行的 In Progress 卡片；短按 200 ms 不觸發，按住 1.5 s 換新 session、舊畫面清掉、可繼續輸入；同頁接續與「CLI 接續而頁面開著」兩種情況，新舊 session 的 `stty size` 都等於 xterm 實際尺寸（46 列 × 65 欄）。
+- **UI 像素比對與 RWD**（基準 main@14bd56e，同一個 fake agent 與 seed，視窗 1280×800 與 1440×900）：差異只在終端機工具列（1280：2,682 px／0.26%；1440：2,039 px／0.16%），為多一顆 24px 圖示按鈕、左側元素位移與分支名被擠短；側欄、檢視面板、終端機內容逐像素相同。768／1024／1280／1440／1920 寬工具列溢出 0、所有按鈕 100% 可見且可點；console error、pageerror、failed request 皆 0。按鈕 24×24、圖示 12×12，hover 與按住中的填色動畫目視正常。
+- **AC-6**（真實 Claude，Haiku 5.5，`--effort low`，throwaway repo 讀入 5～6 個約 65 KB 的檔案；context = `input + cache_read + cache_creation`，排除 sidechain、以 `message.id` 去重）：
+
+  | 輪次 | 舊 session 最後一次 | 新 session 第一次 | 比值 | 簡報字數 |
+  | --- | --- | --- | --- | --- |
+  | 第一輪 | 208,514 | 51,575 | 24.7% | 765 |
+  | 第二輪 | 234,907 | 51,572 | 21.95% | 750 |
+  | 第三輪（最終版，影片為此次） | 187,858（transcript `ce1fd4df-0000-4000-8000-000000000000.jsonl` 行 116–117） | 51,674（`ce1fd4df-1715-4999-8997-4588afe88ea7.jsonl` 行 33–35） | 27.5% | 860 |
+
+  新 session 第一次呼叫的約 51k 幾乎全是使用者全域設定、system prompt、工具與技能的基線（舊 session 第一次呼叫就是 51,009），簡報本身只增加約 600 token。三輪的 `Task.usage` 都等於舊 transcript 的總和，接續後 UI 的總量等於折入值加新 session 自己的用量，沒有重複計算。接續後的真實 Claude TUI 在 +3 s、+8 s、+15 s 的畫面都正常（沒有殘影、只有一個 spinner）。
+- **AC-7**：`docs/README.md`、`IPC_API_MAP.md`、`AGENTS.md`、`test/README.md` 都有對應新增，且 `vibeflow:continueTask` 與 `service.ts`／`client.ts`／`renderer/lib/api.ts` 一致。
+
+### 仍未驗證，或已知取捨
+
+- **tmux backend 的實機行為**：驗收只用 `--backend pty`（tmux 與使用者共用 `tmux -L vibeflow` server），tmux 只有 `tmux-backend.test.mjs` 的 mock 測試。
+- Codex 卡的接續只有單元測試，沒有實機；Windows 沒驗；`NO_WORKTREE` 沒有實機觸發；`npm run build:npm` 與 tarball 的 `vibeflow doctor` 沒跑；`AGENT_BUSY` 只在第一輪實機驗過一次。
+- **工具列取捨**：1280 寬預設分割下，分支名 chip 被擠到幾乎看不到字（main 上本來就只剩約 2 個字元；有進度 chip 的真實卡片在 main 上已是 0 px）；完整分支名仍在右側面板與 `title`。
+- **既有問題，非本功能造成**：同一頁從 1440 縮到 1024（不重新整理）時，工具列在 main 上就溢出 56 px，本分支多 28 px；375 寬 main 上「完成」與刪除鈕本來就被切掉，本分支多 28 px，新按鈕在 375 寬看不到。
+- 由 CLI 先啟動的第一個 session，在瀏覽器 attach 前是 24×80，是既有行為。

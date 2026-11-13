@@ -35,16 +35,21 @@ function harness(t, extra = {}) {
     if (cmd === 'list-sessions') return { code: 0, stdout: [...sessions, 'user-own'].join('\n') + '\n' }
     return { code: 0, stdout: '' }
   }
-  const attach = (args) => {
+  const attach = (args, cols, rows) => {
     const em = new EventEmitter()
     const client = {
       args,
+      cols,
+      rows,
       pid: 100 + clients.length,
       dead: false,
       onData: (cb) => em.on('data', cb),
       onExit: (cb) => em.on('exit', cb),
       write: () => {},
-      resize: () => {},
+      resize: (c, r) => {
+        client.cols = c
+        client.rows = r
+      },
       kill: () => client.exit(),
       exit: () => {
         if (client.dead) return
@@ -86,6 +91,27 @@ test('a start without a command re-attaches to a running session instead of rest
   assert.equal(result.attached, true)
   assert.equal(calls.filter((c) => c[4] === 'new-session').length, 1)
   assert.equal(calls.filter((c) => c[4] === 'kill-session').length, 0)
+})
+
+test('a replacement keeps the size the frontend last gave its client unless it brings its own', async (t) => {
+  const { backend, calls, clients } = harness(t)
+  await backend.start('abc12345', { cwd: '/w', command: 'one', cols: 120, rows: 40 })
+  backend.resize('abc12345', 130, 50)
+
+  await backend.start('abc12345', { cwd: '/w', command: 'two' })
+  const second = calls.filter((c) => c[4] === 'new-session')[1]
+  assert.equal(second[second.indexOf('-x') + 1], '130')
+  assert.equal(second[second.indexOf('-y') + 1], '50')
+  assert.deepEqual([clients[1].cols, clients[1].rows], [130, 50])
+
+  await backend.start('abc12345', { cwd: '/w', command: 'three', cols: 90, rows: 20 })
+  assert.deepEqual([clients[2].cols, clients[2].rows], [90, 20])
+})
+
+test('a start with nothing to replace uses the default size', async (t) => {
+  const { backend, clients } = harness(t)
+  await backend.start('abc12345', { cwd: '/w', command: 'x' })
+  assert.deepEqual([clients[0].cols, clients[0].rows], [80, 24])
 })
 
 test('the session ending reports its exit status; our own detach reports nothing', async (t) => {

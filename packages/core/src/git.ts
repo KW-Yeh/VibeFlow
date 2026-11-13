@@ -1336,12 +1336,13 @@ export interface PrStatus {
  * Check whether a PR already exists for the current branch using the `gh` CLI.
  * Returns null when there is no PR or `gh` is not available.
  */
-export async function getPrStatus(worktreePath: string): Promise<PrStatus | null> {
+export async function getPrStatus(worktreePath: string, timeoutMs?: number): Promise<PrStatus | null> {
   try {
     const { stdout } = await pexec(
       'gh',
       ['pr', 'view', '--json', 'url,number,state'],
-      { cwd: worktreePath, env: execEnv() }
+      // A lookup that outlives its caller must not keep the worktree open as a process's cwd.
+      { cwd: worktreePath, env: execEnv(), ...(timeoutMs ? { timeout: timeoutMs } : {}) }
     )
     const parsed = JSON.parse(stdout.toString().trim()) as PrStatus
     if (parsed.url) return parsed

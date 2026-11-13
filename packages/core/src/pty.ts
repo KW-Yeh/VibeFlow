@@ -96,7 +96,7 @@ export class PtyBackend implements SessionBackend {
   }
 
   async start(key: string, options: SessionStartOptions): Promise<StartResult> {
-    const { cwd, command, onExit, cols = 80, rows = 24, fresh = false } = options
+    const { cwd, command, onExit, fresh = false } = options
     const running = this.sessions.get(key)
     if (running && !command && !fresh && running.cwd === cwd) {
       running.onExit = onExit
@@ -112,6 +112,10 @@ export class PtyBackend implements SessionBackend {
     const scrollback = clearScrollback ? null : (this.scrollbacks.get(key) ?? null)
     if (clearScrollback) this.scrollbacks.delete(key)
 
+    // A replacement without a size of its own keeps the old one: nothing tells the
+    // frontend's terminal to resize just because the program behind it changed.
+    const cols = options.cols ?? running?.proc.cols ?? 80
+    const rows = options.rows ?? running?.proc.rows ?? 24
     this.killNow(key)
 
     const shell = defaultShell()

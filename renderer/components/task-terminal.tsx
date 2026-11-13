@@ -19,7 +19,7 @@ import { fitColumnsWithinViewport, waitForLayoutBox } from '@/lib/terminal-fit'
 import { hideTerminalLink, openTerminalLink, registerTerminalFiles, showTerminalLink } from '@/lib/terminal-links'
 import { cn } from '@/lib/utils'
 import { HoldButton } from '@/components/ui/hold-button'
-import { ArrowDown, Bot, Undo2 } from 'lucide-react'
+import { ArrowDown, Bot, RefreshCw, Undo2 } from 'lucide-react'
 
 const TerminalFilePreview = dynamic(() => import('@/components/terminal-file-preview').then((m) => m.TerminalFilePreview), { ssr: false })
 
@@ -62,6 +62,12 @@ interface TaskTerminalProps {
   /** Start a fresh agent with settings, without card content. */
   onLaunchAgent?: () => Promise<void>
   /**
+   * Carry the card on in a new agent session that starts from a brief of the
+   * card's state instead of the old conversation. Absent for a card that has
+   * not run yet.
+   */
+  onContinueSession?: () => Promise<void>
+  /**
    * The workspace holding this terminal is the one on screen. While active,
    * the terminal takes keyboard focus when it is shown and when the window
    * regains focus, so the user can type without clicking into it first.
@@ -95,6 +101,7 @@ export function TaskTerminal({
   readOnly = false,
   onReturnToBacklog,
   onLaunchAgent,
+  onContinueSession,
   active = true,
   toolbarStart,
   toolbarEnd,
@@ -111,6 +118,7 @@ export function TaskTerminal({
   const [isAttaching, setIsAttaching] = useState(false)
   const [isReturningToBacklog, setIsReturningToBacklog] = useState(false)
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false)
+  const [isContinuing, setIsContinuing] = useState(false)
   // History lives in xterm's own buffer (pty) or in the session's (tmux copy-mode).
   const [isViewScrolledBack, setIsViewScrolledBack] = useState(false)
   const [isSessionScrolledBack, setIsSessionScrolledBack] = useState(false)
@@ -244,6 +252,28 @@ export function TaskTerminal({
       setIsLaunchingAgent(false)
     }
   }, [onLaunchAgent])
+
+  const continueSession = useCallback(async () => {
+    const term = termRef.current
+    if (!term || !onContinueSession || readOnlyRef.current) return
+
+    setIsContinuing(true)
+    term.reset()
+    term.clear()
+    try {
+      await onContinueSession()
+      runningCommandRef.current = true
+      term.focus()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // Nothing was replaced, so the old agent is still running: bring its screen back.
+      const restored = await termStart({ taskId, sessionKey, cols: term.cols, rows: term.rows }).catch(() => null)
+      if (restored?.scrollback) term.write(restored.scrollback)
+      term.writeln(`\r\n⚠️  新 Session 接續失敗：${message}`)
+    } finally {
+      setIsContinuing(false)
+    }
+  }, [onContinueSession, taskId, sessionKey])
 
   const maybeLaunch = useCallback(() => {
     if (!readyRef.current || readOnlyRef.current) return
@@ -626,7 +656,7 @@ export function TaskTerminal({
               <HoldButton
                 className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-6 shrink-0 px-2 text-xs')}
                 onConfirm={() => void returnToBacklog()}
-                disabled={!cwd || isReturningToBacklog || isLaunchingAgent}
+                disabled={!cwd || isReturningToBacklog || isLaunchingAgent || isContinuing}
                 title="按住以退回 Backlog：停止 Agent，捨棄這張卡在本地的 commit、未 commit 變更與 artifacts（遠端分支不動，無法復原）。之後按「開始」才會重新啟動 Agent"
               >
                 <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
@@ -639,12 +669,24 @@ export function TaskTerminal({
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => void launchAgentOnly()}
-                disabled={!cwd || isLaunchingAgent || isReturningToBacklog}
+                disabled={!cwd || isLaunchingAgent || isReturningToBacklog || isContinuing}
                 title="只帶入 Agent 設定，不傳入任務內容"
               >
                 <Bot className={cn('size-3', isLaunchingAgent && 'animate-pulse')} />
                 {isLaunchingAgent ? '啟動中…' : '啟動 Agent'}
               </Button>
+            )}
+            {onContinueSession && (
+              <HoldButton
+                className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'size-6')}
+                fillClassName="bg-primary/25"
+                onConfirm={() => void continueSession()}
+                disabled={!cwd || isContinuing || isLaunchingAgent || isReturningToBacklog}
+                aria-label={isContinuing ? '接續中…' : '按住新 Session 接續'}
+                title="按住以換新 session 接續：結束目前的 Agent，改開一個新的 session，只帶卡片內容、分支與 PR 狀態、todo 和上一個 session 的最後回覆，不帶整段對話。程式碼、分支與 artifacts 都不動，用量照常累計"
+              >
+                <RefreshCw className={cn('size-3', isContinuing && 'animate-spin')} />
+              </HoldButton>
             )}
           </div>
         )}

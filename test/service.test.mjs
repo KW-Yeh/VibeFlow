@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
-import { getStore, listTerminals } from '../packages/core/src/store.ts'
+import { findTask, getStore, listTerminals } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId } from '../packages/core/src/launch.ts'
 import { agentArtifactsPath } from '../packages/core/src/artifacts.ts'
@@ -70,7 +70,8 @@ async function coreWithTask(t, { coreOptions = {}, task: taskInput = {} } = {}) 
   t.after(cleanup)
   const sessions = fakeSessions()
   const bus = new EventBus()
-  const core = createCore({ sessions, bus, version: '9.9.9', ...coreOptions })
+  // A continuation brief asks for the card's PR; no test should run the real `gh` in a worktree.
+  const core = createCore({ sessions, bus, version: '9.9.9', prStatus: async () => null, ...coreOptions })
   // pty:start watches the worktree for sub-agent files; stop it with the test.
   t.after(() => core.shutdown())
   const { task } = await core.handlers['vibeflow:createTask']({
@@ -736,7 +737,7 @@ test('dialog:pickFolder reports unsupported when the host has no dialog', async 
 const PROGRESS_FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'progress', 'claude-todowrite.jsonl')
 
 /** A core whose agent transcripts live under a throwaway home, plus one launched card. */
-async function coreWithProgress(t) {
+async function coreWithProgress(t, coreOptions = {}) {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-service-home-'))
@@ -744,7 +745,8 @@ async function coreWithProgress(t) {
   const bus = new EventBus()
   const events = []
   bus.on((channel, payload) => events.push({ channel, payload }))
-  const core = createCore({ sessions: fakeSessions(), bus, version: '9.9.9', homeDir: home })
+  const sessions = fakeSessions()
+  const core = createCore({ sessions, bus, version: '9.9.9', homeDir: home, prStatus: async () => null, ...coreOptions })
   t.after(() => core.shutdown())
   const { task: created } = await createTaskFromInput({ projectPath, title: 'Progress card', status: 'in_progress' })
   // The renderer stamps launchedAt when it starts a card; the fixture was recorded 2026-10-05.
@@ -759,7 +761,7 @@ async function coreWithProgress(t) {
   await fs.mkdir(dir, { recursive: true })
   const transcript = path.join(dir, `${executorSessionId(task.id, task.runId)}.jsonl`)
   const lines = (await fs.readFile(PROGRESS_FIXTURE, 'utf8')).split('\n').filter(Boolean)
-  return { core, task, events, transcript, lines }
+  return { core, task, events, transcript, lines, sessions, home }
 }
 
 const writeLines = (file, lines) => fs.appendFile(file, lines.map((l) => l + '\n').join(''))
@@ -836,6 +838,174 @@ test('createTask names a Chinese title through the injected translator, and only
   // A core built without a translator (tests, e2e) never starts one.
   assert.equal((await create(plain, '登入流程')).task.branch.startsWith('vf-'), true)
   assert.deepEqual(calls, ['登入流程'])
+})
+
+const PR ={ number: 12, state: 'OPEN', url: 'https://github.com/acme/demo/pull/12' }
+
+/** A running card: the fixture's transcript is on disk and the agent has been launched once. */
+async function launchedCard(t, coreOptions) {
+  const ctx = await coreWithProgress(t, { prStatus: async () => PR, ...coreOptions })
+  await writeLines(ctx.transcript, ctx.lines)
+  await ctx.core.handlers['pty:start']({ taskId: ctx.task.id, launch: {} })
+  return ctx
+}
+
+const newSessionTranscript = (ctx, task) =>
+  path.join(claudeProjectDir(ctx.home, ctx.task.worktreePath), `${executorSessionId(task.id, task.runId)}.jsonl`)
+
+test('continueTask — a new session on the same worktree: usage folded, the brief as its first message', async (t) => {
+  const ctx = await launchedCard(t)
+  const { core, task, sessions } = ctx
+  assert.equal(task.runId, undefined, 'a card nobody restarted has no runId')
+  const worktree = task.worktreePath
+  await writeFile(worktree, 'done.txt', 'done')
+  await git(worktree, 'add', 'done.txt')
+  await git(worktree, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-m', 'feat: done thing')
+  await writeFile(worktree, 'wip.txt', 'wip')
+
+  const before = sessions.starts.length
+  const { task: next, state } = await core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true })
+
+  assert.ok(next.runId && next.runId !== task.runId)
+  assert.ok(next.launchedAt > task.launchedAt)
+  assert.equal(next.usage.output, 2364, 'the first session\'s tokens moved into Task.usage')
+  assert.equal(next.worktreePath, worktree)
+  assert.equal(next.branch, task.branch)
+  assert.equal(state.board.in_progress.find((c) => c.id === task.id).runId, next.runId)
+  assert.deepEqual(sessions.killed, [], 'the old session is replaced by the start, never killed first')
+  assert.equal(sessions.starts.length, before + 1)
+  const { command } = sessions.starts[before]
+  assert.ok(command.includes(`--session-id ${executorSessionId(task.id, next.runId)}`), command)
+  assert.ok(!command.includes('--resume'), command)
+  for (const part of [
+    '任務標題：Progress card',
+    'feat: done thing',
+    'wip.txt',
+    '#12 OPEN https://github.com/acme/demo/pull/12',
+    'Create b.txt containing b',
+    '## 前一個 session 的最後一則回覆',
+    '## 接續指示',
+  ]) {
+    assert.ok(command.includes(part), `${part} is in the brief`)
+  }
+
+  // The new session's tokens add to the folded ones; the old transcript is not counted twice.
+  await writeLines(newSessionTranscript(ctx, next), [JSON.stringify({
+    type: 'assistant',
+    isSidechain: false,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: 'assistant',
+      id: 'msg_continued',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 50, output_tokens: 100 },
+      content: [{ type: 'text', text: 'carrying on' }],
+    },
+  })])
+  assert.equal((await core.handlers['progress:get'](task.id)).totalUsage.output, 2364 + 100)
+  await core.handlers['vibeflow:cleanupTask'](task.id)
+  assert.equal(getStore().get('board').in_progress.find((c) => c.id === task.id).usage.output, 2364 + 100)
+})
+
+test('continueTask — only a launched card in In Progress; a refusal changes nothing', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  const board = () => JSON.stringify(core.handlers['vibeflow:getState']().board)
+  const before = board()
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: task.id }), { code: 'NOT_IN_PROGRESS' })
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: 'nope' }), { code: 'INVALID_REQUEST' })
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: task.id, force: 'yes' }), { code: 'INVALID_REQUEST' })
+  await assert.rejects(core.handlers['vibeflow:continueTask']('nope'), { code: 'INVALID_REQUEST' })
+
+  const { task: unlaunched } = await createTaskFromInput({ projectPath: task.projectPath, title: 'Never ran', status: 'in_progress' })
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: unlaunched.id }), { code: 'NOT_LAUNCHED' })
+
+  const stored = getStore().get('board')
+  getStore().set('board', {
+    ...stored,
+    in_progress: stored.in_progress.filter((c) => c.id !== unlaunched.id),
+    done: [{ ...unlaunched, launchedAt: Date.now() }, ...stored.done],
+  })
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: unlaunched.id }), { code: 'NOT_IN_PROGRESS' })
+  assert.equal(board().includes(unlaunched.id), true)
+  assert.equal(JSON.stringify(core.handlers['vibeflow:getState']().board.backlog), JSON.stringify(JSON.parse(before).backlog))
+})
+
+test('continueTask — a working agent is only interrupted with force; an idle one or none is not asked', async (t) => {
+  const busy = await coreWithProgress(t)
+  const toolCall = busy.lines.findIndex((l) => l.includes('"TodoWrite"'))
+  await writeLines(busy.transcript, busy.lines.slice(0, toolCall + 1))
+  await busy.core.handlers['pty:start']({ taskId: busy.task.id, launch: {} })
+  assert.equal((await busy.core.handlers['progress:get'](busy.task.id)).activity.state, 'working')
+  await assert.rejects(busy.core.handlers['vibeflow:continueTask']({ taskId: busy.task.id }), { code: 'AGENT_BUSY' })
+  assert.equal(busy.sessions.starts.length, 1, 'refused before anything was replaced')
+  assert.equal(findTask(busy.task.id).runId, undefined)
+  await busy.core.handlers['vibeflow:continueTask']({ taskId: busy.task.id, force: true })
+  assert.equal(busy.sessions.starts.length, 2)
+
+  const idle = await launchedCard(t)
+  assert.equal((await idle.core.handlers['progress:get'](idle.task.id)).activity.state, 'waiting')
+  await idle.core.handlers['vibeflow:continueTask']({ taskId: idle.task.id })
+  assert.equal(idle.sessions.starts.length, 2)
+
+  const none = await coreWithProgress(t)
+  await writeLines(none.transcript, none.lines)
+  assert.equal(await none.sessions.isAlive(none.task.id), false)
+  const { task: next } = await none.core.handlers['vibeflow:continueTask']({ taskId: none.task.id })
+  assert.ok(next.runId)
+  assert.equal(none.sessions.starts.length, 1)
+})
+
+test('continueTask — a second request while one is starting is refused; a failed start puts the card back', async (t) => {
+  const { core, task, sessions } = await launchedCard(t)
+  const start = sessions.start.bind(sessions)
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  sessions.start = async (key, opts) => {
+    await gate
+    return start(key, opts)
+  }
+  const first = core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true })
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true }), { code: 'ALREADY_CONTINUING' })
+  release()
+  await first
+
+  const before = findTask(task.id)
+  sessions.start = async () => {
+    throw new Error('boom')
+  }
+  await assert.rejects(core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true }), /boom/)
+  const after = findTask(task.id)
+  assert.equal(after.runId, before.runId)
+  assert.equal(after.launchedAt, before.launchedAt)
+  assert.deepEqual(after.usage, before.usage)
+
+  sessions.start = start
+  await core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true })
+  assert.notEqual(findTask(task.id).runId, before.runId, 'the card is not stuck after a failure')
+})
+
+test('continueTask — unread inbox messages stay for the new session', async (t) => {
+  const { core, task } = await launchedCard(t)
+  const inbox = path.join(task.worktreePath, '.vibeflow-inbox')
+  await fs.mkdir(inbox, { recursive: true })
+  await fs.writeFile(path.join(inbox, '0000000000001-000001'), '<vibeflow from="x">hi</vibeflow>')
+  await core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true })
+  assert.equal(await fs.readFile(path.join(inbox, '0000000000001-000001'), 'utf8'), '<vibeflow from="x">hi</vibeflow>')
+})
+
+test('continueTask — a Codex card gets a new Codex run with the brief and no pinned session', async (t) => {
+  const { core, task, sessions } = await coreWithTask(t, {
+    task: { agentCli: 'codex', model: 'gpt-5.5', effort: 'high' },
+  })
+  await core.handlers['vibeflow:startTask'](task.id)
+  const before = sessions.starts.length
+  await core.handlers['vibeflow:continueTask']({ taskId: task.id, force: true })
+  const { command } = sessions.starts[before]
+  assert.match(command, /codex /)
+  assert.ok(!command.includes('--session-id'), command)
+  assert.ok(command.includes('任務標題：Service card'), command)
+  assert.ok(command.includes('## 接續指示'), command)
+  assert.ok(!command.includes('最後一則回覆'), 'a Codex rollout has no reply reader')
 })
 
 test('a card converted from GitHub keeps its source ref; a ref outside github.com is refused', async (t) => {
