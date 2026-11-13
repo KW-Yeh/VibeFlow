@@ -48,7 +48,8 @@ test.after(() =>
 
 function setup(t) {
   const sessions = fakeSessions()
-  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9' })
+  // A continuation brief asks for the card's PR; no test should run the real `gh` in a worktree.
+  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9', prStatus: async () => null })
   t.after(() => core.shutdown())
   return { core, sessions }
 }

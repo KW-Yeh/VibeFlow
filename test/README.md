@@ -53,6 +53,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `github.test.mjs` | `packages/core/src/github.ts` | remote → `owner/repo`, `gh` issue/PR listing and merging (fake runner, no network), `issueType` fallback, per-repo cache and errors, card ↔ Issue/PR link resolution |
 | `jira.test.mjs`, `jira-adf.test.mjs`, `jira-columns.test.mjs` | Jira core and renderer helpers | acli JQL/JSON conversion, attachment metadata, ADF Markdown, auth status, cache, status columns and due-date sorting |
 | `git.test.mjs` | `packages/core/src/git.ts` | integration against throwaway repos (+ a bare remote): info, worktrees, sync |
+| `pr-status.test.mjs` | `packages/core/src/git.ts` (`getPrStatus`) | a PR lookup that runs out of time is killed instead of left running with the worktree as its cwd (a fake `gh` on PATH; skipped on Windows) |
 | `commit-diff.test.mjs` | `packages/core/src/commit-diff.ts` | a branch's commits and per-commit files; done-card reads from a merged base, a squash (gh fallback with a fake runner), and the no-PR reason |
 | `git-bash.test.mjs` | `packages/core/src/git-bash.ts` | locating Git Bash on Windows |
 | `json-store.test.mjs` | `packages/core/src/json-store.ts`, `chat-store.ts` | reads electron-store-era files, atomic writes, corrupt-file refusal |

@@ -70,7 +70,8 @@ async function coreWithTask(t, { coreOptions = {}, task: taskInput = {} } = {}) 
   t.after(cleanup)
   const sessions = fakeSessions()
   const bus = new EventBus()
-  const core = createCore({ sessions, bus, version: '9.9.9', ...coreOptions })
+  // A continuation brief asks for the card's PR; no test should run the real `gh` in a worktree.
+  const core = createCore({ sessions, bus, version: '9.9.9', prStatus: async () => null, ...coreOptions })
   // pty:start watches the worktree for sub-agent files; stop it with the test.
   t.after(() => core.shutdown())
   const { task } = await core.handlers['vibeflow:createTask']({
@@ -745,7 +746,7 @@ async function coreWithProgress(t, coreOptions = {}) {
   const events = []
   bus.on((channel, payload) => events.push({ channel, payload }))
   const sessions = fakeSessions()
-  const core = createCore({ sessions, bus, version: '9.9.9', homeDir: home, ...coreOptions })
+  const core = createCore({ sessions, bus, version: '9.9.9', homeDir: home, prStatus: async () => null, ...coreOptions })
   t.after(() => core.shutdown())
   const { task: created } = await createTaskFromInput({ projectPath, title: 'Progress card', status: 'in_progress' })
   // The renderer stamps launchedAt when it starts a card; the fixture was recorded 2026-10-05.

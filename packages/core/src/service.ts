@@ -254,18 +254,9 @@ function obj<T>(value: unknown, name: string): T {
   return value as T
 }
 
-/** Resolves to `fallback` when `work` is still running after `ms`; the work itself is not cancelled. */
-async function withTimeout<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([work, new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms) })])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
-/** A PR lookup that takes longer than this is reported as unknown instead of holding the new session back. */
+/** A PR lookup that takes longer than this is stopped and reported as unknown instead of holding the new session back. */
 const PR_LOOKUP_MS = 5_000
+const lookUpPr = (worktreePath: string): Promise<PrStatus | null> => getPrStatus(worktreePath, PR_LOOKUP_MS)
 
 const LIBRARY_KINDS = ['skill', 'prompt', 'script']
 const AGENT_IDS = ['claude', 'codex']
@@ -355,7 +346,7 @@ export interface Core {
  * take ids; a standalone shell may take a selected folder when no task exists.
  * No channel accepts a client-supplied shell command. Events use one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator, prStatus = getPrStatus }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator, prStatus = lookUpPr }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
   const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
@@ -514,7 +505,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       getBranchCommits(worktree, task.baseBranch ?? 'main').catch(() => null),
       collectWorkingEntries(worktree).catch(() => null),
       runGit(worktree, ['rev-list', '--count', '@{u}..HEAD']).then((n) => Number.parseInt(n, 10) || 0, () => null),
-      withTimeout(prStatus(worktree).catch(() => null), PR_LOOKUP_MS, null),
+      prStatus(worktree).catch(() => null),
     ])
     if (commits || uncommitted) {
       facts.git = {

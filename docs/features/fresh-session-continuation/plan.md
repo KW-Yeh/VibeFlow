@@ -77,7 +77,7 @@
 ## 風險與依賴
 
 - **Claude transcript 格式非公開**：`claudeLastReply` 只讀 `type`、`message.content[].type/text`；讀不到就省略該段，不讓接續失敗；fixture 釘住格式。
-- **`gh` 慢或離線**：5 秒 timeout，回「PR 狀態未知」。
+- **`gh` 慢或離線**：5 秒 timeout（`getPrStatus` 的 `timeout` 會殺掉子行程，不讓它留著以 worktree 為 cwd），回「PR 狀態未知」。
 - **打斷執行中的 agent**：`AGENT_BUSY` 擋 CLI／master；UI 靠按住確認。activity 讀數可能過時，所以保留 `--force`。
 - **兩次同時接續**：per-card 鎖，第二次 `ALREADY_CONTINUING`。
 - **進行中的 `mailbox.deliver`**：沒有 inbox 的路徑（Codex）仍在排隊的輸入會在新 session 啟動期間被貼進去，行為與任何一次重啟相同，不另外處理，列為已知限制。
@@ -124,11 +124,12 @@
 - 接續失敗時 handler 會把 `runId`／`launchedAt`／`usage` 還原；UI 在失敗時重新 attach 舊 session 並補回畫面。
 - UI 的按鈕只對 `launchedAt` 有值的卡片顯示。
 
-驗收階段發現並修正三個缺陷（皆不改變 spec 行為，commit 各自獨立）：
+驗收階段與 PR 的 CI 發現並修正四個缺陷（皆不改變 spec 行為，commit 各自獨立）：
 - **接續後 pty 尺寸沒同步**（`9301daa`）：`continueTask` 在 core 啟動新 session 而不帶 cols／rows，pty 停在 80x24，真實 Claude 的 TUI 與瀏覽器終端機尺寸不符而疊字。修在 core：`PtyBackend`／`TmuxBackend` 的 `start` 取代既有 session 時沿用舊尺寸，所以 UI 接續與「CLI 接續而瀏覽器開著」兩種情況都對；前端不需改。原本的 e2e fake agent 不是全螢幕 TUI，抓不到。
 - **工具列溢出**（`f10be10`）：帶文字的按鈕（150px）讓 1280 寬的工具列溢出 40px，「完成」與「按住刪除任務」被擠出而點不到。改成只有圖示（24px），文字說明留在 `aria-label` 與 `title`；e2e 加斷言。
 - **圖示被擠成 4×12px**（`2052dfc`）：`buttonVariants` 的 `size: 'sm'` 帶 `has-[>svg]:px-2.5`，`p-0` 蓋不掉。改用 `size: 'icon'`；e2e 加斷言。
-- 這三個缺陷的新斷言與測試都先在未修正的版本確認會失敗（`actual: [4, 12]`、`overflow: 40`、`80` 對 `130`），再確認修正後通過。
+- **查 PR 逾時沒有殺子行程**（PR #125 的 Windows CI 發現）：原本只讓呼叫端不再等，`gh pr view` 仍以 worktree 為 cwd 繼續跑，Windows 上會讓目錄無法刪除（`master-cards` 測試的清理 `EBUSY`），正式環境裡 `gh` 卡住也會讓之後的完成清理失敗。`getPrStatus` 加上選用的 `timeoutMs`（`execFile` 的 `timeout` 會殺掉子行程），接續流程改用它並移除 `withTimeout`；`service.test.mjs` 與 `master-cards.test.mjs` 的 helper 預設注入 `prStatus`，測試不再執行真的 `gh`；新增 `test/pr-status.test.mjs`。
+- 這些缺陷的新斷言與測試都先在未修正的版本確認會失敗（`actual: [4, 12]`、`overflow: 40`、`80` 對 `130`、等了 30 秒才逾時），再確認修正後通過。
 
 ### 驗證結果（rebase 到 origin/main `d8fa300` 之後的最終程式樹；程式碼的最後一個 commit 為 `2052dfc`）
 
