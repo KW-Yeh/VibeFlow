@@ -90,6 +90,32 @@ test('a fresh start, a new command or another folder still replaces the session'
   }
 })
 
+test('a replacement keeps the size of the session it replaces unless it brings its own', { skip }, async (t) => {
+  const { backend, cwd, output, clear } = await setup(t)
+  await backend.start('card', { cwd, cols: 100, rows: 30, command: AGENT })
+  await until(() => output().includes('ready'), 'the first agent to start')
+
+  clear()
+  await backend.start('card', { cwd, command: AGENT })
+  await until(() => output().includes('ready'), 'the replacement to start')
+  backend.write('card', 'ping\n')
+  await until(() => output().includes('got:ping 30 100'), 'the replacement to report the inherited size')
+
+  clear()
+  await backend.start('card', { cwd, cols: 90, rows: 20, command: AGENT })
+  await until(() => output().includes('ready'), 'the sized replacement to start')
+  backend.write('card', 'ping\n')
+  await until(() => output().includes('got:ping 20 90'), 'the replacement to report its own size')
+})
+
+test('a session with nothing to replace starts at the default size', { skip }, async (t) => {
+  const { backend, cwd, output } = await setup(t)
+  await backend.start('card', { cwd, command: AGENT })
+  await until(() => output().includes('ready'), 'the agent to start')
+  backend.write('card', 'ping\n')
+  await until(() => output().includes('got:ping 24 80'), 'the agent to report the default size')
+})
+
 test('a session that already ended is started again', { skip }, async (t) => {
   const { backend, cwd, exits } = await setup(t)
   await backend.start('card', { cwd, command: 'exit 0' })
