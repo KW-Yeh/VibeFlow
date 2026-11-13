@@ -67,13 +67,13 @@ Master 卡：沒有 git／PR，第 2、3 段換成「底下的卡片」表（id�
 
 ## 驗收條件
 
-- [ ] AC-1：In Progress 且已執行的卡片執行接續後，`runId` 換新、`launchedAt` 更新、worktree 與分支內容不變；`Task.usage` ≥ 接續前的總用量，且完成卡片後總量不重複計算舊 session。
-- [ ] AC-2：新 session 的啟動指令第一則訊息包含簡報各段；取不到的段落被省略；簡報 ≤ 8,000 字；master 卡的簡報不含 git／PR，含底下卡片表。
-- [ ] AC-3：Backlog／Done／未佈建／從未執行的卡片被拒絕且狀態不變；`AGENT_BUSY` 與 `--force` 行為正確；沒有存活 session 時可直接接續。
-- [ ] AC-4：接續過程不對 master 發出「session 結束」通知；slave 卡的新 session 仍只帶 `slaveSystemPrompt()`；inbox 中未讀訊息保留。
-- [ ] AC-5：`task start --new-session` 與 UI 按鈕走同一個 handler；Web UI 按鈕只出現在已執行的 In Progress 卡片，按住確認後終端機顯示新 session。
-- [ ] AC-6：以丟棄式 `--store-path` 起 host，真實 Claude 卡跑完一輪（舊 session 最後一次呼叫 context ≥ 80k）後接續，新 session 第一次呼叫的 context ≤ 舊 session 最後一次的 50%；量測方式：取 transcript 中 assistant 訊息 `usage` 的 `input + cache_read + cache_creation`（與 `progress.ts` 的 `contextTokens` 同定義），附兩個數字與取值位置。
-- [ ] AC-7：`docs/` 索引、`IPC_API_MAP.md`、AGENTS.md 的 CLI 說明已更新；AGENTS.md 的 Definition of Done 全部通過，含 `npm run test:e2e`。
+- [x] AC-1：In Progress 且已執行的卡片執行接續後，`runId` 換新、`launchedAt` 更新、worktree 與分支內容不變；`Task.usage` ≥ 接續前的總用量，且完成卡片後總量不重複計算舊 session。
+- [x] AC-2：新 session 的啟動指令第一則訊息包含簡報各段；取不到的段落被省略；簡報 ≤ 8,000 字；master 卡的簡報不含 git／PR，含底下卡片表。
+- [x] AC-3：Backlog／Done／未佈建／從未執行的卡片被拒絕且狀態不變；`AGENT_BUSY` 與 `--force` 行為正確；沒有存活 session 時可直接接續。
+- [x] AC-4：接續過程不對 master 發出「session 結束」通知；slave 卡的新 session 仍只帶 `slaveSystemPrompt()`；inbox 中未讀訊息保留。
+- [x] AC-5：`task start --new-session` 與 UI 按鈕走同一個 handler；Web UI 按鈕只出現在已執行的 In Progress 卡片，按住確認後終端機顯示新 session。
+- [x] AC-6：以丟棄式 `--store-path` 起 host，真實 Claude 卡跑完一輪（舊 session 最後一次呼叫 context ≥ 80k）後接續，新 session 第一次呼叫的 context ≤ 舊 session 最後一次的 50%；量測方式：取 transcript 中 assistant 訊息 `usage` 的 `input + cache_read + cache_creation`（與 `progress.ts` 的 `contextTokens` 同定義），附兩個數字與取值位置。
+- [x] AC-7：`docs/` 索引、`IPC_API_MAP.md`、AGENTS.md 的 CLI 說明已更新；AGENTS.md 的 Definition of Done 全部通過，含 `npm run test:e2e`。
 
 ## 限制與依賴
 

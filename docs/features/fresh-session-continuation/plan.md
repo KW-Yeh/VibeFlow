@@ -52,11 +52,13 @@
 | `packages/core/IPC_API_MAP.md` | 新增 `vibeflow:continueTask` 一列 | AC-7 |
 | `renderer/lib/api.ts` | `continueTask` wrapper（無 bridge 回 null） | AC-5 |
 | `packages/cli/src/task-command.ts` | `--new-session` boolean；`start` 搭配它時呼叫 `continueTask`，`--force` 傳入；`--force` 只允許用在 `send` 或 `start --new-session`；錯誤用 `err.code`；更新 `TASK_USAGE` | AC-3、AC-5 |
-| `renderer/components/task-terminal.tsx` | 新增 `onContinue` prop 與按住確認的「新 Session 接續」按鈕（`HoldButton`，圖示用 lucide）；仿 `launchAgentOnly` 的 `reset/clear/focus`，並維持 `runningCommandRef` 讓結束文字正確 | AC-5 |
+| `renderer/components/task-terminal.tsx` | 新增 `onContinue` prop 與按住確認的「新 Session 接續」按鈕（`HoldButton`，只有圖示，aria-label 為「按住新 Session 接續」；工具列在 1280 寬已沒有空間再放文字按鈕）；仿 `launchAgentOnly` 的 `reset/clear/focus`，並維持 `runningCommandRef` 讓結束文字正確 | AC-5 |
 | `renderer/components/task-workspace-panel.tsx`、`renderer/components/kanban-board.tsx` | 傳遞 `onContinue`，只對 In Progress、`launchedAt` 有值的卡片提供；呼叫 `continueTask({ taskId, force: true })`（按住即確認） | AC-5 |
 | `test/continuation.test.mjs`（新增） | 簡報段落、上限與裁切順序、省略規則、master 版；`claudeLastReply` 對 fixture | AC-2 |
 | `test/claude.test.mjs`、`test/service.test.mjs`、`test/master-cards.test.mjs`、`test/task-cli.test.mjs` | 見驗證計畫 | AC-1～AC-4 |
-| `e2e/web.e2e.mjs` | 新增步驟：卡片跑起來後按住「新 Session 接續」，終端機再次出現 fake agent 輸出；fake agent 把 argv 寫到 `$FAKE_AGENT_ARGV_LOG`，斷言有新的 `--session-id` 與簡報文字 | AC-5 |
+| `packages/core/src/pty.ts`、`packages/core/src/tmux-backend.ts`（驗收後新增） | `start` 取代既有 session 且沒給 cols／rows 時，沿用被取代 session 的尺寸；明確給的尺寸優先。修正同頁接續後新 pty 停在 80x24 的問題 | AC-5 |
+| `test/pty-backend.test.mjs`、`test/tmux-backend.test.mjs`（驗收後新增） | 取代時沿用尺寸、明確尺寸優先、沒有可取代的 session 時用預設尺寸 | AC-5 |
+| `e2e/web.e2e.mjs` | 新增步驟：卡片跑起來後按住「新 Session 接續」，終端機再次出現 fake agent 輸出；fake agent 把 argv 寫到 `$FAKE_AGENT_ARGV_LOG`，斷言有新的 `--session-id` 與簡報文字；按下前斷言工具列內每顆按鈕都在工具列範圍內、按鈕內圖示為 12×12 | AC-5 |
 | `AGENTS.md` | CLI 說明加上 `task start --new-session`；「What a launch sends」加一句續接簡報 | AC-7 |
 | `docs/README.md`、`test/README.md` | 新增 feature 列與 `continuation.test.mjs` 列 | AC-7 |
 
@@ -122,19 +124,43 @@
 - 接續失敗時 handler 會把 `runId`／`launchedAt`／`usage` 還原；UI 在失敗時重新 attach 舊 session 並補回畫面。
 - UI 的按鈕只對 `launchedAt` 有值的卡片顯示。
 
-### 驗證結果（最終的程式樹上）
+驗收階段發現並修正三個缺陷（皆不改變 spec 行為，commit 各自獨立）：
+- **接續後 pty 尺寸沒同步**（`f8d9169`）：`continueTask` 在 core 啟動新 session 而不帶 cols／rows，pty 停在 80x24，真實 Claude 的 TUI 與瀏覽器終端機尺寸不符而疊字。修在 core：`PtyBackend`／`TmuxBackend` 的 `start` 取代既有 session 時沿用舊尺寸，所以 UI 接續與「CLI 接續而瀏覽器開著」兩種情況都對；前端不需改。原本的 e2e fake agent 不是全螢幕 TUI，抓不到。
+- **工具列溢出**（`6b471a9`）：帶文字的按鈕（150px）讓 1280 寬的工具列溢出 40px，「完成」與「按住刪除任務」被擠出而點不到。改成只有圖示（24px），文字說明留在 `aria-label` 與 `title`；e2e 加斷言。
+- **圖示被擠成 4×12px**（`97f6ffc`）：`buttonVariants` 的 `size: 'sm'` 帶 `has-[>svg]:px-2.5`，`p-0` 蓋不掉。改用 `size: 'icon'`；e2e 加斷言。
+- 這三個缺陷的新斷言與測試都先在未修正的版本確認會失敗（`actual: [4, 12]`、`overflow: 40`、`80` 對 `130`），再確認修正後通過。
+
+### 驗證結果（最終的程式樹 `97f6ffc`）
 
 | 檢查 | 命令 | 結果 |
 | --- | --- | --- |
 | 型別（core） | `npx tsc --noEmit -p tsconfig.json` | exit 0 |
 | 型別（renderer） | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | exit 0 |
-| 單元／handler 測試 | `npm test` | 606 項全過（含 `ui-consistency`、`core-boundary`） |
+| 單元／handler 測試 | `npm test` | 610 項全過（含 `ui-consistency`、`core-boundary`） |
 | 建置 | `npm run build:web` | 成功 |
-| E2E | `npm run test:e2e` | 全部 4 項過；6 次完整執行中有 1 次「board cards close gaps after completing or deleting in the workspace」失敗（訊息未保留），之後該項單獨跑 5 次、完整套件再跑 4 次都過；該項的卡片沒有 `launchedAt`，不會出現新按鈕，不確定是否本來就不穩，未查證 |
+| E2E | `npm run test:e2e` | 全部 4 項過。驗收階段在不同工作樹上連跑 8 次完整套件（第一輪 3 次、第二輪 3 次、第三輪 2 次）都 4/4。實作階段 6 次完整執行中有 1 次「board cards close gaps after completing or deleting in the workspace」失敗（訊息未保留），之後都沒有重現；該項的卡片沒有 `launchedAt`，不會出現新按鈕，不確定是否本來就不穩，未查證 |
 | 清理 | `rm -rf app renderer/.next` | 已刪除 |
 
-### 尚未驗證（交給驗收階段）
+### 驗收結果（三輪，皆由全新 context 的 sub-agent 執行，只回報不改程式碼）
 
-- AC-6：真實 Claude 卡跑完一輪後接續的 context 量測（舊 session 最後一次呼叫 vs 新 session 第一次呼叫）。
-- AC-5 的 CLI 對真實 host 的完整流程（單元測試只涵蓋旗標檢查與 `HOST_NOT_RUNNING`）。
-- UI 的像素比對、RWD 與錄影；tmux backend 上取代 session 的實際行為。
+- **AC-1～AC-4**（fake agent、throwaway repo 與 store、`--backend pty`，對真實 host 與 CLI）：`runId` 換新、`launchedAt` 更新、worktree／分支／未 commit 檔案不變；用量折入且完成卡片後不重複；簡報各段齊全且 ≤ 8,000 字（實測 563～860 字；壓力測試 6,446 字，描述被截斷）、不含舊對話；`NOT_IN_PROGRESS`／`NOT_LAUNCHED`／`INVALID_ARGUMENT` 與 `ALREADY_CONTINUING`（3 個並行只有 1 個成功）正確，`AGENT_BUSY` 與 `--force` 在第一輪的實機驗證（偽造 transcript 令 activity 為 working）正確；接續 slave 後 master 收到 0 則通知，對照組殺掉 agent 則會收到；`.vibeflow-inbox/` 未讀訊息保留。
+- **AC-5**：按鈕只出現在已執行的 In Progress 卡片；短按 200 ms 不觸發，按住 1.5 s 換新 session、舊畫面清掉、可繼續輸入；同頁接續與「CLI 接續而頁面開著」兩種情況，新舊 session 的 `stty size` 都等於 xterm 實際尺寸（46 列 × 65 欄）。
+- **UI 像素比對與 RWD**（基準 main@14bd56e，同一個 fake agent 與 seed，視窗 1280×800 與 1440×900）：差異只在終端機工具列（1280：2,682 px／0.26%；1440：2,039 px／0.16%），為多一顆 24px 圖示按鈕、左側元素位移與分支名被擠短；側欄、檢視面板、終端機內容逐像素相同。768／1024／1280／1440／1920 寬工具列溢出 0、所有按鈕 100% 可見且可點；console error、pageerror、failed request 皆 0。按鈕 24×24、圖示 12×12，hover 與按住中的填色動畫目視正常。
+- **AC-6**（真實 Claude，Haiku 5.5，`--effort low`，throwaway repo 讀入 5～6 個約 65 KB 的檔案；context = `input + cache_read + cache_creation`，排除 sidechain、以 `message.id` 去重）：
+
+  | 輪次 | 舊 session 最後一次 | 新 session 第一次 | 比值 | 簡報字數 |
+  | --- | --- | --- | --- | --- |
+  | 第一輪 | 208,514 | 51,575 | 24.7% | 765 |
+  | 第二輪 | 234,907 | 51,572 | 21.95% | 750 |
+  | 第三輪（最終版，影片為此次） | 187,858（transcript `ce1fd4df-0000-4000-8000-000000000000.jsonl` 行 116–117） | 51,674（`ce1fd4df-1715-4999-8997-4588afe88ea7.jsonl` 行 33–35） | 27.5% | 860 |
+
+  新 session 第一次呼叫的約 51k 幾乎全是使用者全域設定、system prompt、工具與技能的基線（舊 session 第一次呼叫就是 51,009），簡報本身只增加約 600 token。三輪的 `Task.usage` 都等於舊 transcript 的總和，接續後 UI 的總量等於折入值加新 session 自己的用量，沒有重複計算。接續後的真實 Claude TUI 在 +3 s、+8 s、+15 s 的畫面都正常（沒有殘影、只有一個 spinner）。
+- **AC-7**：`docs/README.md`、`IPC_API_MAP.md`、`AGENTS.md`、`test/README.md` 都有對應新增，且 `vibeflow:continueTask` 與 `service.ts`／`client.ts`／`renderer/lib/api.ts` 一致。
+
+### 仍未驗證，或已知取捨
+
+- **tmux backend 的實機行為**：驗收只用 `--backend pty`（tmux 與使用者共用 `tmux -L vibeflow` server），tmux 只有 `tmux-backend.test.mjs` 的 mock 測試。
+- Codex 卡的接續只有單元測試，沒有實機；Windows 沒驗；`NO_WORKTREE` 沒有實機觸發；`npm run build:npm` 與 tarball 的 `vibeflow doctor` 沒跑；`AGENT_BUSY` 只在第一輪實機驗過一次。
+- **工具列取捨**：1280 寬預設分割下，分支名 chip 被擠到幾乎看不到字（main 上本來就只剩約 2 個字元；有進度 chip 的真實卡片在 main 上已是 0 px）；完整分支名仍在右側面板與 `title`。
+- **既有問題，非本功能造成**：同一頁從 1440 縮到 1024（不重新整理）時，工具列在 main 上就溢出 56 px，本分支多 28 px；375 寬 main 上「完成」與刪除鈕本來就被切掉，本分支多 28 px，新按鈕在 375 寬看不到。
+- 由 CLI 先啟動的第一個 session，在瀏覽器 attach 前是 24×80，是既有行為。
