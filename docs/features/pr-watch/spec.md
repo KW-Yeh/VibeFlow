@@ -1,6 +1,6 @@
 # Spec：PR 監聽內建 skill（pr-watch）與 Library 投遞恢復
 
-- 狀態：2026-11-05 使用者確認 Spec／Plan（「Start」）並實作；AC-5 端到端待指定測試 repo
+- 狀態：2026-11-05 使用者確認 Spec／Plan（「Start」）並實作；AC-5 端到端待指定測試 repo；2026-11-13 修正見文末〈只在衝突或必須跟上 base 時喚醒〉
 - Ticket：尚無
 - 需求來源：2026-11-05 使用者要求「建立監聽 PR 狀態的 skill，用固定腳本傳參數穩定且省 token 地監聽；新 PR comment 用 address-review 判斷、base branch 有新 commit 就 rebase；PR merged／closed 就結束監聽；內建在 VibeFlow，prompt 提到監聽 PR 就自動啟動」
 - 確認紀錄（2026-11-05 對話）：
@@ -20,11 +20,11 @@
 
 | 情境 | 行為 |
 | --- | --- |
-| 啟動 | `[--pr <n>]`（省略則取當前分支的 PR）、`--interval <秒>`（預設 60，下限 20）、`--state <file>`（預設 `$VIBEFLOW_SCRATCH_DIR/pr-watch-<owner>-<repo>-<n>.json`，無變數時系統 tmp）、`--since-now`、`--max-wait <秒>`、`--once`。只需 Node 與已登入的 `gh`；Windows 可跑。 |
+| 啟動 | `[--pr <n>]`（省略則取當前分支的 PR）、`--interval <秒>`（預設 60，下限 20）、`--state <file>`（預設 `$VIBEFLOW_SCRATCH_DIR/pr-watch-<owner>-<repo>-<n>.json`，無變數時系統 tmp）、`--since-now`、`--max-wait <秒>`、`--once`、`--rebase-on-any-base-change`（見修正）。只需 Node 與已登入的 `gh`；Windows 可跑。 |
 | 等待中 | 每輪 2 個 GraphQL 查詢（PR 本體＋ base 對 head 的 `compare`；PR 已結束時不查 compare），約 120 點／小時。stdout 不輸出任何東西。 |
 | 新 comment | 有「尚未回覆」且「沒回報過」的 review summary／未 resolved thread 的 inline comment／conversation comment → `{"event":"comments","pr":n,"count":k,"items":[…]}`，exit 10。回報過的記進狀態檔，重啟不重報。 |
 | 「已回覆」的判定 | address-review 每則回覆附隱藏標記 `<!-- vibeflow:address-review -->`。inline：同 thread 中標記回覆之後的 comment 才算未回覆；summary／conversation：晚於最後一則標記回覆的才算。判定依據在 GitHub 上，刪掉狀態檔也不會重做已回覆的項目。 |
-| base 前進 | `compare.behindBy > 0`（base 有 head 沒有的 commit），且這個 base commit 沒回報過 → `{"event":"base","base":"<name>","sha":"…","behindBy":k}`，exit 11。同一個 base commit 只報一次，rebase 失敗不會無限喚醒。fork 來的 PR 不檢查。 |
+| base 事件 | 見下方〈2026-11-13 修正〉：預設只在 GitHub 回報衝突或分支保護要求跟上 base 時才發 → `{"event":"base","reason":"conflict"\|"behind","base":"<name>","sha":"…","behindBy":k}`，exit 11。同一個 base commit 只報一次，rebase 失敗不會無限喚醒。fork 來的 PR 不檢查。（原行為「`behindBy > 0` 即發」只在 `--rebase-on-any-base-change` 下保留。） |
 | merged／closed | `{"event":"merged"\|"closed","pr":n}`，exit 0。 |
 | 同時發生 | merged/closed > comments > base（先回 comment 再 rebase，comment 錨點不錯位）。 |
 | 第一次查詢就失敗（找不到 PR、`gh` 未登入） | `{"event":"error",…}`，exit 2。 |
@@ -84,3 +84,46 @@
 - fork 來的 PR 不檢查 base 前進（compare 無法以本 repo 的 ref 名指到 fork 的 head）。
 - 「需要討論」的項目不回覆，`address-review fetch` 會持續列出；watcher 因狀態檔不會重複喚醒。
 - 預設值沿用：interval 60 秒；首次啟動會回報既有未回覆項目。
+
+## 2026-11-13 修正：只在衝突或必須跟上 base 時喚醒
+
+- 狀態：依使用者提供的任務描述（含明確的行為與驗收條件）直接規劃並實作；描述中沒有待決問題，未另開確認關卡。
+- Ticket：尚無；需求來源為本次使用者提供的任務標題與描述。
+- 文件歸屬：既有 `pr-watch` 的行為修正，沿用本目錄。
+
+### 問題與目標
+
+原本 `behindBy > 0` 且 base commit 與狀態檔不同就發 `base` 事件，SKILL 隨即要求 rebase、跑檢查、force push、重啟監聽。base 每多一個 commit，就在卡片的大 context（常見 20–36 萬 token）上喚醒一次。過去對話紀錄統計：268 次監聽喚醒中 217 次（81%）沒有產生任何實際動作；單一 stacked PR 組就有 84 次 base 移動喚醒。
+
+目標：base 前進本身不再喚醒 agent；只有「不處理就合不了」的情況才喚醒。
+
+### 行為
+
+| 情境 | 預期行為 |
+| --- | --- |
+| 只落後（`behindBy > 0`），`mergeable` 非 `CONFLICTING` 且 `mergeStateStatus` 非 `BEHIND` | 無事件，繼續等 |
+| `mergeable === 'CONFLICTING'`，head 落後 base，且這個 base commit 沒回報過 | `base` 事件，`reason: "conflict"` |
+| `mergeStateStatus === 'BEHIND'`（分支保護要求跟上 base），head 落後 base，且這個 base commit 沒回報過 | `base` 事件，`reason: "behind"` |
+| `mergeable === 'UNKNOWN'`（GitHub 還在計算） | 視為沒有事件，等下一輪；`mergeStateStatus` 此時同為不可信，也不單獨觸發 |
+| 衝突與 BEHIND 同時成立 | `reason: "conflict"` |
+| 同一個 base commit 已回報過 | 不重複回報；base 換了新 commit 才再報 |
+| `--rebase-on-any-base-change` | 保留舊行為：`behindBy > 0` 且 base commit 沒回報過就發 `base` 事件；`reason` 仍依 GitHub 狀態填 `conflict`，否則 `behind` |
+| fork 來的 PR | 仍不檢查（沒有 base 資訊可去重） |
+| `--since-now` | 啟動當下「本來就會發 base 事件」的情況視為已回報；其餘照常 |
+
+- 「head 落後 base」一併要求，因為剛 rebase＋push 後 GitHub 的 `mergeStateStatus` 可能短暫過期，落後數已是最新；兩者都成立才喚醒。
+- 優先序不變：merged/closed > comments > base。
+- SKILL.md：`reason: behind` → 照原流程 rebase、檢查、`--force-with-lease`、重啟；`reason: conflict` → 不自動解衝突，回報衝突檔案並停止監聽（不論 auto mode）。Options 說明新旗標。
+
+### 驗收條件
+
+- [ ] BASE-1：`test/builtin-pr-skills.test.mjs` 涵蓋：只落後不衝突 → 無事件；CONFLICTING → conflict；BEHIND → behind；UNKNOWN → 無事件；同一 base oid 不重複；旗標保留舊行為；`--since-now` 基準。
+- [ ] BASE-2：`npm test` 全綠；`npx tsc --noEmit -p tsconfig.json` 乾淨。
+- [ ] BASE-3：用 `--once` 對真實開啟中 PR 跑腳本，輸出貼在 PR，證明新查詢欄位存在且腳本可執行。
+- [ ] BASE-4：SKILL.md 與腳本檔頭註解的描述與程式一致。
+- [ ] BASE-5：PR 描述明寫「預設不再因 base 前進而 rebase」；說明內建 skill 同步機制會帶到本次修改。
+
+### 契約影響
+
+- `base` 事件 JSON 新增 `reason` 欄位（只增不減）；唯一消費者是 SKILL.md。
+- 預設行為改變是內建 skill 的契約變更：已安裝的使用者在下次啟動 host 時（未改動過的副本）自動拿到新版。
