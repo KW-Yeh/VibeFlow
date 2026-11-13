@@ -359,7 +359,10 @@ test('buildAgentCommand — Claude launches turn on the todo tools card progress
   assert.ok(!buildAgentCommand(CODEX_TASK).includes('CLAUDE_CODE_ENABLE_TODO_TOOLS'))
 })
 
-test('buildAgentCommand — Claude inbox hooks hand waiting messages to the agent, then empty the inbox', (t) => {
+/** Claude Code runs hooks with sh; on Windows that is Git's bash. */
+const HOOK_SHELL = process.platform === 'win32' ? 'C:\\Program Files\\Git\\bin\\bash.exe' : '/bin/sh'
+
+test('buildAgentCommand — Claude inbox hooks hand waiting messages to the agent, then empty the inbox', { skip: !fs.existsSync(HOOK_SHELL) && `no hook shell at ${HOOK_SHELL}` }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-inbox-hook-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const hooks = claudeSettings(buildAgentCommand({ ...TASK, worktreePath: root })).hooks
@@ -367,7 +370,7 @@ test('buildAgentCommand — Claude inbox hooks hand waiting messages to the agen
   const run = (entry, event) => {
     const command = entry.hooks[0].command
     assert.match(command, /exit 0$/, `${event} never fails the agent`)
-    return execSync(command, { shell: '/bin/sh' }).toString()
+    return execSync(command, { shell: HOOK_SHELL }).toString()
   }
   const [postTool] = hooks.PostToolUse.slice(-1)
   const [stop] = hooks.Stop.slice(-1)
