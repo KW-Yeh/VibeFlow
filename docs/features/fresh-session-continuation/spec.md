@@ -1,10 +1,10 @@
 # Spec：卡片換新 session 接續
 
-- 狀態：待確認
+- 狀態：已確認
 - Ticket：尚無
 - 需求來源：使用者需求（2026-11-13）：讓 In Progress 的卡片可以換一個新的 agent session 繼續，新 session 只帶必要的接續資訊，不帶整段歷史。依據：過去對話紀錄中，卡片每次 API 呼叫的 context 中位數 182k token，約 363k 才自動壓縮；存活超過 24 小時的卡占全部卡片成本 46%，其中 71% 是 cache read。
 - 更新日期：2026-11-13
-- 確認紀錄：尚未確認
+- 確認紀錄：2026-11-13 使用者在看過 spec 與五個待確認事項後回覆「繼續」，沒有逐項回答；視為接受建議預設並定案（見末段「待確認事項」），使用者隨時可推翻。2026-11-13 隨後修正一處實作細節（不改行為）：不新增 `LaunchIntent` 欄位，簡報只由 core 組出。
 
 ## 問題與目標
 
@@ -16,7 +16,7 @@
 
 ### 本次包含
 
-- Core：新 handler `vibeflow:continueTask`，以及 `LaunchIntent` 的 `newSession` 旗標；由 core 組出「接續簡報」。
+- Core：新 handler `vibeflow:continueTask`；由 core 組出「接續簡報」。
 - Web UI：卡片終端機工具列新增按住確認的「新 Session 接續」按鈕。
 - CLI：`task start --task <id> --new-session [--force]`（只對 In Progress 的卡片有效）。
 - 用量跨 session 累計、master／slave、inbox、Codex 的行為（見下）。
@@ -35,6 +35,8 @@
 | 卡片不在 In Progress、沒有 worktree、從未執行過 | 拒絕，回明確錯誤碼，不動任何狀態 |
 | agent 正在執行或卡在權限確認 | CLI／handler 回 `AGENT_BUSY`，加 `--force` 才中斷；UI 的按住確認就是 force |
 | 沒有存活的 session（已結束、host 重啟） | 直接開新 session，不需 force |
+| 同一張卡同時兩次接續 | 第二次被拒（`ALREADY_CONTINUING`），不會開出兩個 session |
+| 舊 session 的子 agent 時間軸 | 清空，新 session 從空的時間軸開始 |
 | 不重新路由 | 沿用 `jevRoute` 的模型與 effort；沒有路由結果就用 CLI 預設；不再跑 scout，不重複 scout 分析 |
 | system prompt、Library、board CLI、auto mode | 與任何一次啟動相同，重新組裝；slave 卡仍只帶 `slaveSystemPrompt()` 並向 master 回報 |
 | 啟動後 | `runId` 換新、`launchedAt` 設為現在，進度與 context 讀數改看新 session |
@@ -75,15 +77,17 @@ Master 卡：沒有 git／PR，第 2、3 段換成「底下的卡片」表（id�
 
 ## 限制與依賴
 
-- 新 handler 依序更新 `service.ts`、`client.ts`、`renderer/lib/api.ts`、`packages/core/IPC_API_MAP.md`；`LaunchIntent` 新欄位只是旗標，不接受命令或路徑。
+- 新 handler 依序更新 `service.ts`、`client.ts`、`renderer/lib/api.ts`、`packages/core/IPC_API_MAP.md`；`vibeflow:continueTask` 只接受 task id 與 `force`，不接受任何文字、命令或路徑，簡報完全由 core 組出。
 - Claude transcript 不是公開介面：最後回覆的解析只讀少數欄位，並用 `test/fixtures/progress/` 釘住。
 - `SINCE_SLACK_MS`（5 秒）：在 session 啟動後 5 秒內接續，舊 session 可能被重複計入，屬已知極小風險。
 - 簡報是新的 core 邏輯，必須在 `test/` 有單元測試；UI 變更要做像素級比對與錄影。
 
 ## 待確認事項
 
-1. 觸發只做手動＋CLI、不自動、pr-watch 不預設換 session：同意嗎？
-2. 摘要由 core 整理、不要求舊 agent 寫交接檔：同意嗎？
-3. Master 卡是否納入第一版（目前假設納入，簡報改列底下卡片表）？
-4. 是否保存舊 session id 清單（新增 optional 欄位以便手動 `--resume`）？建議第一版不做。
-5. CLI 用 `task start --new-session`（依需求提示）還是獨立動詞 `task continue`？目前採前者。
+無。下列五點依建議預設定案（使用者以「繼續」接受，可隨時推翻）：
+
+1. 觸發只做手動＋CLI，不自動，pr-watch 不預設換 session。
+2. 摘要由 core 整理，不要求舊 agent 寫交接檔。
+3. Master 卡納入第一版，簡報改列底下卡片表。
+4. 不保存舊 session id 清單（不新增欄位）。
+5. CLI 採 `task start --new-session`，不另開 `task continue`。
