@@ -1,6 +1,6 @@
 # Plan：產生 commit message 改用低成本模型
 
-- 狀態：已確認，待實作
+- 狀態：已實作，獨立驗收與 PR 待完成
 - 對應 Spec：[spec.md](./spec.md)
 - Spec 確認依據：2026-11-13 使用者要求依任務描述直接規劃並執行
 - 更新日期：2026-11-13
@@ -66,4 +66,9 @@
 
 ## 驗證結果
 
-（實作後填寫）
+- AC1、AC2（新測試 `test/commit-message.test.mjs`）：修改前，兩條路徑的 argv 都是 `['-p']`，測試失敗；修改後 2/2 通過。
+- AC3：測試以 PATH 上的假 `claude` / `codex` 執行，未啟動真實 CLI。
+- AC4：`npx tsc --noEmit -p tsconfig.json` 結束碼 0；`npm test` 為 586 pass、0 fail。
+- AC5（手動）：`printf 'Reply with the single word OK.' | codex exec --model gpt-5.6-luna --sandbox read-only -` 結束碼 0，輸出 `OK`。
+- 未執行：`renderer` typecheck、`npm run build:web`、`npm run test:e2e`（本次未動 renderer 與 Web UI）。
+- 未完成：獨立 sub-agent 驗收、push 與 draft PR、PR 監看（因用量上限中斷）。
