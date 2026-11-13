@@ -87,4 +87,7 @@
 
 ### 驗證結果
 
-（實作完成後填入實際命令與結果。）
+- `npx tsc --noEmit -p tsconfig.json`：乾淨。
+- `npm test`：589 項全過（`test/builtin-pr-skills.test.mjs` 24 項）。
+- `node packages/core/builtin-skills/pr-watch/scripts/pr-watch.mjs --pr 122 --once --state <tmp>` 對開啟中的 PR #122：輸出 `{"event":"timeout","pr":122}`、exit 3（head 與 base 同步，`mergeable: MERGEABLE`，無 base 事件，符合預期）。同 PR 的 `fetchPr` 回傳 `mergeable: "MERGEABLE"`、`mergeStateStatus: "UNSTABLE"`、`fetchBaseStatus` 回傳 `behindBy: 0`，證明新欄位存在。
+- 未驗證：真實 PR 上 `CONFLICTING`／`BEHIND` 的端到端喚醒（只以單元測試與 fake `gh` 覆蓋）。

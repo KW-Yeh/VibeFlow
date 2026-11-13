@@ -117,10 +117,10 @@
 
 ### 驗收條件
 
-- [ ] BASE-1：`test/builtin-pr-skills.test.mjs` 涵蓋：只落後不衝突 → 無事件；CONFLICTING → conflict；BEHIND → behind；UNKNOWN → 無事件；同一 base oid 不重複；旗標保留舊行為；`--since-now` 基準。
-- [ ] BASE-2：`npm test` 全綠；`npx tsc --noEmit -p tsconfig.json` 乾淨。
-- [ ] BASE-3：用 `--once` 對真實開啟中 PR 跑腳本，輸出貼在 PR，證明新查詢欄位存在且腳本可執行。
-- [ ] BASE-4：SKILL.md 與腳本檔頭註解的描述與程式一致。
+- [x] BASE-1：`test/builtin-pr-skills.test.mjs` 涵蓋：只落後不衝突 → 無事件；CONFLICTING → conflict；BEHIND → behind；UNKNOWN → 無事件；同一 base oid 不重複；旗標保留舊行為；`--since-now` 基準。
+- [x] BASE-2：`npm test` 全綠；`npx tsc --noEmit -p tsconfig.json` 乾淨。
+- [x] BASE-3：用 `--once` 對真實開啟中 PR 跑腳本，輸出貼在 PR，證明新查詢欄位存在且腳本可執行。
+- [x] BASE-4：SKILL.md 與腳本檔頭註解的描述與程式一致。
 - [ ] BASE-5：PR 描述明寫「預設不再因 base 前進而 rebase」；說明內建 skill 同步機制會帶到本次修改。
 
 ### 契約影響
