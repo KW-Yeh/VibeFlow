@@ -125,23 +125,25 @@
 - UI 的按鈕只對 `launchedAt` 有值的卡片顯示。
 
 驗收階段發現並修正三個缺陷（皆不改變 spec 行為，commit 各自獨立）：
-- **接續後 pty 尺寸沒同步**（`f8d9169`）：`continueTask` 在 core 啟動新 session 而不帶 cols／rows，pty 停在 80x24，真實 Claude 的 TUI 與瀏覽器終端機尺寸不符而疊字。修在 core：`PtyBackend`／`TmuxBackend` 的 `start` 取代既有 session 時沿用舊尺寸，所以 UI 接續與「CLI 接續而瀏覽器開著」兩種情況都對；前端不需改。原本的 e2e fake agent 不是全螢幕 TUI，抓不到。
-- **工具列溢出**（`6b471a9`）：帶文字的按鈕（150px）讓 1280 寬的工具列溢出 40px，「完成」與「按住刪除任務」被擠出而點不到。改成只有圖示（24px），文字說明留在 `aria-label` 與 `title`；e2e 加斷言。
-- **圖示被擠成 4×12px**（`97f6ffc`）：`buttonVariants` 的 `size: 'sm'` 帶 `has-[>svg]:px-2.5`，`p-0` 蓋不掉。改用 `size: 'icon'`；e2e 加斷言。
+- **接續後 pty 尺寸沒同步**（`9301daa`）：`continueTask` 在 core 啟動新 session 而不帶 cols／rows，pty 停在 80x24，真實 Claude 的 TUI 與瀏覽器終端機尺寸不符而疊字。修在 core：`PtyBackend`／`TmuxBackend` 的 `start` 取代既有 session 時沿用舊尺寸，所以 UI 接續與「CLI 接續而瀏覽器開著」兩種情況都對；前端不需改。原本的 e2e fake agent 不是全螢幕 TUI，抓不到。
+- **工具列溢出**（`f10be10`）：帶文字的按鈕（150px）讓 1280 寬的工具列溢出 40px，「完成」與「按住刪除任務」被擠出而點不到。改成只有圖示（24px），文字說明留在 `aria-label` 與 `title`；e2e 加斷言。
+- **圖示被擠成 4×12px**（`2052dfc`）：`buttonVariants` 的 `size: 'sm'` 帶 `has-[>svg]:px-2.5`，`p-0` 蓋不掉。改用 `size: 'icon'`；e2e 加斷言。
 - 這三個缺陷的新斷言與測試都先在未修正的版本確認會失敗（`actual: [4, 12]`、`overflow: 40`、`80` 對 `130`），再確認修正後通過。
 
-### 驗證結果（最終的程式樹 `97f6ffc`）
+### 驗證結果（rebase 到 origin/main `d8fa300` 之後的最終程式樹；程式碼的最後一個 commit 為 `2052dfc`）
 
 | 檢查 | 命令 | 結果 |
 | --- | --- | --- |
 | 型別（core） | `npx tsc --noEmit -p tsconfig.json` | exit 0 |
 | 型別（renderer） | `rm -rf renderer/.next && npx tsc --noEmit -p renderer/tsconfig.json` | exit 0 |
-| 單元／handler 測試 | `npm test` | 610 項全過（含 `ui-consistency`、`core-boundary`） |
+| 單元／handler 測試 | `npm test` | 624 項全過（含 `ui-consistency`、`core-boundary`，以及 base 新增的測試） |
 | 建置 | `npm run build:web` | 成功 |
 | E2E | `npm run test:e2e` | 全部 4 項過。驗收階段在不同工作樹上連跑 8 次完整套件（第一輪 3 次、第二輪 3 次、第三輪 2 次）都 4/4。實作階段 6 次完整執行中有 1 次「board cards close gaps after completing or deleting in the workspace」失敗（訊息未保留），之後都沒有重現；該項的卡片沒有 `launchedAt`，不會出現新按鈕，不確定是否本來就不穩，未查證 |
 | 清理 | `rm -rf app renderer/.next` | 已刪除 |
 
 ### 驗收結果（三輪，皆由全新 context 的 sub-agent 執行，只回報不改程式碼）
+
+三輪都跑在 rebase 之前的樹（base 為 main `14bd56e`）。之後 origin/main 新增 3 個 commit（pr-watch skill、commit message 模型、測試不再呼叫 `claude -p` 翻譯分支名），rebase 時 `service.ts` 與 `test/service.test.mjs` 有衝突，兩邊各加一段，保留雙方；rebase 後只重跑了上表的 DoD 指令，沒有重跑實機驗收。
 
 - **AC-1～AC-4**（fake agent、throwaway repo 與 store、`--backend pty`，對真實 host 與 CLI）：`runId` 換新、`launchedAt` 更新、worktree／分支／未 commit 檔案不變；用量折入且完成卡片後不重複；簡報各段齊全且 ≤ 8,000 字（實測 563～860 字；壓力測試 6,446 字，描述被截斷）、不含舊對話；`NOT_IN_PROGRESS`／`NOT_LAUNCHED`／`INVALID_ARGUMENT` 與 `ALREADY_CONTINUING`（3 個並行只有 1 個成功）正確，`AGENT_BUSY` 與 `--force` 在第一輪的實機驗證（偽造 transcript 令 activity 為 working）正確；接續 slave 後 master 收到 0 則通知，對照組殺掉 agent 則會收到；`.vibeflow-inbox/` 未讀訊息保留。
 - **AC-5**：按鈕只出現在已執行的 In Progress 卡片；短按 200 ms 不觸發，按住 1.5 s 換新 session、舊畫面清掉、可繼續輸入；同頁接續與「CLI 接續而頁面開著」兩種情況，新舊 session 的 `stty size` 都等於 xterm 實際尺寸（46 列 × 65 欄）。
