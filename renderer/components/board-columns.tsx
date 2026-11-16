@@ -63,6 +63,14 @@ export function projectLabel(task: Task): string {
   return parts[parts.length - 1] ?? '未指定專案'
 }
 
+/** What to show where a card's branch goes; a card made without one says so. */
+export function branchLabel(task: Task): string {
+  if (task.branch) return task.branch
+  if (task.inPlace) return '無分支（直接在資料夾）'
+  if (task.noBranch) return '無分支（detached）'
+  return ''
+}
+
 /** Popover that closes on outside click or Esc. Shared by the card and filter menus. */
 export function useDismissible(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null)
@@ -425,10 +433,10 @@ function TaskCard({
           <GitBranch className="size-3 shrink-0" />
           <span
             className="min-w-0 flex-1 truncate"
-            title={column === 'backlog' && !task.worktreePath ? '分支會在開始執行時建立' : undefined}
+            title={column === 'backlog' && !task.worktreePath && !task.noBranch ? '分支會在開始執行時建立' : undefined}
           >
-            {task.branch}
-            {column === 'backlog' && !task.worktreePath && (
+            {branchLabel(task)}
+            {column === 'backlog' && !task.worktreePath && !task.noBranch && (
               <span className="text-muted-foreground/70">（開始時建立）</span>
             )}
           </span>

@@ -44,6 +44,8 @@ task create options:
   --branch <name>        Branch to create for the task (default: derived from the title).
                          If origin already publishes it, the branch is fetched and
                          checked out instead of being created.
+  --no-branch            Do not create a branch: a git project gets a detached
+                         worktree, any other folder is used as is.
   --mode <mode>          ${MODES.join(' | ')}  (default: existing; "new" runs git init first)
   --agent <id>           Task agent: ${AGENT_IDS.join(' | ')}  (default: claude)
   --model <id>           Task model (default: the agent's own default)
@@ -167,6 +169,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         status:        { type: 'string' },
         'base-branch': { type: 'string' },
         branch:        { type: 'string' },
+        'no-branch':   { type: 'boolean' },
         mode:          { type: 'string' },
         agent:         { type: 'string' },
         model:         { type: 'string' },
@@ -250,6 +253,8 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (master && (values.project || values['base-branch'] || values.branch || values.mode)) {
     fail('INVALID_ARGUMENT', 'A master card has no project: drop --project / --base-branch / --branch / --mode')
   }
+  if (master && values['no-branch']) fail('INVALID_ARGUMENT', 'A master card has no branch already: drop --no-branch')
+  if (values['no-branch'] && values.branch !== undefined) fail('INVALID_ARGUMENT', '--branch and --no-branch cannot be used together')
   const missing = []
   if (!master && !values.project) missing.push('--project')
   if (!values.title) missing.push('--title')
@@ -283,6 +288,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     status: (values.status ?? 'backlog') as ColumnId,
     baseBranch: values['base-branch'] ?? null,
     branch: values.branch,
+    createBranch: values['no-branch'] ? false : undefined,
     mode: (values.mode ?? 'existing') as 'existing' | 'new',
     agentCli: values.agent as AgentCliId | undefined,
     model: values.model,
@@ -300,6 +306,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       masterId: task.masterId ?? null,
       projectPath: task.projectPath ?? null,
       branch: task.branch,
+      noBranch: task.noBranch === true,
       worktreePath: task.worktreePath ?? null,
       baseBranch: task.baseBranch,
       agentCli: task.agentCli,

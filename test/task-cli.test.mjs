@@ -6,6 +6,7 @@ import fs from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { getStoreAtPath } from '../packages/core/src/store.ts'
 import { makeRepo } from './support/repo.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -57,4 +58,19 @@ test('task start --new-session needs a running host; a misplaced flag fails befo
   assert.equal((await task(['start', '--task', 'abc', '--force', ...store])).error.code, 'INVALID_ARGUMENT', '--force alone has nothing to force')
   assert.equal((await task(['send', '--task', 'abc', '--text', 'x', '--new-session', ...store], { VIBEFLOW_TASK_ID: 'def' })).error.code, 'INVALID_ARGUMENT')
   assert.equal((await task(['start', '--new-session', ...store])).error.code, 'MISSING_ARGUMENT')
+})
+
+test('task create --no-branch records a branchless card and refuses --branch with it', async (t) => {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const workstation = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-ws-'))
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-folder-'))
+  t.after(() => Promise.all([storeDir, workstation, folder].map((d) => fs.rm(d, { recursive: true, force: true }))))
+  getStoreAtPath(storeDir).set('settings', { autoMode: true, workstationPath: workstation })
+  const args = ['create', '--project', folder, '--title', 'T', '--prompt', 'p', '--store-path', storeDir]
+
+  const { task: card } = await task([...args, '--no-branch'])
+  assert.equal(card.noBranch, true)
+  assert.equal(card.branch, '')
+  assert.equal((await task(args)).error.code, 'PROJECT_NOT_GIT_REPO')
+  assert.equal((await task([...args, '--no-branch', '--branch', 'x'])).error.code, 'INVALID_ARGUMENT')
 })

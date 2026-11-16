@@ -261,7 +261,7 @@ export function EditTaskDialog({
     title.trim().length > 0 &&
     !saving &&
     !loadingInfo &&
-    (!projectChanged || (isRepo && !projectMissing))
+    (!projectChanged || ((isRepo || Boolean(displayedTask.noBranch)) && !projectMissing))
 
 
   const isMaster = displayedTask?.role === 'master'
@@ -364,7 +364,7 @@ export function EditTaskDialog({
           </span>
         </PropertyNote>
       )}
-      {projectChanged && !projectMissing && !loadingInfo && !isRepo && (
+      {projectChanged && !projectMissing && !loadingInfo && !isRepo && !displayedTask.noBranch && (
         <PropertyNote tone="danger">這個資料夾不是 Git repository，請改選一個 Git 專案。</PropertyNote>
       )}
       {isRepo && hasRemote && (
@@ -383,22 +383,28 @@ export function EditTaskDialog({
           />
         </PropertyRow>
       )}
-      <PropertyRow label="分支">
-        <input
-          name="edit-branch"
-          autoComplete="off"
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          placeholder="例如 feature/login-fix"
-          disabled={readOnly || saving}
-          className={ROW_FIELD}
-        />
-      </PropertyRow>
+      {displayedTask.noBranch ? (
+        <PropertyRow label="分支">
+          <span className="text-sm text-muted-foreground">不建立分支</span>
+        </PropertyRow>
+      ) : (
+        <PropertyRow label="分支">
+          <input
+            name="edit-branch"
+            autoComplete="off"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="例如 feature/login-fix"
+            disabled={readOnly || saving}
+            className={ROW_FIELD}
+          />
+        </PropertyRow>
+      )}
       {hasWorktree && gitFieldsChanged ? (
         <PropertyNote tone="warning">
           這張卡已經有 worktree。儲存後會移除它與本地分支，下次開始執行時再重新建立；有未完成的變更時無法儲存。origin 上已推送的分支不會被刪除。
         </PropertyNote>
-      ) : !readOnly ? (
+      ) : !readOnly && !displayedTask.noBranch ? (
         <PropertyNote>分支在卡片開始執行時才建立並推到 origin。</PropertyNote>
       ) : null}
       {masters.length > 0 && (

@@ -667,6 +667,63 @@ async function adoptRemoteBranch(
  * worktree lives outside the project tree, so the project's .gitignore is left
  * untouched.
  */
+/**
+ * Where a card's work starts: origin/<base> when the remote has it, after
+ * bringing the base up to date, so the card starts from the latest base.
+ */
+async function freshStartPoint(projectPath: string, base: string, hasRemote: boolean): Promise<string> {
+  if (!hasRemote) return base
+  try {
+    // `<base>:<base>` fast-forwards the local branch too; fails safely if it's
+    // currently checked out or has diverged — plain fetch covers that case.
+    await git(projectPath, ['fetch', 'origin', `${base}:${base}`])
+  } catch {
+    try {
+      await git(projectPath, ['fetch', 'origin', base])
+    } catch {
+      // offline — fall back to local cache
+    }
+  }
+  try {
+    await git(projectPath, ['rev-parse', '--verify', `origin/${base}`])
+    return `origin/${base}`
+  } catch {
+    return base
+  }
+}
+
+/**
+ * A card that opted out of a branch still gets an isolated worktree, cut from
+ * the latest base like any other, but on a detached HEAD: no branch is created
+ * and nothing is pushed.
+ */
+export async function provisionDetachedWorktree(
+  projectPath: string,
+  workspacePath: string,
+  taskId: string,
+  baseBranch: string | null
+): Promise<Omit<ProvisionResult, 'branch'>> {
+  await ensureLocalExclude(projectPath)
+  const worktreePath = path.join(workspacePath, fallbackBranchName(taskId))
+  if (await fs.access(worktreePath).then(() => true, () => false)) {
+    throw Object.assign(new Error(`工作區資料夾已存在：${fallbackBranchName(taskId)}`), {
+      code: 'WORKTREE_DIR_EXISTS',
+    })
+  }
+  const info = await getGitInfo(projectPath)
+  const base = baseBranch || info.defaultBase || info.currentBranch || 'HEAD'
+  const startPoint = await freshStartPoint(projectPath, base, info.hasRemote)
+  try {
+    await git(projectPath, ['worktree', 'add', '--detach', worktreePath, startPoint])
+  } catch (err) {
+    await removeWorktree(projectPath, worktreePath)
+    throw err
+  }
+  const ignoredEntries = await copySmallIgnoredFiles(projectPath, worktreePath)
+  copyIgnoredDependenciesInBackground(projectPath, worktreePath, ignoredEntries)
+  return { worktreePath, pushed: false, baseBranch: base }
+}
+
 export async function provisionWorktree(
   projectPath: string,
   workspacePath: string,
@@ -694,28 +751,7 @@ export async function provisionWorktree(
     return adoptRemoteBranch(projectPath, worktreePath, branch, base)
   }
 
-  // Prefer origin/<base> as the start point when it exists on the remote.
-  // Pull the local base branch first so history is up-to-date before branching.
-  let startPoint = base
-  if (info.hasRemote) {
-    try {
-      // `<base>:<base>` fast-forwards the local branch too; fails safely if it's
-      // currently checked out or has diverged — plain fetch covers that case.
-      await git(projectPath, ['fetch', 'origin', `${base}:${base}`])
-    } catch {
-      try {
-        await git(projectPath, ['fetch', 'origin', base])
-      } catch {
-        // offline — fall back to local cache
-      }
-    }
-    try {
-      await git(projectPath, ['rev-parse', '--verify', `origin/${base}`])
-      startPoint = `origin/${base}`
-    } catch {
-      startPoint = base
-    }
-  }
+  const startPoint = await freshStartPoint(projectPath, base, info.hasRemote)
 
   try {
     await git(projectPath, [

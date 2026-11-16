@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { AnimatePresence, LayoutGroup } from 'motion/react'
 import { ChevronRight, FolderOpen, GitBranch, GitCompare, Layers, Network, Trash2 } from 'lucide-react'
 
-import type { SlaveEntry } from '@/components/board-columns'
+import { branchLabel, type SlaveEntry } from '@/components/board-columns'
 import { MarkdownContent } from '@/components/markdown-content'
 import { TaskFormDialog, PropertyGroup, PropertyNote } from '@/components/task-form-layout'
 import { TaskProgressDetail } from '@/components/task-progress'
@@ -157,7 +157,7 @@ function DoneTaskSheetBody({
               )}
               <div className="flex items-start gap-2">
                 <GitBranch className="mt-0.5 size-3.5 shrink-0" />
-                <span className="min-w-0 break-all">{task.branch}</span>
+                <span className="min-w-0 break-all">{branchLabel(task)}</span>
               </div>
               {task.baseBranch && (
                 <div className="flex items-start gap-2">

@@ -92,6 +92,11 @@ npm run vibeflow -- task create \
   that already exists **on origin only** is not an error: the branch is fetched
   and checked out so the card continues that work instead of starting a new
   branch off the base. Same field, same rules, in the new-task dialog.
+- `--no-branch` (the dialog's 「建立分支」 switch, off) makes a card that never gets
+  a branch (`Task.noBranch`, `branch: ''`): a git project gets a detached worktree
+  cut from the base and nothing is pushed; a folder that is not a git repo is
+  accepted and used as is (`Task.inPlace`, `worktreePath === projectPath`).
+  Cannot be combined with `--branch`. Spec: `docs/features/no-branch-cards/`.
 - `--effort` defaults to `auto`, matching the UI. The default lives in
   `packages/core/src/agents.ts` (`DEFAULT_TASK_EFFORT`) and is applied in
   `createTaskFromInput`, so both entry points produce identical cards.
@@ -394,6 +399,8 @@ docs/                      everything that is not code (index: docs/README.md)
   in `launchError`. A shell `pty:start` on an unprovisioned card is refused rather
   than falling back to the project checkout. Attachments of an unprovisioned card
   live in `<workspace>/.attachments/<taskId>/` (`taskAttachmentStagingPath`).
+  An `inPlace` card runs in the user's own folder: `gitWorktree()` returns nothing
+  for it, and nothing that tears a card down may remove or rewrite that folder.
 - **Only Backlog cards are editable** (`vibeflow:updateTask` refuses others; the
   CLI's `task update` is the exception). Editing a Backlog card's project, base or
   branch only rewrites the store; one that already has a clean worktree gives it

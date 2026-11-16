@@ -15,6 +15,7 @@ import {
   fallbackBranchName,
   getGitInfo,
   initRepository,
+  provisionDetachedWorktree,
   provisionWorktree,
 } from './git'
 import { projectWorkstationPath, taskAttachmentStagingPath } from './workspace'
@@ -44,6 +45,11 @@ export interface CreateTaskInput {
    */
   branch?: string
   mode?: 'existing' | 'new'
+  /**
+   * false = the card never gets a branch: a detached worktree in a git
+   * project, or the folder itself when the project is not a repo. Default true.
+   */
+  createBranch?: boolean
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort
@@ -110,13 +116,14 @@ export async function createTaskFromInput(
     await initRepository(projectPath)
   }
 
+  const noBranch = input.createBranch === false
   const info = await getGitInfo(projectPath)
-  if (!info.isRepo) {
+  if (!info.isRepo && !noBranch) {
     throw Object.assign(new Error('目標路徑不是 git repository'), { code: 'PROJECT_NOT_GIT_REPO' })
   }
 
   const taskId = randomUUID().slice(0, 8)
-  const explicitBranch = input.branch?.trim() || null
+  const explicitBranch = noBranch ? null : input.branch?.trim() || null
 
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
   if (input.masterId) assertMasterRef(store.get('board'), input.masterId)
@@ -138,18 +145,25 @@ export async function createTaskFromInput(
   if (explicitBranch) {
     await assertBranchAvailable(projectPath, workspacePath, explicitBranch)
   }
-  const branch =
-    explicitBranch ?? (await generateBranchName(input.title, input.description, options.translateTitle))
+  const branch = noBranch
+    ? ''
+    : explicitBranch ??
+      (await generateBranchName(input.title, input.description, options.translateTitle)) ??
+      fallbackBranchName(taskId)
 
   const draft: Task = {
     id: taskId,
     title: input.title.trim() || `Task ${taskId}`,
-    branch: branch ?? fallbackBranchName(taskId),
+    branch,
     branchExplicit: explicitBranch ? true : undefined,
     projectPath,
     projectName,
     workspacePath,
-    baseBranch: input.baseBranch || info.defaultBase || info.currentBranch || undefined,
+    baseBranch: info.isRepo
+      ? input.baseBranch || info.defaultBase || info.currentBranch || undefined
+      : undefined,
+    ...(noBranch ? { noBranch: true as const } : {}),
+    ...(noBranch && !info.isRepo ? { inPlace: true as const } : {}),
   }
 
   // A backlog card stays a plan: its branch is cut from the base when it starts,
@@ -278,7 +292,23 @@ export async function provisionTaskWorktree(task: Task): Promise<ProvisionedFiel
       code: 'WORKTREE_CREATE_FAILED',
     })
   }
+  if (task.inPlace) {
+    return { branch: '', worktreePath: task.projectPath, provisionedAt: Date.now() }
+  }
   await fs.mkdir(task.workspacePath, { recursive: true })
+  if (task.noBranch) {
+    try {
+      const result = await provisionDetachedWorktree(
+        task.projectPath,
+        task.workspacePath,
+        task.id,
+        task.baseBranch ?? null
+      )
+      return { branch: '', ...result, provisionedAt: Date.now() }
+    } catch (err) {
+      throw taskError(`Worktree 建立失敗：${(err as Error).message}`, 'WORKTREE_CREATE_FAILED')
+    }
+  }
   if (task.branchExplicit) {
     await assertBranchAvailable(task.projectPath, task.workspacePath, task.branch)
   }

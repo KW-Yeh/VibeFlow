@@ -243,6 +243,7 @@ export async function createTask(payload: {
   masterId?: string
   branch?: string
   mode?: 'existing' | 'new'
+  createBranch?: boolean
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort

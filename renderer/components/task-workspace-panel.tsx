@@ -40,7 +40,7 @@ import {
 import { MarkdownContent } from '@/components/markdown-content'
 import { DiffEntryRow, DiffFileModal, DiffFileViewer, DiffViewToggles, MAX_DIFF_FILES, useDiffView } from '@/components/diff-file'
 import { CommitDiffContent, DiffGroupToggle } from '@/components/commit-diff'
-import { projectLabel, slaveState, TaskId, todoCount, type SlaveEntry } from '@/components/board-columns'
+import { branchLabel, projectLabel, slaveState, TaskId, todoCount, type SlaveEntry } from '@/components/board-columns'
 import { TaskTerminal } from '@/components/task-terminal'
 import { StatusMark, TaskProgressChip, TaskProgressDetail } from '@/components/task-progress'
 import { Button } from '@/components/ui/button'
@@ -514,7 +514,7 @@ function TaskInfo({
         <div className="flex items-start gap-2">
           <GitBranch className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 break-all">
-            {task.branch}
+            {branchLabel(task)}
             {!task.worktreePath && <span className="text-muted-foreground/70">（建立中…）</span>}
           </span>
         </div>
@@ -944,7 +944,7 @@ export function SlavesContent({
                       ? task.launchError
                       : current
                         ? current.activeForm ?? current.content
-                        : task.branch}
+                        : branchLabel(task)}
                   </span>
                   {pr && <span className="shrink-0">PR #{pr.number}</span>}
                 </div>
@@ -1286,7 +1286,9 @@ export function TaskWorkspacePanel({
       ? null
       : isMaster
         ? '正在準備 master 的工作資料夾，完成後 agent 會自動啟動…'
-        : `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
+        : task.noBranch
+          ? `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立 detached worktree（不建分支）。完成後 agent 會自動啟動…`
+          : `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.
@@ -1582,10 +1584,10 @@ export function TaskWorkspacePanel({
                   ) : (
                     <span
                       className="flex min-w-0 items-center gap-1.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
-                      title={task.branch}
+                      title={branchLabel(task)}
                     >
                       <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{task.branch}</span>
+                      <span className="truncate">{branchLabel(task)}</span>
                     </span>
                   )}
                   {task.baseBranch && (

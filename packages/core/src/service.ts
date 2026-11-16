@@ -154,6 +154,8 @@ export interface CreateTaskPayload {
   /** User-chosen branch name; blank/absent = derive one from the card. */
   branch?: string
   mode?: 'existing' | 'new'
+  /** false = no branch (see CreateTaskInput.createBranch). Absent = true. */
+  createBranch?: boolean
   agentCli?: AgentCliId
   model?: string
   effort?: AgentEffort
@@ -418,9 +420,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     },
   })
 
-  /** The card's git worktree; a master's folder is not one, so git must never run there. */
+  /** The card's git worktree; a master's folder or an in-place card's folder is not one, so git must never run there. */
   function gitWorktree(task: Task): string | undefined {
-    return isMasterTask(task) ? undefined : task.worktreePath
+    return isMasterTask(task) || task.inPlace ? undefined : task.worktreePath
   }
 
   /** What the tracker follows for a card; null when it has no worktree to run in. */
@@ -702,11 +704,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   async function removeTaskWorktree(task: Task): Promise<void> {
-    if (!task.projectPath || !task.worktreePath) return
-    const branch = task.branch || fallbackBranchName(task.id)
+    if (!task.projectPath || !task.worktreePath || task.inPlace) return
     await removeWorktree(task.projectPath, task.worktreePath)
     deleteArtifacts(task.workspacePath ?? path.dirname(task.worktreePath), task.worktreePath)
-    await deleteBranch(task.projectPath, branch)
+    if (!task.noBranch) await deleteBranch(task.projectPath, task.branch || fallbackBranchName(task.id))
   }
 
   function columnOf(taskId: string): ColumnId | null {
@@ -1008,6 +1009,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.agentCli !== undefined && !AGENT_IDS.includes(p.agentCli)) invalid('unknown agent')
       if (p.github !== undefined && !isGithubRef(p.github)) invalid('github must be an issue or pr ref on github.com')
       if (p.jira !== undefined && !isJiraRef(p.jira)) invalid('jira must be a Jira ticket ref')
+      if (p.createBranch !== undefined && typeof p.createBranch !== 'boolean') invalid('createBranch must be a boolean')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
         role: p.role,
@@ -1018,6 +1020,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         baseBranch: p.baseBranch,
         branch: p.branch,
         mode: p.mode,
+        createBranch: p.createBranch,
         agentCli: p.agentCli,
         model: p.model,
         effort: p.effort,
@@ -1042,8 +1045,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     // were new. Launching again is the caller's decision.
     'vibeflow:resetTaskRun': async (taskId) => {
       const task = requireTask(taskId)
-      if (isMasterTask(task) && task.worktreePath) {
-        // A master's folder is not under version control: only the run's
+      if ((isMasterTask(task) || task.inPlace) && task.worktreePath) {
+        // A master's or in-place card's folder is not under version control: only the run's
         // by-products are discarded, never files the user keeps there.
         await teardownTask(task.id)
         if (task.workspacePath) deleteArtifacts(task.workspacePath, task.worktreePath)
@@ -1105,12 +1108,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       }
       let gitPatch: Partial<Task> = {}
       const nextProject = isMasterTask(existing) ? undefined : p.projectPath || existing.projectPath
-      const nextBranch = p.branch === undefined ? '' : str(p.branch, 'branch').trim()
+      const nextBranch = p.branch === undefined || existing.noBranch ? '' : str(p.branch, 'branch').trim()
       const projectChanged = Boolean(p.projectPath && p.projectPath !== existing.projectPath)
       const baseChanged = p.baseBranch != null && p.baseBranch !== (existing.baseBranch ?? null)
       const branchChanged = Boolean(nextBranch && nextBranch !== existing.branch)
       if (nextProject && (projectChanged || baseChanged || branchChanged)) {
-        if (existing.worktreePath) {
+        if (existing.worktreePath && !existing.inPlace) {
           // Only the count matters here, so use the entry list — it reads no
           // blob content and skips the network fetch.
           const diff = await getWorktreeDiffEntries(
@@ -1123,7 +1126,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           }
         }
         const info = await getGitInfo(nextProject)
-        if (!info.isRepo) throw new Error('目標資料夾不是 git repository')
+        if (!info.isRepo && !existing.noBranch) throw new Error('目標資料夾不是 git repository')
         const projectName = path.basename(nextProject)
         const workspacePath = projectWorkstationPath(resolveWorkstationPath(getSettings()), projectName)
         // Free the old branch first, so renaming back to it is not reported as taken.
@@ -1135,11 +1138,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           projectPath: nextProject,
           projectName,
           workspacePath,
-          baseBranch:
-            (p.baseBranch ?? (projectChanged ? null : existing.baseBranch)) ||
-            info.defaultBase ||
-            info.currentBranch ||
-            undefined,
+          baseBranch: info.isRepo
+            ? (p.baseBranch ?? (projectChanged ? null : existing.baseBranch)) ||
+              info.defaultBase ||
+              info.currentBranch ||
+              undefined
+            : undefined,
+          inPlace: existing.noBranch && !info.isRepo ? true : undefined,
           ...(branchChanged ? { branch: nextBranch, branchExplicit: true } : {}),
           worktreePath: undefined,
           pushed: undefined,
@@ -1573,7 +1578,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       progress.untrack(task.id)
       if (task.projectPath && task.worktreePath) {
         await removeTaskWorktree(task)
-        await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
+        if (!task.inPlace) await syncBaseBranch(task.projectPath, task.baseBranch ?? 'main')
       }
       // Only write the outcome when this call actually captured one. Completing
       // an already-completed card (done -> in_progress -> done) has no worktree

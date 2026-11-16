@@ -75,7 +75,8 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
 | `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
-| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks |
+| `no-branch-cards.test.mjs` | `packages/core/src/tasks.ts`, `git.ts`, `service.ts` | cards made without a branch: detached worktree in a git project (no branch, no push), a non-git folder used in place and never touched by reset / complete / delete |
+| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks, `task create --no-branch` |
 | `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it; a replacement keeps the old size unless it brings its own |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
 | `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, a replacement keeping the old client's size, exit status, kill vs. detach |

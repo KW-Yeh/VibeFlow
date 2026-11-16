@@ -102,6 +102,17 @@ export interface Task {
   masterId?: string
   /** A master's chosen folder. Absent = `<workspacePath>/work`, owned and deleted with the card. */
   workDir?: string
+  /**
+   * Created with "建立分支" off: `branch` is '' and the card never gets one.
+   * A git project still gets an isolated worktree, on a detached HEAD.
+   */
+  noBranch?: true
+  /**
+   * A `noBranch` card whose project is not a git repo: it runs in the project
+   * folder itself, so `worktreePath === projectPath`. Git must never run there,
+   * and nothing VibeFlow tears down may remove or rewrite that folder.
+   */
+  inPlace?: true
 }
 
 export function isMasterTask(task: Pick<Task, 'role'>): boolean {

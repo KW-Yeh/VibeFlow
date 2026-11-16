@@ -516,11 +516,18 @@ export function KanbanBoard({
                     完成「{confirmDone.title}」？
                   </h2>
                   <p className="text-base leading-6 text-muted-foreground">
-                    這會刪除這張卡的 worktree（尚未 commit 的變更會一起消失）、本地分支
-                    {confirmDone.branch ? `「${confirmDone.branch}」` : ''}與 artifacts，
-                    並把專案切回
-                    {confirmDone.baseBranch ? `「${confirmDone.baseBranch}」` : '基準分支'}
-                    後更新。此操作無法復原，請先確認要保留的變更都已經 commit 或 push。
+                    {confirmDone.inPlace ? (
+                      <>這會結束這張卡的工作階段並刪除 artifacts；資料夾本身不會被改動。</>
+                    ) : (
+                      <>
+                        這會刪除這張卡的 worktree（尚未 commit 的變更會一起消失）
+                        {confirmDone.noBranch ? '' : '、本地分支'}
+                        {confirmDone.branch ? `「${confirmDone.branch}」` : ''}與 artifacts，
+                        並把專案切回
+                        {confirmDone.baseBranch ? `「${confirmDone.baseBranch}」` : '基準分支'}
+                        後更新。此操作無法復原，請先確認要保留的變更都已經 commit 或 push。
+                      </>
+                    )}
                   </p>
                 </div>
               </div>

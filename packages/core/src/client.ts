@@ -161,6 +161,8 @@ export function createBridge(t: BridgeTransport) {
     masterId?: string
     branch?: string
     mode?: 'existing' | 'new'
+    /** false = no branch: a detached worktree, or the folder itself when it is not a repo. */
+    createBranch?: boolean
     agentCli?: AgentCliId
     model?: string
     effort?: AgentEffort

@@ -1,6 +1,6 @@
 import { Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
-import { TaskId } from '@/components/board-columns'
+import { branchLabel, TaskId } from '@/components/board-columns'
 import { activityMark, StatusMark, TaskProgressChip } from '@/components/task-progress'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
@@ -124,9 +124,14 @@ export function WorkspaceTaskRail({
           <span className="min-w-0 flex-1 truncate">{task.title}</span>
           <TaskId id={task.id} className="font-normal" />
         </span>
+        {!isMaster && (
+          <span className="min-w-0 truncate pl-[22px] text-xs" title={task.projectPath}>
+            {task.projectName ?? ''}
+          </span>
+        )}
         <span className="flex min-w-0 items-center gap-2 pl-[22px] text-xs">
-          <span className="min-w-0 truncate">
-            {isMaster ? 'Master' : task.projectName ?? ''}
+          <span className="min-w-0 truncate font-mono" title={task.branch || undefined}>
+            {isMaster ? 'Master' : branchLabel(task)}
           </span>
           <TaskProgressChip progress={progress[task.id]} mark={isMaster} />
         </span>

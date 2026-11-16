@@ -6,17 +6,19 @@ export function AutoModeSwitch({
   value,
   onChange,
   disabled = false,
+  label = 'Auto Mode',
 }: {
   value: boolean
   onChange: (value: boolean) => void
   disabled?: boolean
+  label?: string
 }) {
   return (
         <button
           type="button"
           role="switch"
           aria-checked={value}
-          aria-label="Auto Mode"
+          aria-label={label}
           disabled={disabled}
           onClick={() => onChange(!value)}
           className="rounded-full p-1 outline-none transition-opacity motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"

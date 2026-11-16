@@ -4,6 +4,7 @@ import { FileUp, FolderOpen, GitBranch, Loader2, Network, Paperclip, X } from 'l
 import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/field'
 import { IconButton } from '@/components/ui/icon-button'
+import { AutoModeSwitch } from '@/components/task-auto-mode-toggle'
 import { DEFAULT_TASK_EFFORT } from '@/components/task-effort-slider'
 import { Select } from '@/components/ui/select'
 import {
@@ -49,6 +50,8 @@ export interface NewTaskDraft {
   projectPath?: string
   baseBranch: string | null
   branch: string
+  /** Ordinary cards only: false = run without a branch. */
+  createBranch?: boolean
   /** Master only: its own folder; absent = one VibeFlow creates. */
   workDir?: string
   /** Ordinary cards only: the master to dispatch it under. */
@@ -122,6 +125,7 @@ export function NewTaskDialog({
   const [initializing, setInitializing] = useState(false)
   const [baseBranch, setBaseBranch] = useState('')
   const [branch, setBranch] = useState(initial?.branch ?? '')
+  const [createBranch, setCreateBranch] = useState(true)
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
@@ -259,7 +263,7 @@ export function NewTaskDialog({
   const isMaster = role === 'master'
   const isReady =
     isMaster ||
-    (Boolean(projectPath) && !projectMissing && isRepo && !loadingInfo && !initializing)
+    (Boolean(projectPath) && !projectMissing && (isRepo || !createBranch) && !loadingInfo && !initializing)
   const canSubmit = title.trim().length > 0 && !creating && !isReadingAttachments && isReady
   const attachmentsLocked = creating || isReadingAttachments
 
@@ -283,7 +287,8 @@ export function NewTaskDialog({
             ...shared,
             projectPath: projectPath ?? undefined,
             baseBranch: hasRemote ? baseBranch || null : null,
-            branch: branch.trim(),
+            branch: createBranch ? branch.trim() : '',
+            ...(createBranch ? {} : { createBranch: false }),
             masterId: masterId || undefined,
           }
     )
@@ -500,7 +505,7 @@ export function NewTaskDialog({
         </PropertyNote>
       )}
       {!projectPath && <PropertyNote>選擇專案後才能建立任務。</PropertyNote>}
-      {gitInfo && !projectMissing && !loadingInfo && !initializing && !isRepo && (
+      {gitInfo && !projectMissing && !loadingInfo && !initializing && !isRepo && createBranch && (
         <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm">
           <p>
             這個資料夾不是 Git repository。可以在這裡初始化：會執行
@@ -529,7 +534,16 @@ export function NewTaskDialog({
           />
         </PropertyRow>
       )}
-      {isRepo && (
+      <div className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-2 px-1">
+        <span className="text-sm text-muted-foreground">建立分支</span>
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm text-muted-foreground">
+            {createBranch ? '獨立分支' : isRepo || !gitInfo ? 'detached worktree' : '直接在資料夾執行'}
+          </span>
+          <AutoModeSwitch value={createBranch} onChange={setCreateBranch} disabled={creating} label="建立分支" />
+        </span>
+      </div>
+      {isRepo && createBranch && (
         <PropertyRow label="分支">
           <input
             name="branch"
@@ -553,7 +567,14 @@ export function NewTaskDialog({
           />
         </PropertyRow>
       )}
-      {isRepo && (
+      {!createBranch && gitInfo && !projectMissing && !loadingInfo && !initializing && (
+        <PropertyNote>
+          {isRepo
+            ? `開始執行時從${hasRemote ? '最新的 origin ' : ''}基準分支建立獨立 worktree（detached HEAD），不建分支、不 push。完成或刪除卡片時 worktree 一併移除，沒推到別處的 commit 不會留下分支。`
+            : '這個資料夾不是 Git repository：agent 直接在資料夾裡執行，沒有 Git diff；完成或刪除卡片都不會動到資料夾。'}
+        </PropertyNote>
+      )}
+      {isRepo && createBranch && (
         <PropertyNote>
           <details>
             <summary className="cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
