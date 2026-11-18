@@ -172,6 +172,17 @@ test('Claude — turns count only messages someone sent the agent', () => {
   assert.equal(claudeUsageTotal(state).turns, 3)
 })
 
+test('Claude — an interrupt puts the agent back at its prompt', () => {
+  const line = (type, message) => JSON.stringify({ type, timestamp: '2026-10-05T14:00:00Z', message })
+  const state = foldClaude([
+    line('assistant', { id: 'm1', content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: {} }] }),
+    line('user', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'b1', content: 'cancelled', is_error: true }] }),
+    line('user', { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] }),
+  ])
+  assert.equal(state.activity.state, 'waiting')
+  assert.equal(state.activity.waitingFor, 'input')
+})
+
 test('Codex — each user_message is a turn, and token_count keeps the count', () => {
   const ev = (payload) => JSON.stringify({ type: 'event_msg', timestamp: '2026-10-05T14:00:00Z', payload })
   const state = foldCodex([

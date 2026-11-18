@@ -156,6 +156,15 @@ function isClaudePrompt(entry: Record<string, unknown>, message: Record<string, 
   return !CLAUDE_MACHINE_PROMPT.test(text)
 }
 
+/** An interrupt ends the turn without a Stop hook: the agent is back at its prompt. */
+function isClaudeInterrupt(entry: Record<string, unknown>, message: Record<string, unknown>): boolean {
+  if (entry.isSidechain) return false
+  const content = message.content
+  const blocks = Array.isArray(content) ? (content as Record<string, unknown>[]) : []
+  const text = typeof content === 'string' ? content : blocks.find((b) => b?.type === 'text')?.text
+  return typeof text === 'string' && text.startsWith('[Request interrupted')
+}
+
 function claudeUsage(u: Record<string, unknown>): TokenUsage {
   const details = u.output_tokens_details as Record<string, unknown> | undefined
   return {
@@ -270,7 +279,7 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
     }
     next.pendingTasks = pending
     if (isClaudePrompt(entry, message)) next.turns = state.turns + 1
-    next.activity = { state: 'working', at }
+    next.activity = isClaudeInterrupt(entry, message) ? { state: 'waiting', waitingFor: 'input', at } : { state: 'working', at }
     return next
   }
 

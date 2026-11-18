@@ -101,7 +101,7 @@ import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './la
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
-import { inboxDir, inboxReady, prepareInbox } from './inbox'
+import { inboxDir, inboxReady, pendingMessages, prepareInbox } from './inbox'
 import { createNotifier } from './notifier'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
@@ -199,6 +199,8 @@ export interface TaskSummary {
   launchError?: string
   todos?: { done: number; total: number; current?: string }
   activity?: Activity
+  /** Messages still waiting in its inbox for the agent to read. Absent = none. */
+  inbox?: number
   pr?: { number: number; url: string; state: string }
   outcome?: { commits: number; files: number; additions: number; deletions: number }
 }
@@ -852,6 +854,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         const todos = snapshot?.todos
         const current = todos?.find((t) => t.status === 'in_progress')
         const pr = task.outcome?.pr
+        const waiting = task.worktreePath ? pendingMessages(inboxDir(task.worktreePath)) : 0
         summaries.push({
           id: task.id,
           title: task.title,
@@ -872,6 +875,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
             },
           } : {}),
           ...(snapshot ? { activity: snapshot.activity } : {}),
+          ...(waiting ? { inbox: waiting } : {}),
           ...(pr ? { pr: { number: pr.number, url: pr.url, state: pr.state } } : {}),
           ...(task.outcome ? {
             outcome: {

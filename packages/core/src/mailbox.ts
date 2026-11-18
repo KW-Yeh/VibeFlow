@@ -15,6 +15,7 @@ const PASTE_END = '\x1b[201~'
 const PASTE_GAP_MS = 200
 const DEFAULT_QUIET_MS = 3000
 const DEFAULT_TIMEOUT_MS = 120_000
+const DEFAULT_RETRY_MS = 5000
 
 export interface MailboxOptions {
   write(key: string, data: string): void
@@ -28,6 +29,8 @@ export interface MailboxOptions {
   quietMs?: number
   /** Give up waiting for quiet after this long. */
   timeoutMs?: number
+  /** How often to try again to wake an agent whose inbox still holds a message. */
+  retryMs?: number
 }
 
 export interface DeliverOptions {
@@ -105,11 +108,35 @@ export function createMailbox(options: MailboxOptions): Mailbox {
   const drafts = new Set<string>()
   const held = new Map<string, string[]>()
   const turns = new Map<string, Promise<unknown>>()
+  const retries = new Map<string, ReturnType<typeof setTimeout>>()
 
-  function noteInput(key: string, data: string): void {
+  /** Whether this input emptied a box that held a draft. */
+  function noteInput(key: string, data: string): boolean {
     lastInput.set(key, Date.now())
-    if (draftAfter(drafts.has(key), data)) drafts.add(key)
+    const had = drafts.has(key)
+    if (draftAfter(had, data)) drafts.add(key)
     else drafts.delete(key)
+    return had && !drafts.has(key)
+  }
+
+  /**
+   * An idle agent reports nothing more, so a message left in its inbox would
+   * wait until someone typed; keep trying while one is there.
+   */
+  function retryLater(key: string): void {
+    if (retries.has(key)) return
+    const timer = setTimeout(() => {
+      retries.delete(key)
+      poke(key)
+    }, options.retryMs ?? DEFAULT_RETRY_MS)
+    timer.unref?.()
+    retries.set(key, timer)
+  }
+
+  function poke(key: string): void {
+    const dir = options.inbox?.(key)
+    if (!dir || !pendingMessages(dir) || turns.has(key)) return
+    void enqueue(key, () => wake(key, dir)).catch(() => {})
   }
 
   async function waitForQuiet(key: string, started: number): Promise<void> {
@@ -143,7 +170,10 @@ export function createMailbox(options: MailboxOptions): Mailbox {
   async function wake(key: string, dir: string): Promise<DeliveryVia> {
     const quiet = options.quietMs ?? quietFromEnv()
     for (;;) {
-      if (!(await canWake(key))) return 'queued'
+      if (!(await canWake(key))) {
+        retryLater(key)
+        return 'queued'
+      }
       const left = (lastInput.get(key) ?? 0) + quiet - Date.now()
       if (left <= 0) break
       await sleep(Math.min(left, 250))
@@ -178,7 +208,7 @@ export function createMailbox(options: MailboxOptions): Mailbox {
 
   return {
     userInput(key, data) {
-      noteInput(key, data)
+      if (noteInput(key, data)) queueMicrotask(() => poke(key))
       const buffer = held.get(key)
       if (buffer) {
         buffer.push(data)
@@ -198,13 +228,11 @@ export function createMailbox(options: MailboxOptions): Mailbox {
       })
     },
 
-    poke(key) {
-      const dir = options.inbox?.(key)
-      if (!dir || !pendingMessages(dir) || turns.has(key)) return
-      void enqueue(key, () => wake(key, dir)).catch(() => {})
-    },
+    poke,
 
     forget(key) {
+      clearTimeout(retries.get(key))
+      retries.delete(key)
       lastInput.delete(key)
       drafts.delete(key)
       held.delete(key)

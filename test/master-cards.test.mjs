@@ -9,6 +9,7 @@ import { createNodePlatform, setPlatform } from '../packages/core/src/platform.t
 import { getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput, updateTaskFromInput } from '../packages/core/src/tasks.ts'
 import { buildAgentCommand, masterSystemPrompt, slaveSystemPrompt } from '../packages/core/src/launch.ts'
+import { postMessage } from '../packages/core/src/inbox.ts'
 import { exists, makeRepo, writeFile } from './support/repo.mjs'
 
 function fakeSessions() {
@@ -475,4 +476,17 @@ test('continuing a master lists its cards instead of git; continuing a card keep
   assert.ok(slaveCommand.includes(master.id), 'it still reports to its master')
   assert.ok(!slaveCommand.includes('你是 VibeFlow 的 Master agent'), 'a card never gets the master instructions')
   assert.equal(findCard(core, dev.id).task.masterId, master.id)
+})
+
+test('a summary counts the messages still waiting in a card\'s inbox', async (t) => {
+  const { core } = setup(t)
+  const { task } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Inbox count' })
+  await core.handlers['pty:start']({ taskId: task.id, launch: {} })
+  const { task: running } = findCard(core, task.id)
+  const [before] = await core.handlers['task:summaries']({ taskId: task.id })
+  assert.equal(before.inbox, undefined)
+  postMessage(path.join(running.worktreePath, '.vibeflow-inbox'), 'one')
+  postMessage(path.join(running.worktreePath, '.vibeflow-inbox'), 'two')
+  const [after] = await core.handlers['task:summaries']({ taskId: task.id })
+  assert.equal(after.inbox, 2)
 })

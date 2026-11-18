@@ -6,7 +6,7 @@ import path from 'node:path'
 import { bracketedPaste, createMailbox, draftAfter, frameMessage } from '../packages/core/src/mailbox.ts'
 import { pendingMessages, postMessage } from '../packages/core/src/inbox.ts'
 
-function setup({ activity = null, quietMs = 0, inbox = null, timeoutMs, elsewhere = false } = {}) {
+function setup({ activity = null, quietMs = 0, inbox = null, timeoutMs, elsewhere = false, retryMs } = {}) {
   const writes = []
   const state = { activity, elsewhere }
   const mailbox = createMailbox({
@@ -16,6 +16,7 @@ function setup({ activity = null, quietMs = 0, inbox = null, timeoutMs, elsewher
     typedElsewhere: async () => state.elsewhere,
     quietMs,
     timeoutMs,
+    retryMs,
   })
   return { mailbox, writes, state }
 }
@@ -177,6 +178,40 @@ test('a poke types what waited once the agent goes idle with an empty input box'
   mailbox.poke('t1')
   await new Promise((r) => setTimeout(r, 300))
   assert.deepEqual(writes.map((w) => w.data), [PASTE('hi'), '\r'])
+})
+
+test('a message left in the inbox is retried until the idle agent can be woken', async (t) => {
+  const inbox = tempInbox(t)
+  const { mailbox, writes, state } = setup({ inbox, activity: { state: 'waiting', waitingFor: 'input' }, elsewhere: true, retryMs: 30 })
+  t.after(() => mailbox.forget('t1'))
+  assert.equal((await mailbox.deliver('t1', 'hi')).via, 'queued')
+  await new Promise((r) => setTimeout(r, 80))
+  assert.equal(writes.length, 0, 'someone is still attached directly')
+  state.elsewhere = false
+  await new Promise((r) => setTimeout(r, 300))
+  assert.deepEqual(writes.map((w) => w.data), [PASTE('hi'), '\r'])
+  assert.equal(pendingMessages(inbox), 0)
+})
+
+test('emptying the input box by hand wakes the agent with what waited', async (t) => {
+  const inbox = tempInbox(t)
+  const { mailbox, writes } = setup({ inbox, activity: { state: 'waiting', waitingFor: 'input' }, retryMs: 60_000 })
+  t.after(() => mailbox.forget('t1'))
+  mailbox.userInput('t1', 'draft')
+  assert.equal((await mailbox.deliver('t1', 'hi')).via, 'queued')
+  mailbox.userInput('t1', '\x15')
+  await new Promise((r) => setTimeout(r, 300))
+  assert.deepEqual(writes.map((w) => w.data), ['draft', '\x15', PASTE('hi'), '\r'])
+})
+
+test('forget stops retrying a session that is gone', async (t) => {
+  const inbox = tempInbox(t)
+  const { mailbox, writes, state } = setup({ inbox, activity: { state: 'working' }, retryMs: 30 })
+  await mailbox.deliver('t1', 'hi')
+  mailbox.forget('t1')
+  state.activity = { state: 'waiting', waitingFor: 'input' }
+  await new Promise((r) => setTimeout(r, 120))
+  assert.equal(writes.length, 0)
 })
 
 test('postMessage keeps arrival order and hides in-flight files from the hook', (t) => {

@@ -198,7 +198,8 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   gets messages through its inbox (`inbox.ts`): `PostToolUse` / `UserPromptSubmit`
   hooks add them as context and `Stop` keeps the agent going with them, so nothing
   is typed (`via: 'queued'` / `'hook'`). Only an idle agent with an empty input box and
-  no direct tmux client is woken by typing. Everywhere else (Codex, sessions launched
+  no direct tmux client is woken by typing, retried every 5 s while a message waits
+  (an interrupt counts as idle); `task show` reports what still waits as `inbox`. Everywhere else (Codex, sessions launched
   before the inbox): one bracketed paste + Enter, never into a permission dialog unless
   forced (`TARGET_BLOCKED`), only once the person has no draft and stopped typing for
   `VIBEFLOW_QUIET_MS` (3 s), never split by another write. Codex reports no permission
