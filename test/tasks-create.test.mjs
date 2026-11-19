@@ -85,8 +85,8 @@ test('a card created straight into In Progress is provisioned at once', async (t
   })
 
   assert.ok(await exists(task.worktreePath))
-  assert.equal(task.pushed, true)
-  assert.match(await git(remotePath, 'branch', '--list', 'fix/login-flow'), /fix\/login-flow/)
+  assert.equal(task.pushed, false)
+  assert.equal(await git(remotePath, 'branch', '--list', 'fix/login-flow'), '')
 })
 
 test('a taken branch name is still refused at creation', async (t) => {

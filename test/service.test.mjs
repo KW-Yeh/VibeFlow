@@ -572,7 +572,7 @@ async function coreWithRemoteTask(t, extra = {}) {
 const cardIn = (core, col, id) =>
   core.handlers['vibeflow:getState']().board[col].find((t2) => t2.id === id)
 
-test('the branch is cut from the base as it is at launch, then pushed', async (t) => {
+test('the branch is cut from the base as it is at launch, and is not pushed', async (t) => {
   const { core, task, branch, projectPath, remotePath, root } = await coreWithRemoteTask(t)
   // origin/main moves on while the card waits in Backlog.
   const other = path.join(root, 'other')
@@ -589,10 +589,10 @@ test('the branch is cut from the base as it is at launch, then pushed', async (t
   await core.handlers['pty:start']({ taskId: task.id, launch: {} })
 
   const launched = cardIn(core, 'backlog', task.id)
-  assert.equal(launched.pushed, true)
+  assert.equal(launched.pushed, false)
   assert.equal(typeof launched.provisionedAt, 'number')
   assert.equal(await git(launched.worktreePath, 'rev-parse', 'HEAD'), latest)
-  assert.match(await git(remotePath, 'branch', '--list', branch), new RegExp(branch))
+  assert.equal(await git(remotePath, 'branch', '--list', branch), '')
 })
 
 test('commit diff handlers read the branch\'s own commits and refuse anything else', async (t) => {

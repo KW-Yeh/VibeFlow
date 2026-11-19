@@ -579,7 +579,7 @@ export function NewTaskDialog({
           <details>
             <summary className="cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
               {hasRemote
-                ? '開始執行時才建立分支與 worktree 並 push。'
+                ? '開始執行時才建立本地分支與 worktree，不 push。'
                 : `沒有 remote，開始執行時從 ${gitInfo?.currentBranch ?? 'HEAD'} 建立本地 worktree。`}
             </summary>
             <ul className="mt-1 list-disc space-y-1 pl-4">
@@ -590,7 +590,7 @@ export function NewTaskDialog({
               </li>
               {hasRemote && (
                 <li>
-                  把新分支 push 到 origin；若 remote 已有同名分支，則取回並接續那條分支的工作。
+                  分支只建在本地，不會 push 到 origin，要開 PR 時再推上去；若 remote 已有同名分支，則取回並接續那條分支的工作。
                 </li>
               )}
               <li>把被 git 忽略的檔案（例如 .env）複製進 worktree，相依套件資料夾在背景複製。</li>

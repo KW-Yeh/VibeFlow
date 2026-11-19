@@ -661,7 +661,8 @@ async function adoptRemoteBranch(
 
 /**
  * Create an isolated worktree for a task under `<workspacePath>/<branch-dir>` on
- * a new branch, and (when a remote exists) push the branch upstream. The branch
+ * a new, local-only branch. Publishing it is left to whoever opens the PR, so a
+ * card that never needs one leaves nothing on the remote. The branch
  * is named from `preferredBranch` (e.g. feature/WR-4832, fix/WCL260522-0002,
  * feature/<title-slug>) when given, otherwise the legacy `vf-<taskId>`. The
  * worktree lives outside the project tree, so the project's .gitignore is left
@@ -757,6 +758,7 @@ export async function provisionWorktree(
     await git(projectPath, [
       'worktree',
       'add',
+      '--no-track',
       '-b',
       branch,
       worktreePath,
@@ -771,22 +773,10 @@ export async function provisionWorktree(
     throw err
   }
 
-  const [pushed, ignoredEntries] = await Promise.all([
-    (async () => {
-      if (!info.hasRemote) return false
-      try {
-        await git(worktreePath, ['push', '-u', 'origin', branch])
-        return true
-      } catch {
-        return false
-      }
-    })(),
-    copySmallIgnoredFiles(projectPath, worktreePath),
-  ])
-
+  const ignoredEntries = await copySmallIgnoredFiles(projectPath, worktreePath)
   copyIgnoredDependenciesInBackground(projectPath, worktreePath, ignoredEntries)
 
-  return { branch, worktreePath, pushed, baseBranch: base }
+  return { branch, worktreePath, pushed: false, baseBranch: base }
 }
 
 /**
@@ -1245,7 +1235,7 @@ export async function commitAndPush(
 
   let pushed = false
   try {
-    await git(worktreePath, ['push'])
+    await git(worktreePath, ['push', '-u', 'origin', 'HEAD'])
     pushed = true
   } catch {
     pushed = false

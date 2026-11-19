@@ -1288,7 +1288,7 @@ export function TaskWorkspacePanel({
         ? '正在準備 master 的工作資料夾，完成後 agent 會自動啟動…'
         : task.noBranch
           ? `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立 detached worktree（不建分支）。完成後 agent 會自動啟動…`
-          : `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree，有 remote 時會一併推送到 origin。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
+          : `正在準備工作環境：從最新的 ${task.baseBranch ?? '基準分支'} 建立分支 ${task.branch} 與 worktree（只建在本地，不推送）。第一次開始執行需要幾秒鐘，完成後 agent 會自動啟動…`
   const artifactsDir = taskArtifactsDir(task.worktreePath, task.workspacePath)
   // Polled at the panel so the tab's changed-file count stays live while
   // another tab is showing — same reason the artifact list is polled here.

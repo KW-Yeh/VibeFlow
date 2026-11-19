@@ -38,3 +38,5 @@
 
 不需要資料遷移：「未佈建」= 卡片沒有 `worktreePath`。舊卡全都有 worktree，行為不變。
 新增選填欄位 `branchExplicit`（使用者是否親自指定分支名，決定佈建時撞名要失敗還是自動加後綴）與 `launchError`。
+
+> **2026-11-19 更新**：佈建不再 `push -u origin`。分支只建在本地（`worktree add --no-track`，不追蹤 `origin/<base>`），要開 PR 時由 agent / pr skill 以 `git push -u origin HEAD` 發佈；不需要分支的任務因此不會在遠端留下分支。`git:approve` 改為 `push -u origin HEAD`，讓從未發佈的分支也能推上去。

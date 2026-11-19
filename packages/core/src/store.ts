@@ -34,7 +34,7 @@ export interface Task {
   workspacePath?: string
   /** Base branch the worktree is (or will be) created from. */
   baseBranch?: string
-  /** Whether the branch was pushed upstream when it was provisioned. */
+  /** Whether the branch is on the remote: adopted from origin, or pushed by approve. */
   pushed?: boolean
   /** Agent CLI used for this task. Absent = 'claude' (pre-field tasks). */
   agentCli?: AgentCliId

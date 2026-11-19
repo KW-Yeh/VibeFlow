@@ -45,7 +45,7 @@ interface TaskTerminalProps {
   launchNonce?: number
   /**
    * Shown while a launch is still creating the card's branch and worktree,
-   * which takes a fetch and a push. Absent once the card has a worktree.
+   * which takes a fetch. Absent once the card has a worktree.
    */
   provisionNotice?: string | null
   /**

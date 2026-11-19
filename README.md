@@ -133,7 +133,7 @@ vibeflow task create …       # 不開 UI 直接建卡，選項見 vibeflow tas
 
 - 每張卡的 worktree 建在「工作站資料夾」底下：`<工作站>/<專案名>/<分支名>`。工作站預設是 `~/Desktop`，可在 **設定** 裡改。
 - 你的專案資料夾本身不會被切換分支，也不會多出 worktree。
-- 專案有 remote 時，新分支會在建卡時 push 到 origin；有設 CI 的話可能會被觸發。
+- 新分支只建在本地，VibeFlow 不會 push；要開 PR 時再由 agent 或你自己 push。
 - 看板資料存在 `~/Library/Application Support/vibeflow/`（macOS）、`%APPDATA%\vibeflow\`（Windows）或 `~/.config/vibeflow/`（Linux）。
 
 **同一台電腦只有一個 VibeFlow**

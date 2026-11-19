@@ -718,7 +718,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   // One provisioning per card at a time: the agent launch and a shell tab can
-  // both ask while `fetch` + `push` are still running.
+  // both ask while `fetch` is still running.
   const provisioning = new Map<string, Promise<Task>>()
 
   /**

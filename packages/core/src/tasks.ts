@@ -274,8 +274,8 @@ export type ProvisionedFields = Pick<Task, 'branch' | 'worktreePath' | 'baseBran
 >
 
 /**
- * Create the card's branch and worktree from the base as it is right now, and
- * push the branch when a remote exists. Returns the fields to write back: the
+ * Create the card's branch and worktree from the base as it is right now. The
+ * branch stays local until a PR publishes it. Returns the fields to write back: the
  * branch can differ from the card's when a generated name had to be
  * de-duplicated.
  */

@@ -142,7 +142,7 @@ test('ensureLocalExclude — adds runtime directories to .git/info/exclude (idem
 
 // --- provisionWorktree ---
 
-test('provisionWorktree — creates a flattened worktree and pushes', async () => {
+test('provisionWorktree — creates a flattened worktree and leaves the remote alone', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
     const res = await provision(projectPath, 'abc12345', 'main', 'feature/my-test')
@@ -152,11 +152,12 @@ test('provisionWorktree — creates a flattened worktree and pushes', async () =
       path.join(path.dirname(projectPath), 'workspace', 'feature-my-test')
     )
     assert.equal(res.baseBranch, 'main')
-    assert.equal(res.pushed, true)
+    assert.equal(res.pushed, false)
     assert.ok(await exists(res.worktreePath))
-    // The branch exists on origin after the push.
     const remoteBranches = await git(projectPath, 'branch', '-r')
-    assert.ok(remoteBranches.includes('origin/feature/my-test'))
+    assert.ok(!remoteBranches.includes('origin/feature/my-test'))
+    // No upstream either, so nothing reports the branch as in sync with origin/main.
+    await assert.rejects(git(res.worktreePath, 'rev-parse', '--abbrev-ref', '@{upstream}'))
   } finally {
     await cleanup()
   }
@@ -478,7 +479,7 @@ test('getWorktreeDiffFile — null for a path that is not part of the diff', asy
 
 // --- commitAndPush ---
 
-test('commitAndPush — stages, commits, and pushes the worktree branch', async () => {
+test('commitAndPush — stages, commits, and publishes the never-pushed branch', async () => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: true })
   try {
     const res = await provision(projectPath, 'abc12345', 'main', 'feature/finalize')
@@ -491,6 +492,7 @@ test('commitAndPush — stages, commits, and pushes the worktree branch', async 
 
     const log = await git(wt, 'log', '-1', '--pretty=%s')
     assert.equal(log, 'feat: ship it')
+    assert.equal(await git(wt, 'rev-parse', '--abbrev-ref', '@{upstream}'), 'origin/feature/finalize')
   } finally {
     await cleanup()
   }
