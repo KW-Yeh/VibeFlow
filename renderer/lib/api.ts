@@ -240,6 +240,8 @@ export async function createTask(payload: {
   baseBranch?: string | null
   role?: 'master'
   workDir?: string
+  /** A master's related projects: folders its agent may read. */
+  projects?: string[]
   masterId?: string
   branch?: string
   mode?: 'existing' | 'new'
@@ -268,6 +270,8 @@ export async function updateTask(payload: {
   baseBranch?: string | null
   branch?: string
   masterId?: string | null
+  /** A master's related projects; [] clears them. */
+  projects?: string[]
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

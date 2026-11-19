@@ -196,13 +196,20 @@ export function TaskId({ id, className }: { id: string; className?: string }) {
 export function slaveState(
   column: ColumnId,
   task: Task,
-  progress: TaskProgress | undefined
+  progress: TaskProgress | undefined,
+  /** The master's cards that are Done, for telling what a card still waits on. */
+  doneIds?: ReadonlySet<string>
 ): { dot: string; label: string; spinning?: boolean } {
   if (column === 'done') return { dot: 'bg-success', label: 'Done' }
   if (column === 'backlog') {
-    return task.launchError
-      ? { dot: 'bg-destructive', label: '開始失敗' }
-      : { dot: 'bg-muted-foreground/60', label: 'Backlog' }
+    if (task.launchError) return { dot: 'bg-destructive', label: '開始失敗' }
+    const waitingOn = (task.after ?? []).filter((id) => !doneIds?.has(id))
+    if (task.after?.length && doneIds) {
+      return waitingOn.length
+        ? { dot: 'bg-muted-foreground/60', label: `等待 ${waitingOn.join('、')}` }
+        : { dot: 'bg-primary', label: '可開始' }
+    }
+    return { dot: 'bg-muted-foreground/60', label: 'Backlog' }
   }
   if (progress?.activity.state === 'waiting' && progress.activity.waitingFor === 'permission') {
     return { dot: 'bg-warning', label: '等待權限' }
@@ -234,10 +241,12 @@ function SlaveList({
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
 }) {
+  const doneIds = new Set(slaves.filter((s) => s.column === 'done').map((s) => s.task.id))
   return (
     <ul className="ml-3 mt-1 space-y-0.5 border-l-2 border-master/40 pl-2" aria-label="Slave 卡片">
       {slaves.map(({ task, column }) => {
-        const state = slaveState(column, task, progress[task.id])
+        const state = slaveState(column, task, progress[task.id], doneIds)
+        const waiting = column === 'backlog' && Boolean(task.after?.length) && !task.launchError
         const todos = column === 'in_progress' ? todoCount(progress[task.id]) : null
         return (
           <li key={task.id}>
@@ -260,7 +269,9 @@ function SlaveList({
               >
                 {task.title}
               </span>
-              <span className="max-w-[40%] shrink-0 truncate text-muted-foreground">{projectLabel(task)}</span>
+              <span className="max-w-[40%] shrink-0 truncate text-muted-foreground">
+                {waiting ? state.label : projectLabel(task)}
+              </span>
               {todos && <span className="shrink-0 tabular-nums text-muted-foreground">{todos}</span>}
             </button>
           </li>

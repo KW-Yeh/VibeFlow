@@ -149,13 +149,17 @@ npm run vibeflow -- task update \
 ### Master cards and starting cards from the CLI
 
 A **master** card (`Task.role === 'master'`, spec: `docs/features/master-cards/`)
-belongs to no repo. It orchestrates: its agent dispatches other cards, starts
-them and follows them through the board CLI. A card dispatched by one carries
-`masterId`; a card has at most one master and masters do not nest.
+belongs to no repo. It plans and dispatches: its agent reads the task (and the
+master's related `projects`, read-only), writes the split into its `plan.md`
+artifact, waits for the person unless in auto mode, creates the cards, starts
+those that wait on nothing, and ends its turn. The person then works with each
+card directly; the master is not in the loop (spec: Phase 7). A card dispatched
+by one carries `masterId`; a card has at most one master and masters do not nest.
 
 ```sh
-npm run vibeflow -- task create --role master --title "…" --prompt "…" [--work-dir <dir>]
-npm run vibeflow -- task create --project <repo> --title "…" --prompt "…" --master <masterId>
+npm run vibeflow -- task create --role master --title "…" --prompt "…" [--work-dir <dir>] [--project <repo> …]
+npm run vibeflow -- task create --project <repo> --title "…" --prompt "…" --master <masterId> [--after <id> …]
+npm run vibeflow -- task update --task <id> --after <id|none>
 npm run vibeflow -- task start --task <id>          # Backlog → In Progress + agent starts
 npm run vibeflow -- task start --task <id> --new-session [--force]   # In Progress → carry on in a new agent session
 npm run vibeflow -- task list [--master <id>]       # column, running, todos x/y, activity, PR
@@ -184,13 +188,22 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   The client sends only the id and `force`, never the brief's text.
 - `task create` run from a master's shell (`VIBEFLOW_TASK_ID` is a master) puts the
   new card under it without `--master`.
-- **Masters and their cards talk through the host, not by polling.** `task send`
-  (`vibeflow:sendMessage`) types a `<vibeflow from="<id> <title>">` message into the
-  other card's agent; only a master and its own cards may (`NOT_RELATED` otherwise).
-  What a card cannot say itself — permission dialog, `launchError`, session ended, a
-  turn that ended without a `task send` to its master — `notifier.ts` tells the master,
-  once each, batched, held while the master is on a dialog or not running, dropped
-  once it leaves In Progress. Pending notes live in host memory only.
+- `--project` on a master (repeatable) stores `Task.projects`: folders its launch
+  gets as `--add-dir` (Claude and Codex) for planning. `--after` stores `Task.after`:
+  cards **of the same master** this one waits on (`INVALID_DEPENDENCY` for another
+  master, itself, an unknown id or a loop). When a card reaches Done through
+  `vibeflow:cleanupTask` (base already synced), `readyDependents` (`dependencies.ts`)
+  finds the master's Backlog cards whose waits are all Done and the host starts them
+  — only while the master is In Progress with auto mode on. Deleting a card drops
+  it from its siblings' `after`.
+- **Masters and their cards talk through the host, not by polling — and rarely.**
+  `task send` (`vibeflow:sendMessage`) types a `<vibeflow from="<id> <title>">` message
+  into the other card's agent; only a master and its own cards may (`NOT_RELATED`
+  otherwise). It is optional: cards do not report to their master. `notifier.ts` tells
+  a master only two things — a card's `launchError` (it breaks the plan's order) and
+  that all its cards are Done (time to sum up) — each once, batched, held while the
+  master is on a dialog or not running, dropped once it leaves In Progress. Pending
+  notes live in host memory only.
 - **Everything handed to an agent goes through `mailbox.ts`**, a person's keys
   (`pty:input`) included. A message must never be sent along with text the person
   typed but has not sent (a draft lasts until Enter / Ctrl+C / Ctrl+U).
@@ -219,11 +232,12 @@ not an injected prompt.
 
 A launch's prompt is the enabled Library prompt snippets and script listing, then
 the user's custom system prompt (Settings), plus the card's title and description.
-Two exceptions: a master card, whose
-system prompt also gets `masterSystemPrompt()` (`launch.ts`): how to dispatch, start
-and steer cards with the board CLI, following its auto mode; and a card with a
-`masterId`, which gets **only** `slaveSystemPrompt()` — not the user's custom
-system prompt nor Library snippets: who its master is and to report there with `task send`. A Jev scout
+Two additions: a master card's
+system prompt also gets `masterSystemPrompt()` (`launch.ts`): plan, write `plan.md`,
+wait for approval unless in auto mode, dispatch with `--after`, end the turn; and a
+card with a `masterId` also gets `slaveSystemPrompt()`: which master's plan it
+belongs to and what its sibling cards do (`MasterContext`, built by `service.ts`
+since `launch.ts` reads no store) — background, not orders, and no duty to report. A Jev scout
 analysis, when there is one, follows the card text in the first prompt. A continuation
 (`task start --new-session`) sends the brief instead, and never routes again. Enabled Library
 skills (`library.ts`, built-ins included) reach every card, a master's cards too: Claude

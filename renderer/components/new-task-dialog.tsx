@@ -54,6 +54,8 @@ export interface NewTaskDraft {
   createBranch?: boolean
   /** Master only: its own folder; absent = one VibeFlow creates. */
   workDir?: string
+  /** Master only: related projects its agent may read while planning. */
+  projects?: string[]
   /** Ordinary cards only: the master to dispatch it under. */
   masterId?: string
   agentCli: AgentCliId
@@ -115,6 +117,7 @@ export function NewTaskDialog({
 }: NewTaskDialogProps) {
   const [role, setRole] = useState<CardRole>('task')
   const [workDir, setWorkDir] = useState('')
+  const [relatedProjects, setRelatedProjects] = useState<string[]>([])
   const [masterId, setMasterId] = useState('')
   const [title, setTitle] = useState(initial?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
@@ -238,6 +241,15 @@ export function NewTaskDialog({
     if (path) setWorkDir(path)
   }
 
+  const addRelatedProject = (path: string) => {
+    setRelatedProjects((list) => (list.includes(path) ? list : [...list, path]))
+  }
+
+  const handleBrowseRelatedProject = async () => {
+    const path = await pickFolder()
+    if (path) addRelatedProject(path)
+  }
+
   const addAttachments = async (files: FileList | File[]) => {
     setAttachmentError(null)
     setIsReadingAttachments(true)
@@ -282,7 +294,14 @@ export function NewTaskDialog({
     }
     onSubmit(
       isMaster
-        ? { ...shared, role: 'master', baseBranch: null, branch: '', workDir: workDir.trim() || undefined }
+        ? {
+            ...shared,
+            role: 'master',
+            baseBranch: null,
+            branch: '',
+            workDir: workDir.trim() || undefined,
+            ...(relatedProjects.length ? { projects: relatedProjects } : {}),
+          }
         : {
             ...shared,
             projectPath: projectPath ?? undefined,
@@ -466,19 +485,48 @@ export function NewTaskDialog({
           </IconButton>
         </div>
       </div>
+      <div className="space-y-1 px-1">
+        <span className="text-sm text-muted-foreground">相關專案</span>
+        {relatedProjects.length > 0 && (
+          <ul className="space-y-1" aria-label="已選的相關專案">
+            {relatedProjects.map((dir) => (
+              <li key={dir} className="flex items-center gap-2 text-sm">
+                <span className="min-w-0 flex-1 truncate font-mono" title={dir}>{basename(dir)}</span>
+                <IconButton
+                  aria-label={`移除 ${basename(dir)}`}
+                  title="移除"
+                  onClick={() => setRelatedProjects((list) => list.filter((p) => p !== dir))}
+                  disabled={creating}
+                  className="rounded-md p-1"
+                >
+                  <X className="size-3.5" />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ProjectFolderPicker
+          compact
+          projectPath={null}
+          recentProjects={recentProjects.filter((p) => !relatedProjects.includes(p.path))}
+          disabled={creating}
+          onSelect={addRelatedProject}
+          onBrowse={() => void handleBrowseRelatedProject()}
+        />
+      </div>
       <PropertyNote>
         <details>
           <summary className="cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
             任何資料夾都可以，不建立分支或 worktree。
           </summary>
           <ul className="mt-1 list-disc space-y-1 pl-4">
-            <li>先判斷任務要不要拆卡，再為每個 repo 建立卡片，掛在這張 Master 底下。</li>
+            <li>先讀相關專案、寫出拆卡計畫（plan.md），再為每個 repo 建立卡片，掛在這張 Master 底下。</li>
             <li>
               {autoMode
-                ? 'Auto Mode 開啟：沒有前置依賴的卡片會直接開始執行。'
-                : 'Auto Mode 關閉：派出的卡片留在 Backlog，由你決定何時開始。'}
+                ? 'Auto Mode 開啟：不等確認直接派工；沒有前置的卡片立刻開始，其餘在前置卡 Done 後自動開始。'
+                : 'Auto Mode 關閉：先等你確認計畫才建卡，卡片留在 Backlog 由你決定何時開始。'}
             </li>
-            <li>追蹤進度並回報；不會自己合併 PR 或把卡片移到 Done。</li>
+            <li>派工後你直接跟各張卡協作；Master 只在卡片啟動失敗或全部完成時再回來整理結果。</li>
           </ul>
         </details>
       </PropertyNote>

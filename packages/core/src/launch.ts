@@ -284,38 +284,57 @@ const BOARD_CLI_SETUP = [
   '  VF() { if [ -n "$VIBEFLOW_CLI_LOADER" ]; then node --experimental-strip-types --import "$VIBEFLOW_CLI_LOADER" "$VIBEFLOW_CLI" "$@"; else node "$VIBEFLOW_CLI" "$@"; fi; }',
 ]
 
+/** The plan a master's card belongs to, as its launch tells it. */
+export interface MasterContext {
+  master: { id: string; title: string }
+  /** The master's other cards, for knowing who does what — never this card itself. */
+  siblings: Array<{ id: string; title: string; summary?: string }>
+  /** Cards this one waited on. */
+  after?: string[]
+}
+
 /**
- * What a card dispatched by a master is told: the master, not the user, is who
- * it answers to, so it has to report there — otherwise the master only learns
- * that a turn ended, never what came of it.
+ * What a card dispatched by a master is told. The person works with it
+ * directly, so it is background — which plan it belongs to and who does the
+ * rest — never a chain of command or a duty to report.
  */
-export function slaveSystemPrompt(opts: { canWrite: boolean }): string {
+export function slaveSystemPrompt(opts: { canWrite: boolean; context?: MasterContext }): string {
+  const master = opts.context?.master
   const lines = [
-    '這張卡片由 VibeFlow 的 Master agent 派工並統籌（master 的 id 在 $VIBEFLOW_MASTER_ID）；使用者主要透過 master 跟你協作。',
-    '你收到的 <vibeflow from="…"> 訊息來自 master 或 VibeFlow 本身，照其中的指示做。',
+    master
+      ? `這張卡片是 VibeFlow Master 卡 ${master.id}「${master.title}」計畫中的一張（master 的 id 在 $VIBEFLOW_MASTER_ID）。`
+      : '這張卡片是 VibeFlow Master 卡計畫中的一張（master 的 id 在 $VIBEFLOW_MASTER_ID）。',
+    '使用者會直接在這張卡跟你協作，照使用者的指示做。',
   ]
-  if (!opts.canWrite) {
-    lines.push('這次啟動無法使用 board CLI，你不能主動回報；完成或卡住時直接在 terminal 寫清楚結果。')
-    return lines.join('\n')
+  const siblings = opts.context?.siblings ?? []
+  if (siblings.length) {
+    lines.push('', '同一個計畫的其他卡片（讓你知道分工與介面，不是你的工作）：')
+    for (const s of siblings) lines.push(`- ${s.id}「${s.title}」${s.summary ? `：${s.summary}` : ''}`)
   }
-  lines.push(
-    '',
-    ...BOARD_CLI_SETUP,
-    '',
-    '回報：任務完成、需要 master 決定、或卡住無法繼續時，立刻用這個指令回報，然後停下來等下一步指示：',
-    '  VF task send --store-path "$VIBEFLOW_STORE_DIR" --task "$VIBEFLOW_MASTER_ID" --text "<回報內容>"',
-    '回報內容要自包含：做了什麼、怎麼驗證、結果；驗收類工作逐項列出通過與未通過的項目及重現步驟；開了 PR 就附上連結。',
-    '沒有 master 要求就不要開 PR。'
-  )
+  if (opts.context?.after?.length) {
+    lines.push('', `這張卡排在這些卡之後：${opts.context.after.join('、')}。`)
+  }
+  lines.push('', '你收到的 <vibeflow from="…"> 訊息來自 master 或 VibeFlow 本身。')
+  if (opts.canWrite) {
+    lines.push(
+      '只有真的需要 master 決定才能繼續時才問它，做完工作不必回報：',
+      ...BOARD_CLI_SETUP,
+      '  VF task send --store-path "$VIBEFLOW_STORE_DIR" --task "$VIBEFLOW_MASTER_ID" --text "<問題>"'
+    )
+  }
   return lines.join('\n')
 }
 
-export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean }): string {
+export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean; projects?: string[] }): string {
   const lines = [
     '你是 VibeFlow 的 Master agent，不屬於任何 repo，工作目錄只是你的筆記區。',
-    '你的工作是把使用者的任務拆解、派給 slave 卡片執行、追蹤到完成，而不是自己改程式碼。',
-    '',
+    '你的工作是理解使用者的任務、拆解成卡片、派工並排好先後，而不是自己改程式碼。',
+    '派工之後使用者會直接跟每張卡協作：你不監工、不轉傳、不追蹤進度。',
   ]
+  if (opts.projects?.length) {
+    lines.push('', '相關專案（可以直接唯讀查看）：', ...opts.projects.map((dir) => `- ${dir}`))
+  }
+  lines.push('')
   if (!opts.canWrite) {
     lines.push(
       '這次啟動無法使用 board CLI（找不到 VIBEFLOW_CLI），你不能建立或啟動卡片。',
@@ -326,25 +345,22 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean 
   lines.push(
     ...BOARD_CLI_SETUP,
     '',
-    '1. 判斷：一張卡做得完就只建一張；涉及多個 repo 或可平行的獨立工作才拆成多張。每張只動一個 repo，各自能獨立驗收。',
-    '2. 派工：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容>',
-    '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——slave 看不到你的對話。',
+    '1. 規劃：先唯讀了解需求與相關 repo，不改任何程式碼。一張卡做得完就只建一張；涉及多個 repo 或可平行的獨立工作才拆成多張。每張只動一個 repo，各自能獨立驗收。',
+    '   彼此有程式碼相依的工作盡量放在同一張；必須分開時用 --after 排先後，並提醒使用者前置卡要先 merge，後面的卡才會從含它的 base 開始。',
+    '2. 計畫：把拆解寫進 "$VIBEFLOW_ARTIFACTS_DIR/plan.md"——每張卡的標題、專案、要做什麼、相依、卡與卡之間的介面約定——並在 terminal 摘要。',
+    opts.autoMode
+      ? '3. 確認：auto mode 開著，不必等使用者確認，寫完計畫就建卡。'
+      : '3. 確認：寫完計畫就停下來，等使用者同意或修改；使用者同意之前不要建任何卡。',
+    '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--after <前置卡 id>]',
+    '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——卡片看不到你的對話。',
     '   標題要短、彼此一眼分得出來：以這張卡負責的部分開頭（例如「後端：…」「驗收：…」），不要讓多張卡共用同一段開頭。',
     '   預設不要加 --model / --effort：沒指定時 Jev 會依任務複雜度挑模型與 effort；只有任務明確需要特定模型或 effort 時才指定。需要時可加 --agent / --base-branch。',
-  )
-  lines.push(
     opts.autoMode
-      ? '3. 啟動：沒有前置依賴的卡直接 VF task start --store-path "$VIBEFLOW_STORE_DIR" --task <id>；有依賴的先留在 Backlog，前置卡完成後再啟動。'
-      : '3. 啟動：不要自己啟動卡片。列出你建了哪些卡、建議的啟動順序，等使用者在 VibeFlow 按開始。'
-  )
-  lines.push(
-    '4. 回報會自己送來：slave 做完、要你決定或卡住時會用 task send 回報；slave 卡在權限確認、啟動失敗、session 結束、或回合結束卻沒回報時，VibeFlow 也會通知你。',
-    '   這些訊息以 <vibeflow from="…"> 包住、直接出現在你的輸入裡。不要輪詢 task list；要看細節時才用 VF task show --store-path "$VIBEFLOW_STORE_DIR" --task <id>。',
-    '5. 調度：用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對自己的卡下指示；卡與卡之間不能直接傳話，一律經過你。',
-    '   需要獨立驗收時另開一張驗收卡。驗收回報問題時，把具體問題與重現步驟整理好轉給負責開發的卡修正，修完再請驗收卡複驗，直到通過。',
-    '   task send 回 via: "queued" 代表訊息已排進對方的收件匣，對方下一次動作或閒置時就會看到，不必重送；task show 的 inbox 是對方還沒讀到的訊息數；回 TARGET_BLOCKED 代表對方卡在權限確認，請使用者到那張卡處理。',
-    '6. PR：驗收通過後，交代開發卡用 pr skill 開 PR（環境裡沒有這個 skill 就用 gh pr create），並回報 PR 連結給你。',
-    '7. 使用者主要只跟你溝通：主動向使用者回報整體進度與需要使用者決定的事。你不會把卡片移到 Done、不會合併 PR；全部完成後整理每張卡的結果與 PR 連結，交給使用者做最後確認。',
+      ? '5. 啟動：沒有 --after 的卡直接 VF task start --store-path "$VIBEFLOW_STORE_DIR" --task <id>；有 --after 的卡不用管，前置卡全部 Done 後 VibeFlow 會自動啟動它。'
+      : '5. 啟動：不要自己啟動卡片。列出你建了哪些卡與建議的啟動順序，等使用者在 VibeFlow 按開始。',
+    '6. 結束：派工完就結束這一回合，列出每張卡與相依。不要輪詢 task list，也不要等卡片回報。',
+    '   VibeFlow 只會在兩種情況再叫你：某張卡啟動失敗，或你的卡全部都已 Done。全部 Done 時，用 VF task list --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" 與 VF task show 整理每張卡的結果與 PR 連結交給使用者。',
+    '   使用者要你轉達時才用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對卡片下指示。你不會把卡片移到 Done、不會合併 PR。',
     '   跟使用者提到任何一張卡時，一律寫成 <id>「<標題>」——卡片上看得到 id，使用者靠它對上是哪一張。'
   )
   return lines.join('\n')
@@ -427,6 +443,8 @@ export interface LaunchOptions {
   library?: LibraryLaunchInfo
   /** Jev's scout analysis for this run; added to the first prompt only. */
   preface?: LaunchPreface
+  /** For a master's card: the plan it belongs to. */
+  masterContext?: MasterContext
   /**
    * The first message of a session that carries on a card another session
    * worked on (continuation.ts). It stands in for the card text, which it
@@ -462,18 +480,20 @@ function assembleCommand(
   opts?: LaunchOptions,
   worktreePath?: string,
   sessionId?: string,
-  workspacePath?: string
+  workspacePath?: string,
+  readDirs: readonly string[] = []
 ): string {
   let cmd: string
+  const readDirFlags = readDirs.map((dir) => `--add-dir ${shellQuote(toShellPath(dir))}`)
   if (agent === 'claude') {
     // Inline --settings: dark theme always, sub-agent recording hooks only
     // when the worktree path is known (session-only, never touches the repo).
     const settings = ` --settings ${shellQuote(buildClaudeSettings(worktreePath))}`
     // Grant access to the workspace folder so the agent can write artifacts
     // outside the worktree.
-    const addDir = workspacePath
+    const addDir = (workspacePath
       ? ` --add-dir ${shellQuote(toShellPath(workspacePath))}`
-      : ''
+      : '') + readDirFlags.map((flag) => ` ${flag}`).join('')
     const modelFlag = model ? ` --model ${model}` : ''
     const effortFlag = effort && effort !== 'auto' ? ` --effort ${effort}` : ''
     // Library skills ride in as a session-only plugin; --add-dir is what makes
@@ -505,6 +525,7 @@ function assembleCommand(
       codexAutoFlag(opts?.autoMode).trim(),
       codexEffortFlag.trim(),
       model ? `--model ${model}` : '',
+      ...readDirFlags,
       combined ? shellQuote(combined) : '',
     ].filter(Boolean)
     // Codex discovers skills only from $CODEX_HOME/skills, so the library is
@@ -573,6 +594,7 @@ export function buildAgentCommand(
     | 'baseBranch'
     | 'role'
     | 'masterId'
+    | 'projects'
   >,
   systemPrompt?: string | null,
   opts?: LaunchOptions,
@@ -586,15 +608,11 @@ export function buildAgentCommand(
     .join('\n\n')
   const canWrite = Boolean(opts?.boardCli?.cliPath)
   const role = task.role === 'master'
-    ? masterSystemPrompt({ canWrite, autoMode: opts?.autoMode === true })
+    ? masterSystemPrompt({ canWrite, autoMode: opts?.autoMode === true, projects: task.projects })
     : task.masterId
-      ? slaveSystemPrompt({ canWrite })
+      ? slaveSystemPrompt({ canWrite, context: opts?.masterContext })
       : null
-  // A master's card answers to the master alone, so the user's custom prompt
-  // and Library snippets (written for cards the user drives) are left out.
-  const sys = task.masterId && task.role !== 'master'
-    ? role ?? ''
-    : role ? [custom, role].filter(Boolean).join('\n\n') : custom
+  const sys = [custom, role].filter(Boolean).join('\n\n')
   const includeTaskPrompt = opts?.includeTaskPrompt !== false
   // Resuming restores the existing conversation verbatim. Do not submit a new
   // user turn automatically; the user can decide what to ask next.
@@ -617,7 +635,8 @@ export function buildAgentCommand(
       opts,
       task.worktreePath,
       sessionId,
-      workspacePath
+      workspacePath,
+      task.role === 'master' ? task.projects ?? [] : []
     )
   )
 }

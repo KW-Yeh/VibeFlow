@@ -362,7 +362,10 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
             const detail = t.role === 'master'
               ? `Master · ${COLUMNS.flatMap((c) => board[c]).filter((x) => x.masterId === t.id).length} 個 slave`
               : `${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
-            const summary = col === 'backlog' ? '' : progressSummary(col === 'in_progress' ? progress[t.id] : null, t.usage)
+            const waitingOn = col === 'backlog' ? (t.after ?? []).filter((id) => !board.done.some((d) => d.id === id)) : []
+            const summary = col === 'backlog'
+              ? (waitingOn.length ? `等待 ${waitingOn.join('、')}` : '')
+              : progressSummary(col === 'in_progress' ? progress[t.id] : null, t.usage)
             return h(
               Box,
               { key: t.id, flexDirection: 'column' },

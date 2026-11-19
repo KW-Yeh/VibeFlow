@@ -72,7 +72,7 @@ import {
   getDoneCommitFile,
   isCommitSha,
 } from './commit-diff'
-import { assertMasterRef, createTaskFromInput, provisionTaskWorktree } from './tasks'
+import { assertMasterRef, createTaskFromInput, provisionTaskWorktree, resolveProjects } from './tasks'
 import type { TitleTranslator } from './branch-name'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
@@ -97,12 +97,13 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executorSessionId, taskAgent, taskModel } from './launch'
+import { buildAgentCommand, executorSessionId, taskAgent, taskModel, type MasterContext } from './launch'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
 import { inboxDir, inboxReady, pendingMessages, prepareInbox } from './inbox'
 import { createNotifier } from './notifier'
+import { readyDependents } from './dependencies'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
 import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
@@ -151,6 +152,10 @@ export interface CreateTaskPayload {
   workDir?: string
   /** Dispatch the new card under this master. */
   masterId?: string
+  /** Cards of the same master this one waits on. */
+  after?: string[]
+  /** A master's related projects. */
+  projects?: string[]
   /** User-chosen branch name; blank/absent = derive one from the card. */
   branch?: string
   mode?: 'existing' | 'new'
@@ -179,6 +184,8 @@ export interface UpdateTaskPayload {
   branch?: string
   /** Master to belong to; null leaves its master; absent keeps it. */
   masterId?: string | null
+  /** A master's related projects; absent keeps them, [] clears them. */
+  projects?: string[]
 }
 
 /** One card as a master (or the CLI) sees it: where it is and how it is doing. */
@@ -188,6 +195,10 @@ export interface TaskSummary {
   column: ColumnId
   role?: 'master'
   masterId?: string
+  /** Cards of the same master it waits on. */
+  after?: string[]
+  /** A master's related projects. */
+  projects?: string[]
   projectName?: string
   branch?: string
   /** Model and effort the card runs on: its own, or Jev's choice for the current run. Absent = CLI default. */
@@ -250,6 +261,11 @@ function outcomeCommit(task: Task, value: unknown): string {
 
 function str(value: unknown, name: string): string {
   if (typeof value !== 'string') invalid(`${name} must be a string`)
+  return value
+}
+
+function strList(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) invalid(`${name} must be a list of strings`)
   return value
 }
 
@@ -371,7 +387,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     codexHomes: () => [path.join(home, '.codex'), ...(libraryCodexHome ? [libraryCodexHome] : [])],
     onUpdate: (taskId, value) => {
       bus.emit('progress:update', { taskId, progress: value })
-      notifier.activity(taskId, value.activity)
       notifier.retry(taskId)
       mailbox.poke(taskId)
     },
@@ -694,9 +709,51 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         autoMode: task.autoMode ?? settings.autoMode,
         preface,
         continuation,
+        masterContext: masterContextOf(task),
       },
       task.workspacePath
     )
+  }
+
+  /**
+   * A master's card reached Done and its base was synced: cards that waited on
+   * it may start now (only for a master in auto mode, the one that may start
+   * cards without the person), and a master whose cards are all Done is told.
+   */
+  async function carryOnAfterDone(taskId: string): Promise<void> {
+    const task = findTask(taskId)
+    if (!task?.masterId || columnOf(task.id) !== 'done') return
+    const master = findTask(task.masterId)
+    if (!master) return
+    const board = getState().board
+    const cards = (Object.values(board) as Task[][]).flat().filter((t) => t.masterId === master.id)
+    if (cards.every((t) => columnOf(t.id) === 'done')) {
+      notifier.allDone(master.id, cards.map((t) => t.id))
+      return
+    }
+    if (columnOf(master.id) !== 'in_progress' || !(master.autoMode ?? getSettings().autoMode)) return
+    for (const next of readyDependents(board, master.id)) {
+      try {
+        await handlers['vibeflow:startTask'](next.id)
+      } catch (err) {
+        // Nobody is waiting on this call: the card goes back to Backlog with
+        // the reason, and its master hears of it, unless provisioning did so.
+        if (!findTask(next.id)?.launchError) returnUnstarted(next.id, (err as Error).message)
+      }
+    }
+  }
+
+  function masterContextOf(task: Task): MasterContext | undefined {
+    const master = task.masterId ? findTask(task.masterId) : undefined
+    if (!master) return undefined
+    const siblings = (Object.values(getState().board) as Task[][]).flat()
+      .filter((t) => t.masterId === master.id && t.id !== task.id)
+      .map((t) => {
+        const line = t.description?.split('\n').map((l) => l.trim()).find(Boolean)
+        const summary = line && line.length > 80 ? `${line.slice(0, 80)}…` : line
+        return { id: t.id, title: t.title, ...(summary ? { summary } : {}) }
+      })
+    return { master: { id: master.id, title: master.title }, siblings, ...(task.after?.length ? { after: task.after } : {}) }
   }
 
   function claudeSessionFile(cwd: string, sessionId: string): string {
@@ -808,7 +865,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       // Session ended (natural exit included), so stop its watcher.
       onExit: () => {
         unwatchSubAgents(key)
-        if (key === task.id) notifier.exited(task.id)
       },
     })
     terminalDirectories.set(key, cwd)
@@ -861,6 +917,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           column,
           ...(task.role ? { role: task.role } : {}),
           ...(task.masterId ? { masterId: task.masterId } : {}),
+          ...(task.after?.length ? { after: task.after } : {}),
+          ...(task.projects?.length ? { projects: task.projects } : {}),
           ...(task.projectName ? { projectName: task.projectName } : {}),
           ...(task.branch ? { branch: task.branch } : {}),
           ...launchChoice(task),
@@ -1008,6 +1066,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       }
       if (p.workDir !== undefined) str(p.workDir, 'workDir')
       if (p.masterId !== undefined) str(p.masterId, 'masterId')
+      if (p.after !== undefined) strList(p.after, 'after')
+      if (p.projects !== undefined) strList(p.projects, 'projects')
       str(p.title ?? '', 'title')
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       if (p.agentCli !== undefined && !AGENT_IDS.includes(p.agentCli)) invalid('unknown agent')
@@ -1019,6 +1079,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         role: p.role,
         workDir: p.workDir,
         masterId: p.masterId,
+        after: p.after,
+        projects: p.projects,
         title: p.title,
         description: p.description,
         baseBranch: p.baseBranch,
@@ -1108,7 +1170,14 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           if (isMasterTask(existing)) invalid('a master cannot belong to another master')
           assertMasterRef(getState().board, str(p.masterId, 'masterId'), existing.id)
         }
-        masterPatch = { masterId: p.masterId || undefined }
+        const masterId = p.masterId || undefined
+        // Waits only hold among one master's cards.
+        masterPatch = masterId === existing.masterId ? {} : { masterId, after: undefined }
+      }
+      if (p.projects !== undefined) {
+        if (!isMasterTask(existing)) invalid('only a master has related projects')
+        const projects = await resolveProjects(strList(p.projects, 'projects'))
+        masterPatch = { ...masterPatch, projects: projects.length ? projects : undefined }
       }
       let gitPatch: Partial<Task> = {}
       const nextProject = isMasterTask(existing) ? undefined : p.projectPath || existing.projectPath
@@ -1232,8 +1301,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (!text) invalid('text must not be empty')
       if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
       if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
-      // Counted when asked, not when typed: the turn may end while this waits for quiet.
-      if (isMasterTask(to)) notifier.reported(from.id)
       await attachAgent(to.id)
       const { queuedMs, via } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
       return { delivered: true, queuedMs, via }
@@ -1592,6 +1659,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         ...(outcome ? { outcome } : {}),
         ...(usage ? { usage } : {}),
       })
+      await carryOnAfterDone(task.id)
       return getState()
     },
 

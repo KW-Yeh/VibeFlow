@@ -74,3 +74,22 @@ test('task create --no-branch records a branchless card and refuses --branch wit
   assert.equal((await task(args)).error.code, 'PROJECT_NOT_GIT_REPO')
   assert.equal((await task([...args, '--no-branch', '--branch', 'x'])).error.code, 'INVALID_ARGUMENT')
 })
+
+test('a master names related projects and its cards wait on each other with --after', async (t) => {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
+  const store = ['--store-path', storeDir]
+  const master = (await task(['create', '--role', 'master', '--title', 'M', '--prompt', 'p', '--project', projectPath, '--project', projectPath, ...store])).task
+  assert.deepEqual(master.projects, [projectPath])
+  const card = (title, extra = []) =>
+    task(['create', '--project', projectPath, '--title', title, '--prompt', 'p', '--master', master.id, ...store, ...extra])
+  const api = (await card('API')).task
+  const ui = (await card('UI', ['--after', api.id])).task
+  assert.deepEqual(ui.after, [api.id])
+  assert.equal((await card('Loop', ['--after', 'nope1234'])).error.code, 'INVALID_DEPENDENCY')
+  assert.equal((await task(['update', '--task', api.id, '--after', ui.id, ...store])).error.code, 'INVALID_DEPENDENCY', 'a loop')
+  assert.deepEqual((await task(['update', '--task', ui.id, '--after', 'none', ...store])).task.after, [])
+  assert.equal((await task(['create', '--project', projectPath, '--project', projectPath, '--title', 'X', '--prompt', 'p', ...store])).error.code, 'INVALID_ARGUMENT')
+  assert.equal((await task(['create', '--role', 'master', '--title', 'X', '--prompt', 'p', '--after', api.id, ...store])).error.code, 'INVALID_ARGUMENT')
+})

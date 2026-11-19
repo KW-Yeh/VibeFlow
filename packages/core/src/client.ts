@@ -158,6 +158,8 @@ export function createBridge(t: BridgeTransport) {
     baseBranch?: string | null
     role?: 'master'
     workDir?: string
+    /** A master's related projects: folders its agent may read. */
+    projects?: string[]
     masterId?: string
     branch?: string
     mode?: 'existing' | 'new'
@@ -185,6 +187,8 @@ export function createBridge(t: BridgeTransport) {
     branch?: string
     /** null leaves its master; absent keeps it. */
     masterId?: string | null
+    /** A master's related projects; [] clears them. */
+    projects?: string[]
   }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:updateTask', payload),
   /** Move a Backlog card to In Progress and start its agent on the host. */

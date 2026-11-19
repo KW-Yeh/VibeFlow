@@ -87,11 +87,11 @@ test('buildAgentCommand — Codex gets the Library CODEX_HOME and its prompts', 
   assert.ok(cmd.includes('LIBRARY_MARKER'))
 })
 
-test('buildAgentCommand — a master\'s card gets Library skills but not its prompts', () => {
+test('buildAgentCommand — a master\'s card gets Library skills and prompts like any card', () => {
   const cmd = buildAgentCommand({ ...TASK, masterId: 'm1234567' }, 'CUSTOM_MARKER', { library: LIBRARY }, '/workspace/project')
   assert.ok(cmd.includes('--plugin-dir'))
-  assert.ok(!cmd.includes('LIBRARY_MARKER'))
-  assert.ok(!cmd.includes('CUSTOM_MARKER'))
+  assert.ok(cmd.includes('LIBRARY_MARKER'))
+  assert.ok(cmd.includes('CUSTOM_MARKER'))
 })
 
 test('buildAgentCommand — Codex receives only card content without a custom prompt', () => {
@@ -221,7 +221,8 @@ test('buildAgentCommand — a continuation sends its brief instead of the card t
 test('buildAgentCommand — a continuation keeps the role prompts', () => {
   const brief = 'brief'
   const slave = buildAgentCommand({ ...TASK, masterId: 'mmmm1111' }, 'custom prompt', { continuation: brief, boardCli: undefined })
-  assert.ok(!slave.includes('custom prompt'), 'a master\'s card still ignores the user prompt')
+  assert.ok(slave.includes('custom prompt'), 'a master\'s card keeps the user prompt')
+  assert.ok(slave.includes('VIBEFLOW_MASTER_ID'), 'and its plan background')
   assert.ok(slave.includes('--append-system-prompt'), slave)
   const master = buildAgentCommand({ ...TASK, role: 'master' }, '', { continuation: brief })
   assert.ok(master.includes('Master agent'), master)

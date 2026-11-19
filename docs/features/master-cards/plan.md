@@ -85,3 +85,118 @@
 
 **已知限制**：TUI 用 tmux attach 直接打字時繞過 mailbox，草稿判斷看不到 — 有外部 tmux client 時一律不打字，
 信只經 hook 抵達。使用者留著草稿不送、agent 又閒置時，信會一直在 inbox 等到使用者送出。
+
+## Phase 7 — Master 改為「規劃＋派工」
+
+> 對應 spec〈Phase 7〉（已確認 2026-11-19，決策 D7–D11）。狀態：**已確認 2026-11-19（使用者：開始實作）**。
+> 確認後依 7a → 7f 實作，每階段結束跑受影響的檢查；commit 另外取得同意。
+
+### 現況（調查結果）
+
+- 提示詞：`packages/core/src/launch.ts` 的 `slaveSystemPrompt()`（292）、`masterSystemPrompt()`（313）；
+  `buildAgentCommand()` 對有 `masterId` 的卡**只**送 `slaveSystemPrompt`，丟掉 Library 與 custom prompt。
+- 可讀目錄：`assembleCommand()` 已經用 `--add-dir` 給 workspace 與 Library；Codex CLI 也支援 `--add-dir <DIR>`
+  （本機 `codex --help` 確認），目前沒用到。
+- 通知：`notifier.ts` 的 `NoteKind = 'blocked' | 'launch_failed' | 'exited' | 'turn_unreported'`；
+  在 `service.ts` 408 建立，`activity`（374）、`launchFailed`（763）、`exited`（811）、`reported`（1236）餵資料。
+  Done 沒有任何通知。
+- 完成流程：renderer 先 `vibeflow:setBoard` 把卡移到 done，再呼叫 `vibeflow:cleanupTask`（1569），
+  它移除 worktree 並 `syncBaseBranch`。所以**相依卡應在 cleanupTask 之後啟動**，provision 時 base 已含前置卡的成果
+  （前置卡有 merge 時）。
+- 啟動：`vibeflow:startTask`（1187）只收 Backlog 卡，可直接重用。
+- 歸屬驗證：`tasks.ts` 的 `assertMasterRef()`（82），create（129）／update（374）都會呼叫。
+- 使用端：`slaveSystemPrompt`／`masterSystemPrompt`／`NoteKind` 只被 `launch.ts`、`notifier.ts`、`test/master-cards.test.mjs` 使用。
+
+### 7a — 資料形狀與驗證（core）
+
+- `store.ts` `Task`：加 `after?: string[]`、`projects?: string[]`。Migration：可選欄位、缺省 = 舊行為，不轉換舊 store。
+- `tasks.ts`：
+  - 新增 `assertDependencies(board, task, after)`：每個 id 存在、與這張卡同一個 `masterId`、不是自己、不形成循環；
+    錯誤碼 `INVALID_DEPENDENCY`。沒有 `masterId` 的卡給 `after` 也拒絕。
+  - `projects`：只允許 master；每個路徑必須是既有資料夾（不要求 git），存絕對路徑、去重。
+  - `createTaskFromInput`／`updateTaskFromInput` 接受兩個欄位；`update` 的 `after: []` 代表清除；
+    改 `masterId` 時清掉不再成立的 `after`。
+- `service.ts`：`vibeflow:createTask`／`updateTask` 驗證新欄位（`str` 陣列）；`deleteTask` 從兄弟卡的 `after` 移除被刪的 id；
+  `TaskSummary` 多回傳 `after`、master 多回傳 `projects`。
+- 測試：`test/tasks-create.test.mjs`、`test/tasks-update.test.mjs`、`test/master-cards.test.mjs` 補循環、跨 master、自己、刪除清理、`projects` 驗證。
+
+### 7b — 提示詞與啟動指令（core）
+
+- `slaveSystemPrompt({ canWrite, master, siblings })`：改成背景段——屬於哪張 master（id、標題）、
+  兄弟卡清單（id、標題、一句話職責＝描述的第一行，截斷）、自己的 `after`。移除「照 master 指示」「完成要回報」「不開 PR」。
+  `canWrite` 時只附一行：真的需要問 master 才用 `task send`。
+- `buildAgentCommand()`：有 `masterId` 的卡改為 `[custom, slaveContext]`，與一般卡一致。兄弟卡資料由 service 組好、
+  經 `LaunchOptions.masterContext` 傳入（launch.ts 是 types-only，不能自己讀 store）。
+- `masterSystemPrompt()`：改寫成 規劃 → 寫 `$VIBEFLOW_ARTIFACTS_DIR/plan.md` → （auto mode 關）等使用者同意 → 建卡（`--after`）
+  → 啟動沒有前置的卡（只在 auto mode 開）→ 結束回合。刪掉 4–6 步的回報、轉傳、驗收迴圈；保留「提到卡片寫成 `<id>「<標題>」`」
+  與「全部完成時會收到通知，整理結果與 PR 連結」。
+- 可讀目錄：master 的 `projects` 每個加一個 `--add-dir`（Claude 與 Codex 都加；Codex 放在 prompt 之前）。
+- 測試：`test/master-cards.test.mjs` 的提示詞斷言改寫；新增 slave 指令含 custom prompt＋Library、master 指令含每個 `projects` 的 `--add-dir`。
+
+### 7c — 通知與自動接力（core）
+
+- `notifier.ts`：`NoteKind` 改為 `'launch_failed' | 'all_done'`；拿掉 activity 裡的 `blocked`／`turn_unreported` 追蹤與 `exited`、`reported`
+  （service 端呼叫一併拿掉）。新增 `allDone(masterId)`。
+- 新檔 `dependencies.ts`（純函式）：`readyDependents(board, doneId)` 回傳同一 master 底下、在 Backlog、`after` 全部在 done 欄的卡。
+- `service.ts` `vibeflow:cleanupTask` 結尾：卡有 `masterId` 時——
+  1. master 在 In Progress 且 `autoMode` 開 → 對每張 `readyDependents` 呼叫 `startTask`（逐張，失敗走既有 `launchError` + 通知）。
+  2. master 底下全部卡都在 done → `notifier.allDone(masterId)`。
+- 測試：`test/notifier.test.mjs` 改寫；`test/service.test.mjs` 以 fake backend 驗證 cleanup 後相依卡被啟動、auto mode 關時不啟動、
+  全部 Done 送一則通知、權限等待不再通知。
+
+### 7d — CLI
+
+- `packages/cli/src/task-command.ts`：`create`／`update` 加 `--after <id>`（可重複；update 用 `--after none` 清除）；
+  `--role master` 時 `--project` 改為可重複、代表相關專案（現在是報錯）；`task list` 文字輸出加「等待 <id>」，`--json` 帶 `after`。`--help` 同步。
+- 測試：`test/task-cli.test.mjs` 補參數解析與錯誤碼。
+
+### 7e — Web UI / TUI
+
+- `renderer/components/new-task-dialog.tsx`：Master 模式左欄（工作目錄下方）加「相關專案」多選，沿用 `project-folder-picker.tsx`；
+  Slave 模式不變（`after` 由 master 建，UI 只顯示不編輯——要編輯另提）。
+- `renderer/components/kanban-board.tsx`：master 底下的 slave 列，Backlog 且有未完成前置時顯示「等待 <id>」，前置全完成但沒自動啟動時顯示「可開始」。
+- master 工作區：Artifacts 有 `plan.md` 時在 slave 表格上方給入口（沿用 Artifacts tab 的開檔）。
+- `renderer/lib/types.ts` 無需改（re-export）；`client.ts`／`api.ts` 跟著 payload 型別。
+- TUI（`packages/tui/src/index.ts`）：slave 縮排列後面加「等待 <id>」；`task-form.ts` 不加 projects（以 Web UI 為準，spec 第 8 條）。
+
+### 7f — 文件與檢查所有使用端
+
+- AGENTS.md：「What a launch sends」（slave 不再只拿 `slaveSystemPrompt`）、「Master cards…」（`--after`、`--project` for master、
+  通知只剩 launch_failed／all_done）、CLI task create 段。
+- `packages/core/IPC_API_MAP.md`：`createTask`／`updateTask` payload、`task:summaries` 回傳。
+- spec D2 段落加一行指向 Phase 7。
+- 使用端掃描：`grep -rn "NoteKind\|slaveSystemPrompt\|masterSystemPrompt\|TaskSummary\|turn_unreported"` 全部對過。
+
+### 方案取捨
+
+- **在 `cleanupTask` 接力而不是 `setBoard`**：setBoard 只看得到欄位變化、不知道 base 何時同步；cleanup 結尾 base 已 sync，相依卡從含前置成果的 base 開分支。代價是只有走正式完成流程（UI 完成、master 完成對話框）的卡會觸發——直接改 store 檔移欄不會。可接受。
+- **兄弟卡資料由 service 傳入**：維持 `launch.ts` types-only 的邊界（`test/core-boundary`）。
+- **保留 `task send`／inbox**：成本是程式碼留著；好處是使用者仍可請 master 轉達，舊 session 不壞。
+
+### 風險
+
+- 正在跑的舊 master/slave session 用的是舊提示詞，會繼續 `task send` 回報；7c 拿掉 `reported` 後仍能收訊，只是不再有 `turn_unreported`。release note 說明。
+- 自動接力會在無人看管時啟動 agent：只在 master auto mode 開時發生，與 D3 一致。
+- 前置卡沒 merge 就 Done（只開 PR）時，相依卡的 base 不含前置成果；spec 已列為不包含（不做 stacked branch），master 規劃時要把有程式碼相依的卡寫進同一張或提醒使用者先 merge。這句寫進 master 提示詞。
+
+### 驗證（對應 spec AC）
+
+| AC | 驗證方式 |
+| --- | --- |
+| AC-1、AC-2 | 執行期：`npm start -- --store-path <tmp> --no-open --port 47831`，建 auto mode 關／開兩張 master 各跑一次 |
+| AC-3、AC-7 | `node scripts/run-tests.mjs ./test/master-cards.test.mjs` |
+| AC-4 | `test/service.test.mjs`（fake backend）＋ 執行期完成前置卡後觀察相依卡啟動 |
+| AC-5 | `test/tasks-create.test.mjs`、`test/tasks-update.test.mjs`、`test/task-cli.test.mjs` |
+| AC-6 | `test/notifier.test.mjs`、`test/service.test.mjs` |
+| AC-8 | 用現有 store 複本啟動 host，看板與卡片行為不變 |
+| DoD | `npx tsc --noEmit -p tsconfig.json`、`npx tsc --noEmit -p renderer/tsconfig.json`、`npm test`、`npm run build:web`、`npm run test:e2e` |
+
+### 執行結果（2026-11-19）
+
+- 7a–7f 依計畫完成。偏離計畫之處：
+  - 自動啟動失敗時，若不是 provisioning 階段的失敗（那裡已經會退回 Backlog），`carryOnAfterDone` 會自己把卡退回 Backlog 並通知 master，避免卡停在 In Progress 卻沒有 session。
+  - 看板的 slave 列：等待中的卡用「等待 <id>」取代專案名稱，不另加欄位；原本並排顯示時標題會被擠到看不見（執行期截圖發現）。
+  - master 的編輯表單沒有加相關專案欄位；`vibeflow:updateTask` 已支援 `projects`，UI 編輯留待之後。
+- 檢查（都已執行）：`npx tsc --noEmit -p tsconfig.json`、`npx tsc --noEmit -p renderer/tsconfig.json`、`npm test`（640 pass）、`npm run build:web`、`npm run test:e2e`（4 pass）。
+- 執行期（暫存 store、`--port 47831`）：CLI 建出 master（帶 `--project`）、一張卡、一張 `--after` 卡；看板巢狀清單顯示「等待 <id>」；新增任務對話框的 Master 模式可以加入／移除相關專案，建立後 store 有 `projects`。
+- 沒有驗證：真的啟動 agent 跑完整流程（AC-1、AC-2 的 agent 行為：寫 plan.md、等確認、派工後結束回合）——提示詞內容由單元測試鎖定，但模型實際照做與否沒有跑過；`plan.md` 入口按鈕需要 master 真的寫出 plan.md 才會出現，也沒有在執行期看到。

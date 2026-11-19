@@ -61,7 +61,7 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `builtin-pr-skills.test.mjs` | `builtin-skills/pr-watch/scripts/*.mjs`, `builtin-skills/address-review/scripts/*.mjs` | unanswered-item detection via the reply marker, watcher event priority/backoff/state, both scripts run against a fake `gh` |
 | `lock.test.mjs` | `packages/core/src/lock.ts` | one host per machine: takeover of dead locks, port, file mode |
 | `mailbox.test.mjs` | `packages/core/src/mailbox.ts` | typing for someone else: bracketed paste + Enter, no typing into a permission dialog, waits for a person to stop typing, never splits a delivery, sender tag |
-| `notifier.test.mjs` | `packages/core/src/notifier.ts` | what a master's card cannot say itself (permission dialog, launch failure, session end, unreported turn) reaches its master once, waits while it cannot take it, dropped once it is done |
+| `notifier.test.mjs` | `packages/core/src/notifier.ts` | a master hears only of a card's launch failure and of all its cards being Done, once each, waits while it cannot take it, dropped once it is done |
 | `continuation.test.mjs` | `packages/core/src/continuation.ts`, `progress.ts` | the brief a card's new session starts from: parts and their order, omission of what could not be read, size caps, the master variant, and the transcript's last reply (`fixtures/progress/claude-last-reply.jsonl`) |
 | `progress.test.mjs` | `packages/core/src/progress.ts` | transcript reducers against recorded fixtures (`fixtures/progress/`): todo lists, usage de-duplication, activity, hook events, notification diffs |
 | `progress-tracker.test.mjs` | `packages/core/src/progress-tracker.ts` | finding a card's transcripts under a temp home: incremental reads, run filtering, Codex cwd matching, hook event files, no back-filled notifications |
@@ -73,7 +73,8 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `board-moves.test.mjs` | `renderer/lib/board-moves.ts` | which column drops are allowed and what each means |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
-| `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master |
+| `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master, slave launch background, a master's related projects, cards that wait (`after`) started after Done |
+| `master-dependencies.test.mjs` | `packages/core/src/tasks.ts` | `after` stays within one master and never loops; update keeps / clears it; a master's related projects |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
 | `no-branch-cards.test.mjs` | `packages/core/src/tasks.ts`, `git.ts`, `service.ts` | cards made without a branch: detached worktree in a git project (no branch, no push), a non-git folder used in place and never touched by reset / complete / delete |
 | `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks, `task create --no-branch` |

@@ -2,9 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createNotifier } from '../packages/core/src/notifier.ts'
 
-const working = { state: 'working' }
-const idle = { state: 'waiting', waitingFor: 'input' }
-const dialog = { state: 'waiting', waitingFor: 'permission' }
 const tick = () => new Promise((r) => setTimeout(r, 5))
 
 function setup() {
@@ -18,67 +15,37 @@ function setup() {
   return { notifier, delivered, master }
 }
 
-test('each thing a card cannot say itself reaches its master once', async () => {
+test('a card that fails to start reaches its master, again if it fails again', async () => {
   const { notifier, delivered } = setup()
-  notifier.activity('s1', working)
-  notifier.activity('s1', dialog)
-  notifier.activity('s1', dialog)
+  notifier.launchFailed('s1', 'no such branch')
   await tick()
-  notifier.launchFailed('s2', 'no such branch')
+  notifier.launchFailed('s1', 'still no branch')
   await tick()
-  notifier.exited('s3')
-  notifier.exited('s3')
-  await tick()
-  assert.equal(delivered.length, 3)
-  assert.ok(delivered[0].text.includes('s1') && delivered[0].text.includes('權限'))
-  assert.ok(delivered[1].text.includes('no such branch'))
-  assert.ok(delivered[2].text.includes('session 已結束'))
+  assert.equal(delivered.length, 2)
+  assert.ok(delivered[0].text.includes('s1') && delivered[0].text.includes('no such branch'))
   assert.ok(delivered.every((d) => d.masterId === 'm1'))
 })
 
-test('a turn that ends without a report is told; one that reported is not', async () => {
+test('all cards Done is told once for the same set of cards', async () => {
   const { notifier, delivered } = setup()
-  notifier.activity('s1', working)
-  notifier.activity('s1', idle)
+  notifier.allDone('m1', ['s1', 's2'])
+  notifier.allDone('m1', ['s2', 's1'])
   await tick()
   assert.equal(delivered.length, 1)
-  assert.ok(delivered[0].text.includes('沒有回報'))
-
-  notifier.activity('s1', working)
-  notifier.reported('s1')
-  notifier.activity('s1', idle)
+  assert.ok(delivered[0].text.includes('都已 Done'))
+  notifier.allDone('m1', ['s1', 's2', 's3'])
   await tick()
-  assert.equal(delivered.length, 1)
-})
-
-test('a report made before a permission dialog still counts for that turn', async () => {
-  const { notifier, delivered } = setup()
-  notifier.activity('s1', working)
-  notifier.reported('s1')
-  notifier.activity('s1', dialog)
-  notifier.activity('s1', working)
-  notifier.activity('s1', dialog)
-  notifier.activity('s1', working)
-  notifier.activity('s1', idle)
+  assert.equal(delivered.length, 2, 'a card added later makes a new set')
+  notifier.allDone('m1', [])
   await tick()
-  assert.equal(delivered.length, 1, 'one batch')
-  assert.equal(delivered[0].text.split('\n').length, 2, 'blocked twice in one turn, no unreported note')
-})
-
-test('an idle card the host never saw start says nothing (a resumed session)', async () => {
-  const { notifier, delivered } = setup()
-  notifier.activity('s1', idle)
-  notifier.activity('s1', { state: 'unknown' })
-  notifier.activity('s1', idle)
-  await tick()
-  assert.equal(delivered.length, 0)
+  assert.equal(delivered.length, 2)
 })
 
 test('news waits while the master cannot take it, then arrives as one message', async () => {
   const { notifier, delivered, master } = setup()
   master.can = 'later'
-  notifier.exited('s1')
-  notifier.exited('s2')
+  notifier.launchFailed('s1', 'a')
+  notifier.launchFailed('s2', 'b')
   await tick()
   assert.equal(delivered.length, 0)
   master.can = 'yes'
@@ -91,7 +58,7 @@ test('news waits while the master cannot take it, then arrives as one message', 
 test('a master that is gone or done drops its news for good', async () => {
   const { notifier, delivered, master } = setup()
   master.can = 'never'
-  notifier.exited('s1')
+  notifier.launchFailed('s1', 'a')
   await tick()
   master.can = 'yes'
   notifier.retry('m1')
@@ -101,9 +68,7 @@ test('a master that is gone or done drops its news for good', async () => {
 
 test('a card without a master is never reported', async () => {
   const { notifier, delivered } = setup()
-  notifier.activity('x1', working)
-  notifier.activity('x1', idle)
-  notifier.exited('x1')
+  notifier.launchFailed('x1', 'a')
   await tick()
   assert.equal(delivered.length, 0)
 })

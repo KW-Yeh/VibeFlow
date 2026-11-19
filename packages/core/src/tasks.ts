@@ -34,6 +34,10 @@ export interface CreateTaskInput {
   workDir?: string
   /** The master card dispatching this one. */
   masterId?: string
+  /** Cards of the same master that must be Done before this one starts. */
+  after?: string[]
+  /** A master's related projects (existing folders its agent may read). */
+  projects?: string[]
   title: string
   description?: string
   status?: ColumnId
@@ -86,6 +90,54 @@ export function assertMasterRef(board: Record<ColumnId, Task[]>, masterId: strin
   if (taskId && masterId === taskId) throw taskError('卡片不能指定自己為 master', 'NOT_A_MASTER')
 }
 
+/**
+ * A card may only wait on cards of its own master, never on itself, and the
+ * waits must not loop — otherwise none of them could ever start.
+ */
+export function assertDependencies(
+  board: Record<ColumnId, Task[]>,
+  taskId: string,
+  masterId: string | undefined,
+  after: string[]
+): void {
+  if (after.length === 0) return
+  if (!masterId) throw taskError('只有隸屬 master 的卡片可以設定 --after', 'INVALID_DEPENDENCY')
+  const all = (Object.values(board) as Task[][]).flat()
+  const byId = new Map(all.map((t) => [t.id, t]))
+  for (const id of after) {
+    if (id === taskId) throw taskError('卡片不能等待自己', 'INVALID_DEPENDENCY')
+    const dep = byId.get(id)
+    if (!dep) throw taskError(`找不到前置卡片：${id}`, 'INVALID_DEPENDENCY')
+    if (dep.masterId !== masterId) throw taskError(`前置卡片 ${id} 不屬於同一張 master`, 'INVALID_DEPENDENCY')
+  }
+  const waitsOn = (id: string): string[] => (id === taskId ? after : byId.get(id)?.after ?? [])
+  const seen = new Set<string>()
+  const stack = [...after]
+  while (stack.length) {
+    const id = stack.pop() as string
+    if (id === taskId) throw taskError('前置卡片形成循環', 'INVALID_DEPENDENCY')
+    if (seen.has(id)) continue
+    seen.add(id)
+    stack.push(...waitsOn(id))
+  }
+}
+
+function uniqueIds(ids: string[] | undefined): string[] {
+  return [...new Set((ids ?? []).map((id) => id.trim()).filter(Boolean))]
+}
+
+/** A master's related projects: existing absolute folders, each once. */
+export async function resolveProjects(projects: string[] | undefined): Promise<string[]> {
+  const unique = [...new Set((projects ?? []).map((dir) => dir.trim()).filter(Boolean))]
+  for (const dir of unique) {
+    const stat = await fs.stat(dir).catch(() => null)
+    if (!path.isAbsolute(dir) || !stat?.isDirectory()) {
+      throw taskError(`找不到專案資料夾：${dir}`, 'PROJECT_NOT_FOUND')
+    }
+  }
+  return unique
+}
+
 async function assertDirectory(dir: string): Promise<void> {
   const stat = await fs.stat(dir).catch(() => null)
   if (!path.isAbsolute(dir) || !stat?.isDirectory()) {
@@ -103,6 +155,7 @@ export async function createTaskFromInput(
   options: CreateTaskOptions = {}
 ): Promise<CreateTaskResult> {
   if (input.role === 'master') return createMasterTask(input)
+  if (input.projects?.length) throw taskError('相關專案只能設定在 master 卡片', 'INVALID_ARGUMENT')
   const projectPath = input.projectPath
   if (!projectPath) throw taskError('尚未選擇專案資料夾', 'PROJECT_NOT_FOUND')
 
@@ -127,6 +180,8 @@ export async function createTaskFromInput(
 
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
   if (input.masterId) assertMasterRef(store.get('board'), input.masterId)
+  const after = uniqueIds(input.after)
+  assertDependencies(store.get('board'), taskId, input.masterId, after)
 
   // The task's workspace folder is `<workstationRoot>/<projectName>` under the
   // global workstation (settings.workstationPath, default ~/Desktop). The
@@ -196,6 +251,7 @@ export async function createTaskFromInput(
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
     ...(input.masterId ? { masterId: input.masterId } : {}),
+    ...(after.length ? { after } : {}),
     ...(input.github ? { github: input.github } : {}),
     ...(input.jira ? { jira: input.jira } : {}),
   }
@@ -222,8 +278,10 @@ export async function createTaskFromInput(
  */
 async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResult> {
   if (input.masterId) throw taskError('master 卡片不能再隸屬其他 master', 'NOT_A_MASTER')
+  if (input.after?.length) throw taskError('master 卡片不能設定 --after', 'INVALID_DEPENDENCY')
   const workDir = input.workDir?.trim() || undefined
   if (workDir) await assertDirectory(workDir)
+  const projects = await resolveProjects(input.projects)
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
   const taskId = randomUUID().slice(0, 8)
   const workspacePath = path.join(mastersRoot(store.path), taskId)
@@ -235,6 +293,7 @@ async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResul
     role: 'master',
     workspacePath,
     ...(workDir ? { workDir } : {}),
+    ...(projects.length ? { projects } : {}),
   }
   const col: ColumnId = input.status ?? 'backlog'
   const provisioned = col === 'backlog' ? null : await provisionTaskWorktree(draft)
@@ -344,6 +403,8 @@ export interface UpdateTaskInput {
   status?: ColumnId
   /** A master's id to dispatch the card under; null removes it from its master. */
   masterId?: string | null
+  /** Cards this one waits on; an empty list clears them. */
+  after?: string[]
   /** CLI-only: explicit store directory; absent = use the host's getStore(). */
   storePath?: string
 }
@@ -377,14 +438,23 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
   }
   const title = input.title?.trim()
   const description = input.description?.trim()
+  const masterId = input.masterId !== undefined ? input.masterId || undefined : current.masterId
+  // Waits only make sense among one master's cards, so a card that changes
+  // master keeps none it did not restate.
+  const after = input.after !== undefined
+    ? uniqueIds(input.after)
+    : masterId === current.masterId ? current.after ?? [] : []
+  assertDependencies(board, current.id, masterId, after)
   const task: Task = {
     ...current,
     ...(title ? { title } : {}),
     ...(input.description !== undefined
       ? { description: description || undefined }
       : {}),
-    ...(input.masterId !== undefined ? { masterId: input.masterId || undefined } : {}),
+    ...(input.masterId !== undefined ? { masterId } : {}),
+    ...(after.length ? { after } : {}),
   }
+  if (!after.length) delete task.after
 
   const to = input.status ?? from
   if (to === from) {

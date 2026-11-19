@@ -103,6 +103,13 @@ export interface Task {
   /** A master's chosen folder. Absent = `<workspacePath>/work`, owned and deleted with the card. */
   workDir?: string
   /**
+   * Cards of the same master that must reach Done before this one starts. When
+   * the master runs in auto mode the host starts this card once they all have.
+   */
+  after?: string[]
+  /** A master's related projects: folders its agent may read while planning. */
+  projects?: string[]
+  /**
    * Created with "建立分支" off: `branch` is '' and the card never gets one.
    * A git project still gets an isolated worktree, on a detached HEAD.
    */
@@ -431,14 +438,25 @@ export function updateTask(taskId: string, patch: Partial<Task>): void {
   getStore().set('board', board)
 }
 
+function withoutRef(task: Task, removedId: string): Task {
+  let next = task
+  if (next.masterId === removedId) next = { ...next, masterId: undefined, after: undefined }
+  if (next.after?.includes(removedId)) {
+    const after = next.after.filter((id) => id !== removedId)
+    next = { ...next, after: after.length ? after : undefined }
+  }
+  return next
+}
+
 /** Remove a task by id from whichever column holds it, and persist. */
 export function removeTask(taskId: string): void {
   const board = getStore().get('board')
   ;(Object.keys(board) as ColumnId[]).forEach((col) => {
     board[col] = board[col]
       .filter((t) => t.id !== taskId)
-      // A dispatched card outlives its master; it just stops belonging to one.
-      .map((t) => (t.masterId === taskId ? { ...t, masterId: undefined } : t))
+      // A dispatched card outlives its master; it just stops belonging to one,
+      // and a card that waited on the removed one no longer does.
+      .map((t) => withoutRef(t, taskId))
   })
   getStore().set('board', board)
 }

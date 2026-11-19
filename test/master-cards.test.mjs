@@ -359,14 +359,29 @@ test("a person's keys reach the agent untagged", async (t) => {
   assert.deepEqual(sessions.writes, [{ key: dev.id, data: 'y' }])
 })
 
-test("a master's card knows its master and how to report; any other card launches as before", () => {
+test("a master's card launches like any card, plus the plan it belongs to", () => {
   const boardCli = { storeDir: '/s', cliPath: '/cli/vibeflow.mjs' }
+  const library = { pluginDir: '/lib/plugin', libraryDir: '/lib', codexHome: '/lib/codex-home', promptText: 'library snippet' }
   const base = { id: 'abcd1234', title: 'T', worktreePath: '/w', branch: 'vf-abcd1234', projectPath: '/p', agentCli: 'claude' }
+  const masterContext = {
+    master: { id: 'feed0001', title: 'Lead' },
+    siblings: [{ id: 'beef0002', title: '後端：API', summary: 'add the endpoint' }],
+    after: ['beef0002'],
+  }
   for (const agentCli of ['claude', 'codex']) {
-    const slave = buildAgentCommand({ ...base, agentCli, masterId: 'feed0001' }, 'house rules', { boardCli, autoMode: true })
+    const slave = buildAgentCommand(
+      { ...base, agentCli, masterId: 'feed0001' },
+      'house rules',
+      { boardCli, autoMode: true, library, masterContext }
+    )
     assert.ok(slave.includes("VIBEFLOW_MASTER_ID='feed0001'"))
-    assert.ok(slave.includes('VF task send'))
-    assert.ok(!slave.includes('house rules'), `${agentCli}: a master's card follows the master, not the custom prompt`)
+    assert.ok(slave.includes('house rules'), `${agentCli}: the custom prompt reaches a master's card too`)
+    assert.ok(slave.includes('library snippet'), `${agentCli}: and so do Library snippets`)
+    assert.ok(slave.includes('feed0001「Lead」'))
+    assert.ok(slave.includes('beef0002「後端：API」：add the endpoint'))
+    assert.ok(slave.includes('使用者會直接在這張卡跟你協作'))
+    assert.ok(!slave.includes('回報內容'), 'no duty to report')
+    assert.ok(!slave.includes('沒有 master 要求就不要開 PR'))
     assert.ok(!slave.includes('VF task start'), 'the master instructions stay with masters')
     const plain = buildAgentCommand({ ...base, agentCli }, 'house rules', { boardCli, autoMode: true })
     assert.ok(plain.includes('house rules'), `${agentCli}: other cards keep the custom prompt`)
@@ -377,22 +392,74 @@ test("a master's card knows its master and how to report; any other card launche
   assert.ok(!slaveSystemPrompt({ canWrite: false }).includes('VF task send'), 'no CLI, no command it cannot run')
 })
 
-test("VibeFlow tells a running master when one of its cards' session ends", async (t) => {
+test("a master's related projects are readable folders of its launch, for either agent", () => {
+  const base = { id: 'abcd1234', title: 'T', worktreePath: '/w', branch: '', role: 'master', projects: ['/repo/a', '/repo/b'] }
+  for (const agentCli of ['claude', 'codex']) {
+    const cmd = buildAgentCommand({ ...base, agentCli }, '', { autoMode: false })
+    assert.ok(cmd.includes("--add-dir '/repo/a'"), agentCli)
+    assert.ok(cmd.includes("--add-dir '/repo/b'"), agentCli)
+    assert.ok(cmd.includes('- /repo/a'), `${agentCli}: and the prompt names them`)
+  }
+  const none = buildAgentCommand({ ...base, projects: undefined, agentCli: 'codex' }, '', { autoMode: false })
+  assert.ok(!none.includes('--add-dir'))
+  const slave = buildAgentCommand({ ...base, role: undefined, masterId: 'm', agentCli: 'codex' }, '', {})
+  assert.ok(!slave.includes('/repo/a'), 'only a master reads its projects')
+})
+
+function moveToDone(core, id) {
+  const board = core.handlers['vibeflow:getState']().board
+  const card = [...board.backlog, ...board.in_progress].find((t) => t.id === id)
+  core.handlers['vibeflow:setBoard']({
+    backlog: board.backlog.filter((t) => t.id !== id),
+    in_progress: board.in_progress.filter((t) => t.id !== id),
+    done: [card, ...board.done],
+  })
+  return core.handlers['vibeflow:cleanupTask'](id)
+}
+
+test('a card that waited starts once its cards are Done, and the master hears only when all are', async (t) => {
   process.env.VIBEFLOW_QUIET_MS = '0'
   t.after(() => { delete process.env.VIBEFLOW_QUIET_MS })
   const { core, sessions } = setup(t)
   const projectPath = await slaveRepo(t)
-  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead' })
-  const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead', autoMode: true })
+  const { task: api } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'API', masterId: master.id })
+  const { task: ui } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'UI', masterId: master.id, after: [api.id] })
   await core.handlers['vibeflow:startTask'](master.id)
-  await core.handlers['vibeflow:startTask'](dev.id)
-  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await core.handlers['vibeflow:startTask'](api.id)
+  // Waiting on a dialog or ending a turn is no news for the master any more.
+  sessions.starts.find((s) => s.key === api.id).onExit()
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(sessions.writes.filter((w) => w.key === master.id).length, 0)
+
+  await moveToDone(core, api.id)
+  assert.equal(findCard(core, ui.id).column, 'in_progress', 'the waiting card started')
+  assert.ok(sessions.starts.some((s) => s.key === ui.id))
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(sessions.writes.filter((w) => w.key === master.id).length, 0, 'not all Done yet')
+
+  await moveToDone(core, ui.id)
   await new Promise((r) => setTimeout(r, 400))
   const toMaster = sessions.writes.filter((w) => w.key === master.id)
-  assert.equal(toMaster.length, 2, 'one paste and its Enter')
-  assert.ok(toMaster[0].data.includes('<vibeflow from="vibeflow">'))
-  assert.ok(toMaster[0].data.includes(dev.id))
-  assert.ok(toMaster[0].data.includes('session 已結束'))
+  assert.ok(toMaster.length > 0)
+  assert.ok(toMaster[0].data.includes('都已 Done'))
+})
+
+test('without auto mode a waiting card stays in Backlog, and deleting what it waits on frees it', async (t) => {
+  const { core } = setup(t)
+  const projectPath = await slaveRepo(t)
+  const { task: master } = await core.handlers['vibeflow:createTask']({ role: 'master', title: 'Lead', autoMode: false })
+  const { task: api } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'API', masterId: master.id })
+  const { task: docs } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Docs', masterId: master.id })
+  const { task: ui } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'UI', masterId: master.id, after: [api.id, docs.id] })
+  await core.handlers['vibeflow:startTask'](master.id)
+  await core.handlers['vibeflow:startTask'](api.id)
+  await moveToDone(core, api.id)
+  assert.equal(findCard(core, ui.id).column, 'backlog')
+  await core.handlers['vibeflow:deleteTask'](docs.id)
+  assert.deepEqual(findCard(core, ui.id).task.after, [api.id])
+  const summary = (await core.handlers['task:summaries']({ taskId: ui.id }))[0]
+  assert.deepEqual(summary.after, [api.id])
 })
 
 test('news for a master that is not running is dropped, never typed into a shell', async (t) => {
@@ -404,21 +471,29 @@ test('news for a master that is not running is dropped, never typed into a shell
   const { task: dev } = await core.handlers['vibeflow:createTask']({ projectPath, title: 'Dev', masterId: master.id })
   await core.handlers['vibeflow:startTask'](dev.id)
   sessions.alive.add(master.id)
-  sessions.starts.find((s) => s.key === dev.id).onExit()
+  await moveToDone(core, dev.id)
   await new Promise((r) => setTimeout(r, 400))
-  assert.equal(sessions.writes.length, 0, 'the master is still in Backlog')
+  assert.equal(sessions.writes.filter((w) => w.key === master.id).length, 0, 'the master is still in Backlog')
 })
 
-test('a master waits for reports instead of polling, relays fixes, and has its cards open the PR', () => {
-  const prompt = masterSystemPrompt({ canWrite: true, autoMode: true })
-  assert.ok(!prompt.includes('定期查看'))
-  assert.ok(prompt.includes('不要輪詢'))
-  assert.ok(prompt.includes('VF task send'))
-  assert.ok(prompt.includes('驗收卡'))
-  assert.ok(prompt.includes('pr skill'))
-  assert.ok(prompt.includes('不會合併 PR'))
-  assert.ok(prompt.includes('不會把卡片移到 Done'))
-  assert.ok(prompt.includes('<id>「<標題>」'))
+test('a master plans, waits for approval unless in auto mode, dispatches and stops', () => {
+  const auto = masterSystemPrompt({ canWrite: true, autoMode: true })
+  const manual = masterSystemPrompt({ canWrite: true, autoMode: false })
+  for (const prompt of [auto, manual]) {
+    assert.ok(prompt.includes('$VIBEFLOW_ARTIFACTS_DIR/plan.md'))
+    assert.ok(prompt.includes('--after'))
+    assert.ok(prompt.includes('不要輪詢'))
+    assert.ok(prompt.includes('結束這一回合'))
+    assert.ok(prompt.includes('全部都已 Done'))
+    assert.ok(prompt.includes('不會合併 PR'))
+    assert.ok(prompt.includes('不會把卡片移到 Done'))
+    assert.ok(prompt.includes('<id>「<標題>」'))
+    assert.ok(!prompt.includes('驗收卡'), 'no relay loop')
+    assert.ok(!prompt.includes('pr skill'))
+  }
+  assert.ok(manual.includes('使用者同意之前不要建任何卡'))
+  assert.ok(!auto.includes('使用者同意之前不要建任何卡'))
+  assert.ok(auto.includes('VibeFlow 會自動啟動'))
 })
 
 test('a master leaves model and effort to Jev unless a card needs a specific one', () => {

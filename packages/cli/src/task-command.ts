@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import path from 'node:path'
 import { claudeTitleTranslator } from '../../core/src/branch-name'
 import { createTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
 import { addTaskArtifact } from '../../core/src/artifacts'
@@ -32,11 +33,16 @@ Usage:
 task create options:
   --role <role>          ${ROLES.join(' | ')}  (default: slave). A master has no project:
                          it runs in its own folder and dispatches other cards.
-  --project <path>       Target project directory (required for a slave)
+  --project <path>       Target project directory (required for a slave). For a
+                         master: a related project its agent may read while
+                         planning; repeat the flag for several
   --work-dir <path>      Master only: run in this existing folder (git or not)
                          instead of one VibeFlow creates
   --master <id>          Dispatch the new card under this master card (default: the
                          calling card, when a master runs this from its own shell)
+  --after <id>           Start this card only once that card of the same master is
+                         Done (repeat for several); the host starts it then when the
+                         master runs in auto mode
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
@@ -63,10 +69,12 @@ task update options:
   --prompt <text>        New card description (empty string clears it)
   --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
   --master <id|none>     Put the card under a master, or "none" to take it out
+  --after <id|none>      Cards of the same master this one waits on (repeat for
+                         several), or "none" to clear them
   --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
 
-  At least one of --title / --prompt / --status / --master is required. Branch,
+  At least one of --title / --prompt / --status / --master / --after is required. Branch,
   worktree and project path are provisioned on disk and cannot be changed here.
 
 task start / list / show / send (need the running VibeFlow host):
@@ -159,7 +167,8 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     parsed = parseArgs({
       args: argv,
       options: {
-        project:       { type: 'string' },
+        project:       { type: 'string', multiple: true },
+        after:         { type: 'string', multiple: true },
         role:          { type: 'string' },
         'work-dir':    { type: 'string' },
         master:        { type: 'string' },
@@ -223,15 +232,17 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (sub === 'update') {
     if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
     requireOneOf('--status', values.status, STATUSES)
-    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined) {
-      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master')
+    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined && values.after === undefined) {
+      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master, --after')
     }
+    if (values.project !== undefined) fail('INVALID_ARGUMENT', 'task update cannot change --project')
     const { task, storePath: resolvedPath } = updateTaskFromInput({
       taskId: values.task,
       title: values.title,
       description: values.prompt,
       status: values.status as ColumnId | undefined,
       masterId: values.master === undefined ? undefined : values.master === 'none' ? null : values.master,
+      after: values.after === undefined ? undefined : values.after.filter((id) => id !== 'none'),
       storePath,
     })
     return {
@@ -243,6 +254,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         branch: task.branch,
         worktreePath: task.worktreePath ?? null,
         masterId: task.masterId ?? null,
+        after: task.after ?? [],
       },
     }
   }
@@ -250,9 +262,11 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   requireOneOf('--role', values.role, ROLES)
   const master = values.role === 'master'
   if (!master && values['work-dir'] !== undefined) fail('INVALID_ARGUMENT', '--work-dir is only for --role master')
-  if (master && (values.project || values['base-branch'] || values.branch || values.mode)) {
-    fail('INVALID_ARGUMENT', 'A master card has no project: drop --project / --base-branch / --branch / --mode')
+  if (master && (values['base-branch'] || values.branch || values.mode)) {
+    fail('INVALID_ARGUMENT', 'A master card has no project of its own: drop --base-branch / --branch / --mode')
   }
+  if (master && values.after) fail('INVALID_ARGUMENT', 'A master card cannot wait on other cards: drop --after')
+  if (!master && (values.project?.length ?? 0) > 1) fail('INVALID_ARGUMENT', 'A card has one project: give --project once')
   if (master && values['no-branch']) fail('INVALID_ARGUMENT', 'A master card has no branch already: drop --no-branch')
   if (values['no-branch'] && values.branch !== undefined) fail('INVALID_ARGUMENT', '--branch and --no-branch cannot be used together')
   const missing = []
@@ -279,7 +293,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   const masterId = values.master ?? (!master && caller && isMasterTask(caller) ? caller.id : undefined)
 
   const { task, storePath: resolvedPath } = await createTaskFromInput({
-    projectPath: values.project,
+    projectPath: master ? undefined : values.project?.[0],
+    projects: master ? values.project?.map((dir) => path.resolve(dir)) : undefined,
+    after: values.after,
     role: master ? 'master' : undefined,
     workDir: values['work-dir'],
     masterId,
@@ -304,6 +320,8 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       title: task.title,
       role: task.role ?? 'slave',
       masterId: task.masterId ?? null,
+      after: task.after ?? [],
+      projects: task.projects ?? [],
       projectPath: task.projectPath ?? null,
       branch: task.branch,
       noBranch: task.noBranch === true,

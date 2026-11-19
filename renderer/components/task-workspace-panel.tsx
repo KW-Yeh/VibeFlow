@@ -894,28 +894,46 @@ export function SlavesContent({
   slaves,
   progressById,
   onSelectTask,
+  hasPlan = false,
+  onOpenPlan,
 }: {
   slaves: SlaveEntry[]
   progressById: Record<string, TaskProgress>
   onSelectTask?: (taskId: string) => void
+  /** The master wrote its plan (plan.md) into its artifacts. */
+  hasPlan?: boolean
+  onOpenPlan?: () => void
 }) {
+  const planLink = hasPlan && onOpenPlan ? (
+    <button
+      type="button"
+      onClick={onOpenPlan}
+      className="inline-flex items-center gap-1.5 rounded-sm text-sm text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <FileText className="size-3.5" />
+      查看拆卡計畫 plan.md
+    </button>
+  ) : null
   if (slaves.length === 0) {
     return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
-        Master 還沒有建立任何 slave 卡片。
-      </p>
+      <div className="space-y-3 py-10 text-center">
+        <p className="text-sm text-muted-foreground">Master 還沒有建立任何 slave 卡片。</p>
+        {planLink}
+      </div>
     )
   }
   const done = slaves.filter((s) => s.column === 'done').length
+  const doneIds = new Set(slaves.filter((s) => s.column === 'done').map((s) => s.task.id))
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
         {slaves.length} 張卡片 · {done} 完成
       </p>
+      {planLink}
       <ul className="space-y-1.5">
         {slaves.map(({ task, column }) => {
           const progress = progressById[task.id]
-          const state = slaveState(column, task, progress)
+          const state = slaveState(column, task, progress, doneIds)
           const todos = column === 'in_progress' ? todoCount(progress) : null
           const current = column === 'in_progress'
             ? progress?.todos?.find((t) => t.status === 'in_progress')
@@ -1347,7 +1365,13 @@ export function TaskWorkspacePanel({
 
   const activeContent =
     activeTab === 'slaves' ? (
-      <SlavesContent slaves={slaves} progressById={progressById} onSelectTask={onSelectTask} />
+      <SlavesContent
+        slaves={slaves}
+        progressById={progressById}
+        onSelectTask={onSelectTask}
+        hasPlan={artifacts.some((a) => !a.scratch && a.name === 'plan.md')}
+        onOpenPlan={() => setActiveTaskTab('artifacts')}
+      />
     ) : activeTab === 'task' ? (
       <TaskInfo task={task} progress={progress} master={master} onSelectTask={onSelectTask} />
     ) : activeTab === 'artifacts' ? (
