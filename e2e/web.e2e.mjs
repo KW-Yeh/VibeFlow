@@ -145,6 +145,7 @@ const terminalRow = (page, label) => page.locator('.xterm-rows:visible > div').f
 
 async function clickTerminalFile(page, label, target = label) {
   const row = terminalRow(page, label)
+  await row.scrollIntoViewIfNeeded()
   const box = await row.boundingBox()
   assert.ok(box, `${label} is visible`)
   const x = box.x + Math.min(20, box.width / 2)
@@ -158,6 +159,7 @@ async function clickTerminalFile(page, label, target = label) {
 /** A relative name is highlighted but neither titled nor opened: its cwd is a guess. */
 async function clickRelativeTerminalFile(page, label) {
   const row = terminalRow(page, label)
+  await row.scrollIntoViewIfNeeded()
   const box = await row.boundingBox()
   assert.ok(box, `${label} is visible`)
   const x = box.x + Math.min(20, box.width / 2)
