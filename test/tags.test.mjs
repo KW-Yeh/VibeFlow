@@ -9,8 +9,17 @@ import { moveTaskFromInput } from '../packages/core/src/tasks.ts'
 
 const card = (id, extra = {}) => ({ id, title: id, branch: '', ...extra })
 
-async function storeWith(board, tags) {
+const tempDirs = []
+test.after(() => Promise.all(tempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }))))
+
+async function tempDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-tags-'))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function storeWith(board, tags) {
+  const dir = await tempDir()
   const store = getStoreAtPath(dir)
   store.set('board', board)
   if (tags) store.set('tags', tags)
@@ -55,7 +64,7 @@ test('a board write strips tags from Done cards only', async () => {
 })
 
 test('a store without tags gets an empty tag list and keeps its order', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-tags-'))
+  const dir = await tempDir()
   await fs.writeFile(path.join(dir, 'vibeflow-state.json'), JSON.stringify({
     version: 4,
     projectPath: null,
