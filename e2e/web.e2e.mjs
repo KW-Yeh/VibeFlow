@@ -1194,3 +1194,73 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   assert.deepEqual(where(), { view: 'workspace' })
   await page.getByText('從左側選一張執行中的卡片。').waitFor()
 })
+
+test('Web UI: cards reorder within a column and carry tags until Done', { skip: !hasWeb && 'run npm run build:web first', timeout: 60_000 }, async (t) => {
+  const browser = await launchBrowser()
+  if (browser.error) { t.skip(`no browser: ${browser.error.message.split('\n')[0]}`); return }
+  t.after(() => browser.close())
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-tags-e2e-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  setPlatform(createNodePlatform({ userDataDir: tmp }))
+  getStore().set('settings', { autoMode: true, workstationPath: path.join(tmp, 'ws') })
+  const bus = new EventBus()
+  const sessions = {
+    kind: 'pty', start: async () => ({ pid: 1, scrollback: null }), write() {}, resize() {},
+    kill: async () => {}, isAlive: async () => false, scrollback: () => null,
+    list: async () => [], shutdown() {},
+  }
+  const core = createCore({ sessions, bus, version: '9.9.9' })
+  // The store outlives the earlier tests in this file; start from an empty board.
+  core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: [], done: [] })
+  getStore().set('tags', [])
+  for (const title of ['Alpha', 'Bravo', 'Charlie']) {
+    await core.handlers['vibeflow:createTask']({ title, projectPath, baseBranch: null })
+  }
+  const server = await startWebServer({ handlers: core.handlers, bus, staticDir: webDir, token: 'tags-e2e' })
+  t.after(async () => { core.shutdown(); await server.close(); await cleanup(); await removeDir(tmp) })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  await page.goto(server.loginUrl())
+  const card = (title) => page.getByRole('button', { name: `開啟任務：${title}`, exact: true })
+  const backlog = () => core.handlers['vibeflow:getState']().board.backlog.map((task) => task.title)
+  const waitFor = async (read, expected) => {
+    for (let i = 0; i < 50 && JSON.stringify(read()) !== JSON.stringify(expected); i += 1) await page.waitForTimeout(100)
+    assert.deepEqual(read(), expected)
+  }
+  await card('Alpha').waitFor()
+  assert.deepEqual(backlog(), ['Charlie', 'Bravo', 'Alpha'])
+
+  // Dropped on the upper half of a card in its own column: it lands before that card.
+  await card('Alpha').getByTitle('拖拉以移動卡片').dragTo(card('Charlie'), { targetPosition: { x: 40, y: 6 } })
+  await waitFor(backlog, ['Alpha', 'Charlie', 'Bravo'])
+  assert.equal(await page.getByRole('dialog').count(), 0, 'a reorder opens no dialog')
+  await page.reload()
+  await card('Alpha').waitFor()
+  const shown = await page.locator('section[data-column="backlog"] [aria-label^="開啟任務："]').evaluateAll(
+    (cards) => cards.map((c) => c.getAttribute('aria-label').replace('開啟任務：', ''))
+  )
+  assert.deepEqual(shown, ['Alpha', 'Charlie', 'Bravo'])
+
+  // A tag typed into the picker is created, applied and offered to the next card.
+  await page.getByRole('button', { name: '任務選項：Charlie' }).click()
+  await page.getByRole('menuitem', { name: '標籤…' }).click()
+  const picker = page.getByRole('dialog', { name: '標籤：Charlie' })
+  await picker.getByLabel('搜尋或新增標籤').fill('等待 PL review PR')
+  await picker.getByLabel('搜尋或新增標籤').press('Enter')
+  await card('Charlie').getByText('等待 PL review PR').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '任務選項：Bravo' }).click()
+  await page.getByRole('menuitem', { name: '標籤…' }).click()
+  await page.getByRole('dialog', { name: '標籤：Bravo' }).getByRole('menuitemcheckbox', { name: '等待 PL review PR' }).click()
+  await card('Bravo').getByText('等待 PL review PR').waitFor()
+  await page.keyboard.press('Escape')
+
+  // Reaching Done takes a card's tags away; the tag stays on the board.
+  const charlie = core.handlers['vibeflow:getState']().board.backlog.find((task) => task.title === 'Charlie')
+  const board = core.handlers['vibeflow:getState']().board
+  core.handlers['vibeflow:setBoard']({ ...board, backlog: board.backlog.filter((task) => task.id !== charlie.id), done: [charlie] })
+  await page.reload()
+  await card('Charlie').waitFor()
+  assert.equal(await card('Charlie').getByText('等待 PL review PR').count(), 0)
+  await card('Bravo').getByText('等待 PL review PR').waitFor()
+  assert.equal(core.handlers['vibeflow:getState']().tags.length, 1)
+})

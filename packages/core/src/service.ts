@@ -72,7 +72,8 @@ import {
   getDoneCommitFile,
   isCommitSha,
 } from './commit-diff'
-import { assertMasterRef, createTaskFromInput, provisionTaskWorktree, resolveProjects } from './tasks'
+import { assertMasterRef, createTaskFromInput, moveTaskFromInput, provisionTaskWorktree, resolveProjects } from './tasks'
+import { createTag, deleteTag, setTaskTags, updateTag } from './tags'
 import type { TitleTranslator } from './branch-name'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
@@ -213,6 +214,8 @@ export interface TaskSummary {
   /** Messages still waiting in its inbox for the agent to read. Absent = none. */
   inbox?: number
   pr?: { number: number; url: string; state: string }
+  /** Names of the card's tags. Absent = none. */
+  tags?: string[]
   outcome?: { commits: number; files: number; additions: number; deletions: number }
 }
 
@@ -897,6 +900,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     }
   }
 
+  function tagNames(task: Task): string[] {
+    const defs = getState().tags ?? []
+    return (task.tags ?? []).flatMap((id) => defs.find((t) => t.id === id)?.name ?? [])
+  }
+
   async function summarizeTasks(filter: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> {
     const board = getState().board
     const alive = new Set(await sessions.list())
@@ -935,6 +943,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           ...(snapshot ? { activity: snapshot.activity } : {}),
           ...(waiting ? { inbox: waiting } : {}),
           ...(pr ? { pr: { number: pr.number, url: pr.url, state: pr.state } } : {}),
+          ...(tagNames(task).length ? { tags: tagNames(task) } : {}),
           ...(task.outcome ? {
             outcome: {
               commits: task.outcome.commits.length,
@@ -1236,6 +1245,47 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         autoMode: p.autoMode,
         ...masterPatch,
         ...gitPatch,
+      })
+      return getState()
+    },
+
+    'vibeflow:moveTask': (payload) => {
+      const p = obj<{ taskId: unknown; beforeId: unknown }>(payload, 'payload')
+      const task = requireTask(p.taskId)
+      const beforeId = p.beforeId === null ? null : requireTask(p.beforeId).id
+      moveTaskFromInput({ taskId: task.id, beforeId })
+      return getState()
+    },
+
+    'tags:create': (payload) => {
+      const p = obj<{ name: unknown; color?: unknown }>(payload, 'payload')
+      createTag(getStore(), { name: str(p.name, 'name'), color: p.color })
+      return getState()
+    },
+
+    'tags:update': (payload) => {
+      const p = obj<{ tagId: unknown; name?: unknown; color?: unknown }>(payload, 'payload')
+      updateTag(getStore(), str(p.tagId, 'tagId'), {
+        name: p.name === undefined ? undefined : str(p.name, 'name'),
+        color: p.color,
+      })
+      return getState()
+    },
+
+    'tags:delete': (tagId) => {
+      deleteTag(getStore(), str(tagId, 'tagId'))
+      return getState()
+    },
+
+    // Unlike the rest of a card, its tags stay editable while it runs: they
+    // record what the work is waiting on, which changes as it goes.
+    'vibeflow:setTaskTags': (payload) => {
+      const p = obj<{ taskId: unknown; add?: unknown; remove?: unknown }>(payload, 'payload')
+      const task = requireTask(p.taskId)
+      setTaskTags(getStore(), {
+        taskId: task.id,
+        add: p.add === undefined ? undefined : strList(p.add, 'add'),
+        remove: p.remove === undefined ? undefined : strList(p.remove, 'remove'),
       })
       return getState()
     },

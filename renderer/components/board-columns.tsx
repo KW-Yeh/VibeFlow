@@ -13,6 +13,7 @@ import {
   Network,
   Pencil,
   Plus,
+  Tag,
   Trash2,
   Terminal,
 } from 'lucide-react'
@@ -41,6 +42,7 @@ import { createEnterVariants, MOTION_INSTANT, MOTION_SPRING, timed } from '@/lib
 import type { GridTerminal } from '@/components/terminal-grid'
 import { NewTaskButton } from '@/components/new-task-button'
 import { HoldButton } from '@/components/ui/hold-button'
+import { TagChips, TagPicker } from '@/components/task-tags'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -103,6 +105,7 @@ function CardMenu({
   task,
   anchor,
   onEdit,
+  onTags,
   onDelete,
   onClose,
 }: {
@@ -112,6 +115,7 @@ function CardMenu({
   anchor: { top: number; right: number }
   /** Absent = the card is read-only (only Backlog cards are editable). */
   onEdit?: () => void
+  onTags: () => void
   onDelete: () => void
   onClose: () => void
 }) {
@@ -143,6 +147,19 @@ function CardMenu({
           編輯任務
         </button>
       )}
+
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onTags()
+          onClose()
+        }}
+        className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
+      >
+        <Tag className="size-3.5 shrink-0" />
+        標籤…
+      </button>
 
       <HoldButton
         role="menuitem"
@@ -333,6 +350,7 @@ function TaskCard({
     null
   )
   const menuOpen = menuAnchor !== null
+  const [tagAnchor, setTagAnchor] = useState<{ top: number; right: number } | null>(null)
   const running = column === 'in_progress'
   const done = column === 'done'
   const isMaster = task.role === 'master'
@@ -437,6 +455,8 @@ function TaskCard({
         </span>
       </div>
 
+      {!done && <TagChips task={task} className="mt-2" />}
+
       {isMaster ? (
         <MasterSummary slaves={slaves ?? []} />
       ) : (
@@ -500,10 +520,13 @@ function TaskCard({
           task={task}
           anchor={menuAnchor}
           onEdit={onEdit}
+          onTags={() => setTagAnchor(menuAnchor)}
           onDelete={onDelete}
           onClose={() => setMenuAnchor(null)}
         />
       )}
+
+      {tagAnchor && <TagPicker task={task} anchor={tagAnchor} onClose={() => setTagAnchor(null)} />}
     </div>
   )
 }
@@ -566,6 +589,8 @@ export interface BoardColumnsProps {
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
   onDropCard: (task: Task, from: ColumnId, to: ColumnId) => void
+  /** Reorder a card within its column; `beforeId` null = the column's end. */
+  onMoveTask: (taskId: string, beforeId: string | null) => void
   onEditTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   onOpenTaskTerminal: (taskId: string) => void
@@ -586,6 +611,7 @@ export function BoardColumns({
   selectedTaskId,
   onSelectTask,
   onDropCard,
+  onMoveTask,
   onEditTask,
   onDeleteTask,
   onOpenTaskTerminal,
@@ -595,9 +621,23 @@ export function BoardColumns({
 }: BoardColumnsProps) {
   const [dragging, setDragging] = useState<{ task: Task; from: ColumnId } | null>(null)
   const [dropTarget, setDropTarget] = useState<ColumnId | null>(null)
+  // Where a card dragged within its own column would land: before this card, or at the end (null).
+  const [insertAt, setInsertAt] = useState<{ column: ColumnId; beforeId: string | null } | null>(null)
   const endDrag = () => {
     setDragging(null)
     setDropTarget(null)
+    setInsertAt(null)
+  }
+  const aimInsert = (column: ColumnId, beforeId: string | null) => {
+    if (insertAt?.column !== column || insertAt.beforeId !== beforeId) setInsertAt({ column, beforeId })
+  }
+  const dropInColumn = (column: ColumnId) => {
+    if (!dragging || !insertAt || insertAt.column !== column) return
+    const order = board[column].map((t) => t.id)
+    const next = order[order.indexOf(dragging.task.id) + 1] ?? null
+    if (insertAt.beforeId !== dragging.task.id && insertAt.beforeId !== next) {
+      onMoveTask(dragging.task.id, insertAt.beforeId)
+    }
   }
   const [projectFilter, setProjectFilter] = useState<string | null>(null)
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
@@ -677,6 +717,13 @@ export function BoardColumns({
               key={column}
               data-column={column}
               onDragOver={(event) => {
+                if (dragging?.from === column) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  // Below the last card: the end of the column. Cards aim for themselves.
+                  if (!(event.target as Element).closest('[data-card-id]')) aimInsert(column, null)
+                  return
+                }
                 if (!droppable) return
                 event.preventDefault()
                 event.dataTransfer.dropEffect = 'move'
@@ -688,6 +735,12 @@ export function BoardColumns({
                 }
               }}
               onDrop={(event) => {
+                if (dragging?.from === column) {
+                  event.preventDefault()
+                  dropInColumn(column)
+                  endDrag()
+                  return
+                }
                 if (!droppable || !dragging) return
                 event.preventDefault()
                 onDropCard(dragging.task, dragging.from, column)
@@ -714,9 +767,12 @@ export function BoardColumns({
 
               <motion.div layoutScroll className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md p-1">
                 <AnimatePresence initial={false} custom={allIds}>
-                {tasks.map((task) => {
+                {tasks.map((task, index) => {
                   const slaves = task.role === 'master' ? slavesOf(task.id) : undefined
                   const collapsed = isFolded(task.id, column)
+                  const aiming = insertAt?.column === column
+                  const lineBefore = aiming && insertAt.beforeId === task.id
+                  const lineAfter = aiming && insertAt.beforeId === null && index === tasks.length - 1
                   return (
                     <motion.div
                       key={task.id}
@@ -729,7 +785,16 @@ export function BoardColumns({
                       animate="visible"
                       exit="exit"
                       className="relative"
+                      data-card-id={task.id}
+                      onDragOver={(event) => {
+                        if (dragging?.from !== column) return
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        const upper = event.clientY < rect.top + rect.height / 2
+                        aimInsert(column, upper ? task.id : tasks[index + 1]?.id ?? null)
+                      }}
                     >
+                      {lineBefore && <span aria-hidden="true" className="pointer-events-none absolute -top-[5px] inset-x-0 h-0.5 rounded-full bg-primary" />}
+                      {lineAfter && <span aria-hidden="true" className="pointer-events-none absolute -bottom-[5px] inset-x-0 h-0.5 rounded-full bg-primary" />}
                       <TaskCard
                         task={task}
                         column={column}

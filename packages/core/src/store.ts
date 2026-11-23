@@ -7,6 +7,8 @@ import type { GithubRef } from './github'
 import type { JiraRef } from './jira'
 import type { JevRoute } from './jev-router'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
+import type { TagColor } from './tag-colors'
+export { moveTaskInColumn } from './board-order'
 export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
 export interface Task {
@@ -120,6 +122,15 @@ export interface Task {
    * and nothing VibeFlow tears down may remove or rewrite that folder.
    */
   inPlace?: true
+  /** Ids of the board's tags on this card, in the order they were added. Never set on a Done card. */
+  tags?: string[]
+}
+
+/** A status label the user can put on any number of cards. Cards refer to it by `id`, so it can be renamed. */
+export interface TagDef {
+  id: string
+  name: string
+  color: TagColor
 }
 
 export function isMasterTask(task: Pick<Task, 'role'>): boolean {
@@ -265,6 +276,8 @@ export interface VibeFlowState {
   recentProjects?: RecentProject[]
   /** The 終端機 page's shells, in grid order. They outlive a page reload and are shared by every frontend. */
   terminals?: StandaloneTerminalEntry[]
+  /** Every tag the user has made, offered to every card. */
+  tags?: TagDef[]
 }
 
 /** One shell on the 終端機 page. Its cwd is resolved again from `taskId` or `projectPath` at every start. */
@@ -330,6 +343,7 @@ function migrateStore(store: JsonStore<VibeFlowState>): void {
     store.set('recentProjects', recentProjectsFromBoard(store.get('board')))
   }
   if (!store.has('terminals')) store.set('terminals', [])
+  if (!store.has('tags')) store.set('tags', [])
   // Earlier builds kept provider API keys here in plaintext. Model lists now
   // come from the agent CLIs, so nothing reads them and they must not linger.
   const settings = store.get('settings') as (AppSettings & { agentConnections?: unknown }) | undefined
@@ -352,6 +366,7 @@ export function getState(): VibeFlowState {
     // fall back to defaults so the renderer always receives a value.
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
     terminals: store.get('terminals') ?? [],
+    tags: store.get('tags') ?? [],
   }
 }
 
@@ -398,9 +413,26 @@ export function setSettings(patch: Partial<AppSettings>): AppSettings {
   return next
 }
 
-export function setBoard(board: BoardState): void {
-  getStore().set('board', board)
+/**
+ * Tags say what a card is waiting on, which a finished card no longer is: a
+ * card loses its tags on reaching Done, whichever path took it there. Every
+ * board write goes through here so no path can skip that.
+ */
+export function writeBoard(store: JsonStore<VibeFlowState>, board: BoardState): void {
+  store.set('board', {
+    ...board,
+    done: board.done.map((t) => {
+      if (!t.tags) return t
+      const { tags: _cleared, ...rest } = t
+      return rest
+    }),
+  })
 }
+
+export function setBoard(board: BoardState): void {
+  writeBoard(getStore(), board)
+}
+
 
 export function setProjectPath(projectPath: string | null): void {
   getStore().set('projectPath', projectPath)
@@ -414,7 +446,7 @@ export function getProjectPath(): string | null {
 export function addTask(task: Task): void {
   const board = getStore().get('board')
   board.backlog = [task, ...board.backlog]
-  getStore().set('board', board)
+  writeBoard(getStore(), board)
 }
 
 /** Find a task by id across all columns. */
@@ -435,7 +467,7 @@ export function updateTask(taskId: string, patch: Partial<Task>): void {
       t.id === taskId ? { ...t, ...patch } : t
     )
   })
-  getStore().set('board', board)
+  writeBoard(getStore(), board)
 }
 
 function withoutRef(task: Task, removedId: string): Task {
@@ -458,7 +490,7 @@ export function removeTask(taskId: string): void {
       // and a card that waited on the removed one no longer does.
       .map((t) => withoutRef(t, taskId))
   })
-  getStore().set('board', board)
+  writeBoard(getStore(), board)
 }
 
 /**

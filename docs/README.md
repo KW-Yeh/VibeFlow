@@ -35,6 +35,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 
 | Feature | Summary |
 |---|---|
+| [card-tags-reorder](features/card-tags-reorder/spec.md) ([plan](features/card-tags-reorder/plan.md)) | Reorder cards within a column (board and workspace rail share the order) and colored status tags, editable from the UI and the CLI |
 | [terminal-file-preview](features/terminal-file-preview/spec.md) ([plan](features/terminal-file-preview/plan.md)) | Click local file paths in task and independent terminals to preview images and text |
 | [workspace-layout](features/workspace-layout/spec.md) ([plan](features/workspace-layout/plan.md)) | A running card's workspace: one toolbar shared with the terminal, and an inspector that docks or folds into an icon rail |
 | [board-workspace-split](features/board-workspace-split/spec.md) ([plan](features/board-workspace-split/plan.md)) | The board and the task workspace as two full-height pages; the workspace lists running cards in a foldable left rail |

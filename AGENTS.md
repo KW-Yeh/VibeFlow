@@ -146,6 +146,31 @@ npm run vibeflow -- task update \
 - A running app picks the change up on its own — `main.ts` watches the store file's
   directory and pushes fresh state to the renderer.
 
+### CLI tags and card order
+
+Tags say what a card is waiting on (spec: `docs/features/card-tags-reorder/`).
+The board keeps one list (`VibeFlowState.tags`, each `{ id, name, color }`);
+a card stores tag ids in `Task.tags`. These commands write the store directly,
+so they need no host, and in a task shell `--task` / the store default to
+`VIBEFLOW_TASK_ID` / `VIBEFLOW_STORE_DIR`:
+
+```sh
+npm run vibeflow -- task tag --add "等待 PL review PR" [--add …] [--remove …] [--color amber]
+npm run vibeflow -- task move --task <id> (--before <id> | --after <id> | --top | --bottom)
+npm run vibeflow -- tag list | create --name … [--color …] | update --tag … [--name …] [--color …] | delete --tag …
+```
+
+- Tags are named by id or by name ignoring case; names are unique ignoring case.
+  `task tag --add` with a name no tag has yet creates it (least-used colour unless
+  `--color`). Colours are `TAG_COLORS` in `packages/core/src/tag-colors.ts`.
+- **A Done card never has tags.** `writeBoard` (`store.ts`) strips them from the
+  Done column on every board write, so no path into Done can skip it. Every board
+  write must go through `writeBoard` / `setBoard`, never `store.set('board', …)`.
+- Tags stay editable in every column but Done (`vibeflow:setTaskTags`), unlike the
+  rest of a card. `vibeflow:setBoard` ignores tags in its payload.
+- Card order is the column array's order. `task move` / `vibeflow:moveTask` move one
+  card within its column; the board and the workspace rail show the same order.
+
 ### Master cards and starting cards from the CLI
 
 A **master** card (`Task.role === 'master'`, spec: `docs/features/master-cards/`)

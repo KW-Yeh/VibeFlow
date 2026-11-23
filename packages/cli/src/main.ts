@@ -12,6 +12,7 @@ import { createLocalTransport } from '../../core/src/local-transport'
 import { TmuxBackend, hasTmux } from '../../core/src/tmux-backend'
 import { ensurePtySpawnHelper } from '../../core/src/pty-helper'
 import { runTaskCommand, resolveStorePath, TASK_USAGE } from './task-command'
+import { runTagCommand } from './tag-command'
 import { isWebDir, loginUrl, startHost, type HostOptions, type RunningHost } from './host'
 import { connectToHost } from './remote'
 import { formatChecks, runDoctor } from './doctor'
@@ -32,7 +33,8 @@ Usage:
   vibeflow doctor          Check Node, git, tmux, node-pty and the agent CLIs
                            (--skip agents,web,… leaves checks out, e.g. on CI)
   vibeflow update          Install the latest global npm release (a running Web UI host restarts into it)
-  vibeflow task …          Create / update cards; add artifacts (vibeflow task --help)
+  vibeflow task …          Create / update / tag / reorder cards; add artifacts (vibeflow task --help)
+  vibeflow tag …           List / create / rename / delete the board's tags (vibeflow tag --help)
 
 Options:
   --profile dev|prod       Store profile (dev = the "(development)" store npm run dev uses)
@@ -361,6 +363,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     return runTaskCommand(argv.slice(1))
   }
+  if (argv[0] === 'tag') return runTagCommand(argv.slice(1))
   let parsed
   try {
     parsed = parse(argv)

@@ -38,6 +38,17 @@
   /* Master-card identity (DESIGN.md accent-purple, lifted for the dark
      canvas). Marks which cards orchestrate and which belong to one. */
   --master: #b48cf2;
+  /* Card tag palette (TAG_COLORS in packages/core/src/tag-colors.ts). Drawn
+     from the DESIGN.md sticker palette and the status colours, lifted so a
+     tag's text reads on its own 15% tint over the card. */
+  --tag-gray: #a39e98;
+  --tag-red: #f0706f;
+  --tag-orange: #f08a4b;
+  --tag-amber: #e2b341;
+  --tag-green: #4ec98a;
+  --tag-teal: #3cc2bd;
+  --tag-blue: #62aef0;
+  --tag-purple: #b48cf2;
   /* Hairline border / form input border — white translucency, composited
      over the surface below (see S7 contrast synthesis). */
   --border: rgba(255, 255, 255, 0.09);
@@ -81,6 +92,14 @@
   --color-warning: var(--warning);
   --color-success: var(--success);
   --color-master: var(--master);
+  --color-tag-gray: var(--tag-gray);
+  --color-tag-red: var(--tag-red);
+  --color-tag-orange: var(--tag-orange);
+  --color-tag-amber: var(--tag-amber);
+  --color-tag-green: var(--tag-green);
+  --color-tag-teal: var(--tag-teal);
+  --color-tag-blue: var(--tag-blue);
+  --color-tag-purple: var(--tag-purple);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

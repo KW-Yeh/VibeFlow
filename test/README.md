@@ -68,16 +68,17 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 | `platform.test.mjs` | `packages/core/src/platform.ts` | per-OS userData resolution, Node platform defaults |
 | `pty-helper.test.mjs` | `packages/core/src/pty-helper.ts` | node-pty `spawn-helper` executable bit and its fix command |
 | `recent-projects.test.mjs` | `packages/core/src/recent-projects.ts` | recent-project ordering, replacement and lost-folder flags |
-| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card, `continueTask` (usage folded once, brief as the first message, busy / duplicate / failed-start handling) |
+| `service.test.mjs` | `packages/core/src/service.ts` | the handler table with a fake session backend: launches, resume, refusals, progress events and usage folded into the card, `continueTask` (usage folded once, brief as the first message, busy / duplicate / failed-start handling), tag and `moveTask` handlers |
 | `subagents.test.mjs` | `packages/core/src/subagents.ts` | resetting sub-agent hook events |
 | `task-order.test.mjs` | `renderer/lib/task-order.ts` | newest-first card ordering |
 | `board-moves.test.mjs` | `renderer/lib/board-moves.ts` | which column drops are allowed and what each means |
 | `tasks-create.test.mjs` | `packages/core/src/tasks.ts` | card creation defaults (Auto Mode) |
 | `master-cards.test.mjs` | `packages/core/src/tasks.ts`, `service.ts`, `launch.ts` | master cards: no project or git, own folder, master links, `startTask`, summaries, delete/reset safety, master prompt, `continueTask` on a master and on a master's card, master ↔ card messages, VibeFlow's notes to a master, slave launch background, a master's related projects, cards that wait (`after`) started after Done |
 | `master-dependencies.test.mjs` | `packages/core/src/tasks.ts` | `after` stays within one master and never loops; update keeps / clears it; a master's related projects |
+| `tags.test.mjs` | `packages/core/src/tags.ts`, `store.ts`, `board-order.ts`, `tasks.ts` | tag names (trim, unique ignoring case), colours, rename / delete reaching every card, `setTaskTags` creating by name and refusing Done cards, Done cards losing their tags on any board write, the `tags` migration, in-column moves |
 | `tasks-update.test.mjs` | `packages/core/src/tasks.ts` | card updates: text patching, provisioned fields kept |
 | `no-branch-cards.test.mjs` | `packages/core/src/tasks.ts`, `git.ts`, `service.ts` | cards made without a branch: detached worktree in a git project (no branch, no push), a non-git folder used in place and never touched by reset / complete / delete |
-| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks, `task create --no-branch` |
+| `task-cli.test.mjs` | `packages/cli/src/task-command.ts` | the `vibeflow task` CLI as an agent shell runs it: a master's new cards default to it, `task send` errors, `task start --new-session` flag checks, `task create --no-branch`, `task tag` / `tag …` / `task move` against a store with no host |
 | `pty-backend.test.mjs` | `packages/core/src/pty.ts` | real node-pty sessions: re-attach to a running one; fresh, new command or new folder replaces it; a replacement keeps the old size unless it brings its own |
 | `terminal-fit.test.mjs` | `renderer/lib/terminal-fit.ts` | terminal column fitting against scrollbar rounding |
 | `tmux-backend.test.mjs` | `packages/core/src/tmux-backend.ts` | tmux sessions: start, re-attach, a replacement keeping the old client's size, exit status, kill vs. detach |

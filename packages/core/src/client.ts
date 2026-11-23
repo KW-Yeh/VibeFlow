@@ -10,6 +10,7 @@ import type {
   VibeFlowState,
 } from './store'
 import type { AgentCli, AgentCliId, AgentEffort } from './agents'
+import type { TagColor } from './tag-colors'
 import type { AgentModelList } from './agent-models'
 import type {
   DiffEntry,
@@ -103,6 +104,18 @@ export function createBridge(t: BridgeTransport) {
   },
   setBoard: (board: BoardState): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setBoard', board),
+  /** Reorder a card within its column; `beforeId` null = the column's end. */
+  moveTask: (payload: { taskId: string; beforeId: string | null }): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:moveTask', payload),
+  createTag: (payload: { name: string; color?: TagColor }): Promise<VibeFlowState> =>
+    t.invoke('tags:create', payload),
+  updateTag: (payload: { tagId: string; name?: string; color?: TagColor }): Promise<VibeFlowState> =>
+    t.invoke('tags:update', payload),
+  deleteTag: (tagId: string): Promise<VibeFlowState> =>
+    t.invoke('tags:delete', tagId),
+  /** `add` takes tag ids or names; an unknown name becomes a new tag. */
+  setTaskTags: (payload: { taskId: string; add?: string[]; remove?: string[] }): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:setTaskTags', payload),
     setSettings: (patch: Partial<AppSettings>): Promise<VibeFlowState> =>
       t.invoke('vibeflow:setSettings', patch),
     getJevKeyStatus: (): Promise<JevKeyStatus> => t.invoke('settings:jevKeyStatus'),

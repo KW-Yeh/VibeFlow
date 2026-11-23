@@ -3,7 +3,7 @@ import path from 'path'
 import React, { useEffect, useState } from 'react'
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink'
 import type { VibeFlowApi } from '../../core/src/client'
-import type { BoardState, ColumnId, Task } from '../../core/src/store'
+import type { BoardState, ColumnId, TagDef, Task } from '../../core/src/store'
 import { describeNotification, progressSummary, type TaskProgress } from '../../core/src/progress'
 import { TMUX_SOCKET } from '../../core/src/tmux-backend'
 import { editFormState, editInEditor, loadFormContext, newFormState, showForm } from './task-form'
@@ -143,6 +143,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
   const { exit } = useApp()
   const { stdout } = useStdout()
   const [board, setBoard] = useState<BoardState | null>(null)
+  const [tags, setTags] = useState<TagDef[]>([])
   const [sel, setSel] = useState<Selection>(initial)
   const [running, setRunning] = useState<Set<string>>(new Set())
   const [backend, setBackend] = useState<'pty' | 'tmux'>('pty')
@@ -153,8 +154,15 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
 
   useEffect(() => {
     let alive = true
-    void api.getState().then((s) => alive && setBoard(s.board))
-    const off = api.onStateChanged((s) => setBoard(s.board))
+    void api.getState().then((s) => {
+      if (!alive) return
+      setBoard(s.board)
+      setTags(s.tags ?? [])
+    })
+    const off = api.onStateChanged((s) => {
+      setBoard(s.board)
+      setTags(s.tags ?? [])
+    })
     const offProgress = api.onProgressUpdate(({ taskId, progress: p }) => {
       setProgress((prev) => ({ ...prev, [taskId]: p }))
     })
@@ -357,6 +365,8 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
         : tasks.map((t, ti) => {
             const isSel = active && ti === sel.index
             const mark = running.has(t.id) ? '● ' : '  '
+            const tagText = (t.tags ?? []).flatMap((id) => tags.find((x) => x.id === id)?.name ?? [])
+            const tagSuffix = tagText.length ? ` [${tagText.join(', ')}]` : ''
             const role = t.role === 'master' ? '◆ ' : t.masterId ? '↳ ' : ''
             const masterTitle = t.masterId ? COLUMNS.flatMap((c) => board[c]).find((m) => m.id === t.masterId)?.title : undefined
             const detail = t.role === 'master'
@@ -369,7 +379,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
             return h(
               Box,
               { key: t.id, flexDirection: 'column' },
-              h(Text, { inverse: isSel, color: running.has(t.id) ? 'green' : t.role === 'master' ? 'magenta' : undefined }, truncate(`${mark}${role}${t.title}`, colWidth - 4)),
+              h(Text, { inverse: isSel, color: running.has(t.id) ? 'green' : t.role === 'master' ? 'magenta' : undefined }, truncate(`${mark}${role}${t.title}${tagSuffix}`, colWidth - 4)),
               summary ? h(Text, { dimColor: !isSel, color: isSel ? 'cyan' : undefined }, truncate(`  ${summary}`, colWidth - 4)) : null,
               isSel ? h(Text, { dimColor: true }, truncate(`  ${detail}`, colWidth - 4)) : null
             )

@@ -1,19 +1,23 @@
 import { parseArgs } from 'node:util'
 import path from 'node:path'
 import { claudeTitleTranslator } from '../../core/src/branch-name'
-import { createTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
+import { createTaskFromInput, moveTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
+import { setTaskTags } from '../../core/src/tags'
 import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
 import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/src/platform'
-import { findTask, isMasterTask } from '../../core/src/store'
+import { findTask, getStoreAtPath, isMasterTask } from '../../core/src/store'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
 import type { ColumnId } from '../../core/src/store'
+import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'start', 'list', 'show', 'send', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'tag', 'move', 'start', 'list', 'show', 'send', 'artifact']
+/** Write the store directly, so they work without a host — and default to the calling card's store. */
+const SHELL_COMMANDS = ['artifact', 'tag', 'move']
 const ROLES = ['slave', 'master']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
@@ -24,6 +28,8 @@ VibeFlow task commands
 Usage:
   vibeflow task create [options]
   vibeflow task update [options]
+  vibeflow task tag --task <id> [--add <tag>]… [--remove <tag>]… [options]
+  vibeflow task move --task <id> (--before <id> | --after <id> | --top | --bottom) [options]
   vibeflow task start --task <id> [options]
   vibeflow task list [--master <id>] [options]
   vibeflow task show --task <id> [options]
@@ -77,6 +83,24 @@ task update options:
   At least one of --title / --prompt / --status / --master / --after is required. Branch,
   worktree and project path are provisioned on disk and cannot be changed here.
 
+task tag options (no host needed; see also \`vibeflow tag --help\`):
+  --task <id>            Card to tag (defaults to VIBEFLOW_TASK_ID in a task shell)
+  --add <tag>            Tag name or id to put on the card; repeat for several.
+                         A name no tag has yet creates that tag
+  --remove <tag>         Tag name or id to take off the card; repeat for several
+  --color <color>        Colour for tags --add creates: ${TAG_COLORS.join(' | ')}
+                         (default: the least used one)
+  Names match ignoring case. A Done card carries no tags: they are cleared when it
+  reaches Done, and --add on it fails.
+
+task move options (no host needed):
+  --task <id>            Card to move (defaults to VIBEFLOW_TASK_ID in a task shell)
+  --before <id>          Put it right before this card of the same column
+  --after <id>           Put it right after this card of the same column
+  --top / --bottom       Put it first / last in its column
+  Only the order within the card's column changes; use task update --status or
+  task start to move it between columns.
+
 task start / list / show / send (need the running VibeFlow host):
   start --task <id>      Move a Backlog card to In Progress and start its agent,
                          the same as dragging it in the app
@@ -115,7 +139,7 @@ Examples:
     --profile dev
 `.trim()
 
-class CliFailure extends Error {
+export class CliFailure extends Error {
   code: string
   constructor(code: string, message: string) {
     super(message)
@@ -123,12 +147,12 @@ class CliFailure extends Error {
   }
 }
 
-function fail(code: string, message: string): never {
+export function fail(code: string, message: string): never {
   throw new CliFailure(code, message)
 }
 
 /** Reject a flag whose value is outside the allowed set. */
-function requireOneOf(flag: string, value: string | undefined, allowed: readonly string[]): void {
+export function requireOneOf(flag: string, value: string | undefined, allowed: readonly string[]): void {
   if (value !== undefined && !allowed.includes(value)) {
     fail('INVALID_ARGUMENT', `${flag} must be one of: ${allowed.join(', ')}`)
   }
@@ -185,6 +209,12 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         effort:        { type: 'string' },
         'auto-mode':   { type: 'string' },
         attach:        { type: 'string', multiple: true },
+        add:           { type: 'string', multiple: true },
+        remove:        { type: 'string', multiple: true },
+        color:         { type: 'string' },
+        before:        { type: 'string' },
+        top:           { type: 'boolean' },
+        bottom:        { type: 'boolean' },
         file:          { type: 'string' },
         text:          { type: 'string' },
         from:          { type: 'string' },
@@ -206,7 +236,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (values.help || !sub) return null
 
   const storePath = resolveStorePath(
-    values['store-path'] ?? (sub === 'artifact' || HOST_COMMANDS.includes(sub) ? process.env.VIBEFLOW_STORE_DIR : undefined),
+    values['store-path'] ?? (SHELL_COMMANDS.includes(sub) || HOST_COMMANDS.includes(sub) ? process.env.VIBEFLOW_STORE_DIR : undefined),
     values.profile
   )
   setPlatform(createNodePlatform({ userDataDir: storePath }))
@@ -222,6 +252,43 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     const task = findTask(taskId)
     if (!task) fail('TASK_NOT_FOUND', `Task not found: ${taskId}`)
     return { taskId, path: addTaskArtifact(task, values.file) }
+  }
+
+  if (sub === 'tag') {
+    const taskId = values.task ?? process.env.VIBEFLOW_TASK_ID
+    if (!taskId) fail('MISSING_ARGUMENT', 'task tag needs --task (or VIBEFLOW_TASK_ID)')
+    if (!values.add?.length && !values.remove?.length) fail('MISSING_ARGUMENT', 'task tag needs --add or --remove')
+    requireOneOf('--color', values.color, TAG_COLORS)
+    const store = getStoreAtPath(storePath)
+    const { task, tags } = setTaskTags(store, { taskId, add: values.add, remove: values.remove, color: values.color })
+    return {
+      storePath: store.path,
+      task: { id: task.id, title: task.title, tags: (task.tags ?? []).map((id) => tags.find((t) => t.id === id)) },
+    }
+  }
+
+  if (sub === 'move') {
+    const taskId = values.task ?? process.env.VIBEFLOW_TASK_ID
+    if (!taskId) fail('MISSING_ARGUMENT', 'task move needs --task (or VIBEFLOW_TASK_ID)')
+    const afterId = values.after?.length === 1 ? values.after[0] : undefined
+    if ((values.after?.length ?? 0) > 1) fail('INVALID_ARGUMENT', 'task move takes one --after')
+    const targets = [values.before, afterId, values.top, values.bottom].filter((v) => v !== undefined)
+    if (targets.length !== 1) fail('MISSING_ARGUMENT', 'task move needs exactly one of --before, --after, --top, --bottom')
+    const column = Object.values(getStoreAtPath(storePath).get('board')).find((c) => c.some((t) => t.id === taskId))
+    if (!column) fail('TASK_NOT_FOUND', `Task not found: ${taskId}`)
+    const others = column.filter((t) => t.id !== taskId)
+    let beforeId: string | null
+    if (values.top) beforeId = others[0]?.id ?? null
+    else if (values.bottom) beforeId = null
+    else if (values.before !== undefined) beforeId = values.before
+    else {
+      const index = others.findIndex((t) => t.id === afterId)
+      if (index === -1) fail('INVALID_MOVE', `Card ${afterId} is not in the same column`)
+      beforeId = others[index + 1]?.id ?? null
+    }
+    const result = moveTaskFromInput({ taskId, beforeId, storePath })
+    const order = getStoreAtPath(storePath).get('board')[result.column].map((t) => t.id)
+    return { storePath: result.storePath, task: { id: result.task.id, column: result.column, position: order.indexOf(taskId) } }
   }
 
   if (values['new-session'] && sub !== 'start') fail('INVALID_ARGUMENT', '--new-session only goes with task start')

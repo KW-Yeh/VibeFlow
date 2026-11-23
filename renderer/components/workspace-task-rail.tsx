@@ -1,9 +1,11 @@
+import { useState, type DragEvent } from 'react'
 import { Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { branchLabel, TaskId } from '@/components/board-columns'
 import { activityMark, StatusMark, TaskProgressChip } from '@/components/task-progress'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
+import { TagChips } from '@/components/task-tags'
 import { cn } from '@/lib/utils'
 import type { Task, TaskProgress } from '@/lib/types'
 
@@ -13,6 +15,8 @@ interface WorkspaceTaskRailProps {
   selectedTaskId: string | null
   progress: Record<string, TaskProgress>
   onSelect: (taskId: string) => void
+  /** Reorder a card within In Progress; `beforeId` null = the column's end. */
+  onMoveTask: (taskId: string, beforeId: string | null) => void
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
 }
@@ -54,10 +58,50 @@ export function WorkspaceTaskRail({
   selectedTaskId,
   progress,
   onSelect,
+  onMoveTask,
   collapsed,
   onCollapsedChange,
 }: WorkspaceTaskRailProps) {
   const rows = orderRunning(running)
+  const [dragId, setDragId] = useState<string | null>(null)
+  // Where the dragged card would land among its group: before `before`, or at the group's end (null).
+  const [aim, setAim] = useState<{ group: string; before: string | null } | null>(null)
+
+  // A master's running cards move only among themselves; the rest (masters
+  // included, which carry their cards along) move among each other.
+  const ids = new Set(running.map((t) => t.id))
+  const groupOf = (t: Task) => (t.masterId && ids.has(t.masterId) ? t.masterId : '')
+  const members = (group: string) => running.filter((t) => groupOf(t) === group)
+  const dragged = running.find((t) => t.id === dragId)
+  const endDrag = () => {
+    setDragId(null)
+    setAim(null)
+  }
+  const aimAt = (event: DragEvent<HTMLDivElement>, task: Task) => {
+    if (!dragged || groupOf(dragged) !== groupOf(task)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = event.currentTarget.getBoundingClientRect()
+    const group = groupOf(task)
+    const peers = members(group)
+    const before = event.clientY < rect.top + rect.height / 2 ? task.id : peers[peers.indexOf(task) + 1]?.id ?? null
+    if (aim?.group !== group || aim.before !== before) setAim({ group, before })
+  }
+  const drop = () => {
+    if (!dragged || !aim) return
+    const rest = running.filter((t) => t.id !== dragged.id)
+    let beforeId = aim.before
+    if (beforeId === null) {
+      // The group's end, in the column: right after its last other member.
+      const last = members(aim.group).filter((t) => t.id !== dragged.id).at(-1)
+      beforeId = last ? rest[rest.indexOf(last) + 1]?.id ?? null : null
+    }
+    const next = running[running.indexOf(dragged) + 1]?.id ?? null
+    if (beforeId !== dragged.id && beforeId !== next) onMoveTask(dragged.id, beforeId)
+  }
+  /** The last row drawn for a group: a master's block ends with its cards. */
+  const groupEndRow = (group: string) =>
+    group === '' ? rows.at(-1)?.task.id : members(group).at(-1)?.id
 
   if (collapsed) {
     return (
@@ -101,10 +145,8 @@ export function WorkspaceTaskRail({
     const isMaster = task.role === 'master'
     const button = (
       <button
-        key={task.id}
         type="button"
         aria-current={selected ? 'page' : undefined}
-        title={task.title}
         onClick={() => onSelect(task.id)}
         className={cn(
           'flex w-full min-w-0 flex-col gap-1 rounded-md border px-2.5 py-2 text-left outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
@@ -135,13 +177,34 @@ export function WorkspaceTaskRail({
           </span>
           <TaskProgressChip progress={progress[task.id]} mark={isMaster} />
         </span>
+        <TagChips task={task} className="pl-[22px]" />
       </button>
     )
-    if (branch === 'none') return button
+    const lineBefore = aim?.before === task.id
+    const lineAfter = aim !== null && aim.before === null && groupEndRow(aim.group) === task.id
     return (
-      <div key={task.id} className="relative pl-7">
-        <TreeLine branch={branch} />
+      <div
+        key={task.id}
+        draggable
+        title={task.title}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', task.id)
+          setDragId(task.id)
+        }}
+        onDragEnd={endDrag}
+        onDragOver={(event) => aimAt(event, task)}
+        onDrop={(event) => {
+          event.preventDefault()
+          drop()
+          endDrag()
+        }}
+        className={cn('relative', branch !== 'none' && 'pl-7', dragId === task.id && 'opacity-50')}
+      >
+        {branch !== 'none' && <TreeLine branch={branch} />}
+        {lineBefore && <span aria-hidden="true" className="pointer-events-none absolute -top-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
         {button}
+        {lineAfter && <span aria-hidden="true" className="pointer-events-none absolute -bottom-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
       </div>
     )
   }

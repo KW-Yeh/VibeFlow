@@ -11,8 +11,10 @@ export type {
   AppSettings,
   NotificationSettings,
   StandaloneTerminalEntry,
+  TagDef,
   VibeFlowState,
 } from '../../packages/core/src/store'
+export type { TagColor } from '../../packages/core/src/tag-colors'
 export type { JevRoute } from '../../packages/core/src/jev-router'
 export type {
   GitInfo,

@@ -10,6 +10,7 @@ import type {
   AttachmentInput,
   BoardCliLaunchInfo,
   BoardState,
+  TagColor,
   ChatChunk,
   ChatAttachment,
   ChatPhase,
@@ -91,6 +92,28 @@ export function onUpdateAvailable(callback: (update: AvailableUpdate | null) => 
 export async function persistBoard(board: BoardState): Promise<void> {
   const b = bridge()
   if (b) await b.setBoard(board)
+}
+
+/** Reorder a card within its column; `beforeId` null = the column's end. */
+export async function moveTask(taskId: string, beforeId: string | null): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.moveTask({ taskId, beforeId }) : null
+}
+
+export async function updateTag(tagId: string, patch: { name?: string; color?: TagColor }): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.updateTag({ tagId, ...patch }) : null
+}
+
+export async function deleteTag(tagId: string): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.deleteTag(tagId) : null
+}
+
+/** `add` takes tag ids or names; an unknown name becomes a new tag. */
+export async function setTaskTags(taskId: string, change: { add?: string[]; remove?: string[] }): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.setTaskTags({ taskId, ...change }) : null
 }
 
 export async function setSettings(

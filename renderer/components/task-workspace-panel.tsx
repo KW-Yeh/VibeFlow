@@ -46,6 +46,7 @@ import { StatusMark, TaskProgressChip, TaskProgressDetail } from '@/components/t
 import { Button } from '@/components/ui/button'
 import { DialogShell } from '@/components/ui/dialog-shell'
 import { IconButton } from '@/components/ui/icon-button'
+import { TagChips, TaskTagsControl } from '@/components/task-tags'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { ZoomableImage } from '@/components/zoomable-image'
 import { taskArtifactsDir } from '@/lib/claude'
@@ -454,6 +455,7 @@ function TaskInfo({
         <h3 className="break-words text-lg font-semibold tracking-tight text-foreground">
           {task.title}
         </h3>
+        <TagChips task={task} max={8} className="mt-2" />
       </div>
 
       {task.jevRoute?.status === 'routing' && (
@@ -1642,6 +1644,7 @@ export function TaskWorkspacePanel({
               }
               toolbarEnd={
                 <>
+                  <TaskTagsControl task={task} />
                   <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
                   <Button
                     size="sm"

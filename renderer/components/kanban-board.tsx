@@ -39,6 +39,8 @@ import type {
 interface KanbanBoardProps {
   board: BoardState
   onBoardChange: (board: BoardState) => void
+  /** Reorder a card within its column; `beforeId` null = the column's end. */
+  onMoveTask: (taskId: string, beforeId: string | null) => void
   onEditTask: (taskId: string) => void
   onTaskDone: (taskId: string) => Promise<void> | void
   onDeleteTask: (taskId: string) => void
@@ -151,6 +153,7 @@ function WorkspaceSurface({
 export function KanbanBoard({
   board,
   onBoardChange,
+  onMoveTask,
   onEditTask,
   onTaskDone,
   onDeleteTask,
@@ -379,6 +382,7 @@ export function KanbanBoard({
             selectedTaskId={selectedTaskId ?? null}
             onSelectTask={onOpenTaskSheet}
             onDropCard={dropCard}
+            onMoveTask={onMoveTask}
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onOpenTaskTerminal={onOpenTaskTerminal}
@@ -435,6 +439,7 @@ export function KanbanBoard({
               selectedTaskId={selectedTaskId ?? null}
               progress={progress}
               onSelect={onSelectTask}
+              onMoveTask={onMoveTask}
               collapsed={railCollapsed}
               onCollapsedChange={changeRailCollapsed}
             />

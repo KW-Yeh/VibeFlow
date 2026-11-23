@@ -93,3 +93,74 @@ test('a master names related projects and its cards wait on each other with --af
   assert.equal((await task(['create', '--project', projectPath, '--project', projectPath, '--title', 'X', '--prompt', 'p', ...store])).error.code, 'INVALID_ARGUMENT')
   assert.equal((await task(['create', '--role', 'master', '--title', 'X', '--prompt', 'p', '--after', api.id, ...store])).error.code, 'INVALID_ARGUMENT')
 })
+
+/** `vibeflow tag …`, run the same way as `task`. */
+async function tagCli(args, env = {}) {
+  const { VIBEFLOW_TASK_ID, VIBEFLOW_STORE_DIR, ...inherited } = process.env
+  const { stdout } = await run(
+    process.execPath,
+    ['--experimental-strip-types', '--import', './test/support/register.mjs', 'scripts/vibeflow.mjs', 'tag', ...args],
+    { cwd: root, env: { ...inherited, ...env } }
+  ).catch((err) => err)
+  return JSON.parse(stdout)
+}
+
+async function seededStore(t) {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-tag-cli-'))
+  t.after(() => fs.rm(storeDir, { recursive: true, force: true }))
+  const card = (id) => ({ id, title: id, branch: '' })
+  getStoreAtPath(storeDir).set('board', { backlog: [card('a'), card('b'), card('c')], in_progress: [card('run')], done: [card('fin')] })
+  return storeDir
+}
+
+test('an agent tags its own card from its shell, by name, without a host', async (t) => {
+  const storeDir = await seededStore(t)
+  const shell = { VIBEFLOW_TASK_ID: 'run', VIBEFLOW_STORE_DIR: storeDir }
+  const added = await task(['tag', '--add', '等待 JFrog 簽核', '--add', 'Blocked', '--color', 'amber'], shell)
+  assert.equal(added.ok, true)
+  assert.deepEqual(added.task.tags.map((x) => [x.name, x.color]), [['等待 JFrog 簽核', 'amber'], ['Blocked', 'amber']])
+
+  const removed = await task(['tag', '--remove', 'blocked'], shell)
+  assert.deepEqual(removed.task.tags.map((x) => x.name), ['等待 JFrog 簽核'])
+
+  const listed = await tagCli(['list'], { VIBEFLOW_STORE_DIR: storeDir })
+  assert.deepEqual(listed.tags.map((x) => x.name), ['等待 JFrog 簽核', 'Blocked'])
+
+  assert.equal((await task(['tag', '--task', 'fin', '--add', 'x', '--store-path', storeDir])).error.code, 'TASK_DONE')
+  assert.equal((await task(['tag', '--task', 'run', '--add', 'x', '--color', 'pink', '--store-path', storeDir])).error.code, 'INVALID_ARGUMENT')
+  assert.equal((await task(['tag', '--task', 'run', '--store-path', storeDir])).error.code, 'MISSING_ARGUMENT')
+})
+
+test('tag create, update and delete manage the board tags and their cards', async (t) => {
+  const storeDir = await seededStore(t)
+  const store = ['--store-path', storeDir]
+  const created = await tagCli(['create', '--name', '等待 PL review PR', '--color', 'blue', ...store])
+  assert.equal(created.tag.color, 'blue')
+  assert.equal((await tagCli(['create', '--name', '等待 pl review pr', ...store])).error.code, 'TAG_EXISTS')
+  await task(['tag', '--task', 'a', '--add', created.tag.id, ...store])
+
+  const updated = await tagCli(['update', '--tag', '等待 PL review PR', '--name', 'PL review', '--color', 'purple', ...store])
+  assert.deepEqual([updated.tag.id, updated.tag.name, updated.tag.color], [created.tag.id, 'PL review', 'purple'])
+  assert.equal((await tagCli(['update', '--tag', 'nope', '--name', 'x', ...store])).error.code, 'UNKNOWN_TAG')
+
+  await tagCli(['delete', '--tag', 'pl review', ...store])
+  assert.equal(getStoreAtPath(storeDir).get('board').backlog[0].tags, undefined)
+  assert.deepEqual((await tagCli(['list', ...store])).tags, [])
+  assert.equal((await tagCli(['rename', ...store])).error.code, 'UNKNOWN_COMMAND')
+})
+
+test('task move reorders a card within its column', async (t) => {
+  const storeDir = await seededStore(t)
+  const store = ['--store-path', storeDir]
+  const order = () => getStoreAtPath(storeDir).get('board').backlog.map((c) => c.id)
+  assert.equal((await task(['move', '--task', 'c', '--top', ...store])).task.position, 0)
+  assert.deepEqual(order(), ['c', 'a', 'b'])
+  await task(['move', '--task', 'c', '--bottom', ...store])
+  assert.deepEqual(order(), ['a', 'b', 'c'])
+  await task(['move', '--task', 'a', '--after', 'b', ...store])
+  assert.deepEqual(order(), ['b', 'a', 'c'])
+  await task(['move', '--task', 'c', '--before', 'b', ...store])
+  assert.deepEqual(order(), ['c', 'b', 'a'])
+  assert.equal((await task(['move', '--task', 'a', '--before', 'run', ...store])).error.code, 'INVALID_MOVE')
+  assert.equal((await task(['move', '--task', 'a', '--top', '--bottom', ...store])).error.code, 'MISSING_ARGUMENT')
+})

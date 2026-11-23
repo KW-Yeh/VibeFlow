@@ -284,6 +284,9 @@ The remaining colours form Notion's **decorative sticker palette** — they appe
 - **Sticker Green** (`{colors.accent-green}` — #1aae39)
 - **Sticker Brown** (`{colors.accent-brown}` — #523410)
 
+### Tag colours (VibeFlow)
+Card tags use a fixed eight-colour palette (`TAG_COLORS` in `packages/core/src/tag-colors.ts`, `--tag-*` in `renderer/styles/globals.css`): gray (Ash), red, orange, amber (the warning colour), green (the success colour), teal, blue (Sticker Sky) and purple (the master colour), each lifted for the dark canvas. A tag is drawn as its colour at 15% behind text in the full colour, never as a solid fill, so it reads as a label and not as an action.
+
 ### Surface
 - **White** (`{colors.canvas}` / `{colors.surface}` — #ffffff): card and panel surfaces, nav bar, form fields.
 - **Warm Paper** (`{colors.canvas-soft}` — #f6f5f4): the signature page canvas and the footer band — a warm off-white that gives the whole site its document-like calm.

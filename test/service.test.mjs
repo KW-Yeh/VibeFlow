@@ -1094,3 +1094,61 @@ test('jira:inbox uses injected acli and a Jira-sourced card persists its ref', a
   assert.throws(() => core.handlers['jira:inbox']({ scope: 'project = OTHER' }), { code: 'INVALID_REQUEST' })
   assert.throws(() => core.handlers['vibeflow:setSettings']({ jira: { storyPointsFields: ['bad'] } }), { code: 'INVALID_REQUEST' })
 })
+
+test('tags: the frontend tags a running card, a board write keeps them, and Done clears them', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  const start = getStore().get('board')
+  core.handlers['vibeflow:setBoard']({ ...start, backlog: start.backlog.filter((c) => c.id !== task.id), in_progress: [task, ...start.in_progress] })
+  let state = core.handlers['vibeflow:setTaskTags']({ taskId: task.id, add: ['等待 PL review PR'] })
+  const tag = state.tags.find((x) => x.name === '等待 PL review PR')
+  assert.ok(tag)
+  assert.deepEqual(findTask(task.id).tags, [tag.id])
+
+  // A frontend's stale board snapshot carries no tags; core keeps its own.
+  const board = getStore().get('board')
+  core.handlers['vibeflow:setBoard']({ ...board, in_progress: board.in_progress.map((c) => ({ ...c, tags: undefined })) })
+  assert.deepEqual(findTask(task.id).tags, [tag.id])
+
+  const before = getStore().get('board')
+  state = core.handlers['vibeflow:setBoard']({
+    ...before,
+    in_progress: before.in_progress.filter((c) => c.id !== task.id),
+    done: [findTask(task.id), ...before.done],
+  })
+  assert.equal(findTask(task.id).tags, undefined)
+  assert.ok(state.tags.some((x) => x.id === tag.id))
+  assert.throws(() => core.handlers['vibeflow:setTaskTags']({ taskId: task.id, add: [tag.id] }), { code: 'TASK_DONE' })
+})
+
+test('tags: create, rename and delete go through the handler table and validate input', async (t) => {
+  const { core, task } = await coreWithTask(t)
+  let state = core.handlers['tags:create']({ name: 'svc-tag', color: 'teal' })
+  const tag = state.tags.find((x) => x.name === 'svc-tag')
+  core.handlers['vibeflow:setTaskTags']({ taskId: task.id, add: [tag.id] })
+  state = core.handlers['tags:update']({ tagId: tag.id, name: 'svc-renamed' })
+  assert.equal(state.tags.find((x) => x.id === tag.id).name, 'svc-renamed')
+  core.handlers['tags:delete'](tag.id)
+  assert.equal(findTask(task.id).tags, undefined)
+  assert.throws(() => core.handlers['tags:create']({ name: 42 }), /name must be a string/)
+  assert.throws(() => core.handlers['vibeflow:setTaskTags']({ taskId: task.id, add: 'x' }), /add must be a list/)
+  assert.throws(() => core.handlers['vibeflow:setTaskTags']({ taskId: 'nope', add: ['x'] }), /unknown task/)
+})
+
+test('moveTask reorders within a column and refuses an anchor elsewhere', async (t) => {
+  const { core, task: first } = await coreWithTask(t)
+  const { task: second } = await core.handlers['vibeflow:createTask']({
+    title: 'Second', projectPath: first.projectPath, baseBranch: null, agentCli: 'claude',
+  })
+  let backlog = getStore().get('board').backlog.map((c) => c.id)
+  assert.ok(backlog.indexOf(second.id) < backlog.indexOf(first.id))
+  core.handlers['vibeflow:moveTask']({ taskId: second.id, beforeId: null })
+  backlog = getStore().get('board').backlog.map((c) => c.id)
+  assert.equal(backlog.at(-1), second.id)
+  core.handlers['vibeflow:moveTask']({ taskId: second.id, beforeId: first.id })
+  backlog = getStore().get('board').backlog.map((c) => c.id)
+  assert.equal(backlog.indexOf(second.id) + 1, backlog.indexOf(first.id))
+
+  const board = getStore().get('board')
+  core.handlers['vibeflow:setBoard']({ ...board, backlog: board.backlog.filter((c) => c.id !== first.id), in_progress: [first, ...board.in_progress] })
+  assert.throws(() => core.handlers['vibeflow:moveTask']({ taskId: second.id, beforeId: first.id }), { code: 'INVALID_MOVE' })
+})

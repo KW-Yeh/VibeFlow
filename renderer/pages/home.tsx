@@ -16,6 +16,8 @@ import { RemoteShareDialog } from '@/components/remote-share-dialog'
 import { NotificationToaster, type Toast } from '@/components/notification-toaster'
 import { withNotificationDefaults } from '@/components/notification-settings'
 import { DialogShell } from '@/components/ui/dialog-shell'
+import { TagsProvider } from '@/components/task-tags'
+import { moveTaskInColumn } from '@/lib/board-order'
 import { Loader2, X } from 'lucide-react'
 import { useRemoteHost } from '@/hooks/use-remote-host'
 import {
@@ -29,6 +31,7 @@ import {
   initRepository,
   listRecentProjects,
   loadState,
+  moveTask,
   onProgressNotify,
   onProgressUpdate,
   onUpdateAvailable,
@@ -68,8 +71,10 @@ import type {
   RecentProjectEntry,
   NotificationSettings,
   ProgressNotification,
+  TagDef,
   Task,
   TaskProgress,
+  VibeFlowState,
 } from '@/lib/types'
 
 // Rendered until the persisted state loads, and as a fallback when core is
@@ -125,6 +130,7 @@ function withStoredTerminals(current: PaneTerminal[], stored: GridTerminal[]): P
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
+  const [tags, setTags] = useState<TagDef[]>([])
   // Live progress of running cards, read by core from each agent's transcript.
   // Session-only; a done card shows its stored Task.usage.
   const [progress, setProgress] = useState<Record<string, TaskProgress>>({})
@@ -191,6 +197,7 @@ export default function HomePage() {
       if (!active) return
       if (state) {
         setBoard(state.board)
+        setTags(state.tags ?? [])
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
@@ -216,6 +223,7 @@ export default function HomePage() {
   useEffect(() => {
     return onStateChanged((state) => {
       setBoard(state.board)
+      setTags(state.tags ?? [])
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
@@ -313,6 +321,23 @@ export default function HomePage() {
   const handleBoardChange = (next: BoardState) => {
     setBoard(next)
     void persistBoard(next)
+  }
+
+  const applyState = useCallback((state: VibeFlowState | null) => {
+    if (!state) return
+    setBoard(state.board)
+    setTags(state.tags ?? [])
+  }, [])
+  const tagsValue = React.useMemo(() => ({ tags, applyState }), [tags, applyState])
+
+  // Shown at once; the host's answer then settles it, or puts it back if refused.
+  const handleMoveTask = (taskId: string, beforeId: string | null) => {
+    const next = moveTaskInColumn(board, taskId, beforeId)
+    if (!next) return
+    setBoard(next)
+    moveTask(taskId, beforeId).then(applyState, () => {
+      void loadState().then(applyState)
+    })
   }
 
   // Only a running card opens in the workspace; any other card opens its sheet.
@@ -536,7 +561,7 @@ export default function HomePage() {
   })
 
   return (
-    <React.Fragment>
+    <TagsProvider value={tagsValue}>
       <Head>
         <title>VibeFlow</title>
       </Head>
@@ -596,6 +621,7 @@ export default function HomePage() {
                   onNewTask={handleOpenNewTask}
                   board={board}
                   onBoardChange={handleBoardChange}
+                  onMoveTask={handleMoveTask}
                   onEditTask={handleOpenEditTask}
                   onTaskDone={handleTaskDone}
                   onDeleteTask={handleDeleteTask}
@@ -779,6 +805,6 @@ export default function HomePage() {
           </div>
         )}
       </div>
-    </React.Fragment>
+    </TagsProvider>
   )
 }

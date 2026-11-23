@@ -5,7 +5,9 @@ import {
   getStore,
   getStoreAtPath,
   isMasterTask,
+  moveTaskInColumn,
   resolveWorkstationPath,
+  writeBoard,
   type ColumnId,
   type Task,
 } from './store'
@@ -259,7 +261,7 @@ export async function createTaskFromInput(
   try {
     const board = store.get('board')
     board[col] = [task, ...board[col]]
-    store.set('board', board)
+    writeBoard(store, board)
     recordRecentProject(store, projectPath)
   } catch (err) {
     throw Object.assign(
@@ -322,7 +324,7 @@ async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResul
   try {
     const board = store.get('board')
     board[col] = [task, ...board[col]]
-    store.set('board', board)
+    writeBoard(store, board)
   } catch (err) {
     throw taskError(`Store 寫入失敗：${(err as Error).message}`, 'STORE_WRITE_FAILED')
   }
@@ -465,7 +467,7 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
   }
 
   try {
-    store.set('board', board)
+    writeBoard(store, board)
   } catch (err) {
     throw Object.assign(
       new Error(`Store 寫入失敗：${(err as Error).message}`),
@@ -474,4 +476,23 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
   }
 
   return { task, storePath: store.path }
+}
+
+export interface MoveTaskInput {
+  taskId: string
+  /** The card to sit right before, in the same column; null = the column's end. */
+  beforeId: string | null
+  storePath?: string
+}
+
+/** Reorder a card within its column. Moving between columns is not this; it starts or finishes work. */
+export function moveTaskFromInput(input: MoveTaskInput): { task: Task; column: ColumnId; storePath: string } {
+  const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
+  const board = store.get('board')
+  const column = (Object.keys(board) as ColumnId[]).find((c) => board[c].some((t) => t.id === input.taskId))
+  if (!column) throw taskError(`找不到卡片：${input.taskId}`, 'TASK_NOT_FOUND')
+  const next = moveTaskInColumn(board, input.taskId, input.beforeId)
+  if (!next) throw taskError(`卡片 ${input.beforeId} 不在同一欄`, 'INVALID_MOVE')
+  writeBoard(store, next)
+  return { task: next[column].find((t) => t.id === input.taskId)!, column, storePath: store.path }
 }
