@@ -1221,6 +1221,8 @@ test('Web UI: cards reorder within a column and carry tags until Done', { skip: 
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await page.goto(server.loginUrl())
   const card = (title) => page.getByRole('button', { name: `開啟任務：${title}`, exact: true })
+  // The card's own tags, not the picker it opens, which renders inside it.
+  const chips = (title) => card(title).getByLabel('標籤', { exact: true })
   const backlog = () => core.handlers['vibeflow:getState']().board.backlog.map((task) => task.title)
   const waitFor = async (read, expected) => {
     for (let i = 0; i < 50 && JSON.stringify(read()) !== JSON.stringify(expected); i += 1) await page.waitForTimeout(100)
@@ -1246,12 +1248,12 @@ test('Web UI: cards reorder within a column and carry tags until Done', { skip: 
   const picker = page.getByRole('dialog', { name: '標籤：Charlie' })
   await picker.getByLabel('搜尋或新增標籤').fill('等待 PL review PR')
   await picker.getByLabel('搜尋或新增標籤').press('Enter')
-  await card('Charlie').getByText('等待 PL review PR').waitFor()
+  await chips('Charlie').getByText('等待 PL review PR').waitFor()
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '任務選項：Bravo' }).click()
   await page.getByRole('menuitem', { name: '標籤…' }).click()
   await page.getByRole('dialog', { name: '標籤：Bravo' }).getByRole('menuitemcheckbox', { name: '等待 PL review PR' }).click()
-  await card('Bravo').getByText('等待 PL review PR').waitFor()
+  await chips('Bravo').getByText('等待 PL review PR').waitFor()
   await page.keyboard.press('Escape')
 
   // Reaching Done takes a card's tags away; the tag stays on the board.
@@ -1260,7 +1262,7 @@ test('Web UI: cards reorder within a column and carry tags until Done', { skip: 
   core.handlers['vibeflow:setBoard']({ ...board, backlog: board.backlog.filter((task) => task.id !== charlie.id), done: [charlie] })
   await page.reload()
   await card('Charlie').waitFor()
-  assert.equal(await card('Charlie').getByText('等待 PL review PR').count(), 0)
-  await card('Bravo').getByText('等待 PL review PR').waitFor()
+  assert.equal(await chips('Charlie').getByText('等待 PL review PR').count(), 0)
+  await chips('Bravo').getByText('等待 PL review PR').waitFor()
   assert.equal(core.handlers['vibeflow:getState']().tags.length, 1)
 })
