@@ -228,3 +228,15 @@
   - `npm run test:e2e`：5 個全數通過。
   - Live Web UI（拋棄式 `--store-path`，port 47833，內建瀏覽器）：看板顯示四欄，盤點卡帶「待回答」標籤與原因；點開盤點面板，摘要與 `docs/features/lodash-dependency/plan.md` 全文都有顯示；在補充 context 輸入回答後按「儲存並重新盤點」，卡片轉為「盤點中」，真的 Claude 跑完第二次後仍為「待回答」（JFrog token 依然缺），store 中描述未變、context 已存、`passes` 為 2；以 DragEvent 把 Backlog 卡拖到盤點欄，卡片進入盤點欄並開始真實盤點，結束後為「待回答」；放行開關開 → 關，產生一份 0 張卡的報告，真的 haiku 補上敘述，報告對話框可以列出並閱讀；設定頁把並行上限改成 3 並儲存，store 中 `settings.autonomous.concurrency` 為 3。結束後以 `vibeflow shutdown` 停止 host，tmux 中沒有測試卡的 session。
   - 沒有在 live UI 驗證：從 UI 按「開始執行」或放行真的啟動執行（會開真實的互動 agent session）；這條路徑由 `release.test.mjs` 與 `service` 層測試覆蓋。視覺設計（窄螢幕時頂列擁擠等）屬於階段 10，不在這次範圍。
+
+### 階段 9：文件（2026-11-25）
+
+- 改動：`AGENTS.md`（新增「Inventory, status tags, release and reports」一節、v5 store 與 `COLUMN_IDS`／`normalizeBoard` 的慣例、`--status inventory`、新檔案的結構說明、`release`／`report` 指令）、`packages/core/IPC_API_MAP.md`（新 handler 與 `startTask`、`setTaskTags` 的新行為）、`test/README.md`（6 個新測試檔與既有測試的新範圍）、`docs/README.md`（autonomous-run 索引）。
+- 驗證（最終狀態，整個 DoD）：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `npx tsc --noEmit -p renderer/tsconfig.json`：通過。
+  - `npm test`：715 個全數通過。
+  - `npm run build:web`：成功。
+  - `npm run test:e2e`：5 個全數通過。
+  - `vibeflow --help` 列出 `release` 與 `report`。
+- 整體沒有驗證的部分：AC-3 設定 JFrog token 後重新盤點通過（沒有真實 token）；真實的額度上限接續（無法按需觸發，只以 fixture 與假時鐘測過）；Codex 額度上限偵測（已知限制）；live UI 中真的啟動執行階段的 agent session；`npm run build:npm` 與打包後的 `vibeflow doctor`（這次沒有打包）。

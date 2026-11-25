@@ -35,6 +35,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 
 | Feature | Summary |
 |---|---|
+| [autonomous-run](features/autonomous-run/spec.md) ([plan](features/autonomous-run/plan.md)) | A 盤點 column where a card runs headlessly to write spec.md / plan.md with 執行準備 and check its resources; reserved status tags; a release switch that starts ready cards under a concurrency limit; Claude usage limits detected and carried on after the reset; batch reports |
 | [card-tags-reorder](features/card-tags-reorder/spec.md) ([plan](features/card-tags-reorder/plan.md)) | Reorder cards within a column (board and workspace rail share the order) and colored status tags, editable from the UI and the CLI |
 | [terminal-file-preview](features/terminal-file-preview/spec.md) ([plan](features/terminal-file-preview/plan.md)) | Click local file paths in task and independent terminals to preview images and text |
 | [workspace-layout](features/workspace-layout/spec.md) ([plan](features/workspace-layout/plan.md)) | A running card's workspace: one toolbar shared with the terminal, and an inspector that docks or folds into an icon rail |

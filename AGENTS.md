@@ -38,7 +38,7 @@ the project folder is chosen **per task** at creation time (there is no global
 |---|---|---|
 | One-click start | `./start.command` / `start.cmd` | macOS/Linux / Windows; a double-click works for both. Same steps: `npm ci` only when `package-lock.json` is newer than the last install, then `npm run build:web` and `npm start` (extra args pass through). |
 | Web UI from source | `npm start` | Builds `app/` once if missing, then runs the `vibeflow` CLI from source (`npm start -- tui`, `npm start -- --profile dev --no-open`). |
-| Any CLI command | `npm run vibeflow -- <command>` | `status`, `stop`, `shutdown`, `open <path>`, `doctor`, `update`, `tui`, `task …` — see `vibeflow --help` |
+| Any CLI command | `npm run vibeflow -- <command>` | `status`, `stop`, `shutdown`, `open <path>`, `doctor`, `update`, `tui`, `task …`, `tag …`, `release …`, `report …` — see `vibeflow --help` |
 | Build Web UI | `npm run build:web` | Static export of the renderer into `app/` (what `vibeflow` serves). `-- --webpack` on restricted runners. |
 | Build npm package | `npm run build:npm` | esbuild bundle of core+cli+tui + the Web UI into `dist-npm/`; then `npm pack ./dist-npm`. Never `npm publish` locally — CI publishes with provenance. |
 | E2E | `npm run test:e2e` | Playwright (playwright-core, the installed Edge/Chrome) drives the Web UI against a real host with a fake agent. Needs `npm run build:web` first. |
@@ -76,7 +76,9 @@ npm run vibeflow -- task create \
 ```
 
 - Required flags: `--project`, `--title`, and `--prompt`.
-- `--status` accepts `backlog`, `in_progress`, or `done`; it defaults to `backlog`.
+- `--status` accepts `backlog`, `inventory`, `in_progress`, or `done`; it defaults to `backlog`.
+  A card written straight into `inventory` is provisioned but no pass starts — use
+  `task inventory rerun` (or `task inventory start` from Backlog).
   A card written straight into `in_progress` does **not** auto-launch — that only
   happens when a card is moved in the app — so leave CLI-created cards in backlog
   unless you intend to start them from the UI.
@@ -170,6 +172,55 @@ npm run vibeflow -- tag list | create --name … [--color …] | update --tag �
   rest of a card. `vibeflow:setBoard` ignores tags in its payload.
 - Card order is the column array's order. `task move` / `vibeflow:moveTask` move one
   card within its column; the board and the workspace rail show the same order.
+
+### Inventory, status tags, release and reports
+
+Spec: `docs/features/autonomous-run/`. The board has a fourth column, **盤點**
+(`inventory`), between Backlog and In Progress. Masters never enter it.
+
+```sh
+npm run vibeflow -- task inventory start --task <id>          # Backlog → 盤點 (host)
+npm run vibeflow -- task inventory context --task <id> --text "…" [--attach <path>]
+npm run vibeflow -- task inventory rerun --task <id>
+npm run vibeflow -- task status --set <key|名稱> [--reason "…"] | --clear   # no host
+npm run vibeflow -- release on | off | status
+npm run vibeflow -- report list | show --report <id>                       # no host
+```
+
+- **Inventory** (`inventory.ts`, `inventoryPrompt` in `launch.ts`): the card is
+  provisioned, then one headless pass (`runAgentPrint`, no terminal) writes
+  `docs/features/<slug>/spec.md` and `plan.md` with a 「執行準備」 section and checks
+  resources without reading secrets. Claude runs `-p --permission-mode dontAsk` with a
+  fixed allowlist (`Edit(./docs/features/**)`, `Bash(<check>:*)`, plus
+  `settings.autonomous.inventoryCommands`); Codex runs `exec --sandbox workspace-write`
+  with network. The pass ends with `VIBEFLOW_INVENTORY_RESULT: ready|needs_answer`,
+  which core turns into the status — the agent never calls the CLI, so the allowlist
+  needs no `node`. Extra context lives in `Task.inventory.context`; an inventory card's
+  description is not editable. Leaving the column aborts the pass.
+- **Status tags** (`status-tags.ts`, keys in `status-keys.ts`): eight reserved tags
+  with fixed ids `status:<key>` (inventorying, needs_answer, ready, running, quota_wait,
+  needs_review, stuck, pr_opened), added at host start, not deletable, one per card.
+  Code reads the id, never the name. `setTaskStatus` is the only writer; it keeps the
+  reason in `Task.statusNote` and logs a `StatusEvent` in the open release batch.
+- **Running from an inventory**: `startTask` accepts an inventory card (new `runId`);
+  its first launch, however it reached In Progress, gets `executionBrief()` instead
+  of the card text (`Task.inventory.handedOffAt` makes that once).
+- **Release** (`release.ts`, `setRelease` in `service.ts`): on = a batch, then 準備開工
+  cards in column order up to `concurrency`. Every non-master In Progress card holds a
+  slot unless its status is needs_review / stuck / pr_opened. Ticks run on
+  `state:changed`, board writes, cleanup and host start (deferred to a microtask).
+- **Usage limits** (`claudeQuotaLimit` in `progress.ts`, `heartbeat.ts`): a Claude
+  transcript line with `isApiErrorMessage` + `error: 'rate_limit'` gives
+  `activity.waitingFor: 'quota'` and `resetsAt`; the host stores `Task.quotaWait`,
+  marks 等待額度, and the heartbeat probes after `resetsAt + 60 s` (else every
+  `heartbeatMinutes`), then types "continue" through `mailbox.ts` or resumes the ended
+  session. A card waiting on a person gets nothing. Codex limits are not detected.
+- **Reports** (`report.ts`): switching off writes `<storeDir>/reports/<id>.md` — a
+  facts table from the batch's events first, then an agent narrative
+  (`reportAgent` / `reportModel` / `reportEffort`, default Claude haiku low); a failed
+  narrative leaves it `pending` and retries. `reportKeep` (default 10) prunes the oldest.
+- **Settings** live in `settings.autonomous`, always read through
+  `resolveAutonomousSettings` (never written by migration, so new defaults apply).
 
 ### Master cards and starting cards from the CLI
 
@@ -331,7 +382,11 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── commit-diff.ts     diff by commit: a running card's base..HEAD, a done card's commits (base, then gh)
 │   ├── library-builtins.ts shipped skills → every user's library (sync at host start, restore)
 │   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
-│   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity, notifications
+│   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity (incl. usage limits), notifications
+│   ├── status-keys.ts / status-tags.ts  reserved status tags (`status:<key>`) and the one status writer
+│   ├── inventory.ts       headless inventory pass: allowlist / sandbox arguments, result parsing
+│   ├── heartbeat.ts / quota-probe.ts  per-card usage-limit timers and the provider probe
+│   ├── release.ts / report.ts  release slots and order; batch reports (table, narrative, retention)
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
 │   └── artifacts.ts, decisions.ts, recent-projects.ts, library.ts, subagents.ts, …
 ├── core/builtin-skills/   skills VibeFlow ships (copied to dist/builtin-skills by build:npm)
@@ -441,6 +496,10 @@ docs/                      everything that is not code (index: docs/README.md)
   live in `<workspace>/.attachments/<taskId>/` (`taskAttachmentStagingPath`).
   An `inPlace` card runs in the user's own folder: `gitWorktree()` returns nothing
   for it, and nothing that tears a card down may remove or rewrite that folder.
+- **The store is v5** (`STATE_VERSION`): `board.inventory`, `release`, `batches`,
+  `reports` are added by field in `migrateStore`; read a board through `normalizeBoard`
+  (an older binary may have written three columns) and iterate `COLUMN_IDS`, never a
+  hard-coded column list.
 - **Only Backlog cards are editable** (`vibeflow:updateTask` refuses others; the
   CLI's `task update` is the exception). Editing a Backlog card's project, base or
   branch only rewrites the store; one that already has a clean worktree gives it
