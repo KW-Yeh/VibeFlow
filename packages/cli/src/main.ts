@@ -271,7 +271,7 @@ async function cmdStatus(values: Values, userDataDir: string): Promise<number> {
   }
   const board = getState().board
   const title = (id: string) =>
-    [...board.backlog, ...board.in_progress, ...board.done].find((t) => t.id === id.split(':')[0])?.title ?? '（不在看板上）'
+    [...board.backlog, ...(board.inventory ?? []), ...board.in_progress, ...board.done].find((t) => t.id === id.split(':')[0])?.title ?? '（不在看板上）'
   if (values.json) {
     console.log(
       JSON.stringify(
@@ -279,7 +279,7 @@ async function cmdStatus(values: Values, userDataDir: string): Promise<number> {
           host: running ? { pid: running.pid, port: running.port, version: running.version } : null,
           backend,
           sessions: sessions.map((key) => ({ key, title: title(key) })),
-          board: { backlog: board.backlog.length, in_progress: board.in_progress.length, done: board.done.length },
+          board: { backlog: board.backlog.length, inventory: board.inventory?.length ?? 0, in_progress: board.in_progress.length, done: board.done.length },
         },
         null,
         2
@@ -290,7 +290,7 @@ async function cmdStatus(values: Values, userDataDir: string): Promise<number> {
   console.log(running ? `Host：執行中（pid ${running.pid}，port ${running.port}，v${running.version}）` : 'Host：未執行')
   console.log(`Sessions（${backend}）：${sessions.length === 0 ? '無' : ''}`)
   for (const key of sessions) console.log(`  ● ${key}  ${title(key)}`)
-  console.log(`看板：Backlog ${board.backlog.length} · In Progress ${board.in_progress.length} · Done ${board.done.length}`)
+  console.log(`看板：Backlog ${board.backlog.length} · 盤點 ${board.inventory?.length ?? 0} · In Progress ${board.in_progress.length} · Done ${board.done.length}`)
   return 0
 }
 

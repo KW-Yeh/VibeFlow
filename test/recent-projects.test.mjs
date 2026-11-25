@@ -8,7 +8,7 @@ import {
   recentProjectsFromBoard,
   rememberProject,
 } from '../packages/core/src/recent-projects.ts'
-import { getStoreAtPath } from '../packages/core/src/store.ts'
+import { STATE_VERSION, getStoreAtPath } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { makeRepo } from './support/repo.mjs'
 
@@ -79,7 +79,7 @@ test('a v3 store is migrated with projects taken from its existing cards', async
     })
   )
   const store = getStoreAtPath(dir)
-  assert.equal(store.get('version'), 4)
+  assert.equal(store.get('version'), STATE_VERSION)
   assert.deepEqual(store.get('recentProjects'), [
     { path: '/p/legacy', name: 'legacy', lastUsedAt: 7 },
   ])

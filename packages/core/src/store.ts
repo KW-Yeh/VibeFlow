@@ -8,8 +8,58 @@ import type { JiraRef } from './jira'
 import type { JevRoute } from './jev-router'
 import { recentProjectsFromBoard, type RecentProject } from './recent-projects'
 import type { TagColor } from './tag-colors'
+import type { ManualEffort } from './effort'
+import type { StatusKey } from './status-keys'
 export { moveTaskInColumn } from './board-order'
-export type ColumnId = 'backlog' | 'in_progress' | 'done'
+export type ColumnId = 'backlog' | 'inventory' | 'in_progress' | 'done'
+
+/** Every column, in board order. */
+export const COLUMN_IDS: readonly ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
+
+/**
+ * A card stopped by a usage limit, waiting for it to reset. Kept on the card
+ * so a restarted host can rebuild the timer.
+ */
+export interface QuotaWait {
+  /** Epoch ms the limit resets; absent = unknown, probe at the heartbeat interval. */
+  resetsAt?: number
+  /** Epoch ms the limit was seen. */
+  since: number
+  agent: AgentCliId
+  /** What was stopped: the card's own run or its headless inventory. */
+  phase: 'run' | 'inventory'
+  /** Status to restore once the card carries on. */
+  statusBefore?: StatusKey
+  /** Epoch ms of the next probe the heartbeat will try. */
+  nextProbeAt?: number
+}
+
+/** A card's inventory: the headless pass that writes spec.md / plan.md before it runs. */
+export interface TaskInventory {
+  /** Extra context the user pasted in the inventory panel, newest last. Never written into the description. */
+  context?: string
+  /** Files the user attached in the inventory panel, relative to the worktree. */
+  attachments?: string[]
+  /** The last pass's closing summary, shown in the inventory panel. */
+  lastSummary?: string
+  /** Epoch ms the running pass started; absent = no pass is running. */
+  runningSince?: number
+  /** Epoch ms the last pass ended. */
+  finishedAt?: number
+  /** Why the last pass failed. */
+  error?: string
+  /** Claude session id of the last pass, so its transcript can be read for a usage limit. */
+  sessionId?: string
+  /** How many passes have run. */
+  passes?: number
+}
+
+/** The last status written by `task status --set` or a status-tag change. */
+export interface TaskStatusNote {
+  status: StatusKey
+  reason?: string
+  at: number
+}
 
 export interface Task {
   id: string
@@ -124,6 +174,12 @@ export interface Task {
   inPlace?: true
   /** Ids of the board's tags on this card, in the order they were added. Never set on a Done card. */
   tags?: string[]
+  /** Set while the card waits for a usage limit to reset. */
+  quotaWait?: QuotaWait
+  /** The card's inventory state; absent = never inventoried. */
+  inventory?: TaskInventory
+  /** The reason that came with the card's current status. */
+  statusNote?: TaskStatusNote
 }
 
 /** A status label the user can put on any number of cards. Cards refer to it by `id`, so it can be renamed. */
@@ -219,6 +275,56 @@ export interface AppSettings {
   /** Stage notifications. Absent = DEFAULT_NOTIFICATION_SETTINGS. */
   notifications?: NotificationSettings
   jira?: { storyPointsFields?: string[] }
+  /** Inventory, release and report settings. Absent = DEFAULT_AUTONOMOUS_SETTINGS. */
+  autonomous?: Partial<AutonomousSettings>
+}
+
+export interface AutonomousSettings {
+  /** How many non-master In Progress cards may run at once while release is on. */
+  concurrency: number
+  /** Minutes between usage-limit probes when no reset time is known or a probe failed. */
+  heartbeatMinutes: number
+  /** Reports kept; older ones are deleted when a new one is written. */
+  reportKeep: number
+  reportAgent: AgentCliId
+  /** Absent = the agent's low-cost default. */
+  reportModel?: string
+  reportEffort: ManualEffort
+  /** Extra shell command prefixes a headless inventory may run (Claude), on top of the built-in list. */
+  inventoryCommands: string[]
+}
+
+export const DEFAULT_AUTONOMOUS_SETTINGS: AutonomousSettings = {
+  concurrency: 2,
+  heartbeatMinutes: 5,
+  reportKeep: 10,
+  reportAgent: 'claude',
+  reportModel: 'haiku',
+  reportEffort: 'low',
+  inventoryCommands: [],
+}
+
+const positiveInt = (v: unknown, fallback: number, max: number): number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max ? v : fallback
+
+/** Stored autonomous settings over the defaults; junk values fall back. */
+export function resolveAutonomousSettings(settings?: Pick<AppSettings, 'autonomous'>): AutonomousSettings {
+  const s = (settings?.autonomous ?? {}) as Record<string, unknown>
+  const d = DEFAULT_AUTONOMOUS_SETTINGS
+  const efforts: ManualEffort[] = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  return {
+    concurrency: positiveInt(s.concurrency, d.concurrency, 20),
+    heartbeatMinutes: positiveInt(s.heartbeatMinutes, d.heartbeatMinutes, 24 * 60),
+    reportKeep: positiveInt(s.reportKeep, d.reportKeep, 1000),
+    reportAgent: s.reportAgent === 'codex' ? 'codex' : 'claude',
+    reportModel: typeof s.reportModel === 'string' && s.reportModel.trim()
+      ? s.reportModel.trim()
+      : s.reportAgent === 'codex' ? undefined : d.reportModel,
+    reportEffort: efforts.includes(s.reportEffort as ManualEffort) ? (s.reportEffort as ManualEffort) : d.reportEffort,
+    inventoryCommands: Array.isArray(s.inventoryCommands)
+      ? s.inventoryCommands.filter((c): c is string => typeof c === 'string' && c.trim() !== '').map((c) => c.trim())
+      : [],
+  }
 }
 
 /** Which progress milestones are announced, and how (task-progress spec). */
@@ -278,6 +384,52 @@ export interface VibeFlowState {
   terminals?: StandaloneTerminalEntry[]
   /** Every tag the user has made, offered to every card. */
   tags?: TagDef[]
+  /** The release switch. */
+  release?: ReleaseState
+  /** Release batches, oldest first. */
+  batches?: ReleaseBatch[]
+  /** Batch reports, newest first. The report text lives in `<storeDir>/reports/<id>.md`. */
+  reports?: ReportEntry[]
+}
+
+export interface ReleaseState {
+  enabled: boolean
+  /** The open batch while the switch is on. */
+  batchId?: string
+}
+
+/** One status change of a card in a batch. */
+export interface StatusEvent {
+  at: number
+  taskId: string
+  /** null = the status tag was removed. */
+  status: StatusKey | null
+  reason?: string
+  /** Who wrote it: the CLI/agent, the user's tag edit, or VibeFlow itself. */
+  source: 'cli' | 'user' | 'host'
+}
+
+/** The cards one switch-on released, and what happened to them. */
+export interface ReleaseBatch {
+  id: string
+  startedAt: number
+  endedAt?: number
+  /** Released cards in release order. */
+  taskIds: string[]
+  /** Title of each released card when it was released, so the report outlives the card. */
+  titles?: Record<string, string>
+  events: StatusEvent[]
+}
+
+export interface ReportEntry {
+  id: string
+  batchId: string
+  createdAt: number
+  /** complete = has the agent's narrative; pending = table only, narrative still to be written. */
+  status: 'complete' | 'pending'
+  title: string
+  /** Epoch ms after which a pending report's narrative may be tried again. */
+  retryAt?: number
 }
 
 /** One shell on the 終端機 page. Its cwd is resolved again from `taskId` or `projectPath` at every start. */
@@ -292,8 +444,20 @@ export interface StandaloneTerminalEntry {
 
 const DEFAULT_BOARD: BoardState = {
   backlog: [],
+  inventory: [],
   in_progress: [],
   done: [],
+}
+
+/** A board read from disk with every column present: an older binary may have written one without `inventory`. */
+export function normalizeBoard(board: Partial<BoardState> | undefined): BoardState {
+  const b = board ?? {}
+  return {
+    backlog: b.backlog ?? [],
+    inventory: b.inventory ?? [],
+    in_progress: b.in_progress ?? [],
+    done: b.done ?? [],
+  }
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -303,9 +467,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 /**
  * Current persisted-state schema version. Bumped when a migration must run on
  * existing stores (see `migrateStore`). v3 introduced workspaces; v4 the
- * recent-projects list.
+ * recent-projects list; v5 the inventory column, release batches and reports.
  */
-const STATE_VERSION = 4
+export const STATE_VERSION = 5
 
 const defaults: VibeFlowState = {
   version: STATE_VERSION,
@@ -344,6 +508,11 @@ function migrateStore(store: JsonStore<VibeFlowState>): void {
   }
   if (!store.has('terminals')) store.set('terminals', [])
   if (!store.has('tags')) store.set('tags', [])
+  const board = store.get('board') as Partial<BoardState> | undefined
+  if (board && !Array.isArray(board.inventory)) store.set('board', normalizeBoard(board))
+  if (!store.has('release')) store.set('release', { enabled: false })
+  if (!store.has('batches')) store.set('batches', [])
+  if (!store.has('reports')) store.set('reports', [])
   // Earlier builds kept provider API keys here in plaintext. Model lists now
   // come from the agent CLIs, so nothing reads them and they must not linger.
   const settings = store.get('settings') as (AppSettings & { agentConnections?: unknown }) | undefined
@@ -361,12 +530,15 @@ export function getState(): VibeFlowState {
   return {
     version: store.get('version'),
     projectPath: store.get('projectPath'),
-    board: store.get('board'),
+    board: normalizeBoard(store.get('board')),
     // `settings` may be absent in state persisted before this field existed;
     // fall back to defaults so the renderer always receives a value.
     settings: store.get('settings') ?? DEFAULT_SETTINGS,
     terminals: store.get('terminals') ?? [],
     tags: store.get('tags') ?? [],
+    release: store.get('release') ?? { enabled: false },
+    batches: store.get('batches') ?? [],
+    reports: store.get('reports') ?? [],
   }
 }
 
@@ -404,6 +576,11 @@ export function setSettings(patch: Partial<AppSettings>): AppSettings {
       notifications: { ...resolveNotificationSettings(getSettings()), ...(patch.notifications ?? {}) },
     })
   }
+  if (patch.autonomous !== undefined) {
+    next.autonomous = resolveAutonomousSettings({
+      autonomous: { ...resolveAutonomousSettings(getSettings()), ...(patch.autonomous ?? {}) },
+    })
+  }
   // A blank custom system prompt means "no custom prompt" — drop the key
   // instead of persisting an empty string.
   if (typeof next.systemPrompt === 'string' && next.systemPrompt.trim() === '') {
@@ -420,7 +597,7 @@ export function setSettings(patch: Partial<AppSettings>): AppSettings {
  */
 export function writeBoard(store: JsonStore<VibeFlowState>, board: BoardState): void {
   store.set('board', {
-    ...board,
+    ...normalizeBoard(board),
     done: board.done.map((t) => {
       if (!t.tags) return t
       const { tags: _cleared, ...rest } = t
@@ -444,14 +621,14 @@ export function getProjectPath(): string | null {
 
 /** Add a task to the backlog column and persist. */
 export function addTask(task: Task): void {
-  const board = getStore().get('board')
+  const board = normalizeBoard(getStore().get('board'))
   board.backlog = [task, ...board.backlog]
   writeBoard(getStore(), board)
 }
 
 /** Find a task by id across all columns. */
 export function findTask(taskId: string): Task | null {
-  const board = getStore().get('board')
+  const board = normalizeBoard(getStore().get('board'))
   for (const column of Object.values(board)) {
     const found = column.find((t) => t.id === taskId)
     if (found) return found
@@ -461,7 +638,7 @@ export function findTask(taskId: string): Task | null {
 
 /** Shallow-merge a patch into a task (by id) across all columns, and persist. */
 export function updateTask(taskId: string, patch: Partial<Task>): void {
-  const board = getStore().get('board')
+  const board = normalizeBoard(getStore().get('board'))
   ;(Object.keys(board) as ColumnId[]).forEach((col) => {
     board[col] = board[col].map((t) =>
       t.id === taskId ? { ...t, ...patch } : t
@@ -482,7 +659,7 @@ function withoutRef(task: Task, removedId: string): Task {
 
 /** Remove a task by id from whichever column holds it, and persist. */
 export function removeTask(taskId: string): void {
-  const board = getStore().get('board')
+  const board = normalizeBoard(getStore().get('board'))
   ;(Object.keys(board) as ColumnId[]).forEach((col) => {
     board[col] = board[col]
       .filter((t) => t.id !== taskId)

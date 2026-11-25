@@ -10,9 +10,10 @@ import { editFormState, editInEditor, loadFormContext, newFormState, showForm } 
 
 const h = React.createElement
 
-const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
+const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
 const COLUMN_TITLES: Record<ColumnId, string> = {
   backlog: 'Backlog',
+  inventory: '盤點',
   in_progress: 'In Progress',
   done: 'Done',
 }
@@ -103,14 +104,19 @@ export function moveCard(
   sel: Selection,
   direction: -1 | 1,
   now = Date.now()
-): { board: BoardState; task: Task; to: ColumnId; effect: 'launch' | 'cleanup' | 'reset' | null } | null {
+): { board: BoardState; task: Task; to: ColumnId; column: number; effect: 'launch' | 'cleanup' | 'reset' | null } | null {
   const from = COLUMNS[sel.column]
-  const to = COLUMNS[sel.column + direction]
+  // The TUI shows the inventory column but offers no inventory operations:
+  // its cards stay put, and moves step over it.
+  if (from === 'inventory') return null
+  const step = COLUMNS[sel.column + direction] === 'inventory' ? 2 * direction : direction
+  const to = COLUMNS[sel.column + step]
   const task = board[from][sel.index]
   if (!to || !task) return null
   const moved = from === 'backlog' && to === 'in_progress' ? { ...task, launchedAt: now } : task
   const next: BoardState = {
     backlog: board.backlog.filter((t) => t.id !== task.id),
+    inventory: board.inventory.filter((t) => t.id !== task.id),
     in_progress: board.in_progress.filter((t) => t.id !== task.id),
     done: board.done.filter((t) => t.id !== task.id),
   }
@@ -123,7 +129,7 @@ export function moveCard(
         : from === 'in_progress' && to === 'backlog'
           ? 'reset'
           : null
-  return { board: next, task: moved, to, effect }
+  return { board: next, task: moved, to, effect, column: sel.column + step }
 }
 
 function truncate(text: string, width: number): string {
@@ -228,12 +234,12 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
           const { state, task } = await api.resetTaskRun(move.task.id)
           const b = state.board
           const without = (list: Task[]) => list.filter((t) => t.id !== task.id)
-          const next = { backlog: [task, ...without(b.backlog)], in_progress: without(b.in_progress), done: without(b.done) }
+          const next = { backlog: [task, ...without(b.backlog)], inventory: without(b.inventory), in_progress: without(b.in_progress), done: without(b.done) }
           setBoard((await api.setBoard(next)).board)
         } else {
           setBoard((await api.setBoard(move.board)).board)
         }
-        setSel({ column: sel.column + direction, index: 0 })
+        setSel({ column: move.column, index: 0 })
         if (move.effect === 'launch') {
           if (!move.task.worktreePath) {
             setMessage(`正在為「${move.task.title}」從最新的 ${move.task.baseBranch ?? '基準分支'} 建立分支 ${move.task.branch} 與 worktree，需要幾秒鐘…`)
@@ -317,7 +323,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
   })
 
   const width = stdout.columns || 100
-  const colWidth = Math.max(20, Math.floor(width / 3) - 1)
+  const colWidth = Math.max(20, Math.floor(width / COLUMNS.length) - 1)
 
   if (!board) return h(Text, null, '讀取看板中…')
 

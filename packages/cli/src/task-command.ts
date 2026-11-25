@@ -14,7 +14,7 @@ import type { ColumnId } from '../../core/src/store'
 import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
-const STATUSES = ['backlog', 'in_progress', 'done']
+const STATUSES = ['backlog', 'inventory', 'in_progress', 'done']
 const SUBCOMMANDS = ['create', 'update', 'tag', 'move', 'start', 'list', 'show', 'send', 'artifact']
 /** Write the store directly, so they work without a host — and default to the calling card's store. */
 const SHELL_COMMANDS = ['artifact', 'tag', 'move']

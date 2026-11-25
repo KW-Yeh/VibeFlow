@@ -240,6 +240,7 @@ export function KanbanBoard({
   const moveTask = (task: Task, to: ColumnId) => {
     const next: BoardState = {
       backlog: board.backlog.filter((t) => t.id !== task.id),
+      inventory: board.inventory.filter((t) => t.id !== task.id),
       in_progress: board.in_progress.filter((t) => t.id !== task.id),
       done: board.done.filter((t) => t.id !== task.id),
     }
@@ -255,6 +256,7 @@ export function KanbanBoard({
     const withStamp = { ...task, launchedAt: Date.now() }
     onBoardChange({
       backlog: board.backlog.filter((t) => t.id !== task.id),
+      inventory: board.inventory.filter((t) => t.id !== task.id),
       in_progress: [withStamp, ...board.in_progress],
       done: board.done,
     })
@@ -283,6 +285,7 @@ export function KanbanBoard({
     const next = result.state.board
     onBoardChange({
       backlog: [result.task, ...next.backlog.filter((t) => t.id !== task.id)],
+      inventory: next.inventory.filter((t) => t.id !== task.id),
       in_progress: next.in_progress.filter((t) => t.id !== task.id),
       done: next.done.filter((t) => t.id !== task.id),
     })
@@ -327,6 +330,7 @@ export function KanbanBoard({
     const ids = new Set(finishing.map((t) => t.id))
     onBoardChange({
       backlog: board.backlog,
+      inventory: board.inventory,
       in_progress: board.in_progress.filter((t) => !ids.has(t.id)),
       done: [...finishing, ...board.done],
     })

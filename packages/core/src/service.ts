@@ -10,6 +10,7 @@ import {
   getStore,
   getStorePath,
   isMasterTask,
+  COLUMN_IDS,
   listTerminals,
   removeTask,
   removeTerminals,
@@ -283,7 +284,7 @@ const lookUpPr = (worktreePath: string): Promise<PrStatus | null> => getPrStatus
 
 const LIBRARY_KINDS = ['skill', 'prompt', 'script']
 const AGENT_IDS = ['claude', 'codex']
-const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
+const COLUMNS = COLUMN_IDS
 
 function libraryKind(value: unknown): LibraryKind {
   if (!LIBRARY_KINDS.includes(value as string)) invalid('kind must be skill | prompt | script')
@@ -303,7 +304,10 @@ function requireTask(taskId: unknown): Task {
 }
 
 function validBoard(value: unknown): BoardState {
-  const board = obj<BoardState>(value, 'board')
+  const board = { ...obj<BoardState>(value, 'board') }
+  // A frontend built before the inventory column sends three columns; its
+  // inventory cards stay where they are instead of disappearing.
+  if (board.inventory === undefined) board.inventory = getState().board.inventory
   for (const col of COLUMNS) {
     if (!Array.isArray(board[col])) invalid(`board.${col} must be an array`)
   }
@@ -311,7 +315,7 @@ function validBoard(value: unknown): BoardState {
   // rewrite their provisioned fields (worktree, project) from the outside.
   const known = new Map<string, Task>()
   for (const col of COLUMNS) for (const t of getState().board[col]) known.set(t.id, t)
-  const next: BoardState = { backlog: [], in_progress: [], done: [] }
+  const next: BoardState = { backlog: [], inventory: [], in_progress: [], done: [] }
   for (const col of COLUMNS) {
     for (const t of board[col]) {
       const current = known.get(obj<Task>(t, 'task').id)
@@ -815,6 +819,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         { ...current, launchedAt: undefined, launchError },
         ...board.backlog.filter((t) => t.id !== taskId),
       ],
+      inventory: board.inventory.filter((t) => t.id !== taskId),
       in_progress: board.in_progress.filter((t) => t.id !== taskId),
       done: board.done.filter((t) => t.id !== taskId),
     }
@@ -1311,6 +1316,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const started = { ...task, launchedAt: Date.now(), launchError: undefined }
       setBoard({
         backlog: board.backlog.filter((t) => t.id !== task.id),
+        inventory: board.inventory.filter((t) => t.id !== task.id),
         in_progress: [started, ...board.in_progress],
         done: board.done,
       })

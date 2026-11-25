@@ -6,6 +6,7 @@ import {
   getStoreAtPath,
   isMasterTask,
   moveTaskInColumn,
+  normalizeBoard,
   resolveWorkstationPath,
   writeBoard,
   type ColumnId,
@@ -259,7 +260,7 @@ export async function createTaskFromInput(
   }
 
   try {
-    const board = store.get('board')
+    const board = normalizeBoard(store.get('board'))
     board[col] = [task, ...board[col]]
     writeBoard(store, board)
     recordRecentProject(store, projectPath)
@@ -322,7 +323,7 @@ async function createMasterTask(input: CreateTaskInput): Promise<CreateTaskResul
   }
 
   try {
-    const board = store.get('board')
+    const board = normalizeBoard(store.get('board'))
     board[col] = [task, ...board[col]]
     writeBoard(store, board)
   } catch (err) {
@@ -424,7 +425,7 @@ export interface UpdateTaskResult {
  */
 export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
-  const board = store.get('board')
+  const board = normalizeBoard(store.get('board'))
   const columns = Object.keys(board) as ColumnId[]
   const from = columns.find((col) => board[col].some((t) => t.id === input.taskId))
   if (!from) {
@@ -488,7 +489,7 @@ export interface MoveTaskInput {
 /** Reorder a card within its column. Moving between columns is not this; it starts or finishes work. */
 export function moveTaskFromInput(input: MoveTaskInput): { task: Task; column: ColumnId; storePath: string } {
   const store = input.storePath ? getStoreAtPath(input.storePath) : getStore()
-  const board = store.get('board')
+  const board = normalizeBoard(store.get('board'))
   const column = (Object.keys(board) as ColumnId[]).find((c) => board[c].some((t) => t.id === input.taskId))
   if (!column) throw taskError(`找不到卡片：${input.taskId}`, 'TASK_NOT_FOUND')
   const next = moveTaskInColumn(board, input.taskId, input.beforeId)

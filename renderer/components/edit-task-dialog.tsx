@@ -49,6 +49,7 @@ export interface EditTaskPayload {
 
 const COLUMN_LABEL: Record<ColumnId, string> = {
   backlog: 'Backlog',
+  inventory: '盤點',
   in_progress: 'In Progress',
   done: 'Done',
 }

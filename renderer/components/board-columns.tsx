@@ -61,12 +61,14 @@ const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
 const COLUMN_LABEL: Record<ColumnId, string> = {
   backlog: 'Backlog',
+  inventory: '盤點',
   in_progress: 'In Progress',
   done: 'Done',
 }
 
 const COLUMN_DOT: Record<ColumnId, string> = {
   backlog: 'bg-muted-foreground/60',
+  inventory: 'bg-tag-blue',
   in_progress: 'bg-warning animate-pulse',
   done: 'bg-success',
 }

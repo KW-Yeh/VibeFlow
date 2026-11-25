@@ -402,7 +402,7 @@ export interface GithubService {
 }
 
 function boardTasks(board: BoardState): Task[] {
-  return [...board.in_progress, ...board.backlog, ...board.done]
+  return [...board.in_progress, ...(board.inventory ?? []), ...board.backlog, ...board.done]
 }
 
 /** Board projects, most recently used first, so a repo maps to the project last worked in. */

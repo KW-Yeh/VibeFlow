@@ -81,6 +81,7 @@ import type {
 // unreachable (static export preview).
 const FALLBACK_BOARD: BoardState = {
   backlog: [],
+  inventory: [],
   in_progress: [],
   done: [],
 }
@@ -106,7 +107,7 @@ function findTask(board: BoardState, taskId: string): Task | null {
 }
 
 function slavesOf(board: BoardState, masterId: string): SlaveEntry[] {
-  return (['in_progress', 'backlog', 'done'] as const).flatMap((column) =>
+  return (['in_progress', 'inventory', 'backlog', 'done'] as const).flatMap((column) =>
     board[column].filter((t) => t.masterId === masterId).map((task) => ({ task, column }))
   )
 }

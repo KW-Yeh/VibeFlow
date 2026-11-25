@@ -132,3 +132,17 @@
   - 檔案寫入要用 `Edit(./docs/features/**)`；`Write(...)` 規則不會被檔案權限檢查採用（CLI 會印警告）。`Edit(docs/features/**)`（沒有 `./`）沒有放行寫入。
   - 實測：`docs/features/demo/spec.md` 寫入成功；`other.txt` 被拒；`Bash(git status:*)`、`Bash(npm ping:*)` 執行成功；`ls /` 被拒。
 - Codex headless 權限（codex-cli 0.170.0）：`codex exec --sandbox workspace-write` 可以寫入功能文件，但沙盒預設沒有網路（`curl` 解析不到 host），資源驗證會全部失敗。加上 `-c sandbox_workspace_write.network_access=true` 後網路可用。Codex 沒有逐指令的 allowlist，限制只到「workspace 內可寫、可上網」；設定中擴充的驗證指令只對 Claude 生效，記為已知限制。
+
+### 階段 2：Store 與 migration（2026-11-25）
+
+- 改動：`ColumnId` 加 `inventory`（`COLUMN_IDS` 依看板順序）；`Task` 加 `quotaWait`、`inventory`、`statusNote`；`VibeFlowState` 加 `release`、`batches`、`reports`；`AppSettings.autonomous` 與 `resolveAutonomousSettings`；`STATE_VERSION = 5`。`status-keys.ts` 放八個狀態 key（無 import，renderer 可用）。
+- Migration 依欄位補值：`board.inventory`、`release`、`batches`、`reports`。`settings.autonomous` 不寫入 store，讀取時由 `resolveAutonomousSettings` 補預設值，之後調整預設值也會套用到沒有設定過的 store（與 `notifications` 的做法一致）。`normalizeBoard` 用在所有讀 board 的地方，`writeBoard` 一律寫出四欄。
+- 相容：`vibeflow:setBoard` 收到沒有 `inventory` 的 board（舊前端）時，保留目前盤點欄的卡片。TUI 顯示盤點欄，但 H/L 會跳過盤點欄、盤點欄的卡片不能移動（spec：TUI 不提供盤點操作）。renderer 只補型別（看板仍是三欄，盤點 UI 在階段 8）。
+- 測試期望值調整（屬於 spec 要求的契約變更，不是消音）：`recent-projects.test.mjs` 的 migration 版本從 `4` 改成 `STATE_VERSION`；`tui.test.mjs` 的欄位索引因新增盤點欄而位移，並新增「跳過盤點欄」案例。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `npx tsc --noEmit -p renderer/tsconfig.json`：通過。
+  - `npm test`：675 個測試全數通過（含新增的 `test/store-migration.test.mjs` 5 個案例）。
+  - `npm run build:web`：成功。
+  - `npm run test:e2e`：5 個測試全數通過（AC-12 的既有流程）。
+  - Runtime：以手寫的 v4 store（一張帶標籤的 Backlog 卡、一張 Done 卡、一個標籤、`autoMode: false` 與自訂 system prompt）在拋棄式 `--store-path` 啟動 host，`task list` 讀得到卡片；store 檔升為 `version: 5`，四欄、標籤、設定都保留，`release`/`batches`/`reports` 為預設值（AC-11）。之後以 `vibeflow shutdown` 停止。
