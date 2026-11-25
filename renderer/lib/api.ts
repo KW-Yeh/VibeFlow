@@ -6,6 +6,7 @@ import type {
   AgentEffort,
   AgentModelList,
   AppSettings,
+  ReportEntry,
   ArtifactContent,
   AttachmentInput,
   BoardCliLaunchInfo,
@@ -301,6 +302,46 @@ export async function updateTask(payload: {
 }
 
 /** Carry a running card on in a new agent session; null without a bridge. */
+export async function startTaskOnHost(taskId: string): Promise<{ state: VibeFlowState; task: Task } | null> {
+  const b = bridge()
+  return b ? b.startTask(taskId) : null
+}
+
+export async function startInventory(taskId: string): Promise<{ state: VibeFlowState; task: Task } | null> {
+  const b = bridge()
+  return b ? b.startInventory(taskId) : null
+}
+
+export async function rerunInventory(taskId: string): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.rerunInventory(taskId) : null
+}
+
+export async function setInventoryContext(payload: { taskId: string; context?: string; attachments?: AttachmentInput[] }): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.setInventoryContext(payload) : null
+}
+
+export async function readInventoryDocs(taskId: string): Promise<{ path: string; content: string }[]> {
+  const b = bridge()
+  return b ? b.readInventoryDocs(taskId) : []
+}
+
+export async function setRelease(enabled: boolean): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.setRelease({ enabled }) : null
+}
+
+export async function listReports(): Promise<ReportEntry[]> {
+  const b = bridge()
+  return b ? b.listReports() : []
+}
+
+export async function readReport(reportId: string): Promise<{ entry: ReportEntry; markdown: string } | null> {
+  const b = bridge()
+  return b ? b.readReport(reportId) : null
+}
+
 export async function continueTask(payload: {
   taskId: string
   force?: boolean

@@ -18,6 +18,8 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import {
   resetTaskRun,
   continueTask,
+  startInventory,
+  startTaskOnHost,
   termSessionExists,
 } from '@/lib/api'
 import { cardMove } from '@/lib/board-moves'
@@ -58,6 +60,8 @@ interface KanbanBoardProps {
   /** A Backlog card to start, staying on the current page; null once taken. */
   startRequest: string | null
   onStartRequest: (taskId: string | null) => void
+  /** Board-wide controls for the board header (the release switch). */
+  boardToolbar?: ReactNode
   /** Open the new-task dialog. */
   onNewTask: () => void
   /** 'workspace' shows the task workspace; 'board' and 'github' show the board page. */
@@ -171,6 +175,7 @@ export function KanbanBoard({
   onViewChange,
   githubView,
   taskLinks,
+  boardToolbar,
 }: KanbanBoardProps) {
   // Tasks whose terminal has ever been opened. A mounted TaskTerminal stays in
   // the DOM (just hidden) while the card is in progress, so PTY state survives
@@ -339,9 +344,18 @@ export function KanbanBoard({
     for (const t of finishing) await onTaskDone(t.id)
   }
 
+  const [boardError, setBoardError] = useState<string | null>(null)
+  const reportBoardError = (err: unknown) => setBoardError(err instanceof Error ? err.message : String(err))
+
   const dropCard = (task: Task, from: ColumnId, to: ColumnId) => {
     const move = cardMove(from, to)
-    if (move === 'start') startTask(task)
+    setBoardError(null)
+    // Inventory and its hand-off run on the host: the pass is headless, and
+    // the first run's brief is built there from the card's spec and plan.
+    if (move === 'inventory') void startInventory(task.id).catch(reportBoardError)
+    else if (move === 'uninventory') moveTask(task, 'backlog')
+    else if (move === 'release') void startTaskOnHost(task.id).catch(reportBoardError)
+    else if (move === 'start') startTask(task)
     else if (move === 'complete') completeTask(task)
     else if (move) {
       setPullBackError(null)
@@ -396,7 +410,21 @@ export function KanbanBoard({
             view={view}
             onViewChange={onViewChange}
             taskLinks={taskLinks}
+            toolbar={boardToolbar}
           />
+        )}
+        {boardError && (
+          <div role="alert" className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-destructive/40 bg-background px-3 py-2 text-sm text-destructive">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>{boardError}</span>
+            <button
+              type="button"
+              onClick={() => setBoardError(null)}
+              className="rounded-sm px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              關閉
+            </button>
+          </div>
         )}
       </div>
 

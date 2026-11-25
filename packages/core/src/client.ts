@@ -228,6 +228,9 @@ export function createBridge(t: BridgeTransport) {
   /** The release switch: on opens a batch and starts 準備開工 cards up to the concurrency limit; off closes it. */
   setRelease: (payload: { enabled: boolean }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setRelease', payload),
+  /** The spec.md / plan.md an inventory card's passes wrote, with their text. */
+  readInventoryDocs: (taskId: string): Promise<{ path: string; content: string }[]> =>
+    t.invoke('vibeflow:readInventoryDocs', taskId),
   /** Batch reports, newest first. */
   listReports: (): Promise<ReportEntry[]> => t.invoke('reports:list'),
   /** One report's index entry and markdown; null when it is gone. */

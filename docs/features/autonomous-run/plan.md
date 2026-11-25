@@ -213,3 +213,18 @@
   - `npx tsc --noEmit -p tsconfig.json`：通過。
   - `node scripts/run-tests.mjs ./test/report.test.mjs`：5 個全數通過（AC-8：表格含 Done 卡的狀態、原因、用量、耗時、PR 與時間軸，進行中的卡標「進行中」；AC-9：agent 失敗時保留表格並標待補寫，假時鐘推進後補上敘述；AC-10：保留 3 份時第 4 份刪除最舊的檔案與索引；host 重啟後補寫待補寫報告；經 host 打開再關閉開關後，`reports:list`／`reports:read` 讀得到報告，`vibeflow report show` 輸出同一份）。
   - `npm test`：714 個全數通過。
+
+### 階段 8：最小 UI（2026-11-25）
+
+- 改動：
+  - 看板四欄（Backlog、盤點、In Progress、Done）。`board-moves.ts`：Backlog → 盤點（`startInventory`，在 host 上 headless 執行）、盤點 → Backlog（寫 board，core 中止 pass 並清掉盤點狀態）、盤點 → In Progress（`startTask`，由 host 組執行簡報）；其他移動規則不變。卡片在盤點欄與 In Progress 顯示狀態原因，等待額度時顯示重置時間。
+  - `autonomous.tsx`（新增）：盤點面板（狀態與原因、盤點摘要、plan.md 全文、spec.md 摺疊、補充 context 文字框、附加檔案、「儲存並重新盤點」「開始執行」；盤點卡點開就是這個面板，不是編輯對話框）、看板頂列的放行開關（顯示「佔用名額／並行上限 · 準備開工數」）與「報告」按鈕、報告對話框（列表與 markdown 閱讀）、設定頁的「盤點與放行」區塊（並行上限、探測間隔、報告保留份數、報告 agent／model／effort、盤點額外指令）。
+  - core：`vibeflow:readInventoryDocs`（只讀這張卡自己的 pass 記錄的文件，且必須在 worktree 內）。
+  - renderer 的進度文字認得「等待額度」。`status-keys.ts` 加進 `core-boundary` 的 renderer-safe 清單（它沒有任何 import），renderer 透過 `lib/status.ts` 使用。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`、`npx tsc --noEmit -p renderer/tsconfig.json`：通過。
+  - `npm test`：715 個全數通過（含 `ui-consistency`、`core-boundary`、新增的拖曳規則案例）。
+  - `npm run build:web`：成功。
+  - `npm run test:e2e`：5 個全數通過。
+  - Live Web UI（拋棄式 `--store-path`，port 47833，內建瀏覽器）：看板顯示四欄，盤點卡帶「待回答」標籤與原因；點開盤點面板，摘要與 `docs/features/lodash-dependency/plan.md` 全文都有顯示；在補充 context 輸入回答後按「儲存並重新盤點」，卡片轉為「盤點中」，真的 Claude 跑完第二次後仍為「待回答」（JFrog token 依然缺），store 中描述未變、context 已存、`passes` 為 2；以 DragEvent 把 Backlog 卡拖到盤點欄，卡片進入盤點欄並開始真實盤點，結束後為「待回答」；放行開關開 → 關，產生一份 0 張卡的報告，真的 haiku 補上敘述，報告對話框可以列出並閱讀；設定頁把並行上限改成 3 並儲存，store 中 `settings.autonomous.concurrency` 為 3。結束後以 `vibeflow shutdown` 停止 host，tmux 中沒有測試卡的 session。
+  - 沒有在 live UI 驗證：從 UI 按「開始執行」或放行真的啟動執行（會開真實的互動 agent session）；這條路徑由 `release.test.mjs` 與 `service` 層測試覆蓋。視覺設計（窄螢幕時頂列擁擠等）屬於階段 10，不在這次範圍。

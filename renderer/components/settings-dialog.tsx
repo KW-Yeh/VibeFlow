@@ -18,6 +18,7 @@ import { LibraryPanel } from '@/components/library-panel'
 import { JiraAuthTerminal } from '@/components/jira-auth-terminal'
 import { TaskAutoModeToggle } from '@/components/task-auto-mode-toggle'
 import { UpdateCheckSection } from '@/components/update-check-section'
+import { AutonomousSettingsSection } from '@/components/autonomous'
 import { NotificationSettingsSection, desktopPermission } from '@/components/notification-settings'
 import { fieldClass } from '@/components/ui/field'
 import {
@@ -585,6 +586,8 @@ export function SettingsDialog({
               }}
             />
           </section>
+
+          <AutonomousSettingsSection />
 
           <section className="space-y-2">
             <div className="flex items-center justify-between">

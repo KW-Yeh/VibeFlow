@@ -17,7 +17,7 @@ import {
   Terminal,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from 'motion/react'
 import { jevResultLabel, jevRoutingLabel } from '@/lib/jev'
 
@@ -57,7 +57,7 @@ import {
 } from '@/lib/board-filter'
 import { readBoardFilters, writeBoardFilters } from '@/lib/view-persistence'
 
-const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
+const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
 
 const COLUMN_LABEL: Record<ColumnId, string> = {
   backlog: 'Backlog',
@@ -228,6 +228,7 @@ export function slaveState(
   doneIds?: ReadonlySet<string>
 ): { dot: string; label: string; spinning?: boolean } {
   if (column === 'done') return { dot: 'bg-success', label: 'Done' }
+  if (column === 'inventory') return { dot: 'bg-tag-blue', label: '盤點' }
   if (column === 'backlog') {
     if (task.launchError) return { dot: 'bg-destructive', label: '開始失敗' }
     const waitingOn = (task.after ?? []).filter((id) => !doneIds?.has(id))
@@ -237,6 +238,9 @@ export function slaveState(
         : { dot: 'bg-primary', label: '可開始' }
     }
     return { dot: 'bg-muted-foreground/60', label: 'Backlog' }
+  }
+  if (progress?.activity.state === 'waiting' && progress.activity.waitingFor === 'quota') {
+    return { dot: 'bg-warning', label: '等待額度' }
   }
   if (progress?.activity.state === 'waiting' && progress.activity.waitingFor === 'permission') {
     return { dot: 'bg-warning', label: '等待權限' }
@@ -522,6 +526,20 @@ function TaskCard({
         </p>
       )}
 
+      {(column === 'inventory' || running) && task.statusNote?.reason && task.tags?.includes(`status:${task.statusNote.status}`) && (
+        <p className="mt-1.5 truncate text-xs text-muted-foreground" title={task.statusNote.reason}>
+          {task.statusNote.reason}
+        </p>
+      )}
+
+      {task.quotaWait && (
+        <p className="mt-1.5 truncate text-xs text-muted-foreground" role="status">
+          {task.quotaWait.resetsAt
+            ? `額度重置：${new Date(task.quotaWait.resetsAt).toLocaleString()}`
+            : '額度重置時間未知，定時探測中'}
+        </p>
+      )}
+
       {column === 'backlog' && task.launchError && (
         <p className="mt-1.5 truncate text-xs text-destructive" title={task.launchError}>
           開始失敗：{task.launchError}
@@ -561,6 +579,8 @@ export interface BoardColumnsProps {
   view: BoardView
   onViewChange: (next: BoardView) => void
   taskLinks: Record<string, GithubTaskLinks>
+  /** Board-wide controls shown in the header before the new-task button (the release switch). */
+  toolbar?: ReactNode
 }
 
 export function BoardColumns({
@@ -579,6 +599,7 @@ export function BoardColumns({
   taskTerminals,
   onShowTaskTerminal,
   onNewTask,
+  toolbar,
 }: BoardColumnsProps) {
   const [dragging, setDragging] = useState<{ task: Task; from: ColumnId } | null>(null)
   const [dropTarget, setDropTarget] = useState<ColumnId | null>(null)
@@ -613,7 +634,7 @@ export function BoardColumns({
   }
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
 
-  const allTasks = [...board.backlog, ...board.in_progress, ...board.done]
+  const allTasks = [...board.backlog, ...board.inventory, ...board.in_progress, ...board.done]
   const reducedMotion = useReducedMotion() ?? false
   const allIds = new Set(allTasks.map((task) => task.id))
   // Cards already on the board when it first showed any are not "new": only a
@@ -689,14 +710,15 @@ export function BoardColumns({
             清除篩選
           </button>
         )}
-        <NewTaskButton onClick={onNewTask} />
+        {toolbar && <div className="ml-auto flex items-center gap-2">{toolbar}</div>}
+        <NewTaskButton onClick={onNewTask} className={toolbar ? 'ml-0' : undefined} />
       </div>
 
       {/* Hidden columns have no measurable layout. Recreate their animation
           tree on return so workspace updates cannot leave stale projections.
           Filter and master expansion state stay in BoardColumns. */}
       {view === 'board' && <LayoutGroup id="board-cards">
-      <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
+      <div className="grid min-h-0 flex-1 grid-cols-4 gap-4 overflow-hidden px-5 pb-4 pt-3">
         {COLUMNS.map((column) => {
           const tasks = visible(column)
           const droppable = dragging !== null && cardMove(dragging.from, column) !== null

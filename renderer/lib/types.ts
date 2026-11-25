@@ -13,7 +13,15 @@ export type {
   StandaloneTerminalEntry,
   TagDef,
   VibeFlowState,
+  ReportEntry,
+  ReleaseState,
+  ReleaseBatch,
+  StatusEvent,
+  AutonomousSettings,
+  TaskInventory,
+  QuotaWait,
 } from '../../packages/core/src/store'
+export type { StatusKey } from '../../packages/core/src/status-keys'
 export type { TagColor } from '../../packages/core/src/tag-colors'
 export type { JevRoute } from '../../packages/core/src/jev-router'
 export type {

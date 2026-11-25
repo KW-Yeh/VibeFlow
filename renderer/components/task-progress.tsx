@@ -29,7 +29,7 @@ function todoCounts(todos: TodoItem[] | null): { done: number; total: number } |
 }
 
 function activityLabel(activity: Activity): string | null {
-  if (activity.state === 'waiting') return activity.waitingFor === 'permission' ? '等待權限' : '等待輸入'
+  if (activity.state === 'waiting') return activity.waitingFor === 'permission' ? '等待權限' : activity.waitingFor === 'quota' ? '等待額度' : '等待輸入'
   if (activity.state === 'working') return activity.tool ? `執行中：${activity.tool}` : '執行中'
   return null
 }
@@ -116,6 +116,7 @@ export function StatusMark({
 /** What a running card's agent is doing: working, or stopped for an answer or a permission. */
 export function activityMark(activity: Activity | undefined): { dot: string; spinning: boolean; label: string } {
   if (activity?.state === 'waiting') {
+    if (activity.waitingFor === 'quota') return { dot: 'bg-warning', spinning: false, label: '等待額度' }
     return activity.waitingFor === 'permission'
       ? { dot: 'bg-warning', spinning: false, label: '等待權限' }
       : { dot: 'bg-primary', spinning: false, label: '等待輸入' }

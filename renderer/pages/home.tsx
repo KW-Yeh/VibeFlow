@@ -9,6 +9,7 @@ import { DoneTaskSheet } from '@/components/done-task-sheet'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { NewTaskDialog, type NewTaskDraft, type NewTaskInitial } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
+import { InventorySheet, ReleaseControl, ReportsDialog } from '@/components/autonomous'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
 import type { BoardView } from '@/components/ui/view-tabs'
@@ -37,6 +38,7 @@ import {
   onUpdateAvailable,
   openUpdateTerminal,
   onStateChanged,
+  startTaskOnHost,
   persistBoard,
   pickFolder,
   setSettings,
@@ -71,6 +73,7 @@ import type {
   RecentProjectEntry,
   NotificationSettings,
   ProgressNotification,
+  ReleaseState,
   TagDef,
   Task,
   TaskProgress,
@@ -94,7 +97,7 @@ function notificationText(n: ProgressNotification): string {
     case 'all_completed':
       return '所有步驟已完成'
     case 'waiting_input':
-      return n.waitingFor === 'permission' ? '等待你允許權限' : '等待你的輸入'
+      return n.waitingFor === 'permission' ? '等待你允許權限' : n.waitingFor === 'quota' ? '等待額度重置' : '等待你的輸入'
   }
 }
 
@@ -131,6 +134,10 @@ function withStoredTerminals(current: PaneTerminal[], stored: GridTerminal[]): P
 
 export default function HomePage() {
   const [board, setBoard] = useState<BoardState>(FALLBACK_BOARD)
+  const [release, setReleaseState] = useState<ReleaseState | undefined>(undefined)
+  const [concurrency, setConcurrency] = useState(2)
+  const [reportsOpen, setReportsOpen] = useState(false)
+  const [inventoryTaskId, setInventoryTaskId] = useState<string | null>(null)
   const [tags, setTags] = useState<TagDef[]>([])
   // Live progress of running cards, read by core from each agent's transcript.
   // Session-only; a done card shows its stored Task.usage.
@@ -199,6 +206,8 @@ export default function HomePage() {
       if (state) {
         setBoard(state.board)
         setTags(state.tags ?? [])
+        setReleaseState(state.release)
+        setConcurrency(state.settings.autonomous?.concurrency ?? 2)
         setAutoMode(state.settings.autoMode)
         setSystemPrompt(state.settings.systemPrompt ?? '')
         setWorkstationPath(state.settings.workstationPath ?? '')
@@ -225,6 +234,8 @@ export default function HomePage() {
     return onStateChanged((state) => {
       setBoard(state.board)
       setTags(state.tags ?? [])
+      setReleaseState(state.release)
+      setConcurrency(state.settings.autonomous?.concurrency ?? 2)
       setAutoMode(state.settings.autoMode)
       setSystemPrompt(state.settings.systemPrompt ?? '')
       setWorkstationPath(state.settings.workstationPath ?? '')
@@ -465,6 +476,12 @@ export default function HomePage() {
 
   // A done card opens its read-only account; the others open the edit sheet.
   const handleOpenEditTask = (taskId: string) => {
+    if (columnOf(board, taskId) === 'inventory') {
+      setEditTask(null)
+      setDoneTaskId(null)
+      setInventoryTaskId(taskId)
+      return
+    }
     if (columnOf(board, taskId) === 'done') {
       setEditTask(null)
       setDoneTaskId(taskId)
@@ -634,6 +651,14 @@ export default function HomePage() {
                   view={view}
                   onViewChange={selectView}
                   taskLinks={taskLinks.links}
+                  boardToolbar={
+                    <ReleaseControl
+                      board={board}
+                      release={release}
+                      concurrency={concurrency}
+                      onOpenReports={() => setReportsOpen(true)}
+                    />
+                  }
                   githubView={
                     <InboxView
                       view={view}
@@ -740,6 +765,15 @@ export default function HomePage() {
               }}
               onClose={() => setDoneTaskId(null)}
             />
+            <InventorySheet
+              task={inventoryTaskId ? board.inventory.find((t) => t.id === inventoryTaskId) ?? null : null}
+              onStart={(task) => {
+                setInventoryTaskId(null)
+                void startTaskOnHost(task.id)
+              }}
+              onClose={() => setInventoryTaskId(null)}
+            />
+            <ReportsDialog open={reportsOpen} onClose={() => setReportsOpen(false)} />
             <SettingsDialog
               open={settingsOpen}
               systemPrompt={systemPrompt}

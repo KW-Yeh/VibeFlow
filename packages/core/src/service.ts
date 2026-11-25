@@ -1461,6 +1461,25 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return setRelease(p.enabled)
     },
 
+    // The spec and plan an inventory wrote, for the inventory panel. Only the
+    // files the card's own passes recorded, and only inside its worktree.
+    'vibeflow:readInventoryDocs': (taskId) => {
+      const task = requireTask(taskId)
+      const worktree = gitWorktree(task)
+      if (!worktree) return []
+      const root = path.resolve(worktree)
+      return (task.inventory?.docs ?? []).flatMap((rel) => {
+        const file = path.resolve(root, rel)
+        if (!file.startsWith(root + path.sep)) return []
+        try {
+          const content = fs.readFileSync(file, 'utf8')
+          return [{ path: rel, content: content.length > 200_000 ? `${content.slice(0, 200_000)}\n…` : content }]
+        } catch {
+          return []
+        }
+      })
+    },
+
     // Batch reports, newest first; the text of one.
     'reports:list': () => getStore().get('reports') ?? [],
     'reports:read': (reportId) => {
