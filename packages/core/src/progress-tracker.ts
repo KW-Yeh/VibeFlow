@@ -308,9 +308,13 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
     // the hook for what the transcript cannot show (a permission prompt) and
     // for leaving a wait (UserPromptSubmit after Stop).
     const hook = entry.hookActivity
-    const activity = hook?.state === 'working' && primary.activity.state === 'working'
-      ? primary.activity
-      : latestActivity(primary.activity, hook)
+    const held = primary.activity
+    // A Stop after a usage limit is the same stop; only a new prompt ends the wait.
+    const activity = held.waitingFor === 'quota'
+      ? (hook?.state === 'working' && (hook.at ?? 0) > (held.at ?? 0) ? hook : held)
+      : hook?.state === 'working' && primary.activity.state === 'working'
+        ? primary.activity
+        : latestActivity(primary.activity, hook)
     return {
       todos: primary.todos,
       runUsage,

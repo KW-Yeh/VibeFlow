@@ -155,3 +155,20 @@
   - `npx tsc --noEmit -p tsconfig.json`：通過。
   - `node scripts/run-tests.mjs ./test/status-tags.test.mjs ./test/task-cli.test.mjs ./test/tags.test.mjs`：28 個全數通過（AC-4：`--set 卡住 --reason` 換掉原有狀態、未知狀態回 `UNKNOWN_STATUS` 並列出可用狀態且不新增標籤）。
   - `npm test`：684 個全數通過。
+
+### 階段 4：額度上限偵測與 heartbeat（2026-11-25）
+
+- 改動：
+  - `progress.ts`：`claudeQuotaLimit` 認出 `isApiErrorMessage` + `error: 'rate_limit'`（或 `apiError: 'usage_limit_reached'`），產生 `activity: { state: 'waiting', waitingFor: 'quota', resetsAt }`；`resetsAt` 先讀 `quotaLimits.resetsAt`，再讀 `apiErrorParams.rate_limit_info.resetsAt`，都沒有就不帶。子 agent（`isSidechain`）的額度上限不算卡片的。等待額度時，非人類的 user 行與 synthetic assistant 行不會把狀態改回 working；人類訊息或真正 model 的回覆才會。
+  - `progress-tracker.ts`：等待額度時，Stop hook 不覆蓋它；只有更新的 working hook 會。
+  - `mailbox.ts`：等待額度視同閒置（agent 停在提示字元），所以 inbox 的訊息能叫醒它；權限對話框與草稿的保護不變。
+  - `heartbeat.ts`（新增）：每張卡一個計時器，時間是 `resetsAt + 60 秒`，沒有重置時間就用「碰到上限的時間 + heartbeat 間隔」；探測失敗把下一次時間存進 `quotaWait.nextProbeAt`，再等一個間隔；同一個 provider 30 秒內共用一次探測。時鐘可注入。
+  - `quota-probe.ts`（新增）：Claude `-p --model haiku --no-session-persistence`、Codex `exec --skip-git-repo-check --ephemeral`，在暫存目錄跑一句話的 prompt；失敗或輸出含額度上限字樣都算沒通過。
+  - `service.ts`：progress 更新時偵測額度上限，寫入 `Task.quotaWait`（含 `statusBefore`）並把狀態設成「等待額度」（`source: 'host'`）；heartbeat 觸發時，session 還活著且仍在等額度就經 mailbox 送「繼續」，已經在等人（回答或權限）就不送、只結束等待；session 已經不在就以 `resume` 重啟同一個 session 再送「繼續」。結束等待時恢復原本的狀態標籤。host 啟動時依 store 重建計時器。盤點階段的額度等待在階段 5 接上。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `node scripts/run-tests.mjs ./test/progress.test.mjs ./test/mailbox.test.mjs ./test/progress-tracker.test.mjs`：54 個全數通過（含 3 個新增的額度上限案例，使用階段 1 的 fixture）。
+  - `node scripts/run-tests.mjs ./test/heartbeat.test.mjs`：7 個全數通過。包括假時鐘下的計時與重試、不同 provider 各自接續、AC-6（掛上「等待額度」並存有重置時間、探測通過後原 session 收到「繼續」、在等人回答時不送）、AC-7（第一個 host 探測失敗後關閉，第二個 host 依 store 重建計時器、以 `--resume` 重啟並送出「繼續」）。
+  - 實際呼叫 `probeAgent('claude')` 一次，回傳 `true`（目前沒有額度上限）。
+  - `npm test`：694 個全數通過。
+  - 沒有驗證：真實的額度上限無法按需觸發，live 環境的接續要等實際碰到時觀察。

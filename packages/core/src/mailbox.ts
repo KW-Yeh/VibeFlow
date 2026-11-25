@@ -101,7 +101,8 @@ export function draftAfter(before: boolean, data: string): boolean {
   return draft
 }
 
-const isIdle = (a: Activity | null) => !a || a.state === 'unknown' || (a.state === 'waiting' && a.waitingFor === 'input')
+// An agent stopped by a usage limit sits at its prompt like one that ended its turn.
+const isIdle = (a: Activity | null) => !a || a.state === 'unknown' || (a.state === 'waiting' && (a.waitingFor === 'input' || a.waitingFor === 'quota'))
 
 export function createMailbox(options: MailboxOptions): Mailbox {
   const lastInput = new Map<string, number>()

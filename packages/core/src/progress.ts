@@ -40,8 +40,10 @@ export interface Activity {
   state: ActivityState
   /** Tool the agent is running right now (state 'working'). */
   tool?: string
-  /** Why it stopped (state 'waiting'): end of turn, or asking for a permission. */
-  waitingFor?: 'input' | 'permission'
+  /** Why it stopped (state 'waiting'): end of turn, asking for a permission, or a usage limit. */
+  waitingFor?: 'input' | 'permission' | 'quota'
+  /** waitingFor 'quota': epoch ms the limit resets, when the agent said. */
+  resetsAt?: number
   /** Epoch ms of the last transcript line or hook event seen. */
   at?: number
 }
@@ -67,7 +69,7 @@ export interface ProgressNotification {
   done?: number
   total?: number
   /** waiting_input: what it is waiting for. */
-  waitingFor?: 'input' | 'permission'
+  waitingFor?: 'input' | 'permission' | 'quota'
 }
 
 export function emptyUsage(): TokenUsage {
@@ -230,6 +232,20 @@ function applyClaudeTask(
   })
 }
 
+/**
+ * A usage-limit reply: Claude writes a synthetic assistant line flagged as an
+ * API error. The reset time is epoch seconds under `quotaLimits` (newer CLIs)
+ * or `apiErrorParams.rate_limit_info`. null = not a usage limit.
+ */
+export function claudeQuotaLimit(entry: Record<string, unknown>): { resetsAt?: number } | null {
+  if (entry.type !== 'assistant' || entry.isSidechain || entry.isApiErrorMessage !== true) return null
+  if (entry.error !== 'rate_limit' && entry.apiError !== 'usage_limit_reached') return null
+  const quota = entry.quotaLimits as Record<string, unknown> | undefined
+  const info = (entry.apiErrorParams as Record<string, unknown> | undefined)?.rate_limit_info as Record<string, unknown> | undefined
+  const seconds = [quota?.resetsAt, info?.resetsAt].find((v) => typeof v === 'number' && Number.isFinite(v) && v > 0) as number | undefined
+  return seconds ? { resetsAt: seconds * 1000 } : {}
+}
+
 /** Fold one Claude transcript line into the state. Unknown or broken lines leave it unchanged. */
 export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState {
   const entry = parseLine(line)
@@ -239,7 +255,18 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
   const message = entry.message as Record<string, unknown> | undefined
   const content = Array.isArray(message?.content) ? (message!.content as Record<string, unknown>[]) : []
 
+  const quota = claudeQuotaLimit(entry)
+  if (quota) {
+    next.activity = { state: 'waiting', waitingFor: 'quota', ...(quota.resetsAt ? { resetsAt: quota.resetsAt } : {}), at }
+    return next
+  }
+  // Until the model itself answers again or a person writes, the agent is
+  // still held by the limit: notices written after it (a sub-agent that
+  // failed on the same limit) are not work resuming.
+  const heldByQuota = state.activity.waitingFor === 'quota'
+
   if (entry.type === 'assistant' && message) {
+    if (heldByQuota && (entry.isSidechain || message.model === '<synthetic>')) return next
     const usage = message.usage as Record<string, unknown> | undefined
     if (usage && typeof message.id === 'string') {
       const u = claudeUsage(usage)
@@ -278,7 +305,9 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
       delete pending[block.tool_use_id]
     }
     next.pendingTasks = pending
-    if (isClaudePrompt(entry, message)) next.turns = state.turns + 1
+    const prompt = isClaudePrompt(entry, message)
+    if (prompt) next.turns = state.turns + 1
+    if (heldByQuota && !prompt) return next
     next.activity = isClaudeInterrupt(entry, message) ? { state: 'waiting', waitingFor: 'input', at } : { state: 'working', at }
     return next
   }
@@ -492,7 +521,7 @@ export function describeNotification(n: ProgressNotification): string {
     case 'all_completed':
       return '所有步驟已完成'
     case 'waiting_input':
-      return n.waitingFor === 'permission' ? '等待你允許權限' : '等待你的輸入'
+      return n.waitingFor === 'permission' ? '等待你允許權限' : n.waitingFor === 'quota' ? '等待額度重置' : '等待你的輸入'
   }
 }
 
@@ -503,6 +532,9 @@ export function progressSummary(progress: TaskProgress | null | undefined, usage
   if (todos && todos.length) parts.push(`${todos.filter((t) => t.status === 'completed').length}/${todos.length}`)
   const total = progress?.totalUsage ?? usage
   if (total && totalTokens(total) > 0) parts.push(`${formatTokens(totalTokens(total))} tok`)
-  if (progress?.activity.state === 'waiting') parts.push(progress.activity.waitingFor === 'permission' ? '等待權限' : '等待輸入')
+  if (progress?.activity.state === 'waiting') {
+    const waitingFor = progress.activity.waitingFor
+    parts.push(waitingFor === 'permission' ? '等待權限' : waitingFor === 'quota' ? '等待額度' : '等待輸入')
+  }
   return parts.join(' · ')
 }

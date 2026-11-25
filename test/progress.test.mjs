@@ -277,3 +277,35 @@ test('text — tokens, notification sentences, one-line summary', () => {
   assert.equal(progressSummary(null, { input: 950, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }), '950 tok')
   assert.equal(progressSummary(null), '')
 })
+
+test('Claude usage limit — the synthetic API-error line means waiting for quota, with its reset time (AC-6)', () => {
+  const all = lines('claude-rate-limit.jsonl')
+  const limitAt = all.findIndex((l) => l.includes('"error":"rate_limit"'))
+  const atLimit = foldClaude(all.slice(0, limitAt + 1))
+  assert.equal(atLimit.activity.state, 'waiting')
+  assert.equal(atLimit.activity.waitingFor, 'quota')
+  assert.equal(atLimit.activity.resetsAt, 1795424400 * 1000)
+  // The sub-agent's failure notice that follows does not count as work resuming.
+  const after = foldClaude(all)
+  assert.equal(after.activity.waitingFor, 'quota')
+  assert.equal(after.turns, 1, 'the notice is not a prompt')
+})
+
+test('Claude usage limit — a person writing or the model answering again ends the wait', () => {
+  const held = foldClaude(lines('claude-rate-limit.jsonl'))
+  const prompt = JSON.stringify({ type: 'user', timestamp: '2026-11-23T09:01:00.000Z', origin: { kind: 'human' }, message: { role: 'user', content: '繼續' } })
+  assert.equal(reduceClaudeLine(held, prompt).activity.state, 'working')
+  const reply = JSON.stringify({ type: 'assistant', timestamp: '2026-11-23T09:01:05.000Z', message: { id: 'msg_9', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] } })
+  assert.equal(reduceClaudeLine(held, reply).activity.waitingFor, 'input')
+})
+
+test('Claude usage limit — falls back to rate_limit_info, and to no reset time at all', () => {
+  const base = { type: 'assistant', isApiErrorMessage: true, error: 'rate_limit', timestamp: '2026-11-23T06:24:38.142Z', message: { id: 'x', model: '<synthetic>', content: [] } }
+  const withInfo = reduceClaudeLine(initialClaudeState(), JSON.stringify({ ...base, apiErrorParams: { rate_limit_info: { resetsAt: 100 } } }))
+  assert.equal(withInfo.activity.resetsAt, 100_000)
+  const without = reduceClaudeLine(initialClaudeState(), JSON.stringify(base))
+  assert.equal(without.activity.waitingFor, 'quota')
+  assert.equal(without.activity.resetsAt, undefined)
+  const sidechain = reduceClaudeLine(initialClaudeState(), JSON.stringify({ ...base, isSidechain: true }))
+  assert.notEqual(sidechain.activity.waitingFor, 'quota', "a sub-agent's limit is not the card's")
+})

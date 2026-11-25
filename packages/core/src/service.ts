@@ -112,6 +112,10 @@ import { EventBus } from './events'
 import type { SessionBackend } from './session-backend'
 import { getPlatform } from './platform'
 import type { PickFolderResult } from './folder-dialog'
+import { createHeartbeat, type HeartbeatClock, type ResumeResult } from './heartbeat'
+import { probeAgent } from './quota-probe'
+import { taskStatus } from './status-keys'
+import { resolveAutonomousSettings, type QuotaWait } from './store'
 
 /** What a terminal start asks for. Core turns it into a command. */
 export interface LaunchIntent {
@@ -351,7 +355,16 @@ export interface CoreOptions {
   titleTranslator?: TitleTranslator
   /** Stand-in for the PR lookup behind a continuation brief; tests override it. */
   prStatus?: (worktreePath: string) => Promise<PrStatus | null>
+  /** Whether a provider accepts work again after a usage limit; tests override it. */
+  quotaProbe?: (agent: AgentCliId) => Promise<boolean>
+  /** The heartbeat's clock; tests pass a fake one. */
+  heartbeatClock?: HeartbeatClock
+  /** How long a resumed session gets to start before "continue" is sent to it. */
+  resumeSettleMs?: number
 }
+
+/** What a card stopped by a usage limit is told once the limit has reset. */
+export const QUOTA_CONTINUE_MESSAGE = '用量額度已經重置。請從中斷的地方繼續剛才的工作。'
 
 export type CoreHandler = (...args: unknown[]) => unknown
 /** Channel → handler. Every transport exposes exactly this table. */
@@ -374,7 +387,7 @@ export interface Core {
  * take ids; a standalone shell may take a selected folder when no task exists.
  * No channel accepts a client-supplied shell command. Events use one bus.
  */
-export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator, prStatus = lookUpPr }: CoreOptions): Core {
+export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAuthStatus, acliRunner, jiraAuthStatus, modelCatalog, jevRouter, titleTranslator, prStatus = lookUpPr, quotaProbe = probeAgent, heartbeatClock, resumeSettleMs = 5000 }: CoreOptions): Core {
   const sink = bus.sink()
   const models = modelCatalog ?? createModelCatalog({ version })
   const router = jevRouter ?? createJevRouter({ getApiKey: readJevApiKey })
@@ -397,6 +410,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       bus.emit('progress:update', { taskId, progress: value })
       notifier.retry(taskId)
       mailbox.poke(taskId)
+      quotaFromActivity(taskId, value.activity)
     },
     onNotify: (taskId, list) => {
       const prefs = resolveNotificationSettings(getSettings())
@@ -589,6 +603,117 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     }
   }
 
+  /**
+   * A card stopped by a usage limit keeps the reset time on itself and wears
+   * 等待額度 until it carries on; its status from before comes back then.
+   */
+  function startQuotaWait(task: Task, phase: QuotaWait['phase'], resetsAt: number | undefined): void {
+    const before = taskStatus(task)
+    updateTask(task.id, {
+      quotaWait: {
+        since: Date.now(),
+        agent: taskAgent(task),
+        phase,
+        ...(resetsAt ? { resetsAt } : {}),
+        ...(before && before !== 'quota_wait' ? { statusBefore: before } : {}),
+      },
+    })
+    if (columnOf(task.id) !== 'done') {
+      setTaskStatus(getStore(), {
+        taskId: task.id,
+        status: 'quota_wait',
+        reason: resetsAt ? `額度重置時間 ${new Date(resetsAt).toISOString()}` : '碰到額度上限，重置時間未知',
+        source: 'host',
+      })
+    }
+    bus.emit('state:changed', getState())
+    heartbeat.sync()
+  }
+
+  function endQuotaWait(taskId: string): void {
+    const task = findTask(taskId)
+    if (!task?.quotaWait) return
+    const before = task.quotaWait.statusBefore
+    updateTask(task.id, { quotaWait: undefined })
+    const current = findTask(task.id)
+    if (current && taskStatus(current) === 'quota_wait' && columnOf(task.id) !== 'done') {
+      setTaskStatus(getStore(), { taskId: task.id, status: before ?? null, source: 'host' })
+    }
+    bus.emit('state:changed', getState())
+    heartbeat.sync()
+  }
+
+  function quotaFromActivity(taskId: string, activity: Activity): void {
+    const task = findTask(taskId)
+    if (!task || columnOf(taskId) !== 'in_progress') return
+    if (activity.waitingFor === 'quota') {
+      if (!task.quotaWait) startQuotaWait(task, 'run', activity.resetsAt)
+      return
+    }
+    const wait = task.quotaWait
+    if (wait?.phase === 'run' && activity.state !== 'unknown' && (activity.at ?? 0) > wait.since) endQuotaWait(taskId)
+  }
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  /** Inventory passes stopped by a limit run again through this; set once the inventory runner exists. */
+  let rerunInventoryAfterQuota: ((taskId: string) => Promise<void>) | null = null
+
+  async function resumeAfterQuota(taskId: string, wait: QuotaWait): Promise<ResumeResult> {
+    const task = findTask(taskId)
+    if (!task) return 'done'
+    if (wait.phase === 'inventory') {
+      endQuotaWait(taskId)
+      if (columnOf(taskId) === 'inventory') await rerunInventoryAfterQuota?.(taskId)
+      return 'done'
+    }
+    if (columnOf(taskId) !== 'in_progress') {
+      endQuotaWait(taskId)
+      return 'done'
+    }
+    if (await sessions.isAlive(taskId)) {
+      trackProgress(task)
+      // Waiting on a person (an answer, a permission) or already going again:
+      // nothing is sent.
+      if (agentActivity(taskId)?.waitingFor !== 'quota') {
+        endQuotaWait(taskId)
+        return 'done'
+      }
+      await attachAgent(taskId)
+    } else {
+      await startTaskSession(task, task.id, { taskId: task.id, launch: { resume: true } })
+      await sleep(resumeSettleMs)
+    }
+    try {
+      await mailbox.deliver(taskId, frameMessage(null, QUOTA_CONTINUE_MESSAGE))
+    } catch {
+      return 'retry'
+    }
+    endQuotaWait(taskId)
+    return 'done'
+  }
+
+  const heartbeat = createHeartbeat({
+    clock: heartbeatClock,
+    waiting: () => {
+      try {
+        const board = getState().board
+        return COLUMNS.flatMap((col) => board[col])
+          .filter((t): t is Task & { quotaWait: QuotaWait } => Boolean(t.quotaWait))
+          .map((t) => ({ taskId: t.id, wait: t.quotaWait }))
+      } catch {
+        return []
+      }
+    },
+    probe: quotaProbe,
+    resume: resumeAfterQuota,
+    reschedule: (taskId, nextProbeAt) => {
+      const task = findTask(taskId)
+      if (task?.quotaWait) updateTask(taskId, { quotaWait: { ...task.quotaWait, nextProbeAt } })
+    },
+    intervalMs: () => resolveAutonomousSettings(getSettings()).heartbeatMinutes * 60_000,
+  })
+
   try {
     ensureStatusTags(getStore())
   } catch {
@@ -602,6 +727,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   } catch {
     // No store yet (first run): nothing is running.
   }
+  // Waits a previous host left on the cards get their timers back.
+  heartbeat.sync()
 
   async function teardownSession(key: string): Promise<void> {
     const standalone = isStandaloneKey(key)
@@ -1835,6 +1962,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       models.warm()
     },
     shutdown() {
+      heartbeat.stop()
       cancelJiraLogin()
       sessions.shutdown()
       cancelAllChatSends()
