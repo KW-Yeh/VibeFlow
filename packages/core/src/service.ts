@@ -100,7 +100,8 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executorSessionId, inventoryPrompt, taskAgent, taskModel, type MasterContext } from './launch'
+import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, taskAgent, taskModel, type MasterContext } from './launch'
+import { releaseCandidates } from './release'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
@@ -823,6 +824,104 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     }
   }
 
+  /**
+   * Backlog or 盤點 → In Progress, agent started. A card from the inventory
+   * column gets a new session that works from its spec and plan.
+   */
+  async function startTask(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
+    const task = requireTask(taskId)
+    const column = columnOf(task.id)
+    if (column !== 'backlog' && column !== 'inventory') throw new Error(`只有 Backlog 或盤點欄的卡片可以啟動（目前在 ${column}）`)
+    if (column === 'inventory') {
+      if (inventories.has(task.id)) throw coded('INVENTORY_RUNNING', '這張卡正在盤點，等盤點結束再啟動')
+      if (task.quotaWait?.phase === 'inventory') updateTask(task.id, { quotaWait: undefined })
+    }
+    const started = moveToColumn(task.id, 'in_progress', {
+      launchedAt: Date.now(),
+      launchError: undefined,
+      ...(column === 'inventory' ? { runId: randomUUID() } : {}),
+    })
+    bus.emit('state:changed', getState())
+    await startTaskSession(started, task.id, { taskId: task.id, launch: {} })
+    return { state: getState(), task: findTask(task.id) ?? started }
+  }
+
+  // --- release ---
+
+  let releasing = false
+  let releaseAgain = false
+
+  /**
+   * While the switch is on, fill the free slots with 準備開工 cards in
+   * inventory-column order. Re-entrant calls (a release changes the state it
+   * reacts to) only ask for one more round.
+   */
+  async function releaseTick(): Promise<void> {
+    if (releasing) {
+      releaseAgain = true
+      return
+    }
+    releasing = true
+    try {
+      do {
+        releaseAgain = false
+        let state: VibeFlowState
+        try {
+          state = getState()
+        } catch {
+          return
+        }
+        const batchId = state.release?.enabled ? state.release.batchId : undefined
+        if (!batchId) return
+        const concurrency = resolveAutonomousSettings(state.settings).concurrency
+        for (const card of releaseCandidates(state.board, concurrency)) {
+          if (inventories.has(card.id)) continue
+          const batches = getStore().get('batches') ?? []
+          getStore().set('batches', batches.map((b) => (b.id === batchId && !b.taskIds.includes(card.id)
+            ? { ...b, taskIds: [...b.taskIds, card.id], titles: { ...b.titles, [card.id]: card.title } }
+            : b)))
+          try {
+            await startTask(card.id)
+          } catch (err) {
+            // The start put it back with its reason; the batch keeps the attempt.
+            const stillThere = findTask(card.id)
+            if (stillThere && columnOf(card.id) !== 'done') {
+              setTaskStatus(getStore(), { taskId: card.id, status: 'stuck', reason: `放行失敗：${(err as Error).message.slice(0, 300)}`, source: 'host' })
+            }
+          }
+        }
+      } while (releaseAgain)
+    } finally {
+      releasing = false
+    }
+  }
+
+  /** Turning the switch on opens a batch; off closes it and leaves running cards to finish. */
+  function setRelease(enabled: boolean): VibeFlowState {
+    const store = getStore()
+    const release = store.get('release') ?? { enabled: false }
+    if (enabled === release.enabled) return getState()
+    if (enabled) {
+      const batchId = randomUUID().slice(0, 8)
+      store.set('batches', [...(store.get('batches') ?? []), { id: batchId, startedAt: Date.now(), taskIds: [], titles: {}, events: [] }])
+      store.set('release', { enabled: true, batchId })
+      bus.emit('state:changed', getState())
+      void releaseTick()
+    } else {
+      const batchId = release.batchId
+      store.set('release', { enabled: false })
+      if (batchId) {
+        store.set('batches', (store.get('batches') ?? []).map((b) => (b.id === batchId ? { ...b, endedAt: Date.now() } : b)))
+        onBatchClosed(batchId)
+      }
+      bus.emit('state:changed', getState())
+    }
+    return getState()
+  }
+
+  /** A closed batch gets its report; the report module hooks in here. */
+  let onBatchClosed: (batchId: string) => void = () => {}
+
   async function startInventory(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
     const task = requireTask(taskId)
     if (isMasterTask(task)) throw coded('MASTER_CARD', 'master 卡片不經過盤點')
@@ -913,6 +1012,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
   // Waits a previous host left on the cards get their timers back.
   heartbeat.sync()
+  // A switch left on keeps releasing; every board change may free a slot or ready a card.
+  // Deferred: a tick may start a card, which needs the whole core built first.
+  const scheduleRelease = () => queueMicrotask(() => void releaseTick())
+  const stopReleaseWatch = bus.on((channel) => {
+    if (channel === 'state:changed') scheduleRelease()
+  })
+  scheduleRelease()
 
   async function teardownSession(key: string): Promise<void> {
     const standalone = isStandaloneKey(key)
@@ -989,6 +1095,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
+    // A card's first run after its inventory starts from the spec and plan,
+    // whichever way it reached In Progress (released, started, dragged).
+    if (!continuation && !intent.resume && intent.includeTaskPrompt !== false && task.inventory?.finishedAt && !task.inventory.handedOffAt) {
+      continuation = executionBrief(task, task.inventory.docs ?? [], { canWrite: Boolean(boardCli?.cliPath) })
+      updateTask(task.id, { inventory: { ...task.inventory, handedOffAt: Date.now() } })
+      if (columnOf(task.id) === 'in_progress') setTaskStatus(getStore(), { taskId: task.id, status: 'running', source: 'host' })
+    }
     let route = settledRoute(task)
     // A continuation keeps the model and effort the card's run already settled on.
     const needsRoute = !continuation && (!taskModel(task) || task.effort === 'auto')
@@ -1304,12 +1417,19 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const before = getState().board.inventory.map((t) => t.id)
       setBoard(validBoard(board))
       for (const id of before) if (columnOf(id) !== 'inventory') leftInventory(id)
+      scheduleRelease()
       return getState()
     },
 
     // Backlog → 盤點: the card gets its branch and worktree and a headless pass
     // writes its spec, plan and 執行準備. It returns at once; the status says how the pass went.
     'vibeflow:startInventory': (taskId) => startInventory(str(taskId, 'taskId')),
+
+    'vibeflow:setRelease': (payload) => {
+      const p = obj<{ enabled: unknown }>(payload, 'payload')
+      if (typeof p.enabled !== 'boolean') invalid('enabled must be a boolean')
+      return setRelease(p.enabled)
+    },
 
     'vibeflow:rerunInventory': (taskId) => {
       const task = requireTask(taskId)
@@ -1681,22 +1801,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     // moves, provisions and starts its agent here, so whoever opens it later
     // attaches to a run that is already going. This is how a master starts the
     // cards it dispatched.
-    'vibeflow:startTask': async (taskId) => {
-      const task = requireTask(taskId)
-      const column = columnOf(task.id)
-      if (column !== 'backlog') throw new Error(`只有 Backlog 的卡片可以啟動（目前在 ${column}）`)
-      const board = getState().board
-      const started = { ...task, launchedAt: Date.now(), launchError: undefined }
-      setBoard({
-        backlog: board.backlog.filter((t) => t.id !== task.id),
-        inventory: board.inventory.filter((t) => t.id !== task.id),
-        in_progress: [started, ...board.in_progress],
-        done: board.done,
-      })
-      bus.emit('state:changed', getState())
-      await startTaskSession(started, task.id, { taskId: task.id, launch: {} })
-      return { state: getState(), task: findTask(task.id) ?? started }
-    },
+    'vibeflow:startTask': (taskId) => startTask(str(taskId, 'taskId')),
 
     // A running card carries on in a new agent session: same worktree and branch,
     // nothing discarded, first message built by core from the card's own facts.
@@ -2089,6 +2194,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         ...(usage ? { usage } : {}),
       })
       await carryOnAfterDone(task.id)
+      scheduleRelease()
       return getState()
     },
 
@@ -2186,6 +2292,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       models.warm()
     },
     shutdown() {
+      stopReleaseWatch()
       heartbeat.stop()
       for (const controller of inventories.values()) controller.abort()
       cancelJiraLogin()

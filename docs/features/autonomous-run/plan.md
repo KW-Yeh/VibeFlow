@@ -188,3 +188,16 @@
   - `npm test`：703 個全數通過。
   - 真實盤點（拋棄式 `--store-path`，不是 dev profile：依交辦規則不使用真實 store）：測試 repo 的 `.npmrc` 指向一個不存在 token 的 JFrog registry，卡片用 Claude haiku、effort low。`task inventory start` 後約 60 秒結束，worktree 中只多出 `docs/features/lodash-dependency/spec.md` 與 `plan.md`，plan.md 有完整的執行準備；`npm config get registry` 通過、`npm whoami` 回 ENEEDAUTH 記為失敗，盤點區摘要列出「JFrog auth token：缺少」，卡片掛「待回答」（AC-1、AC-3 的未設定半段）。agent 嘗試一次 `cat .npmrc` 被 `dontAsk` 拒絕，沒有重試；store 中搜尋不到 `_authToken` 或 npm token 形狀的字串。之後以 `vibeflow shutdown` 停止 host。
   - 沒有驗證：AC-3 的「設定 token 後重新盤點通過」需要真實的 JFrog token，這個環境沒有，未驗證；真實環境的重新盤點只用假 agent 測過。
+
+### 階段 6：執行與放行（2026-11-25）
+
+- 改動：
+  - `launch.ts`：`executionBrief()`，第一則訊息指向 spec.md 與 plan.md、說明「執行準備」就是授權範圍、不能事先授權的操作要停下來，並教 agent 用 `task status --set needs_review|stuck|pr_opened --reason` 回報。
+  - `service.ts`：`startTask` 接受盤點欄的卡片（換新的 `runId` = 新 session；盤點中的卡片拒絕 `INVENTORY_RUNNING`）。盤點完成的卡片第一次啟動時，不論是被放行、`task start` 還是手動拖曳後的 `pty:start`，`launchCommand` 都改用執行簡報並記下 `inventory.handedOffAt`，之後的重啟不會再收到簡報；卡片狀態設為「執行中」。
+  - `release.ts`（新增）：`occupiedSlots`（In Progress 中非 master、狀態不是「待你確認／卡住／已開 PR」的卡片都佔名額，手動拖入與等待額度的也算）、`readyCards`、`releaseCandidates`。
+  - 放行排程：`vibeflow:setRelease` 開啟時建立批次並放行；`state:changed`、`setBoard`、`cleanupTask` 與 host 啟動時各觸發一次（以 microtask 延後，避免在 core 還沒建好時啟動卡片）；同時只有一輪在跑，期間的觸發合併成再跑一輪。放行時先把卡片與標題記進批次，狀態事件因此會寫進批次；啟動失敗的卡片掛「卡住」並附原因。關閉時記錄 `endedAt`，交給報告（階段 7）。
+  - CLI：`vibeflow release on|off|status`（on/off 需要 host，status 直接讀 store）。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `node scripts/run-tests.mjs ./test/release.test.mjs`：6 個全數通過（名額計算、依盤點欄順序放行；AC-5：並行上限 2 時三張準備開工的卡前兩張以新 session 與執行簡報啟動，一張改成「已開 PR」後第三張被放行，批次記錄卡片、標題與狀態事件；關閉開關後不再放行、執行中的卡不受影響、批次有結束時間；開關開著時 host 重啟會繼續放行；手動啟動也拿到執行簡報且只拿一次）。
+  - `npm test`：709 個全數通過（含既有的 `continueTask` 與 Backlog 啟動測試，AC-12）。

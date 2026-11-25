@@ -54,6 +54,8 @@ export interface TaskInventory {
   passes?: number
   /** spec.md / plan.md the passes wrote, relative to the worktree. */
   docs?: string[]
+  /** Epoch ms the card's first run started from its inventory, with the execution brief. */
+  handedOffAt?: number
 }
 
 /** The last status written by `task status --set` or a status-tag change. */

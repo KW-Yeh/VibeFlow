@@ -224,6 +224,9 @@ export function createBridge(t: BridgeTransport) {
   /** The inventory panel's extra context (replaces the text) and attachments (added). */
   setInventoryContext: (payload: { taskId: string; context?: string; attachments?: AttachmentInput[] }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setInventoryContext', payload),
+  /** The release switch: on opens a batch and starts 準備開工 cards up to the concurrency limit; off closes it. */
+  setRelease: (payload: { enabled: boolean }): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:setRelease', payload),
   /** A card's reserved status by key or tag name; null clears it. */
   setTaskStatus: (payload: { taskId: string; status: string | null; reason?: string }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setTaskStatus', payload),

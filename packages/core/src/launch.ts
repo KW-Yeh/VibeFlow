@@ -701,3 +701,43 @@ export function inventoryPrompt(input: InventoryPromptInput): string {
   )
   return lines.join('\n')
 }
+
+/**
+ * The first message of a card that comes out of its inventory: a new session
+ * that works from the spec and plan the inventory wrote, within what its
+ * 執行準備 allows, and reports how it ended through its status.
+ */
+export function executionBrief(task: Pick<Task, 'title' | 'description'>, docs: string[], opts: { canWrite: boolean }): string {
+  const spec = docs.filter((d) => d.endsWith('spec.md'))
+  const plan = docs.filter((d) => d.endsWith('plan.md'))
+  const lines = [
+    `任務標題：${task.title}`,
+    '',
+    '這張卡已經在 VibeFlow 的「盤點」階段完成 spec 與 plan，現在開始執行。',
+    spec.length ? `Spec：${spec.join('、')}` : 'Spec：盤點文件在 docs/features/ 下，先找出這張卡的 spec.md。',
+    plan.length ? `Plan：${plan.join('、')}` : 'Plan：同一個目錄的 plan.md。',
+    '',
+    '## 做法',
+    '1. 先讀完 spec.md 與 plan.md。plan.md 的「執行準備」是這次的授權範圍：裡面列出的指令、權限與遠端操作視為使用者已經明確授權，不用再問。',
+    '2. 照 plan 的實作順序實作、驗收、修正，完成後依「執行準備」允許的範圍 commit、push 到這張卡的分支並開 PR。',
+    '3. 推到共用分支、force push、處理 secret、更動 lock 檔不在預先授權內；碰到時停下來。',
+  ]
+  if (opts.canWrite) {
+    lines.push(
+      '',
+      '## 回報狀態',
+      ...BOARD_CLI_SETUP,
+      '- 碰到「執行準備」的停止條件，或需要它沒有列出的授權：',
+      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set needs_review --reason "<需要使用者確認什麼>"，然後停止。',
+      '- 卡住、無法繼續：',
+      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set stuck --reason "<卡在哪裡>"，然後停止。',
+      '- 開出 PR 之後：',
+      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set pr_opened --reason "<PR 連結>"。'
+    )
+  } else {
+    lines.push('', '這次啟動無法使用 board CLI（找不到 VIBEFLOW_CLI）；需要停下來時，把原因寫在回覆裡。')
+  }
+  const description = task.description?.trim()
+  if (description) lines.push('', '## 原始任務描述', description)
+  return lines.join('\n')
+}
