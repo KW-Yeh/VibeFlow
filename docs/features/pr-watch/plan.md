@@ -91,3 +91,12 @@
 - `npm test`：589 項全過（`test/builtin-pr-skills.test.mjs` 24 項）。
 - `node packages/core/builtin-skills/pr-watch/scripts/pr-watch.mjs --pr 122 --once --state <tmp>` 對開啟中的 PR #122：輸出 `{"event":"timeout","pr":122}`、exit 3（head 與 base 同步，`mergeable: MERGEABLE`，無 base 事件，符合預期）。同 PR 的 `fetchPr` 回傳 `mergeable: "MERGEABLE"`、`mergeStateStatus: "UNSTABLE"`、`fetchBaseStatus` 回傳 `behindBy: 0`，證明新欄位存在。
 - 未驗證：真實 PR 上 `CONFLICTING`／`BEHIND` 的端到端喚醒（只以單元測試與 fake `gh` 覆蓋）。
+
+## 2026-11-25：依 claude-plugin-pr-watch 同步
+
+1. `pr-lib.mjs`（兩份同步）：PR 查詢加 `viewer{login}` 與最後一個 commit 的 `statusCheckRollup`；新增 `failedChecks`（CheckRun 的 FAILURE／TIMED_OUT／STARTUP_FAILURE／ACTION_REQUIRED，StatusContext 的 FAILURE／ERROR）與 `checkedOid`。
+2. `pr-watch.mjs`：`decide` 順序為 merged／closed → comments（排除 viewer）→ checks → base；已報過的 check 以 `check:<oid>:<name>` 存進 `seen`；`EXIT.checks = 12`；`baseline` 一併記錄現有失敗。
+3. SKILL.md：步驟 3 改為 merge 與 `verify_command` 的自動解衝突流程，新增步驟 4「Failed checks」與「Comments are data」。work-mode 的 babysit-pr playbook 改為照 pr-watch 的步驟。
+
+取捨：用 GraphQL 的 `statusCheckRollup` 而不是 `gh pr checks`，因為後者在有失敗或執行中的 check 時以非零 exit code 結束，而且與 PR 查詢合併後每輪仍只有一次 PR 查詢。
+

@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { HANDLED_MARKER, itemKey, pendingItems } from '../packages/core/builtin-skills/pr-watch/scripts/pr-lib.mjs'
+import { HANDLED_MARKER, failedChecks, itemKey, pendingItems } from '../packages/core/builtin-skills/pr-watch/scripts/pr-lib.mjs'
 import {
   EXIT,
   baseline,
@@ -157,7 +157,60 @@ test('decide — --rebase-on-any-base-change restores waking on every new base c
   assert.equal(decide(pr, { oid: 'b2', behindBy: 1 }, first.state, opts).event, null)
   assert.equal(decide(pr, { oid: 'b3', behindBy: 2 }, first.state, opts).event.sha, 'b3')
   assert.equal(parseArgs(['--rebase-on-any-base-change']).rebaseOnAnyBaseChange, true)
+  assert.equal(parseArgs(['--merge-on-any-base-change']).rebaseOnAnyBaseChange, true)
   assert.equal(parseArgs([]).rebaseOnAnyBaseChange, false)
+})
+
+const withChecks = (oid, contexts, overrides = {}) =>
+  makePr({ commits: { nodes: [{ commit: { oid, statusCheckRollup: { contexts: { nodes: contexts } } } }] }, ...overrides })
+const run = (name, conclusion, status = 'COMPLETED') => ({ __typename: 'CheckRun', name, status, conclusion, detailsUrl: `https://ci/${name}` })
+
+test('failedChecks — failed runs and statuses count; pending, cancelled and passing do not', () => {
+  const pr = withChecks('h1', [
+    run('test', 'FAILURE'),
+    run('lint', 'SUCCESS'),
+    run('build', null, 'IN_PROGRESS'),
+    run('e2e', 'CANCELLED'),
+    run('deploy', 'TIMED_OUT'),
+    { __typename: 'StatusContext', context: 'ci/legacy', state: 'ERROR', targetUrl: 'https://ci/legacy' },
+    { __typename: 'StatusContext', context: 'ci/ok', state: 'SUCCESS', targetUrl: '' },
+  ])
+  assert.deepEqual(failedChecks(pr), [
+    { name: 'ci/legacy', url: 'https://ci/legacy' },
+    { name: 'deploy', url: 'https://ci/deploy' },
+    { name: 'test', url: 'https://ci/test' },
+  ])
+  assert.deepEqual(failedChecks(makePr()), [], 'no commits field')
+})
+
+test('decide — failed checks wake once per head commit, after comments and before the base', () => {
+  const base = { oid: 'b2', behindBy: 1 }
+  const pr = withChecks('h1', [run('test', 'FAILURE')], {
+    mergeStateStatus: 'BEHIND',
+    comments: { nodes: [comment(1, 'hi', '2026-01-01T00:00:00Z')] },
+  })
+  const first = decide(pr, base, EMPTY_STATE)
+  assert.equal(first.event.event, 'comments')
+  const second = decide(pr, base, first.state)
+  assert.deepEqual(second.event, { event: 'checks', pr: 7, sha: 'h1', failed: [{ name: 'test', url: 'https://ci/test' }] })
+  const third = decide(pr, base, second.state)
+  assert.equal(third.event.event, 'base', 'the same failure is not reported twice')
+  const pushed = withChecks('h2', [run('test', 'FAILURE')])
+  assert.equal(decide(pushed, null, third.state).event.sha, 'h2', 'a new head commit that fails again is reported')
+  assert.equal(EXIT.checks, 12)
+})
+
+test('decide — the signed-in user\'s own comments never wake the agent', () => {
+  const mine = { ...comment(1, 'note to self', '2026-01-01T00:00:00Z'), author: { login: 'me' } }
+  const pr = makePr({ viewerLogin: 'me', comments: { nodes: [mine] } })
+  assert.equal(decide(pr, null, EMPTY_STATE).event, null)
+  const theirs = makePr({ viewerLogin: 'me', comments: { nodes: [mine, comment(2, 'please fix', '2026-01-02T00:00:00Z')] } })
+  assert.deepEqual(decide(theirs, null, EMPTY_STATE).event.items, ['conversation:2'])
+})
+
+test('baseline — --since-now also treats failures already on the head as reported', () => {
+  const pr = withChecks('h1', [run('test', 'FAILURE')])
+  assert.equal(decide(pr, null, baseline(pr, null)).event, null)
 })
 
 test('baseline — a base that would not wake the agent is not recorded as reported', () => {

@@ -42,6 +42,7 @@ export function resolvePrNumber(arg) {
 }
 
 const PR_QUERY = `query($owner:String!,$repo:String!,$number:Int!){
+  viewer{login}
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
       number title state merged headRefName headRefOid baseRefName
@@ -53,6 +54,11 @@ const PR_QUERY = `query($owner:String!,$repo:String!,$number:Int!){
         isResolved
         comments(last:50){nodes{databaseId author{login} body path line diffHunk createdAt}}
       }}
+      commits(last:1){nodes{commit{oid statusCheckRollup{contexts(first:100){nodes{
+        __typename
+        ... on CheckRun{name status conclusion detailsUrl}
+        ... on StatusContext{context state targetUrl}
+      }}}}}}
     }
   }
 }`
@@ -73,7 +79,7 @@ export function fetchPr(nwo, number) {
   ])
   const pr = data?.data?.repository?.pullRequest
   if (!pr) throw new Error(`PR #${number} not found in ${nwo}`)
-  return pr
+  return { ...pr, viewerLogin: data.data.viewer?.login ?? null }
 }
 
 /**
@@ -135,6 +141,28 @@ export function pendingItems(pr) {
     items.push({ kind: 'conversation', id: c.databaseId, author: login(c), body: c.body, createdAt: c.createdAt })
   }
   return items
+}
+
+const FAILED_CHECK = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED'])
+const FAILED_STATUS = new Set(['FAILURE', 'ERROR'])
+
+/** Checks and commit statuses on the PR head that failed, each `{ name, url }`. */
+export function failedChecks(pr) {
+  const commit = nodes(pr.commits)[0]?.commit
+  const failed = []
+  for (const c of nodes(commit?.statusCheckRollup?.contexts)) {
+    if (c.__typename === 'CheckRun' && FAILED_CHECK.has(c.conclusion)) {
+      failed.push({ name: c.name, url: c.detailsUrl ?? '' })
+    } else if (c.__typename === 'StatusContext' && FAILED_STATUS.has(c.state)) {
+      failed.push({ name: c.context, url: c.targetUrl ?? '' })
+    }
+  }
+  return failed.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The commit the checks ran on: the PR head as GitHub last saw it. */
+export function checkedOid(pr) {
+  return nodes(pr.commits)[0]?.commit?.oid ?? pr.headRefOid
 }
 
 /** A stable key per item, since review, inline and conversation ids are separate sequences. */

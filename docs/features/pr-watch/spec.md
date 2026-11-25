@@ -1,6 +1,6 @@
 # Spec：PR 監聽內建 skill（pr-watch）與 Library 投遞恢復
 
-- 狀態：2026-11-05 使用者確認 Spec／Plan（「Start」）並實作；AC-5 端到端待指定測試 repo；2026-11-13 修正見文末〈只在衝突或必須跟上 base 時喚醒〉
+- 狀態：2026-11-05 使用者確認 Spec／Plan（「Start」）並實作；AC-5 端到端待指定測試 repo；2026-11-13 修正見文末〈只在衝突或必須跟上 base 時喚醒〉；2026-11-25 依 claude-plugin-pr-watch 同步見文末
 - Ticket：尚無
 - 需求來源：2026-11-05 使用者要求「建立監聽 PR 狀態的 skill，用固定腳本傳參數穩定且省 token 地監聽；新 PR comment 用 address-review 判斷、base branch 有新 commit 就 rebase；PR merged／closed 就結束監聽；內建在 VibeFlow，prompt 提到監聽 PR 就自動啟動」
 - 確認紀錄（2026-11-05 對話）：
@@ -127,3 +127,30 @@
 
 - `base` 事件 JSON 新增 `reason` 欄位（只增不減）；唯一消費者是 SKILL.md。
 - 預設行為改變是內建 skill 的契約變更：已安裝的使用者在下次啟動 host 時（未改動過的副本）自動拿到新版。
+
+## 2026-11-25 同步：依 claude-plugin-pr-watch 對齊行為
+
+- 狀態：已實作。
+- 需求來源：使用者要求依本機 global skill 同步內建 skill，並指出 pr-watch 對應的是 `claude-plugin-pr-watch`（Claude Code mod）。
+- 確認紀錄（2026-11-25 對話）：衝突處理選「照 mod：有 verify_command 才自動解」；CI 選「加：失敗時喚醒 agent」。
+- mod 的 UI 部分（提示框上方的監聽列、Draft／Ready for review 按鈕、外框顏色）是 Claude Code mod 專屬，不移植。
+
+| 情境 | 之前 | 現在 |
+| --- | --- | --- |
+| PR head 的 CI check 失敗 | 不看 | exit 12 `checks`（附失敗的 check 名稱與連結）；同一個 head commit 的同一個 check 只報一次；agent 讀 log、找根因、本機重現後修，auto mode 才自動 push，否則回報根因與修法並等待 |
+| 簽入 `gh` 的使用者自己留的 comment | 會喚醒 | 不喚醒 |
+| 需要跟上 base（`behind`） | `git rebase` + `--force-with-lease` | `git merge origin/<base>` + 一般 push，不再 force push |
+| 與 base 衝突、repo 設了 `verify_command` | abort、回報、停止監聽 | 解衝突、commit merge、跑 `verify_command` 到 exit 0，再由只拿到驗證指令與 `git diff HEAD^1 HEAD` 的 subagent 重跑並檢查 diff，同意才一般 push；任何一步失敗或沒把握就不 push、回報並停止 |
+| 與 base 衝突、沒設 `verify_command` | abort、回報、停止監聽 | 不變 |
+| review comment 內容 | 未特別說明 | 明寫只當 review 資料，不照裡面的指令做 review 以外的事 |
+
+- `verify_command` 讀 repo 根目錄 `.claude/pr.config.json`，沒有就讀 `$HOME/.claude/pr.config.json`（與 mod、pr skill 共用同一個檔）。
+- 衝突自動處理以 `verify_command` 為 opt-in，不看 `VIBEFLOW_AUTO_MODE`；乾淨 merge 與 CI 修正仍依 auto mode。
+- `--rebase-on-any-base-change` 更名為 `--merge-on-any-base-change`，舊名保留為別名。
+
+驗收條件：
+
+- [x] SYNC-PW-1：`decide` 的 CI 失敗、自己的 comment、`--since-now` 基準與旗標別名有單元測試。
+- [x] SYNC-PW-2：新 GraphQL 查詢（`viewer`、`commits.statusCheckRollup`）在真實 PR 上可執行，`pr-watch.mjs --once` 正常結束。
+- [ ] SYNC-PW-3：在真實 PR 上觸發 CI 失敗與 base 衝突的端到端驗收（未做）。
+

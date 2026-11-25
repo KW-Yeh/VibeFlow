@@ -2,14 +2,15 @@
 // Wait, silently, until a PR needs the agent: prints ONE JSON line and exits.
 //
 //   node pr-watch.mjs [--pr N] [--interval 60] [--state FILE] [--since-now] [--max-wait SEC] [--once]
-//                     [--rebase-on-any-base-change]
+//                     [--merge-on-any-base-change]   (old name: --rebase-on-any-base-change)
 //
 // exit 10 {"event":"comments",...}  review items nobody answered and not reported before
+// exit 12 {"event":"checks",...}    CI checks on the PR head failed; each head commit + check is reported once
 // exit 11 {"event":"base","reason":"conflict"|"behind",...}
 //                                   the head lacks base commits AND GitHub says the PR conflicts
 //                                   (mergeable CONFLICTING) or must catch up (mergeStateStatus BEHIND).
 //                                   A base that merely moved ahead is silent, and so is UNKNOWN
-//                                   (GitHub still computing); --rebase-on-any-base-change reports
+//                                   (GitHub still computing); --merge-on-any-base-change reports
 //                                   every new base commit the head lacks, as "behind" unless conflicting.
 //                                   One report per base commit.
 // exit 0  {"event":"merged"|"closed",...}
@@ -19,9 +20,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fetchBaseStatus, fetchPr, itemKey, pendingItems, repoNwo, resolvePrNumber } from './pr-lib.mjs'
+import { checkedOid, failedChecks, fetchBaseStatus, fetchPr, itemKey, pendingItems, repoNwo, resolvePrNumber } from './pr-lib.mjs'
 
-export const EXIT = { done: 0, error: 2, timeout: 3, comments: 10, base: 11 }
+export const EXIT = { done: 0, error: 2, timeout: 3, comments: 10, base: 11, checks: 12 }
 const MIN_INTERVAL = 20
 const MAX_BACKOFF = 300
 const MAX_FAILURES = 10
@@ -41,7 +42,7 @@ export function parseArgs(argv) {
     else if (arg === '--max-wait') opts.maxWait = Number(value())
     else if (arg === '--since-now') opts.sinceNow = true
     else if (arg === '--once') opts.once = true
-    else if (arg === '--rebase-on-any-base-change') opts.rebaseOnAnyBaseChange = true
+    else if (arg === '--merge-on-any-base-change' || arg === '--rebase-on-any-base-change') opts.rebaseOnAnyBaseChange = true
     else throw new Error(`unknown option ${arg}`)
   }
   return opts
@@ -85,22 +86,31 @@ export function baseReason(pr, base, opts = {}) {
 
 /**
  * What one poll means, given what was already reported. A finished PR wins,
- * then comments (answering them before a rebase keeps their line anchors
- * meaningful), then a base the PR must act on (see baseReason). A base already
- * reported at this commit is not reported again, so a rebase the agent could
- * not finish does not wake it in a loop.
+ * then comments (answering them before a merge keeps their line anchors
+ * meaningful), then failed checks on the head, then a base the PR must act on
+ * (see baseReason). The user's own comments never wake the agent. A failed
+ * check or a base already reported at this commit is not reported again, so
+ * work the agent could not finish does not wake it in a loop.
  */
 export function decide(pr, base, state, opts = {}) {
   if (pr.merged) return { event: { event: 'merged', pr: pr.number }, state }
   if (pr.state === 'CLOSED') return { event: { event: 'closed', pr: pr.number }, state }
 
   const seen = new Set(state.seen)
-  const fresh = pendingItems(pr).filter((item) => !seen.has(itemKey(item)))
+  const fresh = pendingItems(pr).filter((item) => !seen.has(itemKey(item)) && item.author !== pr.viewerLogin)
   if (fresh.length) {
     const keys = fresh.map(itemKey)
     return {
       event: { event: 'comments', pr: pr.number, count: fresh.length, items: keys },
       state: { ...state, seen: [...state.seen, ...keys] },
+    }
+  }
+  const oid = checkedOid(pr)
+  const failed = failedChecks(pr).filter((c) => !seen.has(checkKey(oid, c)))
+  if (failed.length) {
+    return {
+      event: { event: 'checks', pr: pr.number, sha: oid, failed },
+      state: { ...state, seen: [...state.seen, ...failed.map((c) => checkKey(oid, c))] },
     }
   }
   const reason = baseReason(pr, base, opts)
@@ -113,9 +123,15 @@ export function decide(pr, base, state, opts = {}) {
   return { event: null, state }
 }
 
+const checkKey = (oid, check) => `check:${oid}:${check.name}`
+
 /** Mark everything already there as reported, for --since-now. */
 export function baseline(pr, base, opts = {}) {
-  return { seen: pendingItems(pr).map(itemKey), baseOid: baseReason(pr, base, opts) ? base.oid : null }
+  const oid = checkedOid(pr)
+  return {
+    seen: [...pendingItems(pr).map(itemKey), ...failedChecks(pr).map((c) => checkKey(oid, c))],
+    baseOid: baseReason(pr, base, opts) ? base.oid : null,
+  }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
