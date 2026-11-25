@@ -74,7 +74,8 @@ import {
   isCommitSha,
 } from './commit-diff'
 import { assertMasterRef, createTaskFromInput, moveTaskFromInput, provisionTaskWorktree, resolveProjects } from './tasks'
-import { createTag, deleteTag, setTaskTags, updateTag } from './tags'
+import { createTag, deleteTag, updateTag } from './tags'
+import { ensureStatusTags, setTaskStatus, setTaskTagsWithStatus } from './status-tags'
 import type { TitleTranslator } from './branch-name'
 import { listRecentProjects, recordRecentProject } from './recent-projects'
 import { boardCliLaunchInfo } from './board-cli'
@@ -586,6 +587,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     } finally {
       continuing.delete(task.id)
     }
+  }
+
+  try {
+    ensureStatusTags(getStore())
+  } catch {
+    // No store yet: the tags are added with the first write that needs them.
   }
 
   // Cards already running when the host starts (tmux kept them alive, or an
@@ -1287,11 +1294,26 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'vibeflow:setTaskTags': (payload) => {
       const p = obj<{ taskId: unknown; add?: unknown; remove?: unknown }>(payload, 'payload')
       const task = requireTask(p.taskId)
-      setTaskTags(getStore(), {
+      setTaskTagsWithStatus(getStore(), {
         taskId: task.id,
         add: p.add === undefined ? undefined : strList(p.add, 'add'),
         remove: p.remove === undefined ? undefined : strList(p.remove, 'remove'),
       })
+      bus.emit('state:changed', getState())
+      return getState()
+    },
+
+    // A card's reserved status (null clears it), as `task status --set` writes it.
+    'vibeflow:setTaskStatus': (payload) => {
+      const p = obj<{ taskId: unknown; status: unknown; reason?: unknown }>(payload, 'payload')
+      const task = requireTask(p.taskId)
+      setTaskStatus(getStore(), {
+        taskId: task.id,
+        status: p.status === null ? null : str(p.status, 'status'),
+        reason: p.reason === undefined ? undefined : str(p.reason, 'reason').slice(0, 2000),
+        source: 'user',
+      })
+      bus.emit('state:changed', getState())
       return getState()
     },
 

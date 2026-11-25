@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type { JsonStore } from './json-store'
 import { writeBoard, type BoardState, type ColumnId, type TagDef, type Task, type VibeFlowState } from './store'
 import { TAG_COLORS, isTagColor, type TagColor } from './tag-colors'
+import { STATUS_TAG_PREFIX } from './status-keys'
 
 function tagError(message: string, code: string): Error {
   return Object.assign(new Error(message), { code })
@@ -94,6 +95,7 @@ function withTags(task: Task, ids: string[]): Task {
 export function deleteTag(store: JsonStore<VibeFlowState>, ref: string): TagDef {
   const tags = listTags(store)
   const tag = requireTag(tags, ref)
+  if (tag.id.startsWith(STATUS_TAG_PREFIX)) throw tagError(`「${tag.name}」是保留的狀態標籤，不能刪除`, 'RESERVED_TAG')
   writeBoard(store, mapTasks(store.get('board'), (t) =>
     t.tags?.includes(tag.id) ? withTags(t, t.tags.filter((id) => id !== tag.id)) : t))
   store.set('tags', tags.filter((t) => t.id !== tag.id))

@@ -164,3 +164,24 @@ test('task move reorders a card within its column', async (t) => {
   assert.equal((await task(['move', '--task', 'a', '--before', 'run', ...store])).error.code, 'INVALID_MOVE')
   assert.equal((await task(['move', '--task', 'a', '--top', '--bottom', ...store])).error.code, 'MISSING_ARGUMENT')
 })
+
+test('task status --set replaces the card status and refuses an unknown one (AC-4)', async (t) => {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
+  const store = ['--store-path', storeDir]
+  const card = (await task(['create', '--project', projectPath, '--title', 'S', '--prompt', 'p', ...store])).task
+  const ready = await task(['status', '--set', 'ready', ...store], { VIBEFLOW_TASK_ID: card.id })
+  assert.equal(ready.task.status, 'ready')
+  const stuck = await task(['status', '--task', card.id, '--set', '卡住', '--reason', '缺 token', ...store])
+  assert.deepEqual([stuck.task.status, stuck.task.reason], ['stuck', '缺 token'])
+  const saved = getStoreAtPath(storeDir).get('board').backlog[0]
+  assert.deepEqual(saved.tags, ['status:stuck'])
+  const tagCount = getStoreAtPath(storeDir).get('tags').length
+  const unknown = await task(['status', '--task', card.id, '--set', '不存在的狀態', ...store])
+  assert.equal(unknown.error.code, 'UNKNOWN_STATUS')
+  assert.match(unknown.error.message, /stuck（卡住）/)
+  assert.equal(getStoreAtPath(storeDir).get('tags').length, tagCount)
+  assert.equal((await task(['status', '--task', card.id, ...store])).error.code, 'MISSING_ARGUMENT')
+  assert.equal((await task(['status', '--task', card.id, '--clear', ...store])).task.status, null)
+})

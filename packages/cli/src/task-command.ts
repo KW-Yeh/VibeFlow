@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import path from 'node:path'
 import { claudeTitleTranslator } from '../../core/src/branch-name'
 import { createTaskFromInput, moveTaskFromInput, updateTaskFromInput } from '../../core/src/tasks'
-import { setTaskTags } from '../../core/src/tags'
+import { setTaskStatus, setTaskTagsWithStatus, statusChoices, ensureStatusTags } from '../../core/src/status-tags'
 import { addTaskArtifact } from '../../core/src/artifacts'
 import { fileToAttachmentInput, type AttachmentInput } from '../../core/src/attachments'
 import { AGENT_CLIS, AGENT_EFFORTS, type AgentCliId, type AgentEffort } from '../../core/src/agents'
@@ -15,9 +15,9 @@ import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'inventory', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'tag', 'move', 'start', 'list', 'show', 'send', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list', 'show', 'send', 'artifact']
 /** Write the store directly, so they work without a host — and default to the calling card's store. */
-const SHELL_COMMANDS = ['artifact', 'tag', 'move']
+const SHELL_COMMANDS = ['artifact', 'tag', 'status', 'move']
 const ROLES = ['slave', 'master']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
@@ -29,6 +29,7 @@ Usage:
   vibeflow task create [options]
   vibeflow task update [options]
   vibeflow task tag --task <id> [--add <tag>]… [--remove <tag>]… [options]
+  vibeflow task status --set <status> [--reason <text>] [--task <id>] [options]
   vibeflow task move --task <id> (--before <id> | --after <id> | --top | --bottom) [options]
   vibeflow task start --task <id> [options]
   vibeflow task list [--master <id>] [options]
@@ -92,6 +93,17 @@ task tag options (no host needed; see also \`vibeflow tag --help\`):
                          (default: the least used one)
   Names match ignoring case. A Done card carries no tags: they are cleared when it
   reaches Done, and --add on it fails.
+
+task status options (no host needed):
+  --task <id>            Card to set (defaults to VIBEFLOW_TASK_ID in a task shell)
+  --set <status>         One of the reserved statuses, by key or by its tag's name:
+                         inventorying（盤點中）, needs_answer（待回答）, ready（準備開工）,
+                         running（執行中）, quota_wait（等待額度）, needs_review（待你確認）,
+                         stuck（卡住）, pr_opened（已開 PR）
+  --reason <text>        Why; kept on the card and in the release batch's history
+  --clear                Remove the card's status instead
+  The card's other status tag is removed: a card has at most one. An unknown
+  status fails and creates no tag. Ordinary tags are left alone.
 
 task move options (no host needed):
   --task <id>            Card to move (defaults to VIBEFLOW_TASK_ID in a task shell)
@@ -212,6 +224,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         add:           { type: 'string', multiple: true },
         remove:        { type: 'string', multiple: true },
         color:         { type: 'string' },
+        set:           { type: 'string' },
+        reason:        { type: 'string' },
+        clear:         { type: 'boolean' },
         before:        { type: 'string' },
         top:           { type: 'boolean' },
         bottom:        { type: 'boolean' },
@@ -260,11 +275,23 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     if (!values.add?.length && !values.remove?.length) fail('MISSING_ARGUMENT', 'task tag needs --add or --remove')
     requireOneOf('--color', values.color, TAG_COLORS)
     const store = getStoreAtPath(storePath)
-    const { task, tags } = setTaskTags(store, { taskId, add: values.add, remove: values.remove, color: values.color })
+    const { task, tags } = setTaskTagsWithStatus(store, { taskId, add: values.add, remove: values.remove, color: values.color }, 'cli')
     return {
       storePath: store.path,
       task: { id: task.id, title: task.title, tags: (task.tags ?? []).map((id) => tags.find((t) => t.id === id)) },
     }
+  }
+
+  if (sub === 'status') {
+    const taskId = values.task ?? process.env.VIBEFLOW_TASK_ID
+    if (!taskId) fail('MISSING_ARGUMENT', 'task status needs --task (or VIBEFLOW_TASK_ID)')
+    if ((values.set === undefined) === !values.clear) fail('MISSING_ARGUMENT', 'task status needs exactly one of --set <status> or --clear')
+    const store = getStoreAtPath(storePath)
+    if (values.set !== undefined && !values.set.trim()) {
+      fail('UNKNOWN_STATUS', `--set needs a status. 可用的狀態：${statusChoices(ensureStatusTags(store))}`)
+    }
+    const { task, status } = setTaskStatus(store, { taskId, status: values.clear ? null : values.set!, reason: values.reason, source: 'cli' })
+    return { storePath: store.path, task: { id: task.id, title: task.title, status, reason: task.statusNote?.reason ?? null } }
   }
 
   if (sub === 'move') {

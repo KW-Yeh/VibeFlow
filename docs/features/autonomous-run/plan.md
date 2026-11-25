@@ -146,3 +146,12 @@
   - `npm run build:web`：成功。
   - `npm run test:e2e`：5 個測試全數通過（AC-12 的既有流程）。
   - Runtime：以手寫的 v4 store（一張帶標籤的 Backlog 卡、一張 Done 卡、一個標籤、`autoMode: false` 與自訂 system prompt）在拋棄式 `--store-path` 啟動 host，`task list` 讀得到卡片；store 檔升為 `version: 5`，四欄、標籤、設定都保留，`release`/`batches`/`reports` 為預設值（AC-11）。之後以 `vibeflow shutdown` 停止。
+
+### 階段 3：狀態標籤（2026-11-25）
+
+- 改動：`status-tags.ts`（八個保留狀態、固定 id `status:<key>`、`ensureStatusTags`、`setTaskStatus`、`setTaskTagsWithStatus`、`recordStatusEvent`）；host 啟動時補齊狀態標籤；`vibeflow:setTaskTags` 改走 `setTaskTagsWithStatus`（加上狀態標籤會換掉另一個，並以 `source: 'user'` 記事件）；新 handler `vibeflow:setTaskStatus`；`deleteTag` 拒絕刪除狀態標籤（`RESERVED_TAG`）；CLI `task status --set <key|名稱> [--reason] | --clear`，不需要 host。狀態名稱可用 key 或標籤目前的名稱；使用者已有同名標籤時，狀態標籤改名為「名稱（狀態）」。
+- 設計取捨：一般的 `task tag` 不會順便建立狀態標籤，只有 host 啟動與 `task status` 會；這樣既有的標籤清單不會因為一次打標籤而多出八個。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `node scripts/run-tests.mjs ./test/status-tags.test.mjs ./test/task-cli.test.mjs ./test/tags.test.mjs`：28 個全數通過（AC-4：`--set 卡住 --reason` 換掉原有狀態、未知狀態回 `UNKNOWN_STATUS` 並列出可用狀態且不新增標籤）。
+  - `npm test`：684 個全數通過。
