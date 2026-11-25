@@ -4,11 +4,13 @@ import type { ManualEffort } from './effort'
 /**
  * The headless inventory pass: one agent run, no terminal, that writes a
  * card's spec.md and plan.md (with its 執行準備) and checks what the run will
- * need. It must never be able to do the work itself, so it runs on a fixed
- * allowlist (Claude) or a workspace-only sandbox (Codex).
+ * need. The user chose to let it use every MCP server and skill to find the
+ * best approach (spec: autonomous-run, 2026-11-25 追加), so Claude runs in
+ * auto mode and Codex in a workspace-only sandbox; what it may leave behind is
+ * checked afterwards, not fenced in beforehand.
  */
 
-/** Where an inventory may write. Everything else in the worktree is read-only to it. */
+/** What a pass may leave changed in the worktree. */
 export const INVENTORY_DOCS_DIR = 'docs/features'
 
 /**
@@ -51,7 +53,7 @@ export function inventoryCommands(extra: readonly string[]): string[] {
   return all.filter((c, i) => all.indexOf(c) === i)
 }
 
-/** Claude's `--allowedTools` for an inventory: read anything, write only the feature docs, run only the listed checks. */
+/** Claude's `--allowedTools` for an inventory: what runs without auto mode's classifier looking at it. */
 export function inventoryAllowedTools(extra: readonly string[]): string[] {
   return [
     'Read',
@@ -72,6 +74,13 @@ function platformToken(token: string, platform: NodeJS.Platform): string {
   return platform === 'win32' && /[\s()*]/.test(token) ? `"${token}"` : token
 }
 
+/** The parts of the VibeFlow Library a headless pass needs. */
+export interface InventoryLibrary {
+  pluginDir: string
+  libraryDir: string
+  codexHome: string
+}
+
 export interface InventoryLaunch {
   agent: AgentCliId
   model?: string
@@ -79,25 +88,28 @@ export interface InventoryLaunch {
   /** Claude session id, so the pass's transcript can be read for a usage limit. */
   sessionId: string
   extraCommands: readonly string[]
+  library?: InventoryLibrary | null
   platform?: NodeJS.Platform
 }
 
 /**
- * The CLI arguments for one pass; the prompt goes in on stdin. Claude runs in
- * `dontAsk`: any tool not on the list is refused instead of waiting for an
- * approval nobody can give.
+ * The CLI arguments for one pass; the prompt goes in on stdin. Codex gets the
+ * Library through `CODEX_HOME` (`inventoryEnv`), not an argument.
  */
 export function inventoryArgs(launch: InventoryLaunch): string[] {
   const platform = launch.platform ?? process.platform
   if (launch.agent === 'claude') {
     return [
       '-p',
-      '--permission-mode', 'dontAsk',
+      '--permission-mode', 'auto',
       '--session-id', launch.sessionId,
       ...(launch.model ? ['--model', launch.model] : []),
       ...(launch.effort ? ['--effort', launch.effort] : []),
       '--allowedTools', ...inventoryAllowedTools(launch.extraCommands).map((t) => platformToken(t, platform)),
       '--disallowedTools', ...inventoryDisallowedTools().map((t) => platformToken(t, platform)),
+      ...(launch.library
+        ? ['--plugin-dir', platformToken(launch.library.pluginDir, platform), '--add-dir', platformToken(launch.library.libraryDir, platform)]
+        : []),
     ]
   }
   return [
@@ -111,6 +123,15 @@ export function inventoryArgs(launch: InventoryLaunch): string[] {
     ...(launch.effort ? ['-c', `model_reasoning_effort=${launch.effort}`] : []),
     '-',
   ]
+}
+
+export function inventoryEnv(agent: AgentCliId, library: InventoryLibrary | null | undefined, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return agent === 'codex' && library ? { ...base, CODEX_HOME: library.codexHome } : base
+}
+
+/** Changed paths a pass left outside the feature docs: an experiment it did not undo. */
+export function inventoryLeftovers(changedPaths: readonly string[]): string[] {
+  return changedPaths.filter((p) => !p.startsWith(`${INVENTORY_DOCS_DIR}/`))
 }
 
 export const INVENTORY_RESULT_MARK = 'VIBEFLOW_INVENTORY_RESULT:'

@@ -13,21 +13,24 @@ import {
   inventoryAllowedTools,
   inventoryArgs,
   inventoryCommands,
+  inventoryEnv,
+  inventoryLeftovers,
   isSafeInventoryCommand,
   parseInventoryResult,
 } from '../packages/core/src/inventory.ts'
 import { inventoryPrompt } from '../packages/core/src/launch.ts'
 import { makeRepo } from './support/repo.mjs'
 
-test('Claude passes run in dontAsk with a fixed allowlist, a docs-only write rule and secret paths refused', () => {
+test('Claude passes run in auto mode, with the checks pre-approved and secret paths refused', () => {
   const args = inventoryArgs({ agent: 'claude', sessionId: 'sid', model: 'opus', effort: 'high', extraCommands: ['pnpm whoami'], platform: 'darwin' })
-  assert.deepEqual(args.slice(0, 5), ['-p', '--permission-mode', 'dontAsk', '--session-id', 'sid'])
+  assert.deepEqual(args.slice(0, 5), ['-p', '--permission-mode', 'auto', '--session-id', 'sid'])
   assert.ok(args.includes('Edit(./docs/features/**)'))
   assert.ok(!args.some((a) => a.startsWith('Write(')), 'Write rules are not read by the file permission check')
   assert.ok(args.includes('Bash(npm whoami:*)'))
   assert.ok(args.includes('Bash(pnpm whoami:*)'), 'a command from the settings is added')
   assert.ok(args.includes('Read(./.env)'))
-  assert.ok(!args.some((a) => /bypass|acceptEdits/.test(a)))
+  assert.ok(!args.some((a) => /bypass|acceptEdits|dontAsk/.test(a)))
+  assert.ok(!args.includes('--plugin-dir'), 'no Library flag when nothing is enabled')
   const win = inventoryArgs({ agent: 'claude', sessionId: 'sid', extraCommands: [], platform: 'win32' })
   assert.ok(win.includes('"Bash(git status:*)"'), 'cmd.exe gets a quoted token')
 })
@@ -36,6 +39,21 @@ test('Codex passes run in the workspace-write sandbox with network for resource 
   const args = inventoryArgs({ agent: 'codex', sessionId: 'sid', extraCommands: [] })
   assert.deepEqual(args.slice(0, 5), ['exec', '--sandbox', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true'])
   assert.equal(args.at(-1), '-')
+})
+
+test('the Library reaches a pass: Claude as a plugin dir, Codex through CODEX_HOME', () => {
+  const library = { pluginDir: '/lib/plugin', libraryDir: '/lib', codexHome: '/lib/codex-home' }
+  const claude = inventoryArgs({ agent: 'claude', sessionId: 'sid', extraCommands: [], library, platform: 'darwin' })
+  assert.deepEqual(claude.slice(claude.indexOf('--plugin-dir'), claude.indexOf('--plugin-dir') + 4), ['--plugin-dir', '/lib/plugin', '--add-dir', '/lib'])
+  const codex = inventoryArgs({ agent: 'codex', sessionId: 'sid', extraCommands: [], library })
+  assert.ok(!codex.includes('--plugin-dir'))
+  assert.equal(inventoryEnv('codex', library, { PATH: '/bin' }).CODEX_HOME, '/lib/codex-home')
+  assert.equal(inventoryEnv('claude', library, { PATH: '/bin' }).CODEX_HOME, undefined)
+  assert.deepEqual(inventoryEnv('codex', null, { PATH: '/bin' }), { PATH: '/bin' })
+})
+
+test('only changes outside the feature docs count as leftovers', () => {
+  assert.deepEqual(inventoryLeftovers(['docs/features/x/plan.md', 'src/a.ts', 'docs/README.md']), ['src/a.ts', 'docs/README.md'])
 })
 
 test('a user command with shell syntax is not added to the allowlist', () => {
@@ -58,7 +76,7 @@ test('the prompt asks for 執行準備, forbids reading secrets and lists the al
     title: 'Add lodash', description: '需要新增套件', context: 'registry 是 JFrog', attachments: ['/w/a.txt'],
     existingDocs: ['docs/features/x/plan.md'], commands: ['npm whoami'], docsDir: 'docs/features', resultMark: 'VIBEFLOW_INVENTORY_RESULT:',
   })
-  for (const part of ['## 執行準備', '停止條件', '不要讀取、輸出或記錄任何 secret 的值', '`npm whoami`', 'registry 是 JFrog', '/w/a.txt', 'docs/features/x/plan.md', 'AskUserQuestion', 'VIBEFLOW_INVENTORY_RESULT: ready']) {
+  for (const part of ['## 執行準備', '停止條件', '不要讀取、輸出或記錄任何 secret 的值', '`npm whoami`', 'MCP server 與 skill', '外部系統只能讀', '結束前必須全部還原', 'registry 是 JFrog', '/w/a.txt', 'docs/features/x/plan.md', 'AskUserQuestion', 'VIBEFLOW_INVENTORY_RESULT: ready']) {
     assert.ok(prompt.includes(part), part)
   }
 })
@@ -156,6 +174,24 @@ test('a Backlog card moved to 盤點 gets a worktree and a headless pass; missin
   await until(() => findTask(task.id).inventory?.passes === 2)
   assert.equal(taskStatus(findTask(task.id)), 'ready')
   assert.equal(column(core, task.id), 'inventory', 'a ready card stays in the inventory column')
+})
+
+test('a pass that leaves an experiment behind is 待回答 with the files named, and nothing is removed', async (t) => {
+  const { core, task } = await inventoryCore(t, [
+    async ({ cwd }) => {
+      await writeDocs(cwd, '# Plan\n\n## 執行準備\n\n可直接執行')
+      await fs.writeFile(path.join(cwd, 'spike.ts'), 'export {}')
+      return 'VIBEFLOW_INVENTORY_RESULT: ready'
+    },
+  ])
+  await core.handlers['vibeflow:startInventory'](task.id)
+  await until(() => findTask(task.id).inventory?.finishedAt)
+  const done = findTask(task.id)
+  assert.equal(taskStatus(done), 'needs_answer')
+  assert.match(done.inventory.error, /spike\.ts/)
+  assert.match(done.statusNote.reason, /spike\.ts/)
+  assert.ok(done.inventory.docs.includes('docs/features/add-lib/plan.md'))
+  await fs.access(path.join(done.worktreePath, 'spike.ts'))
 })
 
 test('a pass that ends on a usage limit waits for quota and runs again after the reset', async (t) => {

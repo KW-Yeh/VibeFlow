@@ -667,7 +667,7 @@ export function inventoryPrompt(input: InventoryPromptInput): string {
     '你在 VibeFlow 的「盤點」階段，以 headless 模式執行：沒有終端機，也沒有人能即時回答你。不要使用 AskUserQuestion 或任何需要互動的工具。',
     '',
     '## 這一次要做的事',
-    `1. 依 feature-spec-plan 的做法，在 ${input.docsDir}/<功能 slug>/ 產出或更新 spec.md 與 plan.md。不要做功能實作，不要修改 ${input.docsDir}/ 以外的任何檔案，不要 commit 或 push。`,
+    `1. 依 feature-spec-plan 的做法，在 ${input.docsDir}/<功能 slug>/ 產出或更新 spec.md 與 plan.md。不要 commit 或 push。`,
     '2. plan.md 必須有「## 執行準備」段落，依序列出：',
     '   - 需要使用者決定的事項（每項附建議）',
     '   - 執行階段會用到的指令與權限',
@@ -677,10 +677,16 @@ export function inventoryPrompt(input: InventoryPromptInput): string {
     '3. 實際驗證資源。需要 secret 的資源（例如 JFrog auth token）只能用會用到認證、但不會印出值的檢查（例如 `npm whoami --registry <url>`）。不要讀取、輸出或記錄任何 secret 的值，也不要讀 .env、.npmrc 或憑證檔；文件裡只寫「通過」或「失敗」與缺什麼。',
     '4. 推到共用分支、force push、處理 secret、更動 lock 檔不能事先授權，只能列在停止條件。',
     '5. 所有項目都已就緒時，在 plan.md 的執行準備開頭寫明「可直接執行」。',
+    '',
+    '## 找出最佳做法',
+    '這一階段的目標是讓執行階段照著 plan 就能做對。盡量用手上的工具把做法查清楚、比較過再寫進 plan：',
+    '- 可以用任何 MCP server 與 skill 讀取資料，例如 ticket、eBug、Jira、設計稿、文件、既有 PR；也可以查網路、開 subagent 平行調查。',
+    '- 外部系統只能讀。送單、建立或修改 ticket、改狀態、留言、發訊息或 email 這類寫入一律不做；需要時寫進執行準備的待決定事項，或列為執行階段的步驟。',
+    `- 可以在 worktree 裡試寫程式碼、跑測試或實驗來比較方案，但結束前必須全部還原，只留下 ${input.docsDir}/ 的變更。還原後用 git status 確認；VibeFlow 檢查到其他殘留會把這張卡標成待回答。`,
+    '- 被權限擋下的動作不要繞過，把需要什麼、用途寫進待決定事項。',
   ]
   if (input.commands.length) {
-    lines.push('', '## 可以執行的指令', '只有以下開頭的指令會被允許，其他都會被拒絕：', ...input.commands.map((c) => `- \`${c}\``))
-    lines.push('需要清單外的指令才能驗證時，不要繞過：把「需要允許指令 X（用途）」寫進執行準備的待決定事項。')
+    lines.push('', '## 不需審核的指令', '以下開頭的指令直接放行；其他指令由權限模式判斷，被拒絕時把「需要允許指令 X（用途）」寫進執行準備的待決定事項：', ...input.commands.map((c) => `- \`${c}\``))
   }
   lines.push('', '## 卡片', `任務標題：${input.title}`)
   const description = input.description?.trim()

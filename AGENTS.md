@@ -190,13 +190,16 @@ npm run vibeflow -- report list | show --report <id>                       # no 
 - **Inventory** (`inventory.ts`, `inventoryPrompt` in `launch.ts`): the card is
   provisioned, then one headless pass (`runAgentPrint`, no terminal) writes
   `docs/features/<slug>/spec.md` and `plan.md` with a 「執行準備」 section and checks
-  resources without reading secrets. Claude runs `-p --permission-mode dontAsk` with a
-  fixed allowlist (`Edit(./docs/features/**)`, `Bash(<check>:*)`, plus
-  `settings.autonomous.inventoryCommands`); Codex runs `exec --sandbox workspace-write`
-  with network. The pass ends with `VIBEFLOW_INVENTORY_RESULT: ready|needs_answer`,
-  which core turns into the status — the agent never calls the CLI, so the allowlist
-  needs no `node`. Extra context lives in `Task.inventory.context`; an inventory card's
-  description is not editable. Leaving the column aborts the pass.
+  resources without reading secrets. It may use any MCP server, skill (the Library
+  included) or subagent to find the best approach, but writes to external systems stay
+  out. Claude runs `-p --permission-mode auto` with the Library's `--plugin-dir`, the
+  checks pre-approved (`Bash(<check>:*)`, plus `settings.autonomous.inventoryCommands`)
+  and secret paths denied; Codex runs `exec --sandbox workspace-write` with network and
+  `CODEX_HOME=<library>/codex-home`. A pass may experiment in the worktree but must undo
+  it: any change left outside `docs/features/` makes the card 待回答 with the files named,
+  and core never reverts it. The pass ends with `VIBEFLOW_INVENTORY_RESULT: ready|needs_answer`,
+  which core turns into the status. Extra context lives in `Task.inventory.context`; an
+  inventory card's description is not editable. Leaving the column aborts the pass.
 - **Status tags** (`status-tags.ts`, keys in `status-keys.ts`): eight reserved tags
   with fixed ids `status:<key>` (inventorying, needs_answer, ready, running, quota_wait,
   needs_review, stuck, pr_opened), added at host start, not deletable, one per card.

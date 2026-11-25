@@ -3,7 +3,7 @@
 - 狀態：已確認
 - Ticket：尚無
 - 需求來源：使用者需求（2026-11-25，對話中逐步定案）。卡片先經過「盤點」，用 headless 方式產出 spec.md、plan.md 與執行準備，並把需要使用者準備的資源（例如 JFrog auth token）盤點清楚。之後由一個放行開關依序放行準備好的卡片；卡片碰到額度上限時自己等待重置並接續原 session；關閉開關時產生這一批的報告，存放在 VibeFlow 內。
-- 更新日期：2026-11-25
+- 更新日期：2026-11-25（同日追加盤點放寬權限）
 - 確認紀錄：2026-11-25 使用者看過完整 spec 與六個待確認事項後回覆「都照預設」，六項依建議定案（見「已定案決策」最後六條）。
 
 ## 問題與目標
@@ -39,6 +39,7 @@
 - TUI 只顯示盤點欄與狀態標籤，不提供盤點操作與報告檢視。
 - 設定預設值：並行上限 2、heartbeat 間隔 5 分鐘、報告用 Claude 低成本 model 與 low effort。
 - 盤點欄的卡片不能直接編輯描述，補充內容一律透過盤點區的額外 context。
+- 2026-11-25 追加：盤點放寬權限，讓 agent 能用各種 MCP 與 skill 找出最佳做法。使用者回覆「照預設做」，採以下四項：Claude 盤點改用 auto mode（保留 secret 路徑禁讀）；外部系統只讀，需要寫入時列進待決定事項；可以在 worktree 試做，結束前自行還原，VibeFlow 檢查到殘留就標「待回答」、不自動刪除；Codex 維持 workspace-write sandbox 加網路，另外透過 `CODEX_HOME` 拿到 Library skills。
 
 ## 範圍
 
@@ -72,7 +73,8 @@
 | 情境或觸發條件 | 預期行為 |
 | --- | --- |
 | 使用者把 Backlog 卡片拖進「盤點」，或從 CLI 對卡片開始盤點 | 卡片移到盤點欄，掛上「盤點中」標籤。VibeFlow 依卡片設定建立 worktree 與分支，沿用 `ensureProvisioned` 的規則。接著用 headless 方式啟動 agent，任務是產出 spec.md、plan.md 與「執行準備」，不做功能實作。盤點沒有終端機。 |
-| 盤點用的 agent 權限 | 只允許完成盤點所需的操作：讀取程式碼、在功能文件目錄寫入 spec.md 與 plan.md、執行「執行準備」中列出的驗證指令。遇到範圍外的操作，盤點失敗，原因寫進盤點區，卡片改掛「待回答」。 |
+| 盤點用的 agent 權限 | Claude 以 auto mode 執行：MCP、skill（含 VibeFlow Library）、網路、subagent 都可以用，高風險動作由 auto mode 的分類器擋下；設定中的驗證指令不經審核直接放行；secret 路徑一律禁讀。Codex 在 workspace-write sandbox 加網路中執行，透過 `CODEX_HOME` 取得 Library skills。外部系統只讀：送單、改 ticket 狀態、發訊息這類寫入不做，改列為待決定事項。 |
+| 盤點時試做程式碼 | 為了比較做法，agent 可以在 worktree 中修改程式碼、執行實驗，但結束前必須還原，只留下功能文件目錄的變更。盤點結束後，VibeFlow 檢查 worktree：功能文件目錄以外仍有變更時，卡片掛「待回答」，原因列出殘留的檔案；VibeFlow 不自動刪除或還原。 |
 | 盤點產出的「執行準備」 | 列出四類內容：需要使用者決定的事項、執行階段會用到的指令與權限、需要的資源（檔案、帳號、token、測試資料）與驗證結果、允許的遠端操作（commit、push 到卡片分支、開 draft PR 等）。另外列出停止條件。 |
 | 驗證需要 secret 的資源（例如 JFrog auth token） | agent 不讀取、不輸出、不記錄 secret 的值，只執行會用到認證、但不會印出值的檢查，記錄「通過或失敗」。 |
 | 盤點完成，所有項目都已就緒 | 卡片標籤換成「準備開工」，仍留在盤點欄。plan.md 標為可以直接執行。 |
@@ -163,7 +165,7 @@
 
 - **額度上限的訊號是未驗證的前提。** Claude Code 與 Codex 碰到額度上限時，transcript 或輸出會留下什麼、有沒有附上重置時間，都還沒有實測。這些格式不是公開 API。plan 的第一階段必須先實測並用 fixture 固定格式；判斷不出重置時間時，退回依間隔反覆探測。
 - headless 盤點不能使用 `AskUserQuestion` 這類互動工具。所有問題都必須寫進「執行準備」與盤點區。
-- 盤點的權限：Claude 使用 `--allowedTools` 一類的限制，Codex 使用 sandbox 與 approval policy。具體設定在 plan 階段實測。
+- 盤點的權限：Claude 使用 auto mode（`--permission-mode auto`）加上 secret 路徑的 `--disallowedTools`；auto mode 是否可用取決於帳號與 model，和執行階段開 Auto Mode 時相同。Codex 使用 workspace-write sandbox；`codex exec` 中 MCP 工具是否可用依 Codex 自己的設定。
 - 送訊息給 agent 一律經過 `mailbox.ts`，遵守它對草稿、權限對話框與使用者輸入的保護。
 - `writeBoard` 會清掉 Done 卡片的標籤。報告的資料來源是批次的事件紀錄，不是標籤。
 - 看板新增欄位、放行批次、報告索引、卡片上的重置時間與額外 context 都會改變 `vibeflow-state.json` 的形狀，需要調整 `version` 並寫 migration。報告內文存成獨立檔案，state 只存索引。

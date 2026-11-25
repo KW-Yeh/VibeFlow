@@ -122,8 +122,11 @@ import {
   INVENTORY_RESULT_MARK,
   inventoryArgs,
   inventoryCommands,
+  inventoryEnv,
+  inventoryLeftovers,
   parseInventoryResult,
 } from './inventory'
+import { execEnv } from './env'
 import { initialClaudeState, reduceClaudeLine } from './progress'
 import { probeAgent } from './quota-probe'
 import { taskStatus, type StatusKey } from './status-keys'
@@ -698,11 +701,12 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return moved
   }
 
-  async function inventoryDocs(worktree: string): Promise<string[]> {
-    const entries = await collectWorkingEntries(worktree).catch(() => [])
-    return entries
-      .map((e) => e.path)
-      .filter((p) => p.startsWith(`${INVENTORY_DOCS_DIR}/`) && /\/(spec|plan)\.md$/.test(p))
+  async function inventoryChanges(worktree: string): Promise<{ docs: string[]; leftovers: string[] }> {
+    const paths = (await collectWorkingEntries(worktree).catch(() => [])).map((e) => e.path)
+    return {
+      docs: paths.filter((p) => p.startsWith(`${INVENTORY_DOCS_DIR}/`) && /\/(spec|plan)\.md$/.test(p)),
+      leftovers: inventoryLeftovers(paths),
+    }
   }
 
   /** A usage limit a finished pass ran into, from its transcript, else from what it printed. */
@@ -757,6 +761,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       docsDir: INVENTORY_DOCS_DIR,
       resultMark: INVENTORY_RESULT_MARK,
     })
+    const library = await libraryLaunchInfo(worktree).catch(() => null)
+    if (controller.signal.aborted) {
+      inventories.delete(taskId)
+      return
+    }
     updateTask(taskId, { inventory: { ...task.inventory, runningSince: Date.now(), sessionId, error: undefined } })
     setTaskStatus(getStore(), { taskId, status: 'inventorying', source: 'host' })
     bus.emit('state:changed', getState())
@@ -770,7 +779,14 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         effort,
         sessionId,
         extraCommands: settings.inventoryCommands,
-      }), prompt, { cwd: worktree, timeout: INVENTORY_TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024, signal: controller.signal })
+        library,
+      }), prompt, {
+        cwd: worktree,
+        timeout: INVENTORY_TIMEOUT_MS,
+        maxBuffer: 2 * 1024 * 1024,
+        signal: controller.signal,
+        env: inventoryEnv(agent, library, execEnv()),
+      })
     } catch (err) {
       failure = err as Error
     } finally {
@@ -780,7 +796,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const current = findTask(taskId)
     if (!current) return
     const parsed = parseInventoryResult(output)
-    const docs = await inventoryDocs(worktree)
+    const { docs, leftovers } = await inventoryChanges(worktree)
     const inventory = {
       ...current.inventory,
       runningSince: undefined,
@@ -805,6 +821,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const message = failure.message.slice(0, 2000)
       updateTask(taskId, { inventory: { ...inventory, error: message } })
       setTaskStatus(getStore(), { taskId, status: 'needs_answer', reason: `盤點失敗：${message.slice(0, 300)}`, source: 'host' })
+    } else if (leftovers.length) {
+      const listed = leftovers.slice(0, 10).join('、') + (leftovers.length > 10 ? ` 等 ${leftovers.length} 個檔案` : '')
+      const message = `盤點結束時 worktree 仍有 ${INVENTORY_DOCS_DIR}/ 以外的變更：${listed}。確認後自行還原，再重新盤點。`
+      updateTask(taskId, { inventory: { ...inventory, error: message } })
+      setTaskStatus(getStore(), { taskId, status: 'needs_answer', reason: message.slice(0, 300), source: 'host' })
     } else {
       updateTask(taskId, { inventory })
       setTaskStatus(getStore(), parsed.result === 'ready'

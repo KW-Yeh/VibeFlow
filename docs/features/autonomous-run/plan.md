@@ -248,3 +248,17 @@
 - 測試期望值隨需求改為新用詞：`test/inventory.test.mjs`、`master-cards.test.mjs`、`notifier.test.mjs`、`report.test.mjs`、`service.test.mjs`、`e2e/web.e2e.mjs`（欄位標題、退回／移回按鈕、Done 詳情標題）。
 - 驗證：`npx tsc --noEmit -p tsconfig.json`、`npx tsc --noEmit -p renderer/tsconfig.json` 通過；`npm test` 715 個全數通過；`npm run build:web` 成功；`npm run test:e2e` 5 個全數通過。
 - 未處理（建議另行決定）：畫面上其他英文詞，例如 Auto Mode、Master、Artifacts、session、Git diff 分頁名。這些不是欄位或狀態名稱，範圍較大，沒有在這次一起改。
+
+### 追加：盤點放寬權限（2026-11-25，使用者要求）
+
+- 使用者要求盤點能讀各種 MCP 與 skill，盡量讓 agent 找出最佳做法；四個做法使用者回覆「照預設做」（見 spec 已定案決策最後一條）。
+- 改動：
+  - `inventory.ts`：Claude 由 `dontAsk` 改為 `--permission-mode auto`；`--allowedTools` 只剩「不經分類器直接放行」的意義，secret 路徑的 `--disallowedTools` 保留；有啟用的 Library 時加上 `--plugin-dir`、`--add-dir`。新增 `inventoryEnv`（Codex 用 `CODEX_HOME` 拿到 Library）與 `inventoryLeftovers`（功能文件目錄以外的變更）。
+  - `service.ts`：pass 開始前取得 `libraryLaunchInfo`（放在標記「盤點中」之前，避免拖回 Backlog 的 abort 早於 runner 監聽）；結束後若有殘留變更，卡片掛「待回答」，原因與 `inventory.error` 列出檔案，不自動還原。
+  - `launch.ts` 的 `inventoryPrompt`：拿掉「只能改 docs」，新增「找出最佳做法」段落（MCP 與 skill 只讀、外部寫入列待決定事項、試做必須還原、被擋的動作不繞過）；指令清單改稱「不需審核的指令」。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `npm test`：718 個全數通過（新增 Library 參數、`inventoryEnv`、殘留判斷、殘留變更讓卡片變待回答的 host 測試）。
+  - 實測 headless Claude（2.1.332）用新參數：deepwiki MCP 工具呼叫成功、`translate` skill 成功、在 `docs/features/` 外建檔再刪除成功。另以假 token 的 `.npmrc`、`.env` 測試：`Read`、`cat .npmrc`、`grep API .env` 三種讀法都被擋，輸出沒有出現假 token。
+  - 真實 host（拋棄式 `--store-path`）：`task inventory start` 後實際程序帶 `--permission-mode auto` 與 Library 的 `--plugin-dir`；agent 用了 translate skill、在副本上比較兩種寫法，結束時 worktree 只剩 `docs/features/`，卡片為「準備開工」。之後 `vibeflow shutdown` 並移除測試 worktree。
+- 沒有驗證：Codex 盤點（沒有實跑；`codex exec` 能否用 MCP 依 Codex 設定）；殘留變更的真實情境（只有 host 測試的假 agent）；`head`、`sed` 等其他讀檔方式是否同樣被擋。
