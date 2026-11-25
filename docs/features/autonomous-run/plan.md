@@ -123,4 +123,12 @@
 
 ## 實作與驗證紀錄
 
-尚未實作。
+### 階段 1：實測與 fixture（2026-11-25）
+
+- Claude 額度上限 fixture：`test/fixtures/progress/claude-rate-limit.jsonl`，取自本機真實 transcript（Claude Code 2.1.330），去除 cwd、session、request id 與內容。形狀與調查時一致：`isApiErrorMessage: true`、`error: 'rate_limit'`、`quotaLimits.resetsAt` 與 `apiErrorParams.rate_limit_info.resetsAt`（epoch 秒）。另外發現：額度上限那一行之後，Claude 會寫入 `origin.kind: 'task-notification'` 的 user 行（子 agent 也因額度失敗），現有 reducer 會因此把 activity 改回 working，所以額度狀態要撐過非人類的 user 行，直到出現真正 model 的 assistant 回覆或人類訊息。
+- Codex：`~/.codex/sessions` 中沒有任何「已碰到」額度上限的紀錄。`event_msg` 的 `token_count` 帶有 `rate_limits.primary/secondary.{used_percent, resets_at}`，但只是用量，不是被拒絕的訊號。結論：Codex 額度上限偵測維持已知限制，不自動判為「等待額度」。
+- Claude headless 權限（Claude Code 2.1.332，`claude -p --model haiku`，拋棄式 repo）：
+  - `--permission-mode dontAsk` 會拒絕所有未預先允許的工具，不會卡在詢問。`acceptEdits` 會接受 cwd 內任何檔案寫入，不符合「只寫功能文件目錄」，改用 `dontAsk`。
+  - 檔案寫入要用 `Edit(./docs/features/**)`；`Write(...)` 規則不會被檔案權限檢查採用（CLI 會印警告）。`Edit(docs/features/**)`（沒有 `./`）沒有放行寫入。
+  - 實測：`docs/features/demo/spec.md` 寫入成功；`other.txt` 被拒；`Bash(git status:*)`、`Bash(npm ping:*)` 執行成功；`ls /` 被拒。
+- Codex headless 權限（codex-cli 0.170.0）：`codex exec --sandbox workspace-write` 可以寫入功能文件，但沙盒預設沒有網路（`curl` 解析不到 host），資源驗證會全部失敗。加上 `-c sandbox_workspace_write.network_access=true` 後網路可用。Codex 沒有逐指令的 allowlist，限制只到「workspace 內可寫、可上網」；設定中擴充的驗證指令只對 Claude 生效，記為已知限制。
