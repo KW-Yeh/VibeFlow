@@ -11,6 +11,7 @@ import { BoardColumns } from '@/components/board-columns'
 import { NewTaskButton } from '@/components/new-task-button'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
+import { InventoryWorkspacePanel } from '@/components/autonomous'
 import { WorkspaceTaskRail } from '@/components/workspace-task-rail'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
@@ -57,6 +58,8 @@ interface KanbanBoardProps {
   onSelectTask: (taskId: string) => void
   /** A click on a board card: its sheet, not the workspace. */
   onOpenTaskSheet: (taskId: string) => void
+  /** 開始執行 on an inventory card shown on the workspace page. */
+  onStartInventoryTask: (taskId: string) => void
   /** A Backlog card to start, staying on the current page; null once taken. */
   startRequest: string | null
   onStartRequest: (taskId: string | null) => void
@@ -168,6 +171,7 @@ export function KanbanBoard({
   selectedTaskId,
   onSelectTask,
   onOpenTaskSheet,
+  onStartInventoryTask,
   startRequest,
   onStartRequest,
   onNewTask,
@@ -447,6 +451,7 @@ export function KanbanBoard({
         const selected = selectedTaskId
           ? allTasks.find(({ task, column }) => column === 'in_progress' && task.id === selectedTaskId)
           : null
+        const selectedInventory = selectedTaskId ? board.inventory.find((t) => t.id === selectedTaskId) ?? null : null
 
         // The workspace is for running cards only. A mounted panel stays in the
         // DOM (hidden when not selected) so its PTY survives switching tasks or
@@ -468,6 +473,7 @@ export function KanbanBoard({
             <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail
               running={board.in_progress}
+              inventory={board.inventory}
               selectedTaskId={selectedTaskId ?? null}
               progress={progress}
               onSelect={onSelectTask}
@@ -509,7 +515,13 @@ export function KanbanBoard({
                 )
               })}
 
-              {!selected && (
+              {selectedInventory && (
+                <WorkspaceSurface key={selectedInventory.id} active>
+                  <InventoryWorkspacePanel task={selectedInventory} onStart={(task) => onStartInventoryTask(task.id)} />
+                </WorkspaceSurface>
+              )}
+
+              {!selected && !selectedInventory && (
                 <motion.div
                   initial="hidden"
                   animate="visible"
@@ -520,7 +532,9 @@ export function KanbanBoard({
                     <p className="text-base text-muted-foreground">
                       {board.in_progress.length > 0
                         ? '從左側選一張執行中的卡片。'
-                        : '目前沒有執行中的卡片，到看板開始一個任務，或建立新的任務。'}
+                        : board.inventory.length > 0
+                          ? '從左側選一張盤點中的卡片。'
+                          : '目前沒有執行中的卡片，到看板開始一個任務，或建立新的任務。'}
                     </p>
                     <Button size="sm" onClick={onNewTask} className="rounded-full px-4">
                       <Plus />

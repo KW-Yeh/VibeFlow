@@ -262,3 +262,19 @@
   - 實測 headless Claude（2.1.332）用新參數：deepwiki MCP 工具呼叫成功、`translate` skill 成功、在 `docs/features/` 外建檔再刪除成功。另以假 token 的 `.npmrc`、`.env` 測試：`Read`、`cat .npmrc`、`grep API .env` 三種讀法都被擋，輸出沒有出現假 token。
   - 真實 host（拋棄式 `--store-path`）：`task inventory start` 後實際程序帶 `--permission-mode auto` 與 Library 的 `--plugin-dir`；agent 用了 translate skill、在副本上比較兩種寫法，結束時 worktree 只剩 `docs/features/`，卡片為「準備開工」。之後 `vibeflow shutdown` 並移除測試 worktree。
 - 沒有驗證：Codex 盤點（沒有實跑；`codex exec` 能否用 MCP 依 Codex 設定）；殘留變更的真實情境（只有 host 測試的假 agent）；`head`、`sed` 等其他讀檔方式是否同樣被擋。
+
+### 追加：盤點卡在任務詳情頁顯示、sheet 按鈕被遮住（2026-11-25，使用者回報）
+
+- 問題：任務詳情（workspace）頁只列進行中的卡，盤點卡不會出現；盤點 sheet 的三顆按鈕擠在 300px 側欄底部，「開始執行」被切掉。
+- 改動：
+  - `autonomous.tsx`：盤點內容抽成 `useInventoryView`，sheet 與新的 `InventoryWorkspacePanel` 共用。「附加檔案」移進「補充 context」區塊，底部只剩「儲存並重新盤點」「開始執行」。任務詳情頁的版面是內容欄加 300px 屬性欄，按鈕放在內容欄頂端。
+  - `workspace-task-rail.tsx`：進行中下方新增「盤點」區塊（`盤點中的任務`），收合時以藍點列出；盤點卡不能在 rail 中拖曳。
+  - `kanban-board.tsx`、`home.tsx`：選取範圍包含盤點卡（URL 還原、`openTask`、切到任務詳情頁時預設選第一張）；選到盤點卡時主區域顯示盤點面板，「開始執行」走 `startTaskOnHost`。
+  - `task-form-layout.tsx`：sheet 底部按鈕列加上 `flex-wrap`，按鈕再多也只會換行，不會被切掉。
+- 驗證：
+  - `npx tsc --noEmit -p renderer/tsconfig.json`：通過。
+  - `npm test`：718 個全數通過。
+  - `npm run build:web`：成功。
+  - `npm run test:e2e`：5 個全數通過。
+  - Live Web UI（拋棄式 `--store-path`，兩張真實盤點完的卡）：任務詳情頁的 rail 列出兩張盤點卡，主區域顯示盤點摘要與 plan，按鈕在頂端；看板點卡開 sheet，1440 與 375 寬度下兩顆按鈕都完整，沒有水平捲動。
+- 沒有驗證：從任務詳情頁按「開始執行」實際啟動 agent（會開真實互動 session）；這個按鈕走的是 sheet 原本就使用的 `startTaskOnHost`。

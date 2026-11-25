@@ -195,6 +195,41 @@ export function InventorySheet({
 }
 
 function InventorySheetBody({ task, onStart, onClose }: { task: Task; onStart: (task: Task) => void; onClose: () => void }) {
+  const view = useInventoryView(task, onStart)
+  return (
+    <TaskFormDialog
+      title="盤點"
+      header={<span className="text-sm text-muted-foreground">任務詳情 · 盤點{view.statusLabel ? ` · ${view.statusLabel}` : ''}</span>}
+      saving={false}
+      onClose={onClose}
+      content={view.content}
+      sidebar={view.sidebar}
+      actions={view.actions}
+    />
+  )
+}
+
+/** An inventory card on the 任務詳情 page: the sheet's content, with room to read the plan. */
+export function InventoryWorkspacePanel({ task, onStart }: { task: Task; onStart: (task: Task) => void }) {
+  const view = useInventoryView(task, onStart)
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col md:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground">盤點{view.statusLabel ? ` · ${view.statusLabel}` : ''}</span>
+          <span className="flex-1" />
+          <div className="flex flex-wrap gap-2">{view.actions}</div>
+        </div>
+        {view.content}
+      </div>
+      <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto border-t border-border/70 bg-muted/20 px-3 py-4 md:w-[300px] md:border-l md:border-t-0">
+        {view.sidebar}
+      </aside>
+    </div>
+  )
+}
+
+function useInventoryView(task: Task, onStart: (task: Task) => void) {
   const statusName = useStatusName()
   const status = taskStatus(task)
   const running = Boolean(task.inventory?.runningSince)
@@ -276,6 +311,12 @@ function InventorySheetBody({ task, onStart, onClose }: { task: Task; onStart: (
           rows={5}
           className={cn(fieldClass, 'text-sm')}
         />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" disabled={saving} onClick={() => fileInput.current?.click()}>
+            <Paperclip className="size-3.5" />
+            附加檔案
+          </Button>
+        </div>
         {task.inventory?.attachments?.length ? (
           <ul className="space-y-0.5 text-xs text-muted-foreground">
             {task.inventory.attachments.map((a) => (
@@ -318,32 +359,20 @@ function InventorySheetBody({ task, onStart, onClose }: { task: Task; onStart: (
     </>
   )
 
-  return (
-    <TaskFormDialog
-      title="盤點"
-      header={<span className="text-sm text-muted-foreground">任務詳情 · 盤點{status ? ` · ${statusName(task)}` : ''}</span>}
-      saving={false}
-      onClose={onClose}
-      content={content}
-      sidebar={sidebar}
-      actions={
-        <>
-          <Button variant="ghost" size="sm" disabled={saving} onClick={() => fileInput.current?.click()}>
-            <Paperclip className="size-3.5" />
-            附加檔案
-          </Button>
-          <Button variant="outline" size="sm" disabled={saving || running} onClick={() => void saveAndRerun()}>
-            <RotateCcw className="size-3.5" />
-            儲存並重新盤點
-          </Button>
-          <Button size="sm" disabled={saving || running} onClick={() => onStart(task)} title="移到進行中，用新的 session 依 spec 與 plan 執行">
-            <Play className="size-3.5" />
-            開始執行
-          </Button>
-        </>
-      }
-    />
+  const actions = (
+    <>
+      <Button variant="outline" size="sm" disabled={saving || running} onClick={() => void saveAndRerun()}>
+        <RotateCcw className="size-3.5" />
+        儲存並重新盤點
+      </Button>
+      <Button size="sm" disabled={saving || running} onClick={() => onStart(task)} title="移到進行中，用新的 session 依 spec 與 plan 執行">
+        <Play className="size-3.5" />
+        開始執行
+      </Button>
+    </>
   )
+
+  return { content, sidebar, actions, statusLabel: status ? statusName(task) : null }
 }
 
 // ---------------------------------------------------------------------------

@@ -73,7 +73,7 @@ export function TaskFormDialog({
           <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 pb-3 pt-4 md:overflow-y-auto md:pt-12">
             {sidebar}
           </div>
-          <div className="flex shrink-0 gap-2 border-t border-border/70 px-3 py-3">{actions}</div>
+          <div className="flex shrink-0 flex-wrap gap-2 border-t border-border/70 px-3 py-3">{actions}</div>
         </aside>
       </div>
     </DialogShell>

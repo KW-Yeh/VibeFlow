@@ -414,7 +414,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── done-task-sheet.tsx a done card's sheet from the board: description + outcome, usage, Git diff by commit
 │   ├── diff-file.tsx      shared diff pieces: file viewer, modal, layout toggles, entry row
 │   ├── commit-diff.tsx    the Git diff tab grouped by commit (running) and a done card's commit view
-│   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
+│   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards, then 盤點 cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM core (single source of truth)

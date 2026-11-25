@@ -278,10 +278,10 @@ export default function HomePage() {
     }
   }, [runningIds])
 
-  // The workspace only shows running cards: one that leaves In Progress (done,
+  // The workspace shows running and inventory cards: one that leaves both (done,
   // sent back, deleted) or a stale one restored from the URL leaves nothing selected.
   useEffect(() => {
-    const ids = new Set(board.in_progress.map((t) => t.id))
+    const ids = new Set([...board.in_progress, ...board.inventory].map((t) => t.id))
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
 
@@ -352,9 +352,9 @@ export default function HomePage() {
     })
   }
 
-  // Only a running card opens in the workspace; any other card opens its sheet.
+  // A running or inventory card opens in the workspace; any other card opens its sheet.
   const openTask = (taskId: string) => {
-    if (!board.in_progress.some((t) => t.id === taskId)) {
+    if (![...board.in_progress, ...board.inventory].some((t) => t.id === taskId)) {
       handleOpenEditTask(taskId)
       return
     }
@@ -365,8 +365,9 @@ export default function HomePage() {
 
   // The workspace with nothing picked yet opens on the first running card.
   const selectView = (next: BoardView) => {
-    if (next === 'workspace' && !selectedTaskId && board.in_progress[0]) {
-      setSelectedTaskId(board.in_progress[0].id)
+    const first = board.in_progress[0] ?? board.inventory[0]
+    if (next === 'workspace' && !selectedTaskId && first) {
+      setSelectedTaskId(first.id)
     }
     setView(next)
   }
@@ -634,6 +635,7 @@ export default function HomePage() {
                 <KanbanBoard
                   onSelectTask={openTask}
                   onOpenTaskSheet={handleOpenEditTask}
+                  onStartInventoryTask={(taskId) => void startTaskOnHost(taskId)}
                   startRequest={startRequest}
                   onStartRequest={setStartRequest}
                   onNewTask={handleOpenNewTask}

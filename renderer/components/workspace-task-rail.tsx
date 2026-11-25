@@ -12,6 +12,8 @@ import type { Task, TaskProgress } from '@/lib/types'
 interface WorkspaceTaskRailProps {
   /** The In Progress column, in board order. */
   running: Task[]
+  /** The 盤點 column, in board order: shown below the running cards, not draggable. */
+  inventory: Task[]
   selectedTaskId: string | null
   progress: Record<string, TaskProgress>
   onSelect: (taskId: string) => void
@@ -55,6 +57,7 @@ function TreeLine({ branch }: { branch: Exclude<Branch, 'none'> }) {
 
 export function WorkspaceTaskRail({
   running,
+  inventory,
   selectedTaskId,
   progress,
   onSelect,
@@ -133,6 +136,25 @@ export function WorkspaceTaskRail({
               )}
             >
               <StatusMark {...activityMark(progress[task.id]?.activity)} className="size-2" />
+            </button>
+          )
+        })}
+        {inventory.map((task) => {
+          const selected = task.id === selectedTaskId
+          return (
+            <button
+              key={task.id}
+              type="button"
+              aria-label={`盤點：${task.title}`}
+              aria-current={selected ? 'page' : undefined}
+              title={`盤點：${task.title}`}
+              onClick={() => onSelect(task.id)}
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                selected ? 'bg-primary/15' : 'hover:bg-accent'
+              )}
+            >
+              <span className="size-2 rounded-full bg-tag-blue" />
             </button>
           )
         })}
@@ -232,6 +254,48 @@ export function WorkspaceTaskRail({
         {rows.map(({ task, branch }) => row(task, branch))}
         {rows.length === 0 && (
           <p className="px-2 py-3 text-sm text-muted-foreground">目前沒有進行中的任務</p>
+        )}
+        {inventory.length > 0 && (
+          <section aria-label="盤點中的任務" className="space-y-1 pt-2">
+            <div className="flex items-center gap-2 px-1.5 pb-0.5">
+              <span className="size-1.5 shrink-0 rounded-full bg-tag-blue" />
+              <h2 className={SECTION_LABEL}>盤點</h2>
+              <span className="text-xs tabular-nums text-muted-foreground/80">{inventory.length}</span>
+            </div>
+            {inventory.map((task) => {
+              const selected = task.id === selectedTaskId
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  aria-current={selected ? 'page' : undefined}
+                  title={task.title}
+                  onClick={() => onSelect(task.id)}
+                  className={cn(
+                    'flex w-full min-w-0 flex-col gap-1 rounded-md border px-2.5 py-2 text-left outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                    selected
+                      ? 'border-primary/60 bg-accent text-foreground'
+                      : 'border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                    <span className="flex w-3.5 shrink-0 justify-center">
+                      <span className="size-1.5 rounded-full bg-tag-blue" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{task.title}</span>
+                    <TaskId id={task.id} className="font-normal" />
+                  </span>
+                  <span className="min-w-0 truncate pl-[22px] text-xs" title={task.projectPath}>
+                    {task.projectName ?? ''}
+                  </span>
+                  <span className="min-w-0 truncate pl-[22px] font-mono text-xs" title={task.branch || undefined}>
+                    {branchLabel(task)}
+                  </span>
+                  <TagChips task={task} className="pl-[22px]" />
+                </button>
+              )
+            })}
+          </section>
         )}
       </div>
     </nav>
