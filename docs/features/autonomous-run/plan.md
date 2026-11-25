@@ -201,3 +201,15 @@
   - `npx tsc --noEmit -p tsconfig.json`：通過。
   - `node scripts/run-tests.mjs ./test/release.test.mjs`：6 個全數通過（名額計算、依盤點欄順序放行；AC-5：並行上限 2 時三張準備開工的卡前兩張以新 session 與執行簡報啟動，一張改成「已開 PR」後第三張被放行，批次記錄卡片、標題與狀態事件；關閉開關後不再放行、執行中的卡不受影響、批次有結束時間；開關開著時 host 重啟會繼續放行；手動啟動也拿到執行簡報且只拿一次）。
   - `npm test`：709 個全數通過（含既有的 `continueTask` 與 Backlog 啟動測試，AC-12）。
+
+### 階段 7：報告（2026-11-25）
+
+- 改動：
+  - `report.ts`（新增）：`reportRows` 從批次事件取每張卡的最後狀態與原因（Done 卡的標籤已清掉，所以不看標籤），用量取 `Task.usage`（In Progress 的卡加上目前這一輪），耗時是第一筆到最後一筆事件、還沒結束的算到批次結束，PR 取 `outcome.pr`，否則取「已開 PR」事件原因裡的網址；`reportTable` 產生 markdown 表格與狀態時間軸；`narrativePrompt` 只給 agent 表格；`createReporter` 先寫表格版（狀態 `pending`、內文標「待補寫」），再請 agent 補敘述，成功改成 `complete`，失敗或輸出含額度上限字樣就依 heartbeat 間隔重試；寫入新報告後依保留份數刪除最舊的報告檔與索引，已結束且報告已刪除的批次一併移除；host 啟動時重新排程待補寫的報告。
+  - `service.ts`：關閉放行開關時呼叫 reporter；報告用設定的 agent、model、effort（預設 Claude haiku、low），Claude 以 `-p --permission-mode dontAsk --no-session-persistence` 在暫存目錄執行，不能用任何工具；handler `reports:list`、`reports:read`（只接受報告 id 形狀的字串）。
+  - CLI：`vibeflow report list`、`vibeflow report show --report <id>`（直接讀 store，不需要 host）。
+- 修正：寫測試時發現 `reportRows` 與時間格式用 truthy 判斷，時間戳為 0 時會被當成沒有值，改成判斷 `undefined`；已刪除的卡不再標成「進行中」。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `node scripts/run-tests.mjs ./test/report.test.mjs`：5 個全數通過（AC-8：表格含 Done 卡的狀態、原因、用量、耗時、PR 與時間軸，進行中的卡標「進行中」；AC-9：agent 失敗時保留表格並標待補寫，假時鐘推進後補上敘述；AC-10：保留 3 份時第 4 份刪除最舊的檔案與索引；host 重啟後補寫待補寫報告；經 host 打開再關閉開關後，`reports:list`／`reports:read` 讀得到報告，`vibeflow report show` 輸出同一份）。
+  - `npm test`：714 個全數通過。

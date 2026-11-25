@@ -102,6 +102,7 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, taskAgent, taskModel, type MasterContext } from './launch'
 import { releaseCandidates } from './release'
+import { createReporter, isReportId, readReport } from './report'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
@@ -919,8 +920,32 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return getState()
   }
 
-  /** A closed batch gets its report; the report module hooks in here. */
-  let onBatchClosed: (batchId: string) => void = () => {}
+  const reporter = createReporter({
+    store: getStore,
+    storeDir: () => path.dirname(getStorePath()),
+    narrate: async (prompt) => {
+      const settings = resolveAutonomousSettings(getSettings())
+      const agent = settings.reportAgent
+      const args = agent === 'claude'
+        ? ['-p', '--permission-mode', 'dontAsk', '--no-session-persistence',
+            ...(settings.reportModel ? ['--model', settings.reportModel] : []), '--effort', settings.reportEffort]
+        : ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only',
+            ...(settings.reportModel ? ['--model', settings.reportModel] : []), '-c', `model_reasoning_effort=${settings.reportEffort}`, '-']
+      const out = await agentRunner(agent, args, prompt, { cwd: os.tmpdir(), timeout: 5 * 60_000, maxBuffer: 256 * 1024 })
+      if (LIMIT_TEXT.test(out)) throw new Error('usage limit')
+      return out
+    },
+    usageOf: (task) => (columnOf(task.id) === 'in_progress' ? usageThroughCurrentRun(task) : task.usage),
+    keep: () => resolveAutonomousSettings(getSettings()).reportKeep,
+    retryMs: () => resolveAutonomousSettings(getSettings()).heartbeatMinutes * 60_000,
+    clock: heartbeatClock,
+    onChange: () => bus.emit('state:changed', getState()),
+  })
+
+  /** A closed batch gets its report: the table at once, the narrative when the agent manages. */
+  const onBatchClosed = (batchId: string): void => {
+    void reporter.create(batchId).catch(() => {})
+  }
 
   async function startInventory(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
     const task = requireTask(taskId)
@@ -1019,6 +1044,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     if (channel === 'state:changed') scheduleRelease()
   })
   scheduleRelease()
+  try {
+    reporter.resumePending()
+  } catch {
+    // No store yet: nothing is pending.
+  }
 
   async function teardownSession(key: string): Promise<void> {
     const standalone = isStandaloneKey(key)
@@ -1429,6 +1459,13 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const p = obj<{ enabled: unknown }>(payload, 'payload')
       if (typeof p.enabled !== 'boolean') invalid('enabled must be a boolean')
       return setRelease(p.enabled)
+    },
+
+    // Batch reports, newest first; the text of one.
+    'reports:list': () => getStore().get('reports') ?? [],
+    'reports:read': (reportId) => {
+      if (!isReportId(reportId)) invalid('reportId must be a report id')
+      return readReport(path.dirname(getStorePath()), getStore().get('reports') ?? [], reportId)
     },
 
     'vibeflow:rerunInventory': (taskId) => {
@@ -2293,6 +2330,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     },
     shutdown() {
       stopReleaseWatch()
+      reporter.stop()
       heartbeat.stop()
       for (const controller of inventories.values()) controller.abort()
       cancelJiraLogin()

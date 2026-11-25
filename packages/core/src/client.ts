@@ -6,6 +6,7 @@ import type { TerminalFileResult, TerminalFileOpenResult } from './terminal-file
 import type {
   AppSettings,
   BoardState,
+  ReportEntry,
   Task,
   VibeFlowState,
 } from './store'
@@ -227,6 +228,11 @@ export function createBridge(t: BridgeTransport) {
   /** The release switch: on opens a batch and starts 準備開工 cards up to the concurrency limit; off closes it. */
   setRelease: (payload: { enabled: boolean }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setRelease', payload),
+  /** Batch reports, newest first. */
+  listReports: (): Promise<ReportEntry[]> => t.invoke('reports:list'),
+  /** One report's index entry and markdown; null when it is gone. */
+  readReport: (reportId: string): Promise<{ entry: ReportEntry; markdown: string } | null> =>
+    t.invoke('reports:read', reportId),
   /** A card's reserved status by key or tag name; null clears it. */
   setTaskStatus: (payload: { taskId: string; status: string | null; reason?: string }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setTaskStatus', payload),
