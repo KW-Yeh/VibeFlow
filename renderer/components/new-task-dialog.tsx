@@ -523,8 +523,8 @@ export function NewTaskDialog({
             <li>先讀相關專案、寫出拆卡計畫（plan.md），再為每個 repo 建立卡片，掛在這張 Master 底下。</li>
             <li>
               {autoMode
-                ? 'Auto Mode 開啟：不等確認直接派工；沒有前置的卡片立刻開始，其餘在前置卡 Done 後自動開始。'
-                : 'Auto Mode 關閉：先等你確認計畫才建卡，卡片留在 Backlog 由你決定何時開始。'}
+                ? 'Auto Mode 開啟：不等確認直接派工；沒有前置的卡片立刻開始，其餘在前置卡已完成 後自動開始。'
+                : 'Auto Mode 關閉：先等你確認計畫才建卡，卡片留在待辦由你決定何時開始。'}
             </li>
             <li>派工後你直接跟各張卡協作；Master 只在卡片啟動失敗或全部完成時再回來整理結果。</li>
           </ul>

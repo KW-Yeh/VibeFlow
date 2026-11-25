@@ -6,17 +6,13 @@ import type { VibeFlowApi } from '../../core/src/client'
 import type { BoardState, ColumnId, TagDef, Task } from '../../core/src/store'
 import { describeNotification, progressSummary, type TaskProgress } from '../../core/src/progress'
 import { TMUX_SOCKET } from '../../core/src/tmux-backend'
+import { COLUMN_LABELS } from '../../core/src/column-labels'
 import { editFormState, editInEditor, loadFormContext, newFormState, showForm } from './task-form'
 
 const h = React.createElement
 
 const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
-const COLUMN_TITLES: Record<ColumnId, string> = {
-  backlog: 'Backlog',
-  inventory: '盤點',
-  in_progress: 'In Progress',
-  done: 'Done',
-}
+const COLUMN_TITLES = COLUMN_LABELS
 
 /** Ctrl+] leaves a pty passthrough, as in telnet. */
 export const DETACH_KEY = '\x1d'
@@ -257,7 +253,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
     if (move.effect === 'cleanup') {
       setConfirm({ prompt: `完成「${move.task.title}」？會移除 worktree 與本機分支（y/n）`, run: doMove })
     } else if (move.effect === 'reset') {
-      setConfirm({ prompt: `退回 Backlog 會丟棄這次執行的所有變更，確定？（y/n）`, run: doMove })
+      setConfirm({ prompt: `退回待辦會丟棄這次執行的所有變更，確定？（y/n）`, run: doMove })
     } else {
       await doMove()
     }
@@ -334,7 +330,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
       h(Text, { bold: true }, 'VibeFlow TUI'),
       h(Text, null, 'h/l ←/→   切換欄'),
       h(Text, null, 'j/k ↑/↓   選擇卡片'),
-      h(Text, null, 'H/L       移動卡片（Backlog→In Progress 會啟動 agent；→Done 會清理 worktree）'),
+      h(Text, null, 'H/L       移動卡片（待辦→進行中會啟動 agent；→已完成會清理 worktree）'),
       h(Text, null, 'Enter     進入卡片的終端'),
       h(
         Text,

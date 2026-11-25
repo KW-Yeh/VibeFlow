@@ -229,7 +229,7 @@ export function TaskTerminal({
       term.focus()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      term.writeln(`\r\n⚠️  退回 Backlog 失敗：${message}`)
+      term.writeln(`\r\n⚠️  退回待辦失敗：${message}`)
     } finally {
       setIsReturningToBacklog(false)
     }
@@ -657,10 +657,10 @@ export function TaskTerminal({
                 className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-6 shrink-0 px-2 text-xs')}
                 onConfirm={() => void returnToBacklog()}
                 disabled={!cwd || isReturningToBacklog || isLaunchingAgent || isContinuing}
-                title="按住以退回 Backlog：停止 Agent，捨棄這張卡在本地的 commit、未 commit 變更與 artifacts（遠端分支不動，無法復原）。之後按「開始」才會重新啟動 Agent"
+                title="按住以退回待辦：停止 Agent，捨棄這張卡在本地的 commit、未 commit 變更與 artifacts（遠端分支不動，無法復原）。之後按「開始」才會重新啟動 Agent"
               >
                 <Undo2 className={cn('size-3', isReturningToBacklog && 'animate-pulse')} />
-                {isReturningToBacklog ? '退回中…' : '按住退回 Backlog'}
+                {isReturningToBacklog ? '退回中…' : '按住退回待辦'}
               </HoldButton>
             )}
             {onLaunchAgent && (

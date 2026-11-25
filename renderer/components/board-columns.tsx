@@ -26,6 +26,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { openExternal } from '@/lib/api'
 import { cardMove } from '@/lib/board-moves'
+import { COLUMN_LABELS } from '@/lib/column-labels'
 import { GITHUB_STATE_CLASS, GITHUB_STATE_LABEL } from '@/lib/github-display'
 import { cn } from '@/lib/utils'
 import type {
@@ -59,12 +60,7 @@ import { readBoardFilters, writeBoardFilters } from '@/lib/view-persistence'
 
 const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
 
-const COLUMN_LABEL: Record<ColumnId, string> = {
-  backlog: 'Backlog',
-  inventory: '盤點',
-  in_progress: 'In Progress',
-  done: 'Done',
-}
+const COLUMN_LABEL = COLUMN_LABELS
 
 const COLUMN_DOT: Record<ColumnId, string> = {
   backlog: 'bg-muted-foreground/60',
@@ -227,7 +223,7 @@ export function slaveState(
   /** The master's cards that are Done, for telling what a card still waits on. */
   doneIds?: ReadonlySet<string>
 ): { dot: string; label: string; spinning?: boolean } {
-  if (column === 'done') return { dot: 'bg-success', label: 'Done' }
+  if (column === 'done') return { dot: 'bg-success', label: COLUMN_LABELS.done }
   if (column === 'inventory') return { dot: 'bg-tag-blue', label: '盤點' }
   if (column === 'backlog') {
     if (task.launchError) return { dot: 'bg-destructive', label: '開始失敗' }
@@ -237,7 +233,7 @@ export function slaveState(
         ? { dot: 'bg-muted-foreground/60', label: `等待 ${waitingOn.join('、')}` }
         : { dot: 'bg-primary', label: '可開始' }
     }
-    return { dot: 'bg-muted-foreground/60', label: 'Backlog' }
+    return { dot: 'bg-muted-foreground/60', label: COLUMN_LABELS.backlog }
   }
   if (progress?.activity.state === 'waiting' && progress.activity.waitingFor === 'quota') {
     return { dot: 'bg-warning', label: '等待額度' }

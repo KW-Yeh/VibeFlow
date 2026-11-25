@@ -164,7 +164,7 @@ test('startTask moves a Backlog card to In Progress and starts its agent on the 
   assert.equal(sessions.starts[0].key, task.id)
   assert.match(sessions.starts[0].command, /claude --session-id/)
 
-  await assert.rejects(core.handlers['vibeflow:startTask'](task.id), /只有 Backlog/)
+  await assert.rejects(core.handlers['vibeflow:startTask'](task.id), /只有待辦/)
 })
 
 test('summaries list a master’s cards with where they are and whether they run', async (t) => {
@@ -442,7 +442,7 @@ test('a card that waited starts once its cards are Done, and the master hears on
   await new Promise((r) => setTimeout(r, 400))
   const toMaster = sessions.writes.filter((w) => w.key === master.id)
   assert.ok(toMaster.length > 0)
-  assert.ok(toMaster[0].data.includes('都已 Done'))
+  assert.ok(toMaster[0].data.includes('都已完成'))
 })
 
 test('without auto mode a waiting card stays in Backlog, and deleting what it waits on frees it', async (t) => {
@@ -484,7 +484,7 @@ test('a master plans, waits for approval unless in auto mode, dispatches and sto
     assert.ok(prompt.includes('--after'))
     assert.ok(prompt.includes('不要輪詢'))
     assert.ok(prompt.includes('結束這一回合'))
-    assert.ok(prompt.includes('全部都已 Done'))
+    assert.ok(prompt.includes('全部都已完成'))
     assert.ok(prompt.includes('不會合併 PR'))
     assert.ok(prompt.includes('不會把卡片移到 Done'))
     assert.ok(prompt.includes('<id>「<標題>」'))

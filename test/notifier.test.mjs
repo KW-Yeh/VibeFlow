@@ -32,7 +32,7 @@ test('all cards Done is told once for the same set of cards', async () => {
   notifier.allDone('m1', ['s2', 's1'])
   await tick()
   assert.equal(delivered.length, 1)
-  assert.ok(delivered[0].text.includes('都已 Done'))
+  assert.ok(delivered[0].text.includes('都已完成'))
   notifier.allDone('m1', ['s1', 's2', 's3'])
   await tick()
   assert.equal(delivered.length, 2, 'a card added later makes a new set')

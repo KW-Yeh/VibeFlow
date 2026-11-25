@@ -359,7 +359,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
       ? '5. 啟動：沒有 --after 的卡直接 VF task start --store-path "$VIBEFLOW_STORE_DIR" --task <id>；有 --after 的卡不用管，前置卡全部 Done 後 VibeFlow 會自動啟動它。'
       : '5. 啟動：不要自己啟動卡片。列出你建了哪些卡與建議的啟動順序，等使用者在 VibeFlow 按開始。',
     '6. 結束：派工完就結束這一回合，列出每張卡與相依。不要輪詢 task list，也不要等卡片回報。',
-    '   VibeFlow 只會在兩種情況再叫你：某張卡啟動失敗，或你的卡全部都已 Done。全部 Done 時，用 VF task list --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" 與 VF task show 整理每張卡的結果與 PR 連結交給使用者。',
+    '   VibeFlow 只會在兩種情況再叫你：某張卡啟動失敗，或你的卡全部都已完成（Done）。全部完成時，用 VF task list --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" 與 VF task show 整理每張卡的結果與 PR 連結交給使用者。',
     '   使用者要你轉達時才用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對卡片下指示。你不會把卡片移到 Done、不會合併 PR。',
     '   跟使用者提到任何一張卡時，一律寫成 <id>「<標題>」——卡片上看得到 id，使用者靠它對上是哪一張。'
   )

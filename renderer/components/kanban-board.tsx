@@ -91,17 +91,17 @@ interface PullBack {
 function pullBackCopy({ task, from, to }: PullBack) {
   if (from === 'in_progress') {
     return {
-      title: `退回「${task.title}」到 Backlog？`,
+      title: `退回「${task.title}」到待辦？`,
       body: '這會停止 Agent，並捨棄這張卡在本地的 commit、未 commit 的變更、artifacts 與對話（遠端分支不動）。此操作無法復原。',
-      confirm: '退回 Backlog',
+      confirm: '退回待辦',
       destructive: true,
     }
   }
   if (to === 'backlog') {
     return {
-      title: `把「${task.title}」移回 Backlog？`,
-      body: '卡片回到 Backlog 後可以再編輯。之後開始時會重新建立 worktree，並重新跑一次任務。',
-      confirm: '移回 Backlog',
+      title: `把「${task.title}」移回待辦？`,
+      body: '卡片回到待辦後可以再編輯。之後開始時會重新建立 worktree，並重新跑一次任務。',
+      confirm: '移回待辦',
       destructive: false,
     }
   }
@@ -572,7 +572,7 @@ export function KanbanBoard({
                 <div className="space-y-3 rounded-md border border-border bg-muted/40 p-3">
                   <p className="text-sm leading-5 text-muted-foreground">
                     這張 master 還有 {runningSlaves.length + backlogSlaves.length} 張未完成的子卡
-                    {backlogSlaves.length > 0 ? `，其中 ${backlogSlaves.length} 張在 Backlog 會保留不動` : ''}。
+                    {backlogSlaves.length > 0 ? `，其中 ${backlogSlaves.length} 張在待辦會保留不動` : ''}。
                   </p>
                   {runningSlaves.length > 0 && (
                     <>

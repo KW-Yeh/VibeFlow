@@ -197,7 +197,7 @@ function DoneTaskSheetBody({
       title="任務詳情"
       header={
         <>
-          <span className="text-sm text-muted-foreground">任務詳情 · Done</span>
+          <span className="text-sm text-muted-foreground">任務詳情 · 已完成</span>
           <span
             className={cn(
               'flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm',

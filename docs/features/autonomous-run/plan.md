@@ -240,3 +240,11 @@
   - `npm run test:e2e`：5 個全數通過。
   - `vibeflow --help` 列出 `release` 與 `report`。
 - 整體沒有驗證的部分：AC-3 設定 JFrog token 後重新盤點通過（沒有真實 token）；真實的額度上限接續（無法按需觸發，只以 fixture 與假時鐘測過）；Codex 額度上限偵測（已知限制）；live UI 中真的啟動執行階段的 agent session；`npm run build:npm` 與打包後的 `vibeflow doctor`（這次沒有打包）。
+
+### 追加：欄位名稱改為繁體中文（2026-11-25，使用者要求）
+
+- 使用者在實作中途要求：因為「盤點」是繁體中文，其他欄位名稱也改用繁體中文，類似情況一律用繁體中文呈現。
+- 改動：新增 `column-labels.ts`（待辦、盤點、進行中、已完成；沒有 import，列入 renderer-safe 清單），看板欄名、卡片狀態點、編輯與 Done 詳情的標題、工作區 rail、TUI、報告表格、退回／移回對話框、錯誤訊息（含 `目前在<欄名>`）、通知 master 的訊息、`vibeflow status` 的看板摘要都改用它。資料、CLI JSON 與旗標中的欄位 id 維持英文；Jira 看板的欄名是 Jira 的資料，不改。報告中未結束的卡仍標「進行中」（spec 規定）。
+- 測試期望值隨需求改為新用詞：`test/inventory.test.mjs`、`master-cards.test.mjs`、`notifier.test.mjs`、`report.test.mjs`、`service.test.mjs`、`e2e/web.e2e.mjs`（欄位標題、退回／移回按鈕、Done 詳情標題）。
+- 驗證：`npx tsc --noEmit -p tsconfig.json`、`npx tsc --noEmit -p renderer/tsconfig.json` 通過；`npm test` 715 個全數通過；`npm run build:web` 成功；`npm run test:e2e` 5 個全數通過。
+- 未處理（建議另行決定）：畫面上其他英文詞，例如 Auto Mode、Master、Artifacts、session、Git diff 分頁名。這些不是欄位或狀態名稱，範圍較大，沒有在這次一起改。

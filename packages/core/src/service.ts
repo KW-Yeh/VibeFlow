@@ -102,6 +102,7 @@ import {
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, taskAgent, taskModel, type MasterContext } from './launch'
 import { releaseCandidates } from './release'
+import { columnLabel } from './column-labels'
 import { createReporter, isReportId, readReport } from './report'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
@@ -593,7 +594,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const task = requireTask(taskId)
     if (continuing.has(task.id)) throw coded('ALREADY_CONTINUING', '這張卡正在換新 session')
     const column = columnOf(task.id)
-    if (column !== 'in_progress') throw coded('NOT_IN_PROGRESS', `只有 In Progress 的卡片可以換新 session（目前在 ${column}）`)
+    if (column !== 'in_progress') throw coded('NOT_IN_PROGRESS', `只有進行中的卡片可以換新 session（目前在${columnLabel(column)}）`)
     if (!task.launchedAt) throw coded('NOT_LAUNCHED', '這張卡還沒有執行過，請直接啟動')
     if (!task.worktreePath) throw coded('NO_WORKTREE', '這張卡沒有 worktree')
     continuing.add(task.id)
@@ -832,7 +833,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   async function startTask(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
     const task = requireTask(taskId)
     const column = columnOf(task.id)
-    if (column !== 'backlog' && column !== 'inventory') throw new Error(`只有 Backlog 或盤點欄的卡片可以啟動（目前在 ${column}）`)
+    if (column !== 'backlog' && column !== 'inventory') throw new Error(`只有待辦或盤點欄的卡片可以啟動（目前在${columnLabel(column)}）`)
     if (column === 'inventory') {
       if (inventories.has(task.id)) throw coded('INVENTORY_RUNNING', '這張卡正在盤點，等盤點結束再啟動')
       if (task.quotaWait?.phase === 'inventory') updateTask(task.id, { quotaWait: undefined })
@@ -951,7 +952,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const task = requireTask(taskId)
     if (isMasterTask(task)) throw coded('MASTER_CARD', 'master 卡片不經過盤點')
     const column = columnOf(task.id)
-    if (column !== 'backlog') throw coded('NOT_IN_BACKLOG', `只有 Backlog 的卡片可以開始盤點（目前在 ${column}）`)
+    if (column !== 'backlog') throw coded('NOT_IN_BACKLOG', `只有待辦的卡片可以開始盤點（目前在${columnLabel(column)}）`)
     moveToColumn(task.id, 'inventory', { launchError: undefined })
     setTaskStatus(getStore(), { taskId: task.id, status: 'inventorying', source: 'host' })
     bus.emit('state:changed', getState())
@@ -1709,7 +1710,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       const p = obj<UpdateTaskPayload>(payload, 'payload')
       const existing = requireTask(p.taskId)
       if (columnOf(existing.id) !== 'backlog') {
-        throw new Error('只有 Backlog 的任務可以編輯')
+        throw new Error('只有待辦的任務可以編輯')
       }
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
       let masterPatch: Partial<Task> = {}

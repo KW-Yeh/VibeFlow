@@ -336,7 +336,7 @@ function InventorySheetBody({ task, onStart, onClose }: { task: Task; onStart: (
             <RotateCcw className="size-3.5" />
             儲存並重新盤點
           </Button>
-          <Button size="sm" disabled={saving || running} onClick={() => onStart(task)} title="移到 In Progress，用新的 session 依 spec 與 plan 執行">
+          <Button size="sm" disabled={saving || running} onClick={() => onStart(task)} title="移到進行中，用新的 session 依 spec 與 plan 執行">
             <Play className="size-3.5" />
             開始執行
           </Button>

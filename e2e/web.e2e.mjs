@@ -901,7 +901,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
       })
     }, { heading, titles }, { timeout: 5000 })
   }
-  await expectPacked('In Progress', tasks.map((task) => task.title))
+  await expectPacked('進行中', tasks.map((task) => task.title))
   await card('Finish second').click()
   await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
   await page.getByRole('button', { name: '完成', exact: true }).click()
@@ -910,8 +910,8 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   // Let the board update while display:none, as when the user stays in the workspace.
   await page.waitForTimeout(1000)
   await sidebar.getByRole('button', { name: '看板', exact: true }).click()
-  await expectPacked('In Progress', ['Keep first', 'Delete third', 'Keep fourth'])
-  await expectPacked('Done', ['Finish second'])
+  await expectPacked('進行中', ['Keep first', 'Delete third', 'Keep fourth'])
+  await expectPacked('已完成', ['Finish second'])
 
   await card('Delete third').click()
   await page.getByRole('dialog', { name: '任務詳情' }).getByRole('button', { name: '前往工作區' }).click()
@@ -920,7 +920,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await page.waitForTimeout(1000)
   await sidebar.getByRole('button', { name: '看板', exact: true }).click()
   await card('Delete third').waitFor({ state: 'detached' })
-  await expectPacked('In Progress', ['Keep first', 'Keep fourth'])
+  await expectPacked('進行中', ['Keep first', 'Keep fourth'])
   assert.deepEqual(core.handlers['vibeflow:getState']().board.in_progress.map((task) => task.title), ['Keep first', 'Keep fourth'])
 
   // A Backlog card opens an editable sheet over the board; saving and
@@ -979,7 +979,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await moveDialog.waitFor({ state: 'detached' })
   assert.equal(columnOf('Dragged card'), 'in_progress')
   await drag('Dragged card', 'backlog')
-  await moveDialog.getByRole('button', { name: '退回 Backlog' }).click()
+  await moveDialog.getByRole('button', { name: '退回待辦' }).click()
   await waitForColumn('Dragged card', 'backlog')
 
   // Forward to Done is the 完成 flow; back from Done needs a yes too.
@@ -995,7 +995,7 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await page.getByRole('dialog', { name: '完成任務' }).getByRole('button', { name: '完成並清理', exact: true }).click()
   await waitForColumn('Dragged card', 'done')
   await drag('Dragged card', 'backlog')
-  await moveDialog.getByRole('button', { name: '移回 Backlog' }).click()
+  await moveDialog.getByRole('button', { name: '移回待辦' }).click()
   await waitForColumn('Dragged card', 'backlog')
 })
 
@@ -1170,7 +1170,7 @@ test('Web UI: terminal grid opens the card column directory and selected folders
   await menu.getByRole('button', { name: '看板' }).click()
   await page.getByRole('button', { name: '開啟任務：Done terminal' }).click()
   const doneSheet = page.getByRole('dialog', { name: '任務詳情' })
-  await doneSheet.getByText('任務詳情 · Done').waitFor()
+  await doneSheet.getByText('任務詳情 · 已完成').waitFor()
   assert.equal(await doneSheet.getByRole('button', { name: '前往工作區' }).count(), 0)
   assert.equal(await menu.getByRole('button', { name: '看板' }).getAttribute('aria-current'), 'page')
   await doneSheet.getByRole('button', { name: '關閉任務詳情' }).click()

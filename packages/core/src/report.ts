@@ -14,6 +14,7 @@ import {
   type VibeFlowState,
 } from './store'
 import { taskStatus, type StatusKey } from './status-keys'
+import { COLUMN_LABELS } from './column-labels'
 import { STATUS_DEFS } from './status-tags'
 import { formatTokens, totalTokens, type TokenUsage } from './progress'
 import type { HeartbeatClock } from './heartbeat'
@@ -119,7 +120,7 @@ export function reportRows(batch: ReleaseBatch, board: BoardState, usageOf: (tas
   })
 }
 
-const COLUMN_LABEL: Record<ColumnId, string> = { backlog: 'Backlog', inventory: '盤點', in_progress: 'In Progress', done: 'Done' }
+const COLUMN_LABEL = COLUMN_LABELS
 
 /** The facts-only part of a report, in markdown. */
 export function reportTable(batch: ReleaseBatch, rows: ReportRow[]): string {
@@ -136,7 +137,7 @@ export function reportTable(batch: ReleaseBatch, rows: ReportRow[]): string {
     '| --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const r of rows) {
-    const state = r.column === 'done' ? `Done（${statusLabel(r.status)}）` : r.inProgress ? `進行中（${statusLabel(r.status)}）` : statusLabel(r.status)
+    const state = r.column === 'done' ? `已完成（${statusLabel(r.status)}）` : r.inProgress ? `進行中（${statusLabel(r.status)}）` : statusLabel(r.status)
     lines.push(`| ${cell(`${r.taskId} ${r.title}`)} | ${r.column ? COLUMN_LABEL[r.column] : '已刪除'} | ${cell(state)} | ${cell(r.reason ?? '')} | ${r.usage ? formatTokens(totalTokens(r.usage)) : '—'} | ${r.durationMs !== undefined ? formatDuration(r.durationMs) : '—'} | ${cell(r.pr ?? '')} |`)
   }
   lines.push('', '## 狀態時間軸', '')
@@ -156,7 +157,7 @@ export function reportTable(batch: ReleaseBatch, rows: ReportRow[]): string {
 export function narrativePrompt(table: string): string {
   return [
     '以下是 VibeFlow 一個放行批次的事實表格。請用繁體中文寫一段給人看的敘述，三到八個短段落或條列：',
-    '- 完成了什麼（哪些卡開了 PR、進了 Done）',
+    '- 完成了什麼（哪些卡開了 PR、進了已完成）',
     '- 卡在哪個環節（待你確認、卡住、等待額度，以及原因）',
     '- 哪些卡片比其他卡片花更多時間或 token',
     '只根據表格內容，不要編造表格沒有的事實。不要重複整張表格。直接輸出敘述本身，不要加標題。',

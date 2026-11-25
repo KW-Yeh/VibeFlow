@@ -216,7 +216,7 @@ export function WorkspaceTaskRail({
     >
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border pl-3 pr-1.5">
         <span className="size-1.5 shrink-0 rounded-full bg-warning" />
-        <h2 className={cn(SECTION_LABEL, 'text-warning')}>In Progress</h2>
+        <h2 className={cn(SECTION_LABEL, 'text-warning')}>進行中</h2>
         <span className="text-xs tabular-nums text-muted-foreground/80">{running.length}</span>
         <span className="flex-1" />
         <IconButton

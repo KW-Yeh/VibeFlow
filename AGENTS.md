@@ -496,6 +496,9 @@ docs/                      everything that is not code (index: docs/README.md)
   live in `<workspace>/.attachments/<taskId>/` (`taskAttachmentStagingPath`).
   An `inPlace` card runs in the user's own folder: `gitWorktree()` returns nothing
   for it, and nothing that tears a card down may remove or rewrite that folder.
+- **Column names shown to people come from `column-labels.ts`** (待辦 / 盤點 / 進行中 /
+  已完成), in the Web UI, TUI, reports and messages alike; column ids stay English in
+  data, the CLI's JSON and its flags. Jira's own column names are external data and stay as Jira has them.
 - **The store is v5** (`STATE_VERSION`): `board.inventory`, `release`, `batches`,
   `reports` are added by field in `migrateStore`; read a board through `normalizeBoard`
   (an older binary may have written three columns) and iterate `COLUMN_IDS`, never a

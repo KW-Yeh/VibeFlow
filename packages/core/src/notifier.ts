@@ -78,14 +78,14 @@ export function createNotifier(options: NotifierOptions): Notifier {
       told.delete(`launch_failed:${taskId}`)
       const look = `查看：VF task show --store-path "$VIBEFLOW_STORE_DIR" --task ${taskId}`
       push(card.masterId, `launch_failed:${taskId}`,
-        `${cardLabel(taskId, card.title)} 啟動失敗，已退回 Backlog：${reason || '原因不明'}。等它的卡也不會開始。${look}`)
+        `${cardLabel(taskId, card.title)} 啟動失敗，已退回待辦：${reason || '原因不明'}。等它的卡也不會開始。${look}`)
     },
 
     allDone(masterId, cardIds) {
       if (cardIds.length === 0) return
       const key = `all_done:${masterId}:${[...cardIds].sort().join(',')}`
       push(masterId, key,
-        `你的 ${cardIds.length} 張卡片都已 Done：${cardIds.join('、')}。請整理每張卡的結果與 PR 連結交給使用者：VF task list --store-path "$VIBEFLOW_STORE_DIR" --master ${masterId}`)
+        `你的 ${cardIds.length} 張卡片都已完成：${cardIds.join('、')}。請整理每張卡的結果與 PR 連結交給使用者：VF task list --store-path "$VIBEFLOW_STORE_DIR" --master ${masterId}`)
     },
 
     retry(masterId) {

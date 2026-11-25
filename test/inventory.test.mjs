@@ -204,5 +204,5 @@ test('only a Backlog, non-master card can start an inventory; an inventory card 
   await assert.rejects(() => core.handlers['vibeflow:startInventory'](master.id), { code: 'MASTER_CARD' })
   await core.handlers['vibeflow:startInventory'](task.id)
   await assert.rejects(() => core.handlers['vibeflow:startInventory'](task.id), { code: 'NOT_IN_BACKLOG' })
-  await assert.rejects(() => core.handlers['vibeflow:updateTask']({ taskId: task.id, title: 'x', description: 'y' }), /只有 Backlog/)
+  await assert.rejects(() => core.handlers['vibeflow:updateTask']({ taskId: task.id, title: 'x', description: 'y' }), /只有待辦/)
 })

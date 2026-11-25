@@ -656,7 +656,7 @@ test('only a Backlog card can be edited', async (t) => {
   core.handlers['vibeflow:setBoard']({ backlog: [], in_progress: [task], done: [] })
   await assert.rejects(
     core.handlers['vibeflow:updateTask']({ taskId: task.id, title: 'changed' }),
-    /只有 Backlog/
+    /只有待辦/
   )
 })
 

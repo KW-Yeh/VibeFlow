@@ -50,7 +50,7 @@ test('the table lists every released card with its last status, reason, usage, t
   assert.equal(rows[0].durationMs, 2 * H)
   assert.equal(rows[1].durationMs, 4 * H, 'a card still running counts to the end of the batch')
   const table = reportTable(batch(), rows)
-  for (const part of ['| done1 Card done1 | Done | Done（已開 PR）', '12k', '2 小時 0 分', 'https://github.com/acme/x/pull/7', '進行中（等待額度）', 'gone Deleted card', '## 狀態時間軸', '已開 PR（agent/CLI）']) {
+  for (const part of ['| done1 Card done1 | 已完成 | 已完成（已開 PR）', '12k', '2 小時 0 分', 'https://github.com/acme/x/pull/7', '進行中（等待額度）', 'gone Deleted card', '## 狀態時間軸', '已開 PR（agent/CLI）']) {
     assert.ok(table.includes(part), part)
   }
 })

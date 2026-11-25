@@ -293,7 +293,7 @@ async function cmdStatus(values: Values, userDataDir: string): Promise<number> {
   console.log(running ? `Host：執行中（pid ${running.pid}，port ${running.port}，v${running.version}）` : 'Host：未執行')
   console.log(`Sessions（${backend}）：${sessions.length === 0 ? '無' : ''}`)
   for (const key of sessions) console.log(`  ● ${key}  ${title(key)}`)
-  console.log(`看板：Backlog ${board.backlog.length} · 盤點 ${board.inventory?.length ?? 0} · In Progress ${board.in_progress.length} · Done ${board.done.length}`)
+  console.log(`看板：待辦 ${board.backlog.length} · 盤點 ${board.inventory?.length ?? 0} · 進行中 ${board.in_progress.length} · 已完成 ${board.done.length}`)
   return 0
 }
 

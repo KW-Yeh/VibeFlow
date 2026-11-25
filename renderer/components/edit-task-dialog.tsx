@@ -22,6 +22,7 @@ import {
   useModelEfforts,
 } from '@/components/task-form-layout'
 import { cn } from '@/lib/utils'
+import { COLUMN_LABELS } from '@/lib/column-labels'
 import type {
   AgentCli,
   AgentCliId,
@@ -47,12 +48,7 @@ export interface EditTaskPayload {
   masterId?: string | null
 }
 
-const COLUMN_LABEL: Record<ColumnId, string> = {
-  backlog: 'Backlog',
-  inventory: '盤點',
-  in_progress: 'In Progress',
-  done: 'Done',
-}
+const COLUMN_LABEL: Record<ColumnId, string> = COLUMN_LABELS
 
 interface EditTaskDialogProps {
   /** The card shown, or null when the sheet is closed. */
