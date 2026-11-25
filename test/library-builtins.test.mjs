@@ -162,7 +162,7 @@ test('annotate keeps working for built-in records (smoke)', async (t) => {
 
 test('the shipped skills are well-formed and do not depend on a checkout path', () => {
   const dir = path.resolve('packages/core/builtin-skills')
-  assert.deepEqual(skillNamesIn(dir), ['address-review', 'pr', 'pr-watch', 'visual-parity'])
+  assert.deepEqual(skillNamesIn(dir), ['address-review', 'pr', 'pr-watch', 'visual-parity', 'work-mode'])
   for (const name of skillNamesIn(dir)) {
     const md = fsSync.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8')
     assert.match(md, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), `${name}: frontmatter name`)
@@ -208,7 +208,15 @@ test('the shipped skills use LF, so their hash is the same on every checkout', (
     'pr-watch/scripts/pr-lib.mjs',
     'pr-watch/scripts/pr-watch.mjs',
     'visual-parity/SKILL.md',
+    'visual-parity/README.md',
     'visual-parity/scripts/parity.py',
+    'visual-parity/scripts/scaffold_verify.py',
+    'work-mode/SKILL.md',
+    'work-mode/playbooks/babysit-pr.md',
+    'work-mode/playbooks/bug-fix.md',
+    'work-mode/playbooks/feature.md',
+    'work-mode/playbooks/investigation.md',
+    'work-mode/playbooks/refactor.md',
   ]) {
     assert.ok(!fsSync.readFileSync(path.join(dir, rel)).includes(13), `${rel} has CR`)
   }

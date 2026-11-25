@@ -1,5 +1,15 @@
 # Library 內建 skill Implementation Plan
 
+## 2026-11-25：同步本機 global skill 與新增 work-mode
+
+1. 盤點：`diff -r packages/core/builtin-skills/<name> ~/.claude/skills/<name>`；本機 visual-parity 是 git repo，用 `git log` 找出內建版分出時的共同祖先 `a816f1b`。
+2. visual-parity：`git merge-file` 三方合併 `parity.py`（3 處衝突：元素欄位同時保留 `key`/`leaf` 與 `pixel` 需要的 `x`/`y`；selftest 清單加回 `selftest_pixel`；`pixel` 子指令併入新的 `build_parser()`），`run_pixel` 跟上 `build_pairs` 改為回傳 4 個值。SKILL.md 同樣三方合併，snapshot／scaffold 範例改用 `<skill-dir>` 與 `PARITY_OUT`/`PARITY_SCRATCH`。帶入 README.md（`selftest` 會檢查它）、`scaffold_verify.py`、`scripts/vendor/`（axe-core 4.14.0，MPL-2.0）、`templates/verify-app/`。
+3. pr：步驟 4 換成四槽位範本與 Evidence／Merge Danger／Root Cause 規則、4g 獨立重跑；步驟 6 加送出前自查。保留 `@{upstream}..HEAD` 與 `headRefName` 檢查。
+4. work-mode：新增 `SKILL.md` 與 `playbooks/`，spec／plan 在沒有 spec skill 時落在專案慣例或 `docs/features/<slug>/`。
+5. 測試：`test/library-builtins.test.mjs` 的內建清單與 LF 清單。
+
+取捨：work-mode 的 description 含「VibeFlow 卡片交辦任務」，啟用時每張卡片的 agent 都可能載入它；這是本機版的設計，使用者可在 Library 停用。
+
 ## 2026-10-21：預設輸出至 Artifact 的修正流程
 
 本節追蹤本次修正；原實作計畫保留為歷史。本次 Spec 與以下實作 Plan 已於 2026-10-21 確認。

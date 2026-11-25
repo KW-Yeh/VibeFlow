@@ -6,8 +6,29 @@
 - 更新日期：2026-10-21
 - 後續變更（2026-10-20）：Library 不再於啟動任務時投遞，內建 skill 只保存在 Library 供編輯，見 [prompt-free-artifacts](../prompt-free-artifacts/spec.md)。
 - 後續變更（2026-11-05）：Library 投遞恢復，並新增內建 `pr-watch`、通用版 `address-review`，見 [pr-watch](../pr-watch/spec.md)。
+- 後續變更（2026-11-25）：依本機 global skill 同步 `visual-parity`、`pr`、`pr-watch`，新增 `work-mode`，見下方「2026-11-25 同步」。
 - 確認紀錄：2026-10-03 對話中確認——隨 npm 出貨給所有用戶；pr 改寫成通用版再出貨；
   用戶沒改過的內建項目隨版本自動更新，改過的保留並提示；設計整體確認。
+
+## 2026-11-25 同步：依本機 global skill 更新內建版，新增 work-mode
+
+- 狀態：已實作，待使用者 review。
+- 需求來源：使用者要求「根據本機 global skill 重新同步 vibeflow 內建的 skill，包含 work-mode 也要加入其中」。
+- 原則：內建版是通用版，只移植功能與流程，不帶入公司專屬內容（eBug、Jira、本機 `~/.claude/scripts`、只有本機才有的 skill）；VibeFlow 自己加的部分（Artifact／scratch 輸出位置、`pixel` 模式）保留。
+
+| skill | 本機版新增內容 | 內建版處理 |
+| --- | --- | --- |
+| `visual-parity` | `snapshot`（Figma 設計稿比對）、flow 的 `expect_style`／`wait_animations`／`emulate`／`save_box`／`expect_box`／`axe`、`--mutate`、錄影游標、報告來源欄位、`scaffold_verify.py` 與 `templates/verify-app`、README 與文件同步檢查 | 以 2026-10-03 的共同祖先三方合併 `parity.py` 與 SKILL.md；保留 `pixel` 與 Artifact 路徑；README 改為 Library 安裝說明；範例路徑一律 `<skill-dir>` |
+| `pr` | body 改為依 PR 類型的四槽位範本（Summary → 現況 → 障礙 → Evidence → Merge Danger）、Door 判定、fix 的 Root Cause／Solution 寫法、送出前由獨立 agent 重跑 Evidence | 以英文移植進通用版；本機 `pr-lint.sh`／`pr-evidence.sh` 的檢查改成送出前自查清單 |
+| `address-review` | 無（本機版 2026-09-29 早於內建版） | 不變 |
+| `pr-watch` | 對應 `claude-plugin-pr-watch`（Claude Code mod）：CI 失敗通知、略過自己的 comment、`verify_command` 自動解衝突並由 subagent 把關、merge 而非 rebase | 移植到腳本與 SKILL.md，見 [pr-watch](../pr-watch/spec.md) 的 2026-11-25 同步；mod 的 UI 不移植 |
+| `work-mode`（新） | 任務分流入口與五本 playbook | 英文通用版；`ebug`、`install-library`、`codereview-pr`、`feature-spec-plan`、`hcs-thinking`、`pre-pr-review` 改為「有就用，沒有就照內文做法」，只依賴內建的 `pr`、`pr-watch`、`address-review`、`visual-parity` |
+
+驗收條件：
+
+- [x] SYNC-1：`parity.py selftest` 在含 OpenCV 的環境通過（含 `pixel`、`snapshot`、`--mutate`、文件同步檢查）。
+- [x] SYNC-2：`npm test` 通過，內建清單包含 `work-mode`，新檔案皆為 LF，SKILL.md 不含機器路徑與 eBug／Jira。
+- [x] SYNC-3：`npm run build:npm` 產出的 `dist-npm/dist/builtin-skills` 與來源一致。
 
 ## 2026-10-21 修正：Default built-in skill outputs to VIBEFLOW_ARTIFACTS_DIR
 
