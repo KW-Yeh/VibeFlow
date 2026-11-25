@@ -172,3 +172,19 @@
   - 實際呼叫 `probeAgent('claude')` 一次，回傳 `true`（目前沒有額度上限）。
   - `npm test`：694 個全數通過。
   - 沒有驗證：真實的額度上限無法按需觸發，live 環境的接續要等實際碰到時觀察。
+
+### 階段 5：盤點（2026-11-25）
+
+- 改動：
+  - `inventory.ts`（新增）：內建驗證指令清單（git 唯讀指令、`npm ping/whoami/view/config get registry/ls`、專案 typecheck/lint/test、`gh auth status`）、`isSafeInventoryCommand`（設定中擴充的指令只能是一般字詞，不能有 `;`、`|`、`$()`、引號等）、Claude 參數（`-p --permission-mode dontAsk --session-id … --allowedTools Read Glob Grep LS Edit(./docs/features/**) Bash(<指令>:*)… --disallowedTools Read(./.env)…`，Windows 上把含空白或括號的 token 加引號）、Codex 參數（`exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true`）、結果解析。
+  - `launch.ts`：`inventoryPrompt()`，要求依 feature-spec-plan 產出文件、執行準備的五個部分與停止條件、不讀不印 secret、清單外指令寫進待決定事項、不能事先授權的操作只能列為停止條件。
+  - `service.ts`：`vibeflow:startInventory`（Backlog → 盤點、掛「盤點中」、`ensureProvisioned` 建立 worktree 與分支、背景跑一次 pass）、`vibeflow:rerunInventory`、`vibeflow:setInventoryContext`（context 存在 `Task.inventory.context`，附件寫進 worktree，描述不變）；pass 結束後依結果設「準備開工」或「待回答」，碰到額度上限（讀該 pass 的 transcript，或輸出中的額度上限字樣）就進入 phase 為 `inventory` 的「等待額度」，heartbeat 在重置後重跑盤點；卡片被拖出盤點欄時中止 pass 並清掉盤點相關的狀態標籤，worktree 依 Backlog 卡片的既有規則保留。`TaskSummary` 加上 `status`、`statusReason`、`quotaResetsAt`。
+  - `agent-print.ts`：`signal` 選項，可以中止 headless 執行。
+  - CLI：`task inventory start|rerun|context --task <id> [--text] [--attach]`（需要 host）。
+- 與 plan 的差異：plan 寫的是盤點 agent「最後用 `task status --set` 設定狀態」。實作改成 agent 在最後一行輸出 `VIBEFLOW_INVENTORY_RESULT: ready|needs_answer`，由 VibeFlow 解析後設定狀態。原因：讓 agent 呼叫 VibeFlow CLI 需要在 allowlist 放行 `node …`，等於放行任意程式碼；改由程式設定狀態，allowlist 可以維持只有驗證指令。行為結果與 spec 相同，不影響驗收條件，因此沒有標成待重新確認。
+- 驗證：
+  - `npx tsc --noEmit -p tsconfig.json`：通過。
+  - `node scripts/run-tests.mjs ./test/inventory.test.mjs`：9 個全數通過（參數與 allowlist、危險指令不加入、結果解析、prompt 內容；用假 agent 走過 AC-1 與 AC-2：盤點欄、worktree、spec 與 plan 含執行準備、待回答 → 貼上 context → 重新盤點 → 準備開工且描述不變；盤點碰到額度上限 → 等待額度 → 探測通過後重跑；拖回 Backlog 中止 pass；master 與非 Backlog 卡片被拒、盤點卡不能編輯）。
+  - `npm test`：703 個全數通過。
+  - 真實盤點（拋棄式 `--store-path`，不是 dev profile：依交辦規則不使用真實 store）：測試 repo 的 `.npmrc` 指向一個不存在 token 的 JFrog registry，卡片用 Claude haiku、effort low。`task inventory start` 後約 60 秒結束，worktree 中只多出 `docs/features/lodash-dependency/spec.md` 與 `plan.md`，plan.md 有完整的執行準備；`npm config get registry` 通過、`npm whoami` 回 ENEEDAUTH 記為失敗，盤點區摘要列出「JFrog auth token：缺少」，卡片掛「待回答」（AC-1、AC-3 的未設定半段）。agent 嘗試一次 `cat .npmrc` 被 `dontAsk` 拒絕，沒有重試；store 中搜尋不到 `_authToken` 或 npm token 形狀的字串。之後以 `vibeflow shutdown` 停止 host。
+  - 沒有驗證：AC-3 的「設定 token 後重新盤點通過」需要真實的 JFrog token，這個環境沒有，未驗證；真實環境的重新盤點只用假 agent 測過。

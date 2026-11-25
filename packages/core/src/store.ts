@@ -52,6 +52,8 @@ export interface TaskInventory {
   sessionId?: string
   /** How many passes have run. */
   passes?: number
+  /** spec.md / plan.md the passes wrote, relative to the worktree. */
+  docs?: string[]
 }
 
 /** The last status written by `task status --set` or a status-tag change. */

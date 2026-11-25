@@ -15,7 +15,7 @@ import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
 const STATUSES = ['backlog', 'inventory', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list', 'show', 'send', 'artifact']
+const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list', 'show', 'send', 'inventory', 'artifact']
 /** Write the store directly, so they work without a host — and default to the calling card's store. */
 const SHELL_COMMANDS = ['artifact', 'tag', 'status', 'move']
 const ROLES = ['slave', 'master']
@@ -35,6 +35,8 @@ Usage:
   vibeflow task list [--master <id>] [options]
   vibeflow task show --task <id> [options]
   vibeflow task send --task <id> --text <text> [options]
+  vibeflow task inventory start|rerun --task <id> [options]
+  vibeflow task inventory context --task <id> [--text <text>] [--attach <path>]… [options]
   vibeflow task artifact add --file <path> [options]
 
 task create options:
@@ -130,6 +132,15 @@ task start / list / show / send (need the running VibeFlow host):
                          sender. Only a master and its own cards can message each
                          other. --from defaults to VIBEFLOW_TASK_ID; --force types
                          even into a permission dialog
+
+task inventory (needs the running VibeFlow host):
+  start --task <id>      Move a Backlog card to 盤點: its branch and worktree are
+                         created and a headless pass writes spec.md / plan.md with
+                         執行準備. The card ends up 準備開工 or 待回答
+  rerun --task <id>      Run the pass again on an inventory card, with its context
+  context --task <id> [--text <text>] [--attach <path>]…
+                         Set the card's extra context (replaces the text) and attach
+                         files; the description is never changed
 
 task artifact add options:
   --file <path>         Copy a file into the card's user-facing Artifacts folder
@@ -321,7 +332,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (values['new-session'] && sub !== 'start') fail('INVALID_ARGUMENT', '--new-session only goes with task start')
   if (sub === 'start' && values.force && !values['new-session']) fail('INVALID_ARGUMENT', '--force goes with task start --new-session')
 
-  if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath)
+  if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath, action)
 
   if (sub === 'update') {
     if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
@@ -429,7 +440,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   }
 }
 
-const HOST_COMMANDS = ['start', 'list', 'show', 'send']
+const HOST_COMMANDS = ['start', 'list', 'show', 'send', 'inventory']
 
 /**
  * Starting a card runs its agent, and only the host owns sessions; summaries
@@ -438,9 +449,22 @@ const HOST_COMMANDS = ['start', 'list', 'show', 'send']
  */
 async function hostCommand(
   sub: string,
-  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean; 'new-session'?: boolean },
-  storePath: string
+  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean; 'new-session'?: boolean; attach?: string[] },
+  storePath: string,
+  action?: string
 ): Promise<Record<string, unknown>> {
+  if (sub === 'inventory' && !['start', 'rerun', 'context'].includes(action ?? '')) {
+    fail('UNKNOWN_COMMAND', 'Use: task inventory start | rerun | context')
+  }
+  let inventoryAttachments: AttachmentInput[] = []
+  if (sub === 'inventory' && action === 'context') {
+    if (values.text === undefined && !values.attach?.length) fail('MISSING_ARGUMENT', 'task inventory context needs --text or --attach')
+    try {
+      inventoryAttachments = (values.attach ?? []).map(fileToAttachmentInput)
+    } catch (err) {
+      fail('ATTACHMENT_READ_FAILED', `無法讀取附件：${(err as Error).message}`)
+    }
+  }
   if (sub !== 'list' && !values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
   const from = values.from ?? process.env.VIBEFLOW_TASK_ID
   if (sub === 'send' && (!values.text || !from)) {
@@ -456,6 +480,26 @@ async function hostCommand(
         return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null }, newSession: true }
       } catch (err) {
         // The caller acts on why it was refused (not running, busy, …).
+        const e = err as { code?: string; message?: string }
+        fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
+      }
+    }
+    if (sub === 'inventory') {
+      try {
+        if (action === 'start') {
+          const { task } = await remote.api.startInventory(values.task!)
+          return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null } }
+        }
+        const state = action === 'rerun'
+          ? await remote.api.rerunInventory(values.task!)
+          : await remote.api.setInventoryContext({
+              taskId: values.task!,
+              ...(values.text !== undefined ? { context: values.text } : {}),
+              ...(inventoryAttachments.length ? { attachments: inventoryAttachments } : {}),
+            })
+        const task = state.board.inventory.find((t) => t.id === values.task)
+        return { task: { id: values.task, inventory: task?.inventory ?? null } }
+      } catch (err) {
         const e = err as { code?: string; message?: string }
         fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
       }

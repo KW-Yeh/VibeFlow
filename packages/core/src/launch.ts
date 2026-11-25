@@ -640,3 +640,64 @@ export function buildAgentCommand(
     )
   )
 }
+
+/** What an inventory pass is told about the card and the pass. */
+export interface InventoryPromptInput {
+  title: string
+  description?: string
+  /** Text the user added in the inventory panel. */
+  context?: string
+  /** Files the user attached in the inventory panel. */
+  attachments?: string[]
+  /** spec.md / plan.md an earlier pass wrote, relative to the worktree. */
+  existingDocs?: string[]
+  /** Shell command prefixes the pass may run (Claude); empty = the agent's sandbox decides (Codex). */
+  commands: string[]
+  docsDir: string
+  resultMark: string
+}
+
+/**
+ * The prompt of a headless inventory pass. Nobody can answer it while it
+ * runs, so everything it needs from a person goes into 執行準備 instead of a
+ * question, and its last line tells VibeFlow whether the card is ready.
+ */
+export function inventoryPrompt(input: InventoryPromptInput): string {
+  const lines = [
+    '你在 VibeFlow 的「盤點」階段，以 headless 模式執行：沒有終端機，也沒有人能即時回答你。不要使用 AskUserQuestion 或任何需要互動的工具。',
+    '',
+    '## 這一次要做的事',
+    `1. 依 feature-spec-plan 的做法，在 ${input.docsDir}/<功能 slug>/ 產出或更新 spec.md 與 plan.md。不要做功能實作，不要修改 ${input.docsDir}/ 以外的任何檔案，不要 commit 或 push。`,
+    '2. plan.md 必須有「## 執行準備」段落，依序列出：',
+    '   - 需要使用者決定的事項（每項附建議）',
+    '   - 執行階段會用到的指令與權限',
+    '   - 需要的資源（檔案、帳號、token、測試資料）與這次的驗證結果（通過或失敗）',
+    '   - 允許的遠端操作（例如 commit、push 到卡片分支、開 draft PR）',
+    '   - 停止條件：碰到就要停下來回報的情況',
+    '3. 實際驗證資源。需要 secret 的資源（例如 JFrog auth token）只能用會用到認證、但不會印出值的檢查（例如 `npm whoami --registry <url>`）。不要讀取、輸出或記錄任何 secret 的值，也不要讀 .env、.npmrc 或憑證檔；文件裡只寫「通過」或「失敗」與缺什麼。',
+    '4. 推到共用分支、force push、處理 secret、更動 lock 檔不能事先授權，只能列在停止條件。',
+    '5. 所有項目都已就緒時，在 plan.md 的執行準備開頭寫明「可直接執行」。',
+  ]
+  if (input.commands.length) {
+    lines.push('', '## 可以執行的指令', '只有以下開頭的指令會被允許，其他都會被拒絕：', ...input.commands.map((c) => `- \`${c}\``))
+    lines.push('需要清單外的指令才能驗證時，不要繞過：把「需要允許指令 X（用途）」寫進執行準備的待決定事項。')
+  }
+  lines.push('', '## 卡片', `任務標題：${input.title}`)
+  const description = input.description?.trim()
+  if (description) lines.push('', '任務描述：', description)
+  if (input.existingDocs?.length) {
+    lines.push('', '## 上一次盤點的文件', '以這些檔案為基礎更新，不要另開新的功能目錄：', ...input.existingDocs.map((d) => `- ${d}`))
+  }
+  const context = input.context?.trim()
+  if (context) lines.push('', '## 使用者補充的 context', context)
+  if (input.attachments?.length) {
+    lines.push('', '## 使用者附加的檔案', ...input.attachments.map((a) => `- ${a}`))
+  }
+  lines.push(
+    '',
+    '## 結束時',
+    '用幾行摘要說明：文件在哪裡、還有哪些待回答的問題或缺少的資源（逐條列出）、驗證結果。',
+    `最後一行只寫 \`${input.resultMark} ready\`（全部就緒）或 \`${input.resultMark} needs_answer\`（還有待決定的事或缺少的資源）。`
+  )
+  return lines.join('\n')
+}

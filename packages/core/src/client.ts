@@ -215,6 +215,18 @@ export function createBridge(t: BridgeTransport) {
    */
   continueTask: (payload: { taskId: string; force?: boolean }): Promise<{ state: VibeFlowState; task: Task }> =>
     t.invoke('vibeflow:continueTask', payload),
+  /** Backlog → 盤點: provision the card and start its headless inventory pass. */
+  startInventory: (taskId: string): Promise<{ state: VibeFlowState; task: Task }> =>
+    t.invoke('vibeflow:startInventory', taskId),
+  /** Run an inventory card's pass again, with its extra context. Refused while one runs (`INVENTORY_RUNNING`). */
+  rerunInventory: (taskId: string): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:rerunInventory', taskId),
+  /** The inventory panel's extra context (replaces the text) and attachments (added). */
+  setInventoryContext: (payload: { taskId: string; context?: string; attachments?: AttachmentInput[] }): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:setInventoryContext', payload),
+  /** A card's reserved status by key or tag name; null clears it. */
+  setTaskStatus: (payload: { taskId: string; status: string | null; reason?: string }): Promise<VibeFlowState> =>
+    t.invoke('vibeflow:setTaskStatus', payload),
   /** Cards as a master sees them; filter by master or a single card. */
   taskSummaries: (filter?: { masterId?: string; taskId?: string }): Promise<TaskSummary[]> =>
     t.invoke('task:summaries', filter),

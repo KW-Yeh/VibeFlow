@@ -9,6 +9,8 @@ export interface AgentPrintOptions {
   maxBuffer?: number
   /** Defaults to the augmented `execEnv()`. */
   env?: NodeJS.ProcessEnv
+  /** Aborting kills the run, which then rejects. */
+  signal?: AbortSignal
 }
 
 /**
@@ -42,6 +44,7 @@ export function runAgentPrint(
       env: opts.env ?? execEnv(),
       timeout: opts.timeout,
       windowsHide: true,
+      ...(opts.signal ? { signal: opts.signal } : {}),
     }
     // cmd.exe gets one pre-joined command line: handing spawn args alongside
     // `shell` concatenates them unescaped anyway, and Node deprecates it.
