@@ -1,5 +1,4 @@
 import {
-  Check,
   ChevronDown,
   CircleCheckBig,
   CircleDot,
@@ -16,6 +15,7 @@ import {
   Tag,
   Trash2,
   Terminal,
+  X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from 'motion/react'
@@ -42,7 +42,20 @@ import { createEnterVariants, MOTION_INSTANT, MOTION_SPRING, timed } from '@/lib
 import type { GridTerminal } from '@/components/terminal-grid'
 import { NewTaskButton } from '@/components/new-task-button'
 import { HoldButton } from '@/components/ui/hold-button'
-import { TagChips, TagPicker } from '@/components/task-tags'
+import { TagChips, TagPicker, useTags } from '@/components/task-tags'
+import { GithubFilterMenu } from '@/components/github-filter-menu'
+import {
+  EMPTY_BOARD_FILTERS,
+  UNTAGGED,
+  boardFilterOptions,
+  hasBoardFilters,
+  liveBoardFilters,
+  masterMatch,
+  matchesBoardFilters,
+  projectLabel,
+  type BoardFilters,
+} from '@/lib/board-filter'
+import { readBoardFilters, writeBoardFilters } from '@/lib/view-persistence'
 
 const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
@@ -58,12 +71,7 @@ const COLUMN_DOT: Record<ColumnId, string> = {
   done: 'bg-success',
 }
 
-export function projectLabel(task: Task): string {
-  if (task.role === 'master') return 'Master'
-  if (task.projectName) return task.projectName
-  const parts = (task.projectPath ?? '').split(/[/\\]/).filter(Boolean)
-  return parts[parts.length - 1] ?? '未指定專案'
-}
+export { projectLabel }
 
 /** What to show where a card's branch goes; a card made without one says so. */
 export function branchLabel(task: Task): string {
@@ -249,11 +257,14 @@ export function todoCount(progress: TaskProgress | undefined): string | null {
 /** A master's dispatched cards, nested under it whichever column each is in. */
 function SlaveList({
   slaves,
+  shown = slaves,
   progress,
   selectedTaskId,
   onSelectTask,
 }: {
   slaves: SlaveEntry[]
+  /** The ones the board filter lets through; waits still resolve against every slave. */
+  shown?: SlaveEntry[]
   progress: Record<string, TaskProgress>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
@@ -261,7 +272,7 @@ function SlaveList({
   const doneIds = new Set(slaves.filter((s) => s.column === 'done').map((s) => s.task.id))
   return (
     <ul className="ml-3 mt-1 space-y-0.5 border-l-2 border-master/40 pl-2" aria-label="Slave 卡片">
-      {slaves.map(({ task, column }) => {
+      {shown.map(({ task, column }) => {
         const state = slaveState(column, task, progress[task.id], doneIds)
         const waiting = column === 'backlog' && Boolean(task.after?.length) && !task.launchError
         const todos = column === 'in_progress' ? todoCount(progress[task.id]) : null
@@ -531,58 +542,6 @@ function TaskCard({
   )
 }
 
-export function ProjectFilter({
-  projects,
-  value,
-  onChange,
-}: {
-  projects: string[]
-  value: string | null
-  onChange: (next: string | null) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useDismissible(open, () => setOpen(false))
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <Layers className="size-3.5 shrink-0 text-muted-foreground" />
-        {value ?? '所有專案'}
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-      </button>
-      {open && (
-        <div
-          ref={ref}
-          role="menu"
-          className="absolute left-0 top-8 z-20 w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-        >
-          {[null, ...projects].map((project) => (
-            <button
-              key={project ?? '__all__'}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onChange(project)
-                setOpen(false)
-              }}
-              className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
-            >
-              <span className="min-w-0 flex-1 truncate">{project ?? '所有專案'}</span>
-              {project === value && <Check className="size-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export interface BoardColumnsProps {
   board: BoardState
   progress: Record<string, TaskProgress>
@@ -639,7 +598,17 @@ export function BoardColumns({
       onMoveTask(dragging.task.id, insertAt.beforeId)
     }
   }
-  const [projectFilter, setProjectFilter] = useState<string | null>(null)
+  const { tags } = useTags()
+  const [savedFilters, setSavedFilters] = useState<BoardFilters>(EMPTY_BOARD_FILTERS)
+  const filtersRead = useRef(false)
+  useEffect(() => {
+    setSavedFilters(readBoardFilters())
+    filtersRead.current = true
+  }, [])
+  const setFilters = (next: BoardFilters) => {
+    setSavedFilters(next)
+    if (filtersRead.current) writeBoardFilters(next)
+  }
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
 
   const allTasks = [...board.backlog, ...board.in_progress, ...board.done]
@@ -662,11 +631,9 @@ export function BoardColumns({
         ? { opacity: 0, transition: MOTION_INSTANT }
         : { opacity: 0, scale: reducedMotion ? 1 : 0.96, transition: timed('micro', reducedMotion, 'exit') },
   })
-  const projects = Array.from(new Set(allTasks.map(projectLabel))).sort((a, b) =>
-    a.localeCompare(b)
-  )
-  // A filter that no longer matches any task would silently empty the board.
-  const activeFilter = projectFilter && projects.includes(projectFilter) ? projectFilter : null
+  const filters = liveBoardFilters(savedFilters, tags)
+  const filterOptions = boardFilterOptions(allTasks, tags, filters)
+  const tagName = (id: string) => (id === UNTAGGED ? '無標籤' : tags.find((t) => t.id === id)?.name ?? id)
 
   // A finished master's cards are history: folded unless someone opens them.
   const [masterFolded, setMasterFolded] = useState<Record<string, boolean>>({})
@@ -682,11 +649,8 @@ export function BoardColumns({
   const visible = (column: ColumnId) =>
     board[column].filter((task) => {
       if (nested(task)) return false
-      if (!activeFilter) return true
-      if (task.role === 'master') {
-        return activeFilter === 'Master' || slavesOf(task.id).some((s) => projectLabel(s.task) === activeFilter)
-      }
-      return projectLabel(task) === activeFilter
+      if (task.role === 'master') return masterMatch(task, slavesOf(task.id), filters).visible
+      return matchesBoardFilters(task, filters)
     })
   const toggleMaster = (id: string, column: ColumnId) =>
     setMasterFolded((current) => ({ ...current, [id]: !(current[id] ?? column === 'done') }))
@@ -696,11 +660,33 @@ export function BoardColumns({
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
         <ViewTabs value={view} onChange={onViewChange} />
         <span className="h-4 w-px bg-border" />
-        <ProjectFilter
-          projects={projects}
-          value={activeFilter}
-          onChange={setProjectFilter}
+        <GithubFilterMenu
+          name="專案"
+          allLabel="所有專案"
+          icon={Layers}
+          options={filterOptions.projects}
+          value={filters.projects}
+          onChange={(projects) => setFilters({ ...filters, projects })}
         />
+        <GithubFilterMenu
+          name="標籤"
+          allLabel="所有標籤"
+          icon={Tag}
+          options={filterOptions.tags}
+          value={filters.tags}
+          onChange={(next) => setFilters({ ...filters, tags: next })}
+          optionLabel={tagName}
+        />
+        {hasBoardFilters(filters) && (
+          <button
+            type="button"
+            onClick={() => setFilters(EMPTY_BOARD_FILTERS)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <X className="size-3" />
+            清除篩選
+          </button>
+        )}
         <NewTaskButton onClick={onNewTask} />
       </div>
 
@@ -769,6 +755,7 @@ export function BoardColumns({
                 <AnimatePresence initial={false} custom={allIds}>
                 {tasks.map((task, index) => {
                   const slaves = task.role === 'master' ? slavesOf(task.id) : undefined
+                  const listed = slaves && masterMatch(task, slaves, filters).slaves
                   const collapsed = isFolded(task.id, column)
                   const aiming = insertAt?.column === column
                   const lineBefore = aiming && insertAt.beforeId === task.id
@@ -811,7 +798,7 @@ export function BoardColumns({
                         onDragStart={() => setDragging({ task, from: column })}
                         onDragEnd={endDrag}
                       />
-                      {slaves && slaves.length > 0 && (
+                      {listed && listed.length > 0 && (
                         <>
                           <button
                             type="button"
@@ -822,11 +809,12 @@ export function BoardColumns({
                             <ChevronDown
                               className={cn('size-3 transition-transform motion-reduce:transition-none', collapsed && '-rotate-90')}
                             />
-                            {collapsed ? `展開 ${slaves.length} 個 slave` : '收合'}
+                            {collapsed ? `展開 ${listed.length} 個 slave` : '收合'}
                           </button>
                           {!collapsed && (
                             <SlaveList
                               slaves={slaves}
+                              shown={listed}
                               progress={progress}
                               selectedTaskId={selectedTaskId}
                               onSelectTask={onSelectTask}

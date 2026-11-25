@@ -51,6 +51,7 @@ One directory per feature, each with a `spec.md` (what and why) and a
 | [lazy-branch-provisioning](features/lazy-branch-provisioning/spec.md) | Create the branch/worktree when a card starts, not when it is created; only backlog cards are editable |
 | [task-progress](features/task-progress/spec.md) | Derive each card's progress (todo list) and token usage from the agent's own JSONL transcript instead of model-written progress files; hook-driven stage notifications with toggles |
 | [github-issues-prs](features/github-issues-prs/spec.md) | Replace the sidebar task tree with an Issues & PRs view (GitHub via `gh`), convert an Issue/PR into a Backlog card, and show each card's linked Issue/PR |
+| [board-filters](features/board-filters/spec.md) | Project / tag multi-select filters on the board, applied to all three columns and kept across reloads |
 | [github-filters](features/github-filters/spec.md) | Project / assignee / author multi-select filters and project-then-number ordering in the Issues & PRs view; PRs I have reviewed stay listed |
 | [agent-model-catalog](features/agent-model-catalog/spec.md) | Claude Code and Codex model lists from the signed-in local CLIs (`claude` stream-json `initialize`, `codex app-server` `model/list`; no API key, no prompt), and the effort slider follows each model's supported levels (adds `max` / `ultra`); falls back to the builtin lists |
 | [jev-routing](features/jev-routing/spec.md) ([plan](features/jev-routing/plan.md)) | Use Jev to pick model and effort for cards that leave them open, scouting unclear tasks first |

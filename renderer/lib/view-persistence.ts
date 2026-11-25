@@ -2,6 +2,7 @@ import type { BoardView } from '@/components/ui/view-tabs'
 import type { InboxTab } from '@/components/inbox-view'
 import type { JiraScope } from '@/lib/types'
 import { EMPTY_GITHUB_FILTERS, type GithubFilters } from '@/lib/github-filter'
+import type { BoardFilters } from '@/lib/board-filter'
 
 // Where the user was survives a reload: the view and card in the URL (so the
 // address names them), the rest per browser. Anything unreadable falls back
@@ -16,6 +17,7 @@ const INBOX_TAB_KEY = 'vibeflow:inbox-tab'
 const FILTERS_KEY = 'vibeflow:github-filters'
 const JIRA_SCOPE_KEY = 'vibeflow:jira-scope'
 const DIFF_VIEW_KEY = 'vibeflow:diff-view'
+const BOARD_FILTERS_KEY = 'vibeflow:board-filters'
 
 export type GithubFilterState = Record<'issues' | 'prs', GithubFilters>
 
@@ -127,3 +129,13 @@ export function readGithubFilters(): GithubFilterState {
 }
 
 export const writeGithubFilters = (filters: GithubFilterState) => write(FILTERS_KEY, filters)
+
+export function readBoardFilters(): BoardFilters {
+  const value = (read(BOARD_FILTERS_KEY) ?? {}) as Partial<Record<keyof BoardFilters, unknown>>
+  return {
+    projects: isStrings(value.projects) ? value.projects : [],
+    tags: isStrings(value.tags) ? value.tags : [],
+  }
+}
+
+export const writeBoardFilters = (filters: BoardFilters) => write(BOARD_FILTERS_KEY, filters)
