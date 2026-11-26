@@ -162,7 +162,7 @@ test('annotate keeps working for built-in records (smoke)', async (t) => {
 
 test('the shipped skills are well-formed and do not depend on a checkout path', () => {
   const dir = path.resolve('packages/core/builtin-skills')
-  assert.deepEqual(skillNamesIn(dir), ['address-review', 'pr', 'pr-watch', 'visual-parity', 'work-mode'])
+  assert.deepEqual(skillNamesIn(dir), ['address-review', 'night-prep', 'pr', 'pr-watch', 'visual-parity', 'work-mode'])
   for (const name of skillNamesIn(dir)) {
     const md = fsSync.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8')
     assert.match(md, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), `${name}: frontmatter name`)
@@ -203,6 +203,13 @@ test('the shipped skills use LF, so their hash is the same on every checkout', (
     'address-review/SKILL.md',
     'address-review/scripts/pr-lib.mjs',
     'address-review/scripts/review.mjs',
+    'night-prep/SKILL.md',
+    'night-prep/playbooks/add-tests.md',
+    'night-prep/playbooks/bug-fix.md',
+    'night-prep/playbooks/dependency.md',
+    'night-prep/playbooks/feature.md',
+    'night-prep/playbooks/investigation.md',
+    'night-prep/playbooks/refactor.md',
     'pr/SKILL.md',
     'pr-watch/SKILL.md',
     'pr-watch/scripts/pr-lib.mjs',

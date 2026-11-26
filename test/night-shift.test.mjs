@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
 import { batchDrained, dispatchable, occupiedSlots, waitingOnDependencies } from '../packages/core/src/release.ts'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { findTask, getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
-import { executorSessionId, nightShiftBrief } from '../packages/core/src/launch.ts'
+import { executorSessionId, masterSystemPrompt, nightShiftBrief } from '../packages/core/src/launch.ts'
 import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
 import { reportRows, reportTable } from '../packages/core/src/report.ts'
 import { setTaskStatus } from '../packages/core/src/status-tags.ts'
@@ -228,4 +229,37 @@ test('a ready card started by hand drops its 準備開工 and gets no night brie
   await core.handlers['vibeflow:startTask'](a.id)
   assert.equal(taskStatus(findTask(a.id)), null)
   assert.ok(!sessions.starts.find((s) => s.key === a.id).command.includes('夜班任務'))
+})
+
+// --- daytime prep (night-prep skill) ---
+
+test('the night brief re-runs the sheet\'s resource checks first and lets only an approved lock-file change through (AC-12)', () => {
+  const text = nightShiftBrief({ title: 'Deps' }, { canWrite: true })
+  assert.ok(text.includes('「資源檢查」段落') && text.includes('開工第一步先逐條執行'))
+  assert.ok(text.includes('不讀出 secret 的值'))
+  assert.ok(text.includes('「已定案的決定」寫明使用者已同意'), 'a lock-file change needs the approval written on the sheet')
+  assert.ok(text.includes('needs_review') && text.includes('報告路徑'), 'work without a PR reports its report')
+})
+
+test('a master asked for tonight hands the prep to night-prep, which waits for confirmation even in auto mode (AC-12)', () => {
+  for (const autoMode of [true, false]) {
+    const text = masterSystemPrompt({ canWrite: true, autoMode })
+    assert.ok(text.includes('night-prep'))
+    assert.ok(text.includes('取代這裡的第 3 步（確認）與第 5 步（啟動）'))
+  }
+})
+
+test('night-prep has a checklist per work-mode kind, waits for confirmation and creates cards with --ready (AC-11)', () => {
+  const dir = path.resolve('packages/core/builtin-skills/night-prep')
+  const skill = fsSync.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+  for (const part of ['work-mode', '--ready', '--after', 'Do not create a card before that', 'Never run `task start`', '資源檢查', '已定案的決定', 'Existing PR']) {
+    assert.ok(skill.includes(part), part)
+  }
+  for (const playbook of ['bug-fix', 'feature', 'refactor', 'add-tests', 'dependency', 'investigation']) {
+    assert.ok(skill.includes(`playbooks/${playbook}.md`), `SKILL.md links ${playbook}`)
+    const md = fsSync.readFileSync(path.join(dir, 'playbooks', `${playbook}.md`), 'utf8')
+    assert.match(md, /## Checklist/, `${playbook} has a checklist`)
+  }
+  assert.match(fsSync.readFileSync(path.join(dir, 'playbooks', 'add-tests.md'), 'utf8'), /no production code changed/)
+  assert.match(fsSync.readFileSync(path.join(dir, 'playbooks', 'dependency.md'), 'utf8'), /approved the lock-file change today/)
 })

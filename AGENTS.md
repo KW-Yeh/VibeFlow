@@ -185,6 +185,13 @@ npm run vibeflow -- dispatch [--stop | --status]                             # �
 npm run vibeflow -- report list | show --report <id>                       # no host
 ```
 
+- **Daytime prep** is the built-in skill `night-prep` (`packages/core/builtin-skills/night-prep/`),
+  not core code: restate, classify each item with work-mode's table, gather that kind's
+  checklist (`playbooks/`), split into cards that do not share files, run the repos' own
+  install / test / registry / `gh` checks without reading secrets, write `plan.md` and wait
+  for confirmation, then `task create --ready [--after …]`. Each card's description is a
+  task sheet (背景 / 範圍 / 驗收條件 / 已定案的決定 / 資源檢查 / 不在授權內). A master
+  asked for tonight follows it instead of its own confirm / start steps.
 - **Status tags** (`status-tags.ts`, keys in `status-keys.ts`): six reserved tags
   with fixed ids `status:<key>` (ready, running, quota_wait, needs_review, stuck,
   pr_opened), added at host start, not deletable, one per card. Code reads the id,
@@ -198,7 +205,9 @@ npm run vibeflow -- report list | show --report <id>                       # no 
   pr_opened / ready. A sent card gets `Task.dispatch`; its first launch sends
   `nightShiftBrief()` once (`dispatch.briefedAt`): use work-mode, with the night's
   overrides only — confirmations count as given, no questions, a Draft PR, report a
-  status and end the turn, never watch the PR. A card going again gets a
+  status and end the turn, never watch the PR; re-run the sheet's 資源檢查 first and
+  stop as 卡住 on a failure; a lock-file change only when the sheet records the
+  approval; work without a PR reports `needs_review` with its report's path. A card going again gets a
   `continueTask` session with `dispatch.redo` (the reason the person wrote) first. A
   card started by hand drops its 準備開工 and gets no brief. A sent card that ends its
   turn with no status, or sits on a permission prompt, becomes 待你確認

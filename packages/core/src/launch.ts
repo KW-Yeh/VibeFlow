@@ -353,9 +353,7 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
       : '3. 確認：寫完計畫就停下來，等使用者同意或修改；使用者同意之前不要建任何卡。',
     '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--after <前置卡 id>]',
     '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——卡片看不到你的對話。',
-    '   eBug 卡的 prompt 列出單號即可；同一個元件的多張 eBug 合併成一張卡。',
-    '   使用者說要「今晚派工」或「下班派」時，建卡加上 --ready（排進今晚），不要 task start；派工由使用者按「下班派工」。',
-    '   每張卡要是一晚做得完、隔天早上審得完的大小；做法還不確定的，在 prompt 寫明「先寫 plan」。',
+    '   使用者說要「今晚派工」「下班派工」或「排進今晚」時，改用 night-prep skill：它依任務類型盤點、拆卡、檢查資源、等使用者確認後才用 --ready 建卡（不要 task start；派工由使用者按「下班派工」）。這時以 night-prep 的步驟為準，取代這裡的第 3 步（確認）與第 5 步（啟動）。',
     '   標題要短、彼此一眼分得出來：以這張卡負責的部分開頭（例如「後端：…」「驗收：…」），不要讓多張卡共用同一段開頭。',
     '   預設不要加 --model / --effort：沒指定時 Jev 會依任務複雜度挑模型與 effort；只有任務明確需要特定模型或 effort 時才指定。需要時可加 --agent / --base-branch。',
     opts.autoMode
@@ -389,7 +387,9 @@ export function nightShiftBrief(
     '- spec.md／plan.md 的確認視為使用者已預先授權：寫完就往下做，確認紀錄寫「夜班預先授權，早上驗收」。',
     '- 不要停下來問問題。兩種解讀都說得通時選比較保守的，把假設寫進 PR 內文。',
     '- PR 一律開成 Draft。開出來之後回報狀態就結束這一回合，不要盯 PR、不要啟動 pr-watch。',
-    '- 推到共用分支、force push、處理 secret、更動 lock 檔都不在授權內；碰到時停止並回報。'
+    '- 推到共用分支、force push、處理 secret 都不在授權內；更動 lock 檔也不在授權內，除非任務描述的「已定案的決定」寫明使用者已同意這次的變更。碰到時停止並回報。',
+    '- 任務描述有「資源檢查」段落時，開工第一步先逐條執行（只看通過與否，不讀出 secret 的值）。有任何一條失敗，就標「卡住」並寫明哪一條、缺什麼，不要往下做。',
+    '- 沒有 PR 的工作（例如調查）：把報告放進 "$VIBEFLOW_ARTIFACTS_DIR"，用 needs_review 回報並附上報告路徑。'
   )
   if (opts.canWrite) {
     lines.push(

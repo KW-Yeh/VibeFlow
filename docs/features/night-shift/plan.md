@@ -2,7 +2,7 @@
 
 - 狀態：已確認
 - 對應 Spec：[spec.md](./spec.md)
-- 更新日期：2026-11-26（第二版）
+- 更新日期：2026-11-26（第三版）
 - 確認紀錄：2026-11-26 使用者回覆「可以，寫完規格與計畫就開始實作」，授權直接實作。分支：`feat/night-shift`。同日回覆「刪掉盤點，改用 work-mode」，第二版見最後一節；第一版的 `kind` 與 Feature／eBug 步驟已撤除，下方第一版內容保留作為決策紀錄。
 
 ## 現有程式碼調查
@@ -107,3 +107,22 @@
 
 - 兩個 typecheck、`npm test`（`store-migration` 加 v5 → v6 案例、`night-shift` 改寫 brief 斷言、刪除 `inventory.test.mjs`）、`npm run build:web`、`npm run test:e2e`。
 - 用一份手寫的 v5 store（盤點欄有準備開工、待回答、帶 context 的卡）啟動 host，在 Web UI 確認三欄與卡片位置。
+
+## 第三版：night-prep skill
+
+### 做法
+
+1. **新的內建 skill**：`packages/core/builtin-skills/night-prep/`。`SKILL.md` 放共用流程（重述 → 分類 → 依類型盤點 → 拆卡 → 檢查資源 → 寫 plan.md 等確認 → 建卡），`playbooks/` 每種類型一份盤點清單。分類直接沿用 work-mode 的表格，不另外定義，晚上 work-mode 選到的 playbook 才會和白天盤點的一致。`library-builtins.ts` 依目錄自動找到內建 skill，不用改程式碼。
+2. **任務單格式**：在 `SKILL.md` 固定段落（背景、範圍、驗收條件、已定案的決定、資源檢查、不在授權內的事），晚上的 brief 才能要求「先重跑資源檢查」。
+3. **master 提示**（`masterSystemPrompt`）：使用者要今晚派工時用 night-prep，取代原本寫死的 `--ready` 說明。
+4. **夜班 brief**（`nightShiftBrief`）：加一條覆寫——任務單有「資源檢查」段落就先跑，失敗就標「卡住」並停止。
+
+### 為什麼不放進 work-mode
+
+work-mode 的分類是「這一件事現在該怎麼做」，派工準備是同時整理好幾件事、只產出任務單，不改程式碼，不屬於 work-mode 的任何一種類型。另外做成 skill，work-mode 不用知道夜班的存在。
+
+### 驗證
+
+- `library-builtins.test.mjs`：內建 skill 清單、frontmatter、LF。
+- `night-shift.test.mjs`：master 提示與夜班 brief 的新規則。
+- 啟動拋棄式 host，確認 Library 目錄同步出 `night-prep` 與它的 playbooks。
