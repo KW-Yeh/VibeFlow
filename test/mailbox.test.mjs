@@ -116,6 +116,15 @@ test('the input box counts as holding text until Enter, Ctrl+C or Ctrl+U empties
   assert.equal(draftAfter(true, '\x7f\x7f'), true, 'deleting by hand is not trusted to empty it')
 })
 
+test('the terminal answering tmux\'s queries on attach is not a draft', () => {
+  assert.equal(draftAfter(false, '\x1b]11;rgb:0a0a/0a0a/0a0a\x1b\\'), false, 'OSC 11 colour reply (ST)')
+  assert.equal(draftAfter(false, '\x1b]10;rgb:ffff/ffff/ffff\x07'), false, 'OSC 10 colour reply (BEL)')
+  assert.equal(draftAfter(false, '\x1bP>|xterm.js(6.0.0)\x1b\\'), false, 'XTVERSION reply (DCS)')
+  assert.equal(draftAfter(false, '\x1b[?1;2c\x1b[>0;276;0c'), false, 'DA1 / DA2 replies')
+  assert.equal(draftAfter(false, '\x1b]11;rgb:0/0/0\x1b\\hi'), true, 'keys after a reply still count')
+  assert.equal(draftAfter(true, '\x1b]11;rgb:0/0/0\x07'), true, 'a reply does not empty a draft either')
+})
+
 test('typing waits while the input box holds unsent text, and never sends it along', async () => {
   const { mailbox, writes } = setup({ timeoutMs: 400 })
   mailbox.userInput('t1', 'half a sentence')

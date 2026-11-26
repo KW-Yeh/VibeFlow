@@ -283,7 +283,7 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
   function compose(entry: Entry): TaskProgress | null {
     const { target } = entry
     let runUsage = emptyUsage()
-    let primary: { todos: TaskProgress['todos']; contextTokens?: number; activity: Activity; startedAt?: number } | null = null
+    let primary: { todos: TaskProgress['todos']; contextTokens?: number; activity: Activity; startedAt?: number; background?: number } | null = null
     if (target.agent === 'claude') {
       for (const [file, cursor] of entry.claude) {
         runUsage = addUsage(runUsage, claudeUsageTotal(cursor.state))
@@ -291,7 +291,7 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
         const isExecutor = path.basename(file, '.jsonl') === target.sessionId
         const s = cursor.state
         if (isExecutor || (!target.sessionId && (!primary || (s.startedAt ?? 0) > (primary.startedAt ?? 0)))) {
-          primary = { todos: s.todos, contextTokens: s.contextTokens, activity: s.activity, startedAt: s.startedAt }
+          primary = { todos: s.todos, contextTokens: s.contextTokens, activity: s.activity, startedAt: s.startedAt, background: s.background?.length }
         }
       }
     } else {
@@ -310,11 +310,14 @@ export function createProgressTracker(opts: ProgressTrackerOptions): ProgressTra
     const hook = entry.hookActivity
     const held = primary.activity
     // A Stop after a usage limit is the same stop; only a new prompt ends the wait.
-    const activity = held.waitingFor === 'quota'
+    const settled = held.waitingFor === 'quota'
       ? (hook?.state === 'working' && (hook.at ?? 0) > (held.at ?? 0) ? hook : held)
       : hook?.state === 'working' && primary.activity.state === 'working'
         ? primary.activity
         : latestActivity(primary.activity, hook)
+    const activity = settled.state === 'waiting' && settled.waitingFor === 'input' && primary.background
+      ? { ...settled, background: primary.background }
+      : settled
     return {
       todos: primary.todos,
       runUsage,

@@ -30,7 +30,7 @@
 
 **4. 夜班 brief（`nightShiftBrief`，放在 `launch.ts`）。** 共用的部分是卡片內容、「沒有人在線上」的規則、依 `kind` 的步驟，以及回報狀態的指令。盤點過的卡另外附上 spec 和 plan 的路徑；重派的卡把 `redo` 放在最前面，並附上 continuation 的事實（分支、PR、最後一次回覆）。
 
-**5. 自動讓出名額（`settleIdleDispatched`）。** 掛在 `progress.onUpdate`。只處理派出中的卡：卡片在進行中、`dispatch.batchId` 是目前的批次、已經送過 brief、activity 時間晚於 `briefedAt`、狀態是執行中或沒有狀態。activity 是 `waiting/input` 就掛「待你確認：agent 結束回合但沒有回報狀態」；是 `waiting/permission` 就掛「待你確認：卡在權限確認」。
+**5. 自動讓出名額（`settleIdleDispatched`）。** 掛在 `progress.onUpdate`。只處理派出中的卡：卡片在進行中、`dispatch.batchId` 是目前的批次、已經送過 brief、activity 時間晚於 `briefedAt`、狀態是執行中或沒有狀態。activity 是 `waiting/input` 就掛「待你確認：agent 結束回合但沒有回報狀態」，除非 `activity.background` 顯示還有背景任務沒回報（`progress.ts` 從 `backgroundTaskId`／`isAsync` 的 tool result 記下，看到對應的 `<task-notification>` 才移除）；是 `waiting/permission` 就掛「待你確認：卡在權限確認」。
 
 **6. 批次自動結束（`maybeCloseBatch`）。** 每次 `releaseTick` 結束時檢查：批次裡沒有任何卡佔著名額，而且已經沒有可派出的卡，就走和手動關閉相同的路徑（寫 `endedAt`、產生報告）。為了避免剛開批次、卡片還沒啟動就被判定結束，批次至少要派出過一張卡才會自動關閉。
 

@@ -817,6 +817,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
    */
   function settleIdleDispatched(taskId: string, activity: Activity): void {
     if (activity.state !== 'waiting' || (activity.waitingFor !== 'input' && activity.waitingFor !== 'permission')) return
+    if (activity.waitingFor === 'input' && activity.background) return
     const task = findTask(taskId)
     const briefedAt = task?.dispatch?.briefedAt
     if (!task || !briefedAt || columnOf(taskId) !== 'in_progress') return
@@ -880,11 +881,20 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       await startTaskSession(task, task.id, { taskId: task.id, launch: { resume: true } })
       await sleep(resumeSettleMs)
     }
+    const inbox = task.worktreePath ? inboxDir(task.worktreePath) : null
+    if (inbox && inboxReady(inbox) && pendingMessages(inbox) > 0) {
+      mailbox.poke(taskId)
+      return 'retry'
+    }
+    let via
     try {
-      await mailbox.deliver(taskId, frameMessage(null, QUOTA_CONTINUE_MESSAGE))
+      ({ via } = await mailbox.deliver(taskId, frameMessage(null, QUOTA_CONTINUE_MESSAGE)))
     } catch {
       return 'retry'
     }
+    // Still in the inbox means the agent has not seen it: the card keeps 等待額度
+    // until it works again (quotaFromActivity), or the next attempt wakes it.
+    if (via === 'queued') return 'retry'
     endQuotaWait(taskId)
     return 'done'
   }

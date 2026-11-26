@@ -309,3 +309,18 @@ test('Claude usage limit — falls back to rate_limit_info, and to no reset time
   const sidechain = reduceClaudeLine(initialClaudeState(), JSON.stringify({ ...base, isSidechain: true }))
   assert.notEqual(sidechain.activity.waitingFor, 'quota', "a sub-agent's limit is not the card's")
 })
+
+test('Claude background tasks — counted from launch until their task-notification (Claude Code 2.1.332 shapes)', () => {
+  const all = lines('claude-background.jsonl')
+  const atEnd = foldClaude(all.slice(0, 5))
+  assert.deepEqual(atEnd.background, ['b97377cfi', 'agent-changepayment'], 'a background shell and an async sub-agent')
+  assert.equal(atEnd.activity.waitingFor, 'input')
+  assert.deepEqual(foldClaude(all.slice(0, 6)).background, ['agent-changepayment'], 'a completed notice ends its task')
+  assert.deepEqual(foldClaude(all).background, [], 'a failed one ends it too')
+})
+
+test('a waiting agent with background tasks does not notify that it waits for input', () => {
+  const prev = { todos: null, activity: { state: 'working', at: 1 } }
+  assert.deepEqual(diffProgress(prev, { todos: null, activity: { state: 'waiting', waitingFor: 'input', background: 1, at: 2 } }), [])
+  assert.equal(diffProgress(prev, { todos: null, activity: { state: 'waiting', waitingFor: 'input', at: 2 } }).length, 1)
+})

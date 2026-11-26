@@ -44,6 +44,11 @@ export interface Activity {
   waitingFor?: 'input' | 'permission' | 'quota'
   /** waitingFor 'quota': epoch ms the limit resets, when the agent said. */
   resetsAt?: number
+  /**
+   * waitingFor 'input': background tasks (shells, sub-agents) the agent started
+   * and has not been told have ended. It carries on by itself when they do.
+   */
+  background?: number
   /** Epoch ms of the last transcript line or hook event seen. */
   at?: number
 }
@@ -136,10 +141,35 @@ export interface ClaudeState {
   /** First timestamp in the file — when the session began. */
   startedAt?: number
   turns: number
+  /** Ids of background tasks launched and not yet reported back by a task-notification. */
+  background: string[]
 }
 
 export function initialClaudeState(): ClaudeState {
-  return { todos: null, usageById: {}, pendingTasks: {}, activity: { state: 'unknown' }, turns: 0 }
+  return { todos: null, usageById: {}, pendingTasks: {}, activity: { state: 'unknown' }, turns: 0, background: [] }
+}
+
+/** The id a tool result says now runs in the background: a shell (`backgroundTaskId`) or an async sub-agent. */
+function backgroundLaunch(result: Record<string, unknown> | undefined): string | null {
+  if (!result) return null
+  if (typeof result.backgroundTaskId === 'string') return result.backgroundTaskId
+  if (result.isAsync === true && typeof result.agentId === 'string') return result.agentId
+  return null
+}
+
+const TASK_NOTIFICATION = /^<task-notification>[\s\S]*?<task-id>([^<]+)<\/task-id>/
+const NOTIFIED_STATUS = /<status>([^<]*)<\/status>/
+
+/** The background task a task-notification reports finished, if this line is one. */
+function backgroundEnded(message: Record<string, unknown>): string | null {
+  const content = message.content
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content) ? (content as Record<string, unknown>[]).find((b) => b?.type === 'text')?.text : undefined
+  if (typeof text !== 'string') return null
+  const id = TASK_NOTIFICATION.exec(text.trimStart())?.[1]
+  if (!id) return null
+  return NOTIFIED_STATUS.exec(text)?.[1] === 'running' ? null : id
 }
 
 /** Text Claude Code writes as a user line on its own; versions without `origin` only tell it apart by these. */
@@ -305,6 +335,10 @@ export function reduceClaudeLine(state: ClaudeState, line: string): ClaudeState 
       delete pending[block.tool_use_id]
     }
     next.pendingTasks = pending
+    const background = state.background ?? []
+    const launched = backgroundLaunch(result)
+    const ended = backgroundEnded(message)
+    if (launched || ended) next.background = [...background, ...(launched ? [launched] : [])].filter((id) => id !== ended)
     const prompt = isClaudePrompt(entry, message)
     if (prompt) next.turns = state.turns + 1
     if (heldByQuota && !prompt) return next
@@ -495,7 +529,7 @@ export function diffProgress(prev: TaskProgress | undefined, next: TaskProgress)
   if (allDone(todos) && !allDone(before)) {
     out.push({ kind: 'all_completed', done, total: todos.length })
   }
-  if (next.activity.state === 'waiting' && prev.activity.state !== 'waiting') {
+  if (next.activity.state === 'waiting' && prev.activity.state !== 'waiting' && !next.activity.background) {
     out.push({ kind: 'waiting_input', waitingFor: next.activity.waitingFor ?? 'input' })
   }
   return out

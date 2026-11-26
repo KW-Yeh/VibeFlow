@@ -82,6 +82,9 @@ function quietFromEnv(): number {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const PASTED = /\x1b\[200~[\s\S]*?(\x1b\[201~|$)/g
+// The terminal answering a query (tmux asks xterm.js for its colours and version
+// on every attach) arrives as input too: OSC and DCS replies are not keys.
+const TERMINAL_REPLIES = /\x1b[\]P^_X][\s\S]*?(\x07|\x1b\\|$)/g
 const ESCAPES = /\x1b(\[[0-9;?<=>]*[ -\/]*[@-~]|O.|.)?/g
 const CLEARS_INPUT = /[\r\n\x03\x15]/
 
@@ -92,7 +95,7 @@ const CLEARS_INPUT = /[\r\n\x03\x15]/
  * reading never sends a message on top of someone's words.
  */
 export function draftAfter(before: boolean, data: string): boolean {
-  const keys = data.replace(PASTED, 'x').replace(ESCAPES, '')
+  const keys = data.replace(PASTED, 'x').replace(TERMINAL_REPLIES, '').replace(ESCAPES, '')
   let draft = before
   for (const ch of keys) {
     if (CLEARS_INPUT.test(ch)) draft = false

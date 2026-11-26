@@ -210,7 +210,7 @@ npm run vibeflow -- report list | show --report <id>                       # no 
   approval; work without a PR reports `needs_review` with its report's path. A card going again gets a
   `continueTask` session with `dispatch.redo` (the reason the person wrote) first. A
   card started by hand drops its 準備開工 and gets no brief. A sent card that ends its
-  turn with no status, or sits on a permission prompt, becomes 待你確認
+  turn with no status (and no background task of its own still running), or sits on a permission prompt, becomes 待你確認
   (`settleIdleDispatched`). The batch closes itself once `batchDrained()` (it sent
   something, none of its cards holds a slot, nothing left to send), recording what it
   skipped. Ticks run on `state:changed`, board writes, cleanup and host start
@@ -220,7 +220,9 @@ npm run vibeflow -- report list | show --report <id>                       # no 
   `activity.waitingFor: 'quota'` and `resetsAt`; the host stores `Task.quotaWait`,
   marks 等待額度, and the heartbeat probes after `resetsAt + 60 s` (else every
   `heartbeatMinutes`), then types "continue" through `mailbox.ts` or resumes the ended
-  session. A card waiting on a person gets nothing. Codex limits are not detected.
+  session. A continue that only reached the inbox does not end the wait: the card keeps
+  等待額度 until the agent works again, and later attempts wake it instead of posting
+  another. A card waiting on a person gets nothing. Codex limits are not detected.
 - **Reports** (`report.ts`): a closed batch writes its 晨報 to `<storeDir>/reports/<id>.md` —
   a facts table from the batch's events first, grouped 需要你處理 / 等你驗收 / 已完成 plus
   沒有派出, then an agent narrative

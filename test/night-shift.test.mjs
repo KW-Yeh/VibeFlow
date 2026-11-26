@@ -263,3 +263,69 @@ test('night-prep has a checklist per work-mode kind, waits for confirmation and 
   assert.match(fsSync.readFileSync(path.join(dir, 'playbooks', 'add-tests.md'), 'utf8'), /no production code changed/)
   assert.match(fsSync.readFileSync(path.join(dir, 'playbooks', 'dependency.md'), 'utf8'), /approved the lock-file change today/)
 })
+
+test('a continue that only reached the inbox keeps the card on 等待額度 and is typed once the agent can be woken', async (t) => {
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(cleanup)
+  getStore().set('board', board({}))
+  getStore().set('release', { enabled: false })
+  const timers = []
+  const clock = { now: () => Date.now(), setTimer: (fn) => { timers.push(fn); return fn }, clearTimer: (fn) => { const i = timers.indexOf(fn); if (i >= 0) timers.splice(i, 1) } }
+  const fire = async () => { const fn = timers.shift(); assert.ok(fn, 'a heartbeat timer is set'); fn(); await new Promise((r) => setTimeout(r, 300)) }
+  const sessions = { ...fakeSessions(), writes: [], foreign: true, write(key, data) { this.writes.push(data) }, async hasForeignClients() { return this.foreign } }
+  const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9', homeDir: home, prStatus: async () => null, quotaProbe: async () => true, heartbeatClock: clock, resumeSettleMs: 0 })
+  t.after(() => core.shutdown())
+
+  const { task } = await createTaskFromInput({ projectPath, title: 'limited', description: 'x', model: 'sonnet' })
+  await core.handlers['vibeflow:startTask'](task.id)
+  const started = findTask(task.id)
+  const inbox = path.join(started.worktreePath, '.vibeflow-inbox')
+  await fs.mkdir(inbox, { recursive: true })
+  await fs.writeFile(path.join(inbox, '.ready'), '')
+  const dir = claudeProjectDir(home, started.worktreePath)
+  await fs.mkdir(dir, { recursive: true })
+  const transcript = path.join(dir, `${executorSessionId(started.id, started.runId)}.jsonl`)
+  await fs.writeFile(transcript, JSON.stringify({
+    type: 'assistant', timestamp: new Date(Date.now() + 1000).toISOString(), isApiErrorMessage: true, error: 'rate_limit',
+    message: { id: 'e1', model: '<synthetic>', stop_reason: 'stop_sequence', content: [{ type: 'text', text: "You've hit your limit" }] },
+  }) + '\n')
+  core.handlers['progress:get'](started.id)
+  assert.ok(findTask(task.id).quotaWait, 'the limit starts a wait')
+  const pending = () => fsSync.readdirSync(inbox).filter((n) => !n.startsWith('.')).length
+
+  await fire()
+  assert.equal(pending(), 1, 'the continue waits in the inbox: a person is attached')
+  assert.ok(findTask(task.id).quotaWait, 'a queued continue does not end the wait')
+  assert.equal(taskStatus(findTask(task.id)), 'quota_wait')
+
+  await fire()
+  assert.equal(pending(), 1, 'the next attempt does not post a second continue')
+
+  sessions.foreign = false
+  await fire()
+  await new Promise((r) => setTimeout(r, 6000))
+  assert.equal(pending(), 0)
+  assert.ok(sessions.writes.some((w) => w.includes('用量額度已經重置')), 'the waiting continue is typed')
+})
+
+test('a dispatched card that ends its turn to wait for its own background tasks is not waiting for a person', async (t) => {
+  const { core, projectPath } = await nightCore(t)
+  const only = await tonight(projectPath, 'background')
+  core.handlers['vibeflow:setRelease']({ enabled: true })
+  await until(() => taskStatus(findTask(only.id)) === 'running')
+  const sent = findTask(only.id)
+  const dir = claudeProjectDir(home, sent.worktreePath)
+  await fs.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${executorSessionId(sent.id, sent.runId)}.jsonl`)
+  const fixture = fsSync.readFileSync(path.join(import.meta.dirname, 'fixtures', 'progress', 'claude-background.jsonl'), 'utf8').trim().split('\n')
+  const later = (line, s) => JSON.stringify({ ...JSON.parse(line), timestamp: new Date(Date.now() + s * 1000).toISOString() })
+  await fs.writeFile(file, fixture.slice(0, 5).map((l, i) => later(l, i + 1)).join('\n') + '\n')
+  await core.handlers['progress:get'](sent.id)
+  assert.equal(core.handlers['progress:get'](sent.id).activity.background, 2)
+  assert.equal(taskStatus(findTask(only.id)), 'running', 'its background tasks will wake it')
+
+  const done = JSON.stringify({ type: 'assistant', message: { id: 'm9', model: 'claude-sonnet-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: '好了' }] } })
+  await fs.appendFile(file, [...fixture.slice(5), done].map((l, i) => later(l, i + 10)).join('\n') + '\n')
+  core.handlers['progress:get'](sent.id)
+  await until(() => taskStatus(findTask(only.id)) === 'needs_review')
+})
