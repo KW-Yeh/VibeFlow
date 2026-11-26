@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'motion/react'
-import { FileText, GitBranch, Layers, Loader2, Paperclip, Play, RotateCcw } from 'lucide-react'
+import { FileText, GitBranch, Layers, Loader2, Moon, Paperclip, Play, RotateCcw, Square } from 'lucide-react'
 
 import { MarkdownContent } from '@/components/markdown-content'
 import { PropertyGroup, PropertyNote, TaskFormDialog } from '@/components/task-form-layout'
@@ -18,6 +18,7 @@ import {
   setInventoryContext,
   setRelease,
   setSettings,
+  setTaskStatus,
 } from '@/lib/api'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
 import { cn } from '@/lib/utils'
@@ -25,13 +26,13 @@ import { taskStatus } from '@/lib/status'
 import type { AutonomousSettings, BoardState, ReleaseState, ReportEntry, Task } from '@/lib/types'
 
 /*
- * The autonomous run's minimal UI: the inventory panel, the release switch,
+ * The autonomous run's minimal UI: the inventory panel, 下班派工 (the release switch),
  * the reports list and its settings. Visual design is still to come (spec:
  * docs/features/autonomous-run/), so these only carry the elements and the
  * behaviour the spec asks for.
  */
 
-const SLOT_FREEING = ['needs_review', 'stuck', 'pr_opened']
+const SLOT_FREEING = ['needs_review', 'stuck', 'pr_opened', 'ready']
 
 function occupied(board: BoardState): number {
   return board.in_progress.filter((t) => {
@@ -39,6 +40,17 @@ function occupied(board: BoardState): number {
     const status = taskStatus(t)
     return !status || !SLOT_FREEING.includes(status)
   }).length
+}
+
+/** Same order and rules as core's dispatchable(): 盤點, 待辦, then running cards marked to go again. */
+function tonightCount(board: BoardState): number {
+  const done = new Set(board.done.map((t) => t.id))
+  const ready = (t: Task) => t.role !== 'master' && taskStatus(t) === 'ready' && !t.quotaWait && (t.after ?? []).every((id) => done.has(id))
+  return [
+    ...board.inventory.filter(ready),
+    ...board.backlog.filter(ready),
+    ...board.in_progress.filter((t) => ready(t) && t.launchedAt && t.worktreePath),
+  ].length
 }
 
 function useStatusName() {
@@ -50,7 +62,7 @@ function useStatusName() {
 }
 
 // ---------------------------------------------------------------------------
-// Release switch
+// 下班派工
 // ---------------------------------------------------------------------------
 
 export function ReleaseControl({
@@ -66,13 +78,13 @@ export function ReleaseControl({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const enabled = release?.enabled === true
-  const ready = board.inventory.filter((t) => taskStatus(t) === 'ready').length
-  const toggle = async () => {
+  const on = release?.enabled === true
+  const tonight = tonightCount(board)
+  const run = async (enabled: boolean) => {
     setBusy(true)
     setError(null)
     try {
-      await setRelease(!enabled)
+      await setRelease(enabled)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -81,35 +93,110 @@ export function ReleaseControl({
   }
   return (
     <div className="flex items-center gap-2 text-sm">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        aria-label="放行"
-        disabled={busy}
-        onClick={() => void toggle()}
-        title={enabled ? '關閉放行：不再放行新卡片，執行中的卡片繼續跑完，並產生這一批的報告' : '打開放行：依盤點欄順序放行準備開工的卡片'}
-        className={cn(
-          'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50',
-          enabled ? 'border-success/50 bg-success/15 text-success' : 'border-border text-muted-foreground hover:bg-accent'
-        )}
-      >
-        {busy ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-        放行 {enabled ? '開' : '關'}
-      </button>
-      <span className="text-xs tabular-nums text-muted-foreground" title="執行中名額 / 並行上限 · 準備開工">
-        {occupied(board)}/{concurrency} · 準備 {ready}
-      </span>
+      {on ? (
+        <>
+          <span
+            role="status"
+            className="flex items-center gap-1.5 rounded-full border border-success/50 bg-success/15 px-2.5 py-1 text-xs text-success"
+            title="執行中名額 / 並行上限 · 還沒派出的今晚卡片"
+          >
+            <Moon className="size-3" />
+            夜班進行中 <span className="tabular-nums">{occupied(board)}/{concurrency} · 待派 {tonight}</span>
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(false)}
+            title="不再派出新卡片；執行中的卡片繼續跑完，並產生晨報"
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />}
+            停止派工
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || tonight === 0}
+          onClick={() => void run(true)}
+          title={tonight === 0
+            ? '還沒有排進今晚的卡片：在卡片選單按「排進今晚」，或把卡片標成「準備開工」'
+            : `依序派出 ${tonight} 張準備開工的卡片，同時最多 ${concurrency} 張；全部停下來後產生晨報`}
+          className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:text-muted-foreground disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" /> : <Moon className="size-3" />}
+          下班派工 <span className="tabular-nums">（{tonight}）</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={onOpenReports}
         className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <FileText className="size-3" />
-        報告
+        晨報
       </button>
       {error && <span role="alert" className="text-xs text-destructive">{error}</span>}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 改方向重派
+// ---------------------------------------------------------------------------
+
+/** Mark a running card to go out again with the next 下班派工, with the correction it should start from. */
+export function RedoDialog({ task, onClose }: { task: Task | null; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {task && <RedoDialogBody key={task.id} task={task} onClose={onClose} />}
+    </AnimatePresence>
+  )
+}
+
+function RedoDialogBody({ task, onClose }: { task: Task; onClose: () => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    if (!text.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await setTaskStatus(task.id, 'ready', text.trim())
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <DialogShell title="改方向重派" showHeader onClose={onClose} contentClassName="max-w-[560px]">
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          「{task.title}」會排進今晚。下次下班派工時，它在同一個分支上換新 session 接續，先讀你寫的修正方向。
+        </p>
+        <textarea
+          aria-label="修正方向"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save()
+          }}
+          placeholder="哪裡方向錯了、要改成怎麼做…"
+          className={cn(fieldClass, 'min-h-32 w-full resize-y text-sm leading-6')}
+        />
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} className="rounded-full">取消</Button>
+          <Button size="sm" onClick={() => void save()} disabled={busy || !text.trim()} className="rounded-full">
+            {busy && <Loader2 className="animate-spin" />}
+            排進今晚
+          </Button>
+        </div>
+      </div>
+    </DialogShell>
   )
 }
 
@@ -138,11 +225,11 @@ function ReportsDialogBody({ onClose }: { onClose: () => void }) {
     void readReport(openId).then((r) => setMarkdown(r?.markdown ?? '找不到這份報告。'))
   }, [openId])
   return (
-    <DialogShell title="放行報告" showHeader onClose={onClose} contentClassName="max-w-[880px]">
+    <DialogShell title="晨報" showHeader onClose={onClose} contentClassName="max-w-[880px]">
       <div className="flex min-h-[320px] gap-4">
         <ul className="w-56 shrink-0 space-y-1" aria-label="報告列表">
           {reports === null && <li className="text-sm text-muted-foreground">讀取中…</li>}
-          {reports?.length === 0 && <li className="text-sm text-muted-foreground">還沒有報告。關閉放行開關時會產生一份。</li>}
+          {reports?.length === 0 && <li className="text-sm text-muted-foreground">還沒有晨報。夜班批次結束時會產生一份。</li>}
           {reports?.map((r) => (
             <li key={r.id}>
               <button

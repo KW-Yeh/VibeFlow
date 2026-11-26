@@ -10,7 +10,7 @@ import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/
 import { findTask, getStoreAtPath, isMasterTask } from '../../core/src/store'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
-import type { ColumnId } from '../../core/src/store'
+import type { ColumnId, TaskKind } from '../../core/src/store'
 import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
@@ -19,6 +19,7 @@ const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list
 /** Write the store directly, so they work without a host — and default to the calling card's store. */
 const SHELL_COMMANDS = ['artifact', 'tag', 'status', 'move']
 const ROLES = ['slave', 'master']
+const KINDS = ['feature', 'ebug']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
 
@@ -55,6 +56,10 @@ task create options:
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
+  --kind <kind>          ${KINDS.join(' | ')}  (default: feature). An ebug card's prompt
+                         can be just the eBug numbers; the night shift reads them
+  --ready                Mark the card 準備開工: it goes out with the next 下班派工
+                         (vibeflow dispatch)
   --base-branch <name>   Branch the worktree is created from (default: repo's current branch)
   --branch <name>        Branch to create for the task (default: derived from the title).
                          If origin already publishes it, the branch is fetched and
@@ -78,12 +83,13 @@ task update options:
   --prompt <text>        New card description (empty string clears it)
   --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
   --master <id|none>     Put the card under a master, or "none" to take it out
+  --kind <kind>          ${KINDS.join(' | ')}
   --after <id|none>      Cards of the same master this one waits on (repeat for
                          several), or "none" to clear them
   --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
 
-  At least one of --title / --prompt / --status / --master / --after is required. Branch,
+  At least one of --title / --prompt / --status / --master / --after / --kind is required. Branch,
   worktree and project path are provisioned on disk and cannot be changed here.
 
 task tag options (no host needed; see also \`vibeflow tag --help\`):
@@ -217,6 +223,8 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         project:       { type: 'string', multiple: true },
         after:         { type: 'string', multiple: true },
         role:          { type: 'string' },
+        kind:          { type: 'string' },
+        ready:         { type: 'boolean' },
         'work-dir':    { type: 'string' },
         master:        { type: 'string' },
         title:         { type: 'string' },
@@ -337,8 +345,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (sub === 'update') {
     if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
     requireOneOf('--status', values.status, STATUSES)
-    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined && values.after === undefined) {
-      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master, --after')
+    requireOneOf('--kind', values.kind, KINDS)
+    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined && values.after === undefined && values.kind === undefined) {
+      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master, --after, --kind')
     }
     if (values.project !== undefined) fail('INVALID_ARGUMENT', 'task update cannot change --project')
     const { task, storePath: resolvedPath } = updateTaskFromInput({
@@ -348,6 +357,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       status: values.status as ColumnId | undefined,
       masterId: values.master === undefined ? undefined : values.master === 'none' ? null : values.master,
       after: values.after === undefined ? undefined : values.after.filter((id) => id !== 'none'),
+      kind: values.kind as TaskKind | undefined,
       storePath,
     })
     return {
@@ -371,6 +381,10 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     fail('INVALID_ARGUMENT', 'A master card has no project of its own: drop --base-branch / --branch / --mode')
   }
   if (master && values.after) fail('INVALID_ARGUMENT', 'A master card cannot wait on other cards: drop --after')
+  if (master && (values.kind !== undefined || values.ready)) fail('INVALID_ARGUMENT', 'A master card has no kind and never goes out with the night shift: drop --kind / --ready')
+  if (values.ready && values.status !== undefined && values.status !== 'backlog' && values.status !== 'inventory') {
+    fail('INVALID_ARGUMENT', '--ready is for a card in backlog or inventory')
+  }
   if (!master && (values.project?.length ?? 0) > 1) fail('INVALID_ARGUMENT', 'A card has one project: give --project once')
   if (master && values['no-branch']) fail('INVALID_ARGUMENT', 'A master card has no branch already: drop --no-branch')
   if (values['no-branch'] && values.branch !== undefined) fail('INVALID_ARGUMENT', '--branch and --no-branch cannot be used together')
@@ -381,6 +395,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (missing.length) fail('MISSING_ARGUMENT', `Missing required arguments: ${missing.join(', ')}`)
 
   requireOneOf('--status', values.status, STATUSES)
+  requireOneOf('--kind', values.kind, KINDS)
   requireOneOf('--mode', values.mode, MODES)
   requireOneOf('--agent', values.agent, AGENT_IDS)
   requireOneOf('--effort', values.effort, AGENT_EFFORTS)
@@ -407,6 +422,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     title: values.title!,
     description: values.prompt,
     status: (values.status ?? 'backlog') as ColumnId,
+    kind: values.kind as TaskKind | undefined,
     baseBranch: values['base-branch'] ?? null,
     branch: values.branch,
     createBranch: values['no-branch'] ? false : undefined,
@@ -418,11 +434,16 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     attachments,
     storePath,
   }, { translateTitle: claudeTitleTranslator })
+  const ready = values.ready
+    ? setTaskStatus(getStoreAtPath(storePath), { taskId: task.id, status: 'ready', reason: '排進今晚', source: 'cli' }).status
+    : null
   return {
     storePath: resolvedPath,
     task: {
       id: task.id,
       title: task.title,
+      kind: task.role === 'master' ? null : task.kind ?? 'feature',
+      status: ready,
       role: task.role ?? 'slave',
       masterId: task.masterId ?? null,
       after: task.after ?? [],

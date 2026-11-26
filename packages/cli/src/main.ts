@@ -12,7 +12,7 @@ import { createLocalTransport } from '../../core/src/local-transport'
 import { TmuxBackend, hasTmux } from '../../core/src/tmux-backend'
 import { ensurePtySpawnHelper } from '../../core/src/pty-helper'
 import { runTaskCommand, resolveStorePath, TASK_USAGE } from './task-command'
-import { runReleaseCommand, runReportCommand } from './release-command'
+import { runDispatchCommand, runReleaseCommand, runReportCommand } from './release-command'
 import { runTagCommand } from './tag-command'
 import { isWebDir, loginUrl, startHost, type HostOptions, type RunningHost } from './host'
 import { connectToHost } from './remote'
@@ -36,8 +36,9 @@ Usage:
   vibeflow update          Install the latest global npm release (a running Web UI host restarts into it)
   vibeflow task …          Create / update / tag / reorder cards; add artifacts (vibeflow task --help)
   vibeflow tag …           List / create / rename / delete the board's tags (vibeflow tag --help)
+  vibeflow dispatch        下班派工: send tonight's 準備開工 cards out (vibeflow dispatch --help)
   vibeflow release …       The release switch: on | off | status (vibeflow release --help)
-  vibeflow report …        Batch reports: list | show --report <id> (vibeflow report --help)
+  vibeflow report …        Morning reports: list | show --report <id> (vibeflow report --help)
 
 Options:
   --profile dev|prod       Store profile (dev = the "(development)" store npm run dev uses)
@@ -367,6 +368,7 @@ export async function main(argv: string[]): Promise<number> {
     return runTaskCommand(argv.slice(1))
   }
   if (argv[0] === 'tag') return runTagCommand(argv.slice(1))
+  if (argv[0] === 'dispatch') return runDispatchCommand(argv.slice(1))
   if (argv[0] === 'release') return runReleaseCommand(argv.slice(1))
   if (argv[0] === 'report') return runReportCommand(argv.slice(1))
   let parsed

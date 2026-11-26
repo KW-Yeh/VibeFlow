@@ -373,7 +373,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
             const masterTitle = t.masterId ? COLUMNS.flatMap((c) => board[c]).find((m) => m.id === t.masterId)?.title : undefined
             const detail = t.role === 'master'
               ? `Master · ${COLUMNS.flatMap((c) => board[c]).filter((x) => x.masterId === t.id).length} 個 slave`
-              : `${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
+              : `${t.kind === 'ebug' ? 'eBug · ' : ''}${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
             const waitingOn = col === 'backlog' ? (t.after ?? []).filter((id) => !board.done.some((d) => d.id === id)) : []
             const summary = col === 'backlog'
               ? (waitingOn.length ? `等待 ${waitingOn.join('、')}` : '')

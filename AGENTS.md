@@ -173,17 +173,21 @@ npm run vibeflow -- tag list | create --name … [--color …] | update --tag �
 - Card order is the column array's order. `task move` / `vibeflow:moveTask` move one
   card within its column; the board and the workspace rail show the same order.
 
-### Inventory, status tags, release and reports
+### Inventory, status tags, night shift and reports
 
-Spec: `docs/features/autonomous-run/`. The board has a fourth column, **盤點**
-(`inventory`), between Backlog and In Progress. Masters never enter it.
+Specs: `docs/features/autonomous-run/` (盤點, status tags, usage limits, reports) and
+`docs/features/night-shift/` (下班派工, card kinds, the morning report, which replaced
+the release switch's on/off semantics). The board has a fourth column, **盤點**
+(`inventory`), between Backlog and In Progress. Masters never enter it; it is an
+optional daytime step, not a gate — a Backlog card marked 準備開工 goes out too.
 
 ```sh
 npm run vibeflow -- task inventory start --task <id>          # Backlog → 盤點 (host)
 npm run vibeflow -- task inventory context --task <id> --text "…" [--attach <path>]
 npm run vibeflow -- task inventory rerun --task <id>
 npm run vibeflow -- task status --set <key|名稱> [--reason "…"] | --clear   # no host
-npm run vibeflow -- release on | off | status
+npm run vibeflow -- task create … [--kind feature|ebug] [--ready]           # --ready = 排進今晚
+npm run vibeflow -- dispatch [--stop | --status]                             # 下班派工 (host); = release on|off|status
 npm run vibeflow -- report list | show --report <id>                       # no host
 ```
 
@@ -208,18 +212,28 @@ npm run vibeflow -- report list | show --report <id>                       # no 
 - **Running from an inventory**: `startTask` accepts an inventory card (new `runId`);
   its first launch, however it reached In Progress, gets `executionBrief()` instead
   of the card text (`Task.inventory.handedOffAt` makes that once).
-- **Release** (`release.ts`, `setRelease` in `service.ts`): on = a batch, then 準備開工
-  cards in column order up to `concurrency`. Every non-master In Progress card holds a
-  slot unless its status is needs_review / stuck / pr_opened. Ticks run on
-  `state:changed`, board writes, cleanup and host start (deferred to a microtask).
+- **Night shift** (`release.ts`, `setRelease` / `dispatchCard` / `closeBatch` in
+  `service.ts`): on = 下班派工 — refused with `NOTHING_READY` when `dispatchable()` is
+  empty, else a batch, then 準備開工 cards in order (盤點, 待辦, then In Progress cards
+  marked to go again; cards whose `after` is not Done wait) up to `concurrency`. Every
+  non-master In Progress card holds a slot unless its status is needs_review / stuck /
+  pr_opened / ready. A sent card gets `Task.dispatch`; its first launch sends
+  `nightShiftBrief()` (per `Task.kind`: feature / ebug) once (`dispatch.briefedAt`), and
+  a card going again gets a `continueTask` session with `dispatch.redo` (the reason the
+  person wrote) first. A sent card that ends its turn with no status, or sits on a
+  permission prompt, becomes 待你確認 (`settleIdleDispatched`). The batch closes itself
+  once `batchDrained()` (it sent something, none of its cards holds a slot, nothing left
+  to send), recording what it skipped. Ticks run on `state:changed`, board writes,
+  cleanup and host start (deferred to a microtask).
 - **Usage limits** (`claudeQuotaLimit` in `progress.ts`, `heartbeat.ts`): a Claude
   transcript line with `isApiErrorMessage` + `error: 'rate_limit'` gives
   `activity.waitingFor: 'quota'` and `resetsAt`; the host stores `Task.quotaWait`,
   marks 等待額度, and the heartbeat probes after `resetsAt + 60 s` (else every
   `heartbeatMinutes`), then types "continue" through `mailbox.ts` or resumes the ended
   session. A card waiting on a person gets nothing. Codex limits are not detected.
-- **Reports** (`report.ts`): switching off writes `<storeDir>/reports/<id>.md` — a
-  facts table from the batch's events first, then an agent narrative
+- **Reports** (`report.ts`): a closed batch writes its 晨報 to `<storeDir>/reports/<id>.md` —
+  a facts table from the batch's events first, grouped 需要你處理 / 等你驗收 / 已完成 plus
+  沒有派出, then an agent narrative
   (`reportAgent` / `reportModel` / `reportEffort`, default Claude haiku low); a failed
   narrative leaves it `pending` and retries. `reportKeep` (default 10) prunes the oldest.
 - **Settings** live in `settings.autonomous`, always read through

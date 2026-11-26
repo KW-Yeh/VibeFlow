@@ -100,8 +100,8 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, taskAgent, taskModel, type MasterContext } from './launch'
-import { releaseCandidates } from './release'
+import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, nightShiftBrief, taskAgent, taskModel, type MasterContext } from './launch'
+import { batchDrained, dispatchable, releaseCandidates, waitingOnDependencies } from './release'
 import { columnLabel } from './column-labels'
 import { createReporter, isReportId, readReport } from './report'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
@@ -130,7 +130,7 @@ import { execEnv } from './env'
 import { initialClaudeState, reduceClaudeLine } from './progress'
 import { probeAgent } from './quota-probe'
 import { taskStatus, type StatusKey } from './status-keys'
-import { resolveAutonomousSettings, type QuotaWait } from './store'
+import { resolveAutonomousSettings, TASK_KINDS, type QuotaWait, type TaskKind } from './store'
 
 /** What a terminal start asks for. Core turns it into a command. */
 export interface LaunchIntent {
@@ -187,6 +187,8 @@ export interface CreateTaskPayload {
   model?: string
   effort?: AgentEffort
   autoMode?: boolean
+  /** Absent = feature. */
+  kind?: TaskKind
   attachments?: AttachmentInput[]
   github?: GithubRef
   jira?: JiraRef
@@ -200,6 +202,8 @@ export interface UpdateTaskPayload {
   model?: string
   effort?: AgentEffort
   autoMode?: boolean
+  /** Absent keeps the card's kind. */
+  kind?: TaskKind
   projectPath?: string
   baseBranch?: string | null
   /** New branch name; blank/absent keeps the current one. */
@@ -438,6 +442,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       notifier.retry(taskId)
       mailbox.poke(taskId)
       quotaFromActivity(taskId, value.activity)
+      settleIdleDispatched(taskId, value.activity)
     },
     onNotify: (taskId, list) => {
       const prefs = resolveNotificationSettings(getSettings())
@@ -593,7 +598,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
    * brief instead of the old conversation. Nothing the card produced is
    * touched; its usage so far moves into Task.usage.
    */
-  async function continueTask(taskId: string, force: boolean): Promise<{ state: VibeFlowState; task: Task }> {
+  async function continueTask(
+    taskId: string,
+    force: boolean,
+    wrapBrief?: (brief: string) => string
+  ): Promise<{ state: VibeFlowState; task: Task }> {
     const task = requireTask(taskId)
     if (continuing.has(task.id)) throw coded('ALREADY_CONTINUING', '這張卡正在換新 session')
     const column = columnOf(task.id)
@@ -609,7 +618,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
           throw coded('AGENT_BUSY', 'agent 正在執行或等待權限確認；加上 force 才會中斷它並換新 session')
         }
       }
-      const brief = buildContinuationPrompt(await continuationFacts(task))
+      const facts = buildContinuationPrompt(await continuationFacts(task))
+      const brief = wrapBrief ? wrapBrief(facts) : facts
       const usage = usageThroughCurrentRun(task)
       updateTask(task.id, { runId: randomUUID(), launchedAt: Date.now(), ...(usage ? { usage } : {}) })
       resetSubAgents(task.worktreePath)
@@ -904,42 +914,104 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
             ? { ...b, taskIds: [...b.taskIds, card.id], titles: { ...b.titles, [card.id]: card.title } }
             : b)))
           try {
-            await startTask(card.id)
+            await dispatchCard(card, batchId)
           } catch (err) {
             // The start put it back with its reason; the batch keeps the attempt.
             const stillThere = findTask(card.id)
             if (stillThere && columnOf(card.id) !== 'done') {
-              setTaskStatus(getStore(), { taskId: card.id, status: 'stuck', reason: `放行失敗：${(err as Error).message.slice(0, 300)}`, source: 'host' })
+              setTaskStatus(getStore(), { taskId: card.id, status: 'stuck', reason: `派工失敗：${(err as Error).message.slice(0, 300)}`, source: 'host' })
             }
           }
         }
+        const batch = (getStore().get('batches') ?? []).find((b) => b.id === batchId)
+        if (batch && batchDrained(batch, getState().board)) closeBatch()
       } while (releaseAgain)
     } finally {
       releasing = false
     }
   }
 
-  /** Turning the switch on opens a batch; off closes it and leaves running cards to finish. */
+  /**
+   * Send one card of tonight's list out. A card from 待辦 or 盤點 starts; an
+   * In Progress card marked to go again gets a new session on the same branch,
+   * with the correction the person wrote on its status first.
+   */
+  async function dispatchCard(card: Task, batchId: string): Promise<void> {
+    const redo = columnOf(card.id) === 'in_progress' ? card.statusNote?.reason : undefined
+    updateTask(card.id, { dispatch: { batchId, at: Date.now(), ...(redo ? { redo } : {}) } })
+    if (columnOf(card.id) !== 'in_progress') {
+      await startTask(card.id)
+      return
+    }
+    const canWrite = Boolean((await boardCliLaunchInfo())?.cliPath)
+    await continueTask(card.id, false, (progress) => nightShiftBrief(card, { canWrite, redo, progress }))
+    const current = findTask(card.id)
+    if (current?.dispatch) updateTask(card.id, { dispatch: { ...current.dispatch, briefedAt: Date.now() } })
+    setTaskStatus(getStore(), { taskId: card.id, status: 'running', source: 'host' })
+    bus.emit('state:changed', getState())
+  }
+
+  /** End the open batch: nothing more goes out, running cards carry on, the morning report is written. */
+  function closeBatch(): void {
+    const store = getStore()
+    const batchId = store.get('release')?.batchId
+    store.set('release', { enabled: false })
+    if (batchId) {
+      const board = getState().board
+      const skipped = [...dispatchable(board), ...waitingOnDependencies(board)].map((t) => t.id)
+      store.set('batches', (store.get('batches') ?? []).map((b) => (b.id === batchId
+        ? { ...b, endedAt: Date.now(), ...(skipped.length ? { skipped } : {}), titles: { ...b.titles, ...Object.fromEntries(skipped.map((id) => [id, findTask(id)?.title ?? id])) } }
+        : b)))
+      onBatchClosed(batchId)
+    }
+    bus.emit('state:changed', getState())
+  }
+
+  /**
+   * On = 下班派工: open a night-shift batch and send tonight's cards out; it
+   * closes itself once every card it sent stopped. Off = stop sending.
+   */
   function setRelease(enabled: boolean): VibeFlowState {
     const store = getStore()
     const release = store.get('release') ?? { enabled: false }
-    if (enabled === release.enabled) return getState()
+    if (enabled === release.enabled) {
+      if (enabled) void releaseTick()
+      return getState()
+    }
     if (enabled) {
+      if (dispatchable(getState().board).length === 0) throw coded('NOTHING_READY', '沒有可以派出的卡片：先把卡片標成「準備開工」（排進今晚）')
       const batchId = randomUUID().slice(0, 8)
       store.set('batches', [...(store.get('batches') ?? []), { id: batchId, startedAt: Date.now(), taskIds: [], titles: {}, events: [] }])
       store.set('release', { enabled: true, batchId })
       bus.emit('state:changed', getState())
       void releaseTick()
     } else {
-      const batchId = release.batchId
-      store.set('release', { enabled: false })
-      if (batchId) {
-        store.set('batches', (store.get('batches') ?? []).map((b) => (b.id === batchId ? { ...b, endedAt: Date.now() } : b)))
-        onBatchClosed(batchId)
-      }
-      bus.emit('state:changed', getState())
+      closeBatch()
     }
     return getState()
+  }
+
+  /**
+   * A card the night shift sent out that ended its turn without a status, or
+   * sits on a permission prompt, waits for a person: say so and free its slot,
+   * or the batch never ends and the morning has no report.
+   */
+  function settleIdleDispatched(taskId: string, activity: Activity): void {
+    if (activity.state !== 'waiting' || (activity.waitingFor !== 'input' && activity.waitingFor !== 'permission')) return
+    const task = findTask(taskId)
+    const briefedAt = task?.dispatch?.briefedAt
+    if (!task || !briefedAt || columnOf(taskId) !== 'in_progress') return
+    if (getStore().get('release')?.batchId !== task.dispatch?.batchId) return
+    if ((activity.at ?? 0) <= briefedAt) return
+    const status = taskStatus(task)
+    if (status && status !== 'running') return
+    setTaskStatus(getStore(), {
+      taskId,
+      status: 'needs_review',
+      reason: activity.waitingFor === 'permission' ? '卡在權限確認' : 'agent 結束回合但沒有回報狀態',
+      source: 'host',
+    })
+    bus.emit('state:changed', getState())
   }
 
   const reporter = createReporter({
@@ -1147,16 +1219,33 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const settings = getSettings()
     const library = await libraryLaunchInfo(task.worktreePath)
     const boardCli = await boardCliLaunchInfo()
+    const isContinuation = Boolean(continuation)
+    const firstLaunch = !continuation && !intent.resume && intent.includeTaskPrompt !== false
+    let briefed = false
+    if (firstLaunch && task.dispatch && !task.dispatch.briefedAt) {
+      briefed = true
+      const inventoried = Boolean(task.inventory?.finishedAt && !task.inventory.handedOffAt)
+      continuation = nightShiftBrief(task, { canWrite: Boolean(boardCli?.cliPath), docs: inventoried ? task.inventory?.docs ?? [] : [] })
+      updateTask(task.id, {
+        dispatch: { ...task.dispatch, briefedAt: Date.now() },
+        ...(inventoried ? { inventory: { ...task.inventory, handedOffAt: Date.now() } } : {}),
+      })
+      if (columnOf(task.id) === 'in_progress') setTaskStatus(getStore(), { taskId: task.id, status: 'running', source: 'host' })
+    } else if (firstLaunch && taskStatus(task) === 'ready' && !(task.inventory?.finishedAt && !task.inventory.handedOffAt) && columnOf(task.id) === 'in_progress') {
+      // Started by hand instead of by the night shift: it is no longer waiting to go out.
+      setTaskStatus(getStore(), { taskId: task.id, status: null, source: 'host' })
+    }
     // A card's first run after its inventory starts from the spec and plan,
     // whichever way it reached In Progress (released, started, dragged).
     if (!continuation && !intent.resume && intent.includeTaskPrompt !== false && task.inventory?.finishedAt && !task.inventory.handedOffAt) {
+      briefed = true
       continuation = executionBrief(task, task.inventory.docs ?? [], { canWrite: Boolean(boardCli?.cliPath) })
       updateTask(task.id, { inventory: { ...task.inventory, handedOffAt: Date.now() } })
       if (columnOf(task.id) === 'in_progress') setTaskStatus(getStore(), { taskId: task.id, status: 'running', source: 'host' })
     }
     let route = settledRoute(task)
     // A continuation keeps the model and effort the card's run already settled on.
-    const needsRoute = !continuation && (!taskModel(task) || task.effort === 'auto')
+    const needsRoute = !isContinuation && !(briefed && task.inventory?.finishedAt) && (!taskModel(task) || task.effort === 'auto')
     if (needsRoute && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
@@ -1644,6 +1733,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.github !== undefined && !isGithubRef(p.github)) invalid('github must be an issue or pr ref on github.com')
       if (p.jira !== undefined && !isJiraRef(p.jira)) invalid('jira must be a Jira ticket ref')
       if (p.createBranch !== undefined && typeof p.createBranch !== 'boolean') invalid('createBranch must be a boolean')
+      if (p.kind !== undefined && !TASK_KINDS.includes(p.kind)) invalid('unknown kind')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
         role: p.role,
@@ -1661,6 +1751,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         model: p.model,
         effort: p.effort,
         autoMode: p.autoMode,
+        kind: p.role === 'master' ? undefined : p.kind,
         attachments: p.attachments,
         github: p.github,
         jira: p.jira,
@@ -1734,6 +1825,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         throw new Error('只有待辦的任務可以編輯')
       }
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
+      if (p.kind !== undefined && !TASK_KINDS.includes(p.kind)) invalid('unknown kind')
       let masterPatch: Partial<Task> = {}
       if (p.masterId !== undefined) {
         if (p.masterId !== null) {
@@ -1804,6 +1896,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         jevRoute: undefined,
         effort: p.effort,
         autoMode: p.autoMode,
+        ...(p.kind !== undefined && !isMasterTask(existing) ? { kind: p.kind === 'ebug' ? 'ebug' as const : undefined } : {}),
         ...masterPatch,
         ...gitPatch,
       })

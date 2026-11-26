@@ -8,7 +8,7 @@
 import type { AgentCliId } from './agents'
 import type { BoardCliLaunchInfo } from './board-cli'
 import type { LibraryLaunchInfo } from './library'
-import type { Task } from './store'
+import type { Task, TaskKind } from './store'
 
 /**
  * Temporary-artifact directory suffix. User-facing files are copied to
@@ -351,8 +351,11 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
     opts.autoMode
       ? '3. 確認：auto mode 開著，不必等使用者確認，寫完計畫就建卡。'
       : '3. 確認：寫完計畫就停下來，等使用者同意或修改；使用者同意之前不要建任何卡。',
-    '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--after <前置卡 id>]',
+    '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--kind feature|ebug] [--after <前置卡 id>]',
     '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——卡片看不到你的對話。',
+    '   eBug 卡用 --kind ebug，prompt 列出單號即可；同一個元件的多張 eBug 合併成一張卡。',
+    '   使用者說要「今晚派工」或「下班派」時，建卡加上 --ready（排進今晚），不要 task start；派工由使用者按「下班派工」。',
+    '   每張卡要是一晚做得完、隔天早上審得完的大小；做法還不確定的，在 prompt 寫明「先寫 plan」。',
     '   標題要短、彼此一眼分得出來：以這張卡負責的部分開頭（例如「後端：…」「驗收：…」），不要讓多張卡共用同一段開頭。',
     '   預設不要加 --model / --effort：沒指定時 Jev 會依任務複雜度挑模型與 effort；只有任務明確需要特定模型或 effort 時才指定。需要時可加 --agent / --base-branch。',
     opts.autoMode
@@ -363,6 +366,70 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
     '   使用者要你轉達時才用 VF task send --store-path "$VIBEFLOW_STORE_DIR" --task <id> --text <內容> 對卡片下指示。你不會把卡片移到 Done、不會合併 PR。',
     '   跟使用者提到任何一張卡時，一律寫成 <id>「<標題>」——卡片上看得到 id，使用者靠它對上是哪一張。'
   )
+  return lines.join('\n')
+}
+
+const NIGHT_STEPS: Record<TaskKind, string[]> = {
+  feature: [
+    '1. 做法不確定時先寫 plan（照 feature-spec-plan 的 plan.md），確定了再實作。',
+    '2. 實作，補上對應的 unit test。',
+    '3. 自己 review 一遍 diff，修掉看到的問題。',
+    '4. 專案的 lint／typecheck／test 全部跑過且通過。',
+    '5. commit、push 到這張卡的分支，開 Draft PR；有寫 plan 就把 plan 附在 PR 內文。',
+  ],
+  ebug: [
+    '1. 讀單：用 ebug skill（或 eCL）讀任務描述裡列出的每一張 eBug 單，照單上的網址、步驟與預期值。',
+    '2. 照單重現並量測，記下修正前的數據或畫面。',
+    '3. 修正，修完再量一次；修正前後的截圖存進 "$VIBEFLOW_ARTIFACTS_DIR"，也附進 PR。',
+    '4. 自己 review 一遍 diff；專案的 lint／typecheck／test 全部跑過且通過。',
+    '5. commit、push 到這張卡的分支，開 Draft PR，PR 內文逐張列出單號、原因與修正前後。',
+  ],
+}
+
+/**
+ * The first message of a card a night-shift batch sent out. Nobody is around
+ * until morning, so the card must not wait on a question; it ends with a
+ * status a person can read in the morning report.
+ */
+export function nightShiftBrief(
+  task: Pick<Task, 'title' | 'description' | 'kind'>,
+  opts: { canWrite: boolean; docs?: string[]; redo?: string; progress?: string }
+): string {
+  const kind: TaskKind = task.kind === 'ebug' ? 'ebug' : 'feature'
+  const lines: string[] = []
+  const redo = opts.redo?.trim()
+  if (redo) lines.push('## 修正方向（最優先）', redo, '', '這張卡之前已經做過一輪，上面是使用者驗收後要你改的方向。在同一個分支上接著做，PR 也沿用。', '')
+  lines.push(
+    `任務標題：${task.title}`,
+    `類型：${kind === 'ebug' ? 'eBug' : 'Feature'}`,
+    '',
+    '這張卡是 VibeFlow 下班派工派出的夜班任務。現在沒有人在線上，明天早上才會有人看結果。',
+    '- 不要停下來問問題，也不要等確認。能判斷的照最合理的解讀做下去，把你的假設寫進 PR 內文。',
+    '- 推到共用分支、force push、處理 secret、更動 lock 檔都不在授權內；碰到時就停止並回報。',
+    '- PR 一律開成 Draft。'
+  )
+  const docs = opts.docs ?? []
+  if (docs.length) {
+    lines.push('', '這張卡白天已經盤點過，先讀完這些文件；plan.md 的「執行準備」是這次的授權範圍：', ...docs.map((d) => `- ${d}`))
+  }
+  lines.push('', '## 步驟', ...NIGHT_STEPS[kind])
+  if (opts.canWrite) {
+    lines.push(
+      '',
+      '## 回報狀態（一定要做，早上的晨報靠它）',
+      ...BOARD_CLI_SETUP,
+      '- 開出 Draft PR 之後：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set pr_opened --reason "<PR 連結>"',
+      '- 需要人決定才能繼續：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set needs_review --reason "<需要決定什麼>"，然後停止。',
+      '- 卡住、無法繼續：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set stuck --reason "<卡在哪裡>"，然後停止。',
+      '結束這一回合前一定要設好其中一個狀態；沒有設，VibeFlow 會把卡片標成「待你確認」。'
+    )
+  } else {
+    lines.push('', '這次啟動無法使用 board CLI（找不到 VIBEFLOW_CLI）；結束時把結果與 PR 連結寫在最後的回覆裡。')
+  }
+  const description = task.description?.trim()
+  if (description) lines.push('', '## 任務描述', description)
+  const progress = opts.progress?.trim()
+  if (progress) lines.push('', '## 上一輪的進度', progress)
   return lines.join('\n')
 }
 

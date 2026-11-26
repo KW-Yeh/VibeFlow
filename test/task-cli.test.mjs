@@ -185,3 +185,26 @@ test('task status --set replaces the card status and refuses an unknown one (AC-
   assert.equal((await task(['status', '--task', card.id, ...store])).error.code, 'MISSING_ARGUMENT')
   assert.equal((await task(['status', '--task', card.id, '--clear', ...store])).task.status, null)
 })
+
+test('task create --kind ebug --ready puts an eBug card on tonight\'s list; dispatch needs a host (night shift)', async (t) => {
+  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { projectPath, cleanup } = await makeRepo({ withRemote: false })
+  t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
+  const store = ['--store-path', storeDir]
+  const created = await task(['create', '--project', projectPath, '--title', 'Bugs', '--prompt', 'WCL260522-0003', '--kind', 'ebug', '--ready', ...store])
+  assert.equal(created.task.kind, 'ebug')
+  assert.equal(created.task.status, 'ready')
+  const saved = getStoreAtPath(storeDir).get('board').backlog.find((c) => c.id === created.task.id)
+  assert.equal(saved.kind, 'ebug')
+  assert.ok(saved.tags.includes('status:ready'))
+  assert.equal(saved.worktreePath, undefined)
+
+  assert.equal((await task(['create', '--project', projectPath, '--title', 'x', '--prompt', 'p', '--kind', 'chore', ...store])).error.code, 'INVALID_ARGUMENT')
+  assert.equal((await task(['create', '--role', 'master', '--title', 'M', '--prompt', 'p', '--ready', ...store])).error.code, 'INVALID_ARGUMENT')
+  const updated = await task(['update', '--task', created.task.id, '--kind', 'feature', ...store])
+  assert.equal(updated.ok, true)
+  assert.equal(getStoreAtPath(storeDir).get('board').backlog.find((c) => c.id === created.task.id).kind, undefined)
+
+  const { stdout } = await run(process.execPath, ['--experimental-strip-types', '--import', './test/support/register.mjs', 'scripts/vibeflow.mjs', 'dispatch', ...store], { cwd: root }).catch((err) => err)
+  assert.equal(JSON.parse(stdout).error.code, 'HOST_NOT_RUNNING')
+})

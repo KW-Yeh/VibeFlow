@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { occupiedSlots, readyCards, releaseCandidates } from '../packages/core/src/release.ts'
+import { occupiedSlots, dispatchable, releaseCandidates } from '../packages/core/src/release.ts'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
@@ -37,7 +37,7 @@ test('ready cards are released in inventory-column order, up to the free slots',
     inventory: [card('a', { tags: ['status:ready'] }), card('q', { tags: ['status:needs_answer'] }), card('b', { tags: ['status:ready'] }), card('c', { tags: ['status:ready'] })],
     in_progress: [card('x')],
   })
-  assert.deepEqual(readyCards(b).map((t) => t.id), ['a', 'b', 'c'])
+  assert.deepEqual(dispatchable(b).map((t) => t.id), ['a', 'b', 'c'])
   assert.deepEqual(releaseCandidates(b, 3).map((t) => t.id), ['a', 'b'])
   assert.deepEqual(releaseCandidates(b, 1), [])
 })
@@ -81,7 +81,7 @@ async function releaseCore(t) {
   getStore().set('batches', [])
   const sessions = fakeSessions()
   const bus = new EventBus()
-  const core = createCore({ sessions, bus, version: '9.9.9', prStatus: async () => null, quotaProbe: async () => true })
+  const core = createCore({ sessions, bus, version: '9.9.9', prStatus: async () => null, quotaProbe: async () => true, agentRunner: async () => '敘述' })
   t.after(() => core.shutdown())
   return { core, sessions, bus, projectPath }
 }

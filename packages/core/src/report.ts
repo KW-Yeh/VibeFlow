@@ -122,23 +122,47 @@ export function reportRows(batch: ReleaseBatch, board: BoardState, usageOf: (tas
 
 const COLUMN_LABEL = COLUMN_LABELS
 
-/** The facts-only part of a report, in markdown. */
+/** Which part of the morning report a card belongs in. */
+export function reportGroup(row: ReportRow): 'attention' | 'review' | 'closed' {
+  if (row.column === 'done' || !row.column) return 'closed'
+  if (row.status === 'pr_opened') return 'review'
+  return 'attention'
+}
+
+const GROUP_HEADINGS: Record<ReturnType<typeof reportGroup>, string> = {
+  attention: '## 需要你處理',
+  review: '## 等你驗收',
+  closed: '## 已完成或已刪除',
+}
+
+/** The facts-only part of a report, in markdown: what needs a person first, then what waits for review. */
 export function reportTable(batch: ReleaseBatch, rows: ReportRow[]): string {
   const lines = [
-    `# 放行批次報告 ${batch.id}`,
+    `# 晨報 ${time(batch.endedAt ?? batch.startedAt).slice(0, 10)}（批次 ${batch.id}）`,
     '',
     `- 開始：${time(batch.startedAt)}（UTC）`,
     `- 結束：${time(batch.endedAt)}（UTC）`,
-    `- 放行卡片：${rows.length} 張；進行中 ${rows.filter((r) => r.inProgress).length} 張`,
-    '',
-    '## 卡片',
-    '',
-    '| 卡片 | 欄位 | 最後狀態 | 原因 | Token | 耗時 | PR |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
+    `- 派出卡片：${rows.length} 張；需要你處理 ${rows.filter((r) => reportGroup(r) === 'attention').length} 張，等你驗收 ${rows.filter((r) => reportGroup(r) === 'review').length} 張`,
   ]
-  for (const r of rows) {
-    const state = r.column === 'done' ? `已完成（${statusLabel(r.status)}）` : r.inProgress ? `進行中（${statusLabel(r.status)}）` : statusLabel(r.status)
-    lines.push(`| ${cell(`${r.taskId} ${r.title}`)} | ${r.column ? COLUMN_LABEL[r.column] : '已刪除'} | ${cell(state)} | ${cell(r.reason ?? '')} | ${r.usage ? formatTokens(totalTokens(r.usage)) : '—'} | ${r.durationMs !== undefined ? formatDuration(r.durationMs) : '—'} | ${cell(r.pr ?? '')} |`)
+  for (const group of ['attention', 'review', 'closed'] as const) {
+    const part = rows.filter((r) => reportGroup(r) === group)
+    if (!part.length) continue
+    lines.push(
+      '',
+      GROUP_HEADINGS[group],
+      '',
+      '| 卡片 | 欄位 | 最後狀態 | 原因 | Token | 耗時 | PR |',
+      '| --- | --- | --- | --- | --- | --- | --- |',
+    )
+    for (const r of part) {
+      const state = r.column === 'done' ? `已完成（${statusLabel(r.status)}）` : r.inProgress ? `進行中（${statusLabel(r.status)}）` : statusLabel(r.status)
+      lines.push(`| ${cell(`${r.taskId} ${r.title}`)} | ${r.column ? COLUMN_LABEL[r.column] : '已刪除'} | ${cell(state)} | ${cell(r.reason ?? '')} | ${r.usage ? formatTokens(totalTokens(r.usage)) : '—'} | ${r.durationMs !== undefined ? formatDuration(r.durationMs) : '—'} | ${cell(r.pr ?? '')} |`)
+    }
+  }
+  const skipped = batch.skipped ?? []
+  if (skipped.length) {
+    lines.push('', '## 沒有派出', '', '批次結束時仍標著「準備開工」、但沒有派出的卡（例如等待的卡還沒完成）：', '')
+    for (const id of skipped) lines.push(`- ${id} ${batch.titles?.[id] ?? id}`)
   }
   lines.push('', '## 狀態時間軸', '')
   for (const r of rows) {
@@ -156,7 +180,7 @@ export function reportTable(batch: ReleaseBatch, rows: ReportRow[]): string {
 /** What the narrative agent is asked. It reads the table only; it runs no tools. */
 export function narrativePrompt(table: string): string {
   return [
-    '以下是 VibeFlow 一個放行批次的事實表格。請用繁體中文寫一段給人看的敘述，三到八個短段落或條列：',
+    '以下是 VibeFlow 一個夜班批次的事實表格，使用者早上會先讀這份晨報。請用繁體中文寫一段給人看的敘述，三到八個短段落或條列，需要使用者處理的卡寫在最前面：',
     '- 完成了什麼（哪些卡開了 PR、進了已完成）',
     '- 卡在哪個環節（待你確認、卡住、等待額度，以及原因）',
     '- 哪些卡片比其他卡片花更多時間或 token',
@@ -271,7 +295,7 @@ export function createReporter(options: ReporterOptions): Reporter {
         batchId,
         createdAt: now,
         status: 'pending',
-        title: `放行批次 ${batch.id}（${rows.length} 張卡）`,
+        title: `晨報 ${new Date(now).toISOString().slice(0, 10)}（${rows.length} 張卡）`,
       }
       const kept = pruneReports([entry, ...entries()], options.keep(), options.storeDir())
       store.set('reports', kept)

@@ -184,6 +184,27 @@ export interface Task {
   inventory?: TaskInventory
   /** The reason that came with the card's current status. */
   statusNote?: TaskStatusNote
+  /** What the work is; decides the night-shift steps. Absent = feature. Never set on a master. */
+  kind?: TaskKind
+  /** Set when a night-shift batch sent the card out; absent = never dispatched. */
+  dispatch?: TaskDispatch
+}
+
+export const TASK_KINDS = ['feature', 'ebug'] as const
+export type TaskKind = (typeof TASK_KINDS)[number]
+
+export function taskKind(task: Pick<Task, 'kind'>): TaskKind {
+  return task.kind === 'ebug' ? 'ebug' : 'feature'
+}
+
+export interface TaskDispatch {
+  batchId: string
+  /** Epoch ms the card was sent out. */
+  at: number
+  /** Epoch ms its night-shift brief went out; absent = the next launch sends it. */
+  briefedAt?: number
+  /** The correction the person wrote when sending a running card out again. */
+  redo?: string
 }
 
 /** A status label the user can put on any number of cards. Cards refer to it by `id`, so it can be renamed. */
@@ -423,6 +444,8 @@ export interface ReleaseBatch {
   /** Title of each released card when it was released, so the report outlives the card. */
   titles?: Record<string, string>
   events: StatusEvent[]
+  /** 準備開工 cards still waiting when the batch closed (e.g. on an unfinished dependency). */
+  skipped?: string[]
 }
 
 export interface ReportEntry {

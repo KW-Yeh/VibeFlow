@@ -6,11 +6,14 @@ import {
   GitPullRequest,
   GitPullRequestDraft,
   GripVertical,
+  Bug,
   Layers,
   Loader2,
+  Moon,
   MoreHorizontal,
   Network,
   Pencil,
+  Redo2,
   Plus,
   Tag,
   Trash2,
@@ -24,7 +27,9 @@ import { jevResultLabel, jevRoutingLabel } from '@/lib/jev'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { IconButton } from '@/components/ui/icon-button'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
-import { openExternal } from '@/lib/api'
+import { openExternal, setTaskStatus } from '@/lib/api'
+import { RedoDialog } from '@/components/autonomous'
+import { taskStatus } from '@/lib/status'
 import { cardMove } from '@/lib/board-moves'
 import { COLUMN_LABELS } from '@/lib/column-labels'
 import { GITHUB_STATE_CLASS, GITHUB_STATE_LABEL } from '@/lib/github-display'
@@ -105,12 +110,14 @@ export const MENU_ITEM =
 
 /** w-52 plus the room the menu needs; used to keep it inside the viewport. */
 const MENU_WIDTH = 208
-const MENU_HEIGHT = 224
+const MENU_HEIGHT = 260
 
 function CardMenu({
   task,
   anchor,
   onEdit,
+  onTonight,
+  onRedo,
   onTags,
   onDelete,
   onClose,
@@ -121,6 +128,10 @@ function CardMenu({
   anchor: { top: number; right: number }
   /** Absent = the card is read-only (only Backlog cards are editable). */
   onEdit?: () => void
+  /** 待辦 / 盤點 cards: put on or take off tonight's list. */
+  onTonight?: () => void
+  /** Running cards: go out again with the next 下班派工. */
+  onRedo?: () => void
   onTags: () => void
   onDelete: () => void
   onClose: () => void
@@ -151,6 +162,36 @@ function CardMenu({
         >
           <Pencil className="size-3.5 shrink-0" />
           編輯任務
+        </button>
+      )}
+
+      {onTonight && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onTonight()
+            onClose()
+          }}
+          className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
+        >
+          <Moon className="size-3.5 shrink-0" />
+          {taskStatus(task) === 'ready' ? '取消排進今晚' : '排進今晚'}
+        </button>
+      )}
+
+      {onRedo && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onRedo()
+            onClose()
+          }}
+          className={cn('focus-visible:ring-[3px] focus-visible:ring-ring/50', MENU_ITEM, 'hover:bg-accent hover:text-accent-foreground')}
+        >
+          <Redo2 className="size-3.5 shrink-0" />
+          改方向重派…
         </button>
       )}
 
@@ -364,12 +405,21 @@ function TaskCard({
   )
   const menuOpen = menuAnchor !== null
   const [tagAnchor, setTagAnchor] = useState<{ top: number; right: number } | null>(null)
+  const [redoOpen, setRedoOpen] = useState(false)
   const running = column === 'in_progress'
   const done = column === 'done'
   const isMaster = task.role === 'master'
   const terminalDirectory = isMaster ? '工作' : running || (done && task.worktreePath) ? '分支' : '專案'
 
+  const status = taskStatus(task)
+  const canTonight = !isMaster && (column === 'backlog' || (column === 'inventory' && (status === 'ready' || status === 'needs_answer')))
+  const toggleTonight = () => {
+    const off = status === 'ready'
+    void setTaskStatus(task.id, off ? null : 'ready', off ? undefined : '排進今晚').catch(() => {})
+  }
+
   return (
+    <>
     <div
       ref={cardRef}
       role="button"
@@ -419,6 +469,12 @@ function TaskCard({
         <span className={cn('min-w-0 flex-1 truncate', isMaster && 'font-medium text-master')}>
           {projectLabel(task)}
         </span>
+        {task.kind === 'ebug' && (
+          <span className="flex shrink-0 items-center gap-0.5 rounded-xs bg-muted px-1 py-0.5 text-[11px] text-foreground" title="eBug 卡片">
+            <Bug className="size-2.5" />
+            eBug
+          </span>
+        )}
         <TaskId id={task.id} />
         <IconButton
           aria-label={`在${terminalDirectory}目錄開啟 Terminal：${task.title}`}
@@ -547,6 +603,8 @@ function TaskCard({
           task={task}
           anchor={menuAnchor}
           onEdit={onEdit}
+          onTonight={canTonight ? toggleTonight : undefined}
+          onRedo={running && !isMaster && task.launchedAt && task.worktreePath ? () => setRedoOpen(true) : undefined}
           onTags={() => setTagAnchor(menuAnchor)}
           onDelete={onDelete}
           onClose={() => setMenuAnchor(null)}
@@ -555,6 +613,8 @@ function TaskCard({
 
       {tagAnchor && <TagPicker task={task} anchor={tagAnchor} onClose={() => setTagAnchor(null)} />}
     </div>
+    <RedoDialog task={redoOpen ? task : null} onClose={() => setRedoOpen(false)} />
+    </>
   )
 }
 

@@ -3,6 +3,8 @@ import type {
   UpdateCheckResult,
   AgentCli,
   AgentCliId,
+  TaskKind,
+  StatusKey,
   AgentEffort,
   AgentModelList,
   AppSettings,
@@ -112,6 +114,12 @@ export async function deleteTag(tagId: string): Promise<VibeFlowState | null> {
 }
 
 /** `add` takes tag ids or names; an unknown name becomes a new tag. */
+/** A card's reserved status; null clears it. */
+export async function setTaskStatus(taskId: string, status: StatusKey | null, reason?: string): Promise<VibeFlowState | null> {
+  const b = bridge()
+  return b ? b.setTaskStatus({ taskId, status, ...(reason ? { reason } : {}) }) : null
+}
+
 export async function setTaskTags(taskId: string, change: { add?: string[]; remove?: string[] }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.setTaskTags({ taskId, ...change }) : null
@@ -296,6 +304,7 @@ export async function updateTask(payload: {
   masterId?: string | null
   /** A master's related projects; [] clears them. */
   projects?: string[]
+  kind?: TaskKind
 }): Promise<VibeFlowState | null> {
   const b = bridge()
   return b ? b.updateTask(payload) : null

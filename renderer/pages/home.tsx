@@ -519,6 +519,7 @@ export default function HomePage() {
         baseBranch: payload.baseBranch,
         branch: payload.branch,
         masterId: payload.masterId,
+        kind: payload.kind,
       })
       if (state) setBoard(state.board)
       return true

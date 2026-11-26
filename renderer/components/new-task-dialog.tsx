@@ -22,6 +22,7 @@ import {
   useModelEfforts,
 } from '@/components/task-form-layout'
 import { filesToAttachmentInputs } from '@/lib/file-attachments'
+import { TASK_KIND_OPTIONS } from '@/lib/task-kind'
 import { cn } from '@/lib/utils'
 import { basenameFromPath as basename } from '@/lib/workspace-path'
 import type {
@@ -33,6 +34,7 @@ import type {
   GithubRef,
   JiraRef,
   RecentProjectEntry,
+  TaskKind,
 } from '@/lib/types'
 
 interface AttachmentItem {
@@ -58,6 +60,8 @@ export interface NewTaskDraft {
   projects?: string[]
   /** Ordinary cards only: the master to dispatch it under. */
   masterId?: string
+  /** Ordinary cards only; absent = feature. */
+  kind?: TaskKind
   agentCli: AgentCliId
   model: string
   effort: AgentEffort
@@ -129,6 +133,7 @@ export function NewTaskDialog({
   const [baseBranch, setBaseBranch] = useState('')
   const [branch, setBranch] = useState(initial?.branch ?? '')
   const [createBranch, setCreateBranch] = useState(true)
+  const [kind, setKind] = useState<TaskKind>('feature')
   const [agents, setAgents] = useState<AgentCli[] | null>(null)
   const [detectTimedOut, setDetectTimedOut] = useState(false)
   const [detectKey, setDetectKey] = useState(0)
@@ -308,6 +313,7 @@ export function NewTaskDialog({
             baseBranch: hasRemote ? baseBranch || null : null,
             branch: createBranch ? branch.trim() : '',
             ...(createBranch ? {} : { createBranch: false }),
+            ...(kind === 'ebug' ? { kind } : {}),
             masterId: masterId || undefined,
           }
     )
@@ -398,7 +404,9 @@ export function NewTaskDialog({
         placeholder={
           isMaster
             ? '描述整體目標、涉及的 repo 與限制。Master 會先判斷要不要拆成多張卡…'
-            : '描述這個任務的目標、需求或背景脈絡…（可以直接把檔案拖進來當附件）'
+            : kind === 'ebug'
+              ? '列出 eBug 單號即可（同一個元件的多張可以放在同一張卡），晚上由 agent 自己讀單…'
+              : '描述這個任務的目標、需求或背景脈絡…（可以直接把檔案拖進來當附件）'
         }
         className={cn(fieldClass, 'min-h-32 flex-1 resize-none text-sm leading-6')}
       />
@@ -553,6 +561,16 @@ export function NewTaskDialog({
         </PropertyNote>
       )}
       {!projectPath && <PropertyNote>選擇專案後才能建立任務。</PropertyNote>}
+      <PropertyRow label="類型">
+        <Select
+          name="kind"
+          aria-label="類型"
+          value={kind}
+          onChange={(value) => setKind(value as TaskKind)}
+          className={ROW_FIELD}
+          options={TASK_KIND_OPTIONS}
+        />
+      </PropertyRow>
       {gitInfo && !projectMissing && !loadingInfo && !initializing && !isRepo && createBranch && (
         <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm">
           <p>
