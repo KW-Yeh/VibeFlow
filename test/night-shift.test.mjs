@@ -8,7 +8,7 @@ import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
 import { findTask, getStore } from '../packages/core/src/store.ts'
-import { createTaskFromInput, updateTaskFromInput } from '../packages/core/src/tasks.ts'
+import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId, nightShiftBrief } from '../packages/core/src/launch.ts'
 import { claudeProjectDir } from '../packages/core/src/progress-tracker.ts'
 import { reportRows, reportTable } from '../packages/core/src/report.ts'
@@ -17,18 +17,17 @@ import { taskStatus } from '../packages/core/src/status-keys.ts'
 import { makeRepo } from './support/repo.mjs'
 
 const card = (id, extra = {}) => ({ id, title: id, branch: '', ...extra })
-const board = (b) => ({ backlog: [], inventory: [], in_progress: [], done: [], ...b })
+const board = (b) => ({ backlog: [], in_progress: [], done: [], ...b })
 const READY = ['status:ready']
 
 // --- tonight's list ---
 
-test('tonight goes out in order: 盤點, 待辦, then running cards marked to go again; waits and masters stay', () => {
+test('tonight goes out in order: 待辦, then running cards marked to go again; waits and masters stay', () => {
   const b = board({
-    backlog: [card('b1', { tags: READY }), card('plain'), card('m', { role: 'master', tags: READY }), card('dep', { tags: READY, after: ['x'] })],
-    inventory: [card('i1', { tags: READY }), card('ask', { tags: ['status:needs_answer'] })],
+    backlog: [card('b1', { tags: READY }), card('plain'), card('m', { role: 'master', tags: READY }), card('dep', { tags: READY, after: ['x'] }), card('b2', { tags: READY })],
     in_progress: [card('redo', { tags: READY, launchedAt: 1, worktreePath: '/w' }), card('run', { tags: ['status:running'] })],
   })
-  assert.deepEqual(dispatchable(b).map((t) => t.id), ['i1', 'b1', 'redo'])
+  assert.deepEqual(dispatchable(b).map((t) => t.id), ['b1', 'b2', 'redo'])
   assert.deepEqual(waitingOnDependencies(b).map((t) => t.id), ['dep'])
   assert.equal(occupiedSlots(b), 1, 'a card waiting to go again holds no slot')
   b.done.push(card('x'))
@@ -49,17 +48,12 @@ test('a batch is drained once it sent something, nothing it sent holds a slot an
 
 // --- the brief ---
 
-test('a feature and an eBug get their own night steps; both open a Draft PR and report a status (AC-5)', () => {
-  const feature = nightShiftBrief({ title: 'Login', description: '做登入' }, { canWrite: true })
-  const ebug = nightShiftBrief({ title: 'Player bugs', description: 'WCL260522-0003', kind: 'ebug' }, { canWrite: true })
-  for (const text of [feature, ebug]) {
-    assert.ok(text.includes('Draft PR'))
-    assert.ok(text.includes('--set pr_opened'))
-    assert.ok(text.includes('不要停下來問問題'))
+test('the night brief hands the work to work-mode and overrides only what would wait for a person (AC-5)', () => {
+  const text = nightShiftBrief({ title: 'Player bugs', description: 'WCL260522-0003' }, { canWrite: true })
+  for (const part of ['work-mode', '預先授權', '不要停下來問問題', 'Draft', '不要盯 PR', 'pr-watch', '--set pr_opened', '--set stuck', 'WCL260522-0003']) {
+    assert.ok(text.includes(part), part)
   }
-  assert.ok(feature.includes('unit test') && feature.includes('先寫 plan'))
-  assert.ok(ebug.includes('ebug skill') && ebug.includes('重現') && ebug.includes('VIBEFLOW_ARTIFACTS_DIR'))
-  assert.ok(!feature.includes('ebug skill'))
+  assert.ok(!text.includes('## 步驟'), 'no steps of its own: the playbook decides them')
   const redo = nightShiftBrief({ title: 'Login' }, { canWrite: false, redo: '改用 OAuth', progress: '分支 vf-1，PR #3' })
   assert.ok(redo.startsWith('## 修正方向'))
   assert.ok(redo.includes('改用 OAuth') && redo.includes('PR #3'))
@@ -142,12 +136,11 @@ test('下班派工 with nothing marked for tonight is refused (AC-4)', async (t)
   assert.deepEqual(getStore().get('batches'), [])
 })
 
-test('下班派工 sends backlog cards out up to the limit with the night brief; a freed slot sends the next (AC-1, AC-3, AC-5)', async (t) => {
+test('下班派工 sends backlog cards out up to the limit with the night brief; a freed slot sends the next (AC-2, AC-3, AC-5)', async (t) => {
   const { core, sessions, bus, projectPath } = await nightCore(t)
   const c = await tonight(projectPath, 'gamma')
-  const b = await tonight(projectPath, 'beta', { kind: 'ebug' })
+  const b = await tonight(projectPath, 'beta')
   const a = await tonight(projectPath, 'alpha')
-  assert.equal(findTask(b.id).kind, 'ebug')
   assert.equal(findTask(a.id).worktreePath, undefined, 'marking a card for tonight provisions nothing')
 
   core.handlers['vibeflow:setRelease']({ enabled: true })
@@ -155,8 +148,7 @@ test('下班派工 sends backlog cards out up to the limit with the night brief;
   assert.deepEqual(columnIds('in_progress').sort(), [a.id, b.id].sort())
   assert.deepEqual(columnIds('backlog'), [c.id])
   const startOf = (id) => sessions.starts.find((s) => s.key === id).command
-  assert.ok(startOf(a.id).includes('夜班任務') && startOf(a.id).includes('unit test'))
-  assert.ok(startOf(b.id).includes('ebug skill'))
+  for (const id of [a.id, b.id]) assert.ok(startOf(id).includes('夜班任務') && startOf(id).includes('work-mode'))
   for (const id of [a.id, b.id]) {
     assert.equal(taskStatus(findTask(id)), 'running')
     assert.ok(findTask(id).dispatch.briefedAt)
@@ -236,13 +228,4 @@ test('a ready card started by hand drops its 準備開工 and gets no night brie
   await core.handlers['vibeflow:startTask'](a.id)
   assert.equal(taskStatus(findTask(a.id)), null)
   assert.ok(!sessions.starts.find((s) => s.key === a.id).command.includes('夜班任務'))
-})
-
-test('the kind can be changed on update and is never kept on a master', async (t) => {
-  const { projectPath } = await nightCore(t)
-  const { task } = await createTaskFromInput({ projectPath, title: 'k', kind: 'ebug' })
-  updateTaskFromInput({ taskId: task.id, kind: 'feature' })
-  assert.equal(findTask(task.id).kind, undefined)
-  const { task: master } = await createTaskFromInput({ role: 'master', title: 'm', kind: 'ebug' })
-  assert.equal(findTask(master.id).kind, undefined)
 })

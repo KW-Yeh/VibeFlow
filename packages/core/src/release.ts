@@ -32,19 +32,17 @@ function isReady(task: Task): boolean {
 }
 
 /**
- * Tonight's list in dispatch order: 盤點, then 待辦, then In Progress cards
- * marked to go again, each in column order. Cards still waiting on another
- * card are left out.
+ * Tonight's list in dispatch order: 待辦, then In Progress cards marked to go
+ * again, each in column order. Cards still waiting on another card are left out.
  */
 export function dispatchable(board: BoardState): Task[] {
   const redo = board.in_progress.filter((t) => isReady(t) && t.launchedAt && t.worktreePath)
-  return [...board.inventory, ...board.backlog.filter((t) => isReady(t)), ...redo]
-    .filter((t) => isReady(t) && dependenciesDone(board, t))
+  return [...board.backlog.filter(isReady), ...redo].filter((t) => dependenciesDone(board, t))
 }
 
 /** 準備開工 cards that cannot go out yet because a card they wait on is not Done. */
 export function waitingOnDependencies(board: BoardState): Task[] {
-  return [...board.inventory, ...board.backlog, ...board.in_progress]
+  return [...board.backlog, ...board.in_progress]
     .filter((t) => isReady(t) && !dependenciesDone(board, t))
 }
 

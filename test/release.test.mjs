@@ -7,7 +7,7 @@ import { occupiedSlots, dispatchable, releaseCandidates } from '../packages/core
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
-import { findTask, getStore, updateTask } from '../packages/core/src/store.ts'
+import { findTask, getStore } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { executorSessionId } from '../packages/core/src/launch.ts'
 import { setTaskStatus } from '../packages/core/src/status-tags.ts'
@@ -15,7 +15,7 @@ import { taskStatus } from '../packages/core/src/status-keys.ts'
 import { makeRepo } from './support/repo.mjs'
 
 const card = (id, extra = {}) => ({ id, title: id, branch: '', ...extra })
-const board = (b) => ({ backlog: [], inventory: [], in_progress: [], done: [], ...b })
+const board = (b) => ({ backlog: [], in_progress: [], done: [], ...b })
 
 test('every non-master In Progress card holds a slot unless its status gave it back', () => {
   const b = board({
@@ -32,9 +32,9 @@ test('every non-master In Progress card holds a slot unless its status gave it b
   assert.equal(occupiedSlots(b), 3)
 })
 
-test('ready cards are released in inventory-column order, up to the free slots', () => {
+test('ready cards are released in 待辦 order, up to the free slots', () => {
   const b = board({
-    inventory: [card('a', { tags: ['status:ready'] }), card('q', { tags: ['status:needs_answer'] }), card('b', { tags: ['status:ready'] }), card('c', { tags: ['status:ready'] })],
+    backlog: [card('a', { tags: ['status:ready'] }), card('q', { tags: ['status:stuck'] }), card('b', { tags: ['status:ready'] }), card('c', { tags: ['status:ready'] })],
     in_progress: [card('x')],
   })
   assert.deepEqual(dispatchable(b).map((t) => t.id), ['a', 'b', 'c'])
@@ -65,9 +65,17 @@ const settle = async (ms = 300) => {
   while (Date.now() < end) await new Promise((r) => setTimeout(r, 10))
 }
 
+/** Wait until `check` holds; the host starts cards in the background. */
+async function until(check, ms = 8000) {
+  const end = Date.now() + ms
+  while (!check()) {
+    if (Date.now() > end) throw new Error('timed out waiting for the host')
+    await new Promise((r) => setTimeout(r, 20))
+  }
+}
+
 async function readyCard(projectPath, title) {
-  const { task } = await createTaskFromInput({ projectPath, title, description: `做 ${title}`, status: 'inventory' })
-  updateTask(task.id, { inventory: { finishedAt: Date.now(), passes: 1, docs: [`docs/features/${title}/plan.md`, `docs/features/${title}/spec.md`] } })
+  const { task } = await createTaskFromInput({ projectPath, title, description: `做 ${title}`, model: 'sonnet', effort: 'high' })
   setTaskStatus(getStore(), { taskId: task.id, status: 'ready', source: 'host' })
   return findTask(task.id)
 }
@@ -95,28 +103,26 @@ test('switching release on with a limit of 2 starts the first two ready cards wi
   const c = await readyCard(projectPath, 'gamma')
   // createTaskFromInput puts each new card first; order the column a, b, c.
   const state = getStore().get('board')
-  getStore().set('board', { ...state, inventory: [a, b, c].map((x) => state.inventory.find((y) => y.id === x.id)) })
+  getStore().set('board', { ...state, backlog: [a, b, c].map((x) => state.backlog.find((y) => y.id === x.id)) })
   core.handlers['vibeflow:setSettings']({ autonomous: { concurrency: 2 } })
 
   core.handlers['vibeflow:setRelease']({ enabled: true })
-  await settle()
+  await until(() => [a.id, b.id].every((id) => taskStatus(findTask(id)) === 'running'))
   assert.deepEqual(columnIds('in_progress').sort(), [a.id, b.id].sort())
-  assert.deepEqual(columnIds('inventory'), [c.id])
+  assert.deepEqual(columnIds('backlog'), [c.id])
   for (const x of [a, b]) {
     const started = findTask(x.id)
     const start = sessions.starts.find((s) => s.key === x.id)
-    assert.ok(started.runId, 'a released card gets a new run')
     assert.ok(start.command.includes(`--session-id ${executorSessionId(x.id, started.runId)}`), 'a new session, not a resume')
-    assert.ok(start.command.includes(`docs/features/${x.title}/plan.md`), 'the first message points at the plan')
-    assert.ok(start.command.includes('執行準備'), 'and says the 執行準備 is the authorization')
+    assert.ok(start.command.includes('work-mode'), 'the first message hands the work to work-mode')
     assert.equal(taskStatus(started), 'running')
   }
 
   // One card opens its PR: its slot is free again.
   setTaskStatus(getStore(), { taskId: a.id, status: 'pr_opened', reason: 'https://example.test/pr/1', source: 'cli' })
   bus.emit('state:changed', core.handlers['vibeflow:getState']())
-  await settle()
-  assert.deepEqual(columnIds('inventory'), [])
+  await until(() => taskStatus(findTask(c.id)) === 'running')
+  assert.deepEqual(columnIds('backlog'), [])
   assert.ok(columnIds('in_progress').includes(c.id))
 
   const batch = getStore().get('batches')[0]
@@ -131,14 +137,14 @@ test('switching off stops releasing and closes the batch; running cards keep goi
   core.handlers['vibeflow:setSettings']({ autonomous: { concurrency: 1 } })
   const a = await readyCard(projectPath, 'one')
   core.handlers['vibeflow:setRelease']({ enabled: true })
-  await settle()
+  await until(() => taskStatus(findTask(a.id)) === 'running')
   assert.deepEqual(columnIds('in_progress'), [a.id])
   core.handlers['vibeflow:setRelease']({ enabled: false })
   const b = await readyCard(projectPath, 'two')
   setTaskStatus(getStore(), { taskId: a.id, status: 'pr_opened', source: 'cli' })
   bus.emit('state:changed', core.handlers['vibeflow:getState']())
   await settle()
-  assert.deepEqual(columnIds('inventory'), [b.id], 'nothing is released with the switch off')
+  assert.deepEqual(columnIds('backlog'), [b.id], 'nothing is released with the switch off')
   assert.ok(sessions.alive.has(a.id), 'the running card was not stopped')
   const [batch] = getStore().get('batches')
   assert.ok(batch.endedAt >= batch.startedAt)
@@ -153,18 +159,7 @@ test('a switch left on keeps releasing after a host restart', async (t) => {
   const sessions = fakeSessions()
   const core = createCore({ sessions, bus: new EventBus(), version: '9.9.9', prStatus: async () => null })
   t.after(() => core.shutdown())
-  await settle()
+  await until(() => taskStatus(findTask(a.id)) === 'running')
   assert.deepEqual(columnIds('in_progress'), [a.id])
   assert.deepEqual(getStore().get('batches')[0].taskIds, [a.id])
-})
-
-test('a ready card started by hand gets the same execution brief, once', async (t) => {
-  const { core, sessions, projectPath } = await releaseCore(t)
-  const a = await readyCard(projectPath, 'manual')
-  await core.handlers['vibeflow:startTask'](a.id)
-  const start = sessions.starts.find((s) => s.key === a.id)
-  assert.ok(start.command.includes('docs/features/manual/plan.md'))
-  assert.equal(taskStatus(findTask(a.id)), 'running')
-  // A later start of the same card (a restart) is not handed the brief again.
-  assert.ok(findTask(a.id).inventory.handedOffAt)
 })

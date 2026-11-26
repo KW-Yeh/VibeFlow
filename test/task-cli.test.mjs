@@ -186,24 +186,22 @@ test('task status --set replaces the card status and refuses an unknown one (AC-
   assert.equal((await task(['status', '--task', card.id, '--clear', ...store])).task.status, null)
 })
 
-test('task create --kind ebug --ready puts an eBug card on tonight\'s list; dispatch needs a host (night shift)', async (t) => {
+test('task create --ready puts a card on tonight\'s list without provisioning it; dispatch needs a host (night shift)', async (t) => {
   const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
   const store = ['--store-path', storeDir]
-  const created = await task(['create', '--project', projectPath, '--title', 'Bugs', '--prompt', 'WCL260522-0003', '--kind', 'ebug', '--ready', ...store])
-  assert.equal(created.task.kind, 'ebug')
+  const created = await task(['create', '--project', projectPath, '--title', 'Bugs', '--prompt', 'WCL260522-0003', '--ready', ...store])
   assert.equal(created.task.status, 'ready')
   const saved = getStoreAtPath(storeDir).get('board').backlog.find((c) => c.id === created.task.id)
-  assert.equal(saved.kind, 'ebug')
   assert.ok(saved.tags.includes('status:ready'))
   assert.equal(saved.worktreePath, undefined)
 
-  assert.equal((await task(['create', '--project', projectPath, '--title', 'x', '--prompt', 'p', '--kind', 'chore', ...store])).error.code, 'INVALID_ARGUMENT')
+  assert.equal((await task(['create', '--project', projectPath, '--title', 'x', '--prompt', 'p', '--kind', 'ebug', ...store])).error.code, 'INVALID_ARGUMENT', 'cards have no kind')
+  assert.equal((await task(['create', '--project', projectPath, '--title', 'x', '--prompt', 'p', '--status', 'inventory', ...store])).error.code, 'INVALID_ARGUMENT', 'no 盤點 column')
   assert.equal((await task(['create', '--role', 'master', '--title', 'M', '--prompt', 'p', '--ready', ...store])).error.code, 'INVALID_ARGUMENT')
-  const updated = await task(['update', '--task', created.task.id, '--kind', 'feature', ...store])
-  assert.equal(updated.ok, true)
-  assert.equal(getStoreAtPath(storeDir).get('board').backlog.find((c) => c.id === created.task.id).kind, undefined)
+  assert.equal((await task(['inventory', 'start', '--task', created.task.id, ...store])).error.code, 'UNKNOWN_COMMAND')
+  assert.equal((await task(['status', '--task', created.task.id, '--set', 'needs_answer', ...store])).error.code, 'UNKNOWN_STATUS')
 
   const { stdout } = await run(process.execPath, ['--experimental-strip-types', '--import', './test/support/register.mjs', 'scripts/vibeflow.mjs', 'dispatch', ...store], { cwd: root }).catch((err) => err)
   assert.equal(JSON.parse(stdout).error.code, 'HOST_NOT_RUNNING')

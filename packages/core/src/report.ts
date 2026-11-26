@@ -43,8 +43,12 @@ export function reportPath(storeDir: string, id: string): string {
   return path.join(reportsDir(storeDir), `${id}.md`)
 }
 
+/** Statuses that are gone but may still sit in an old batch's events. */
+const RETIRED_STATUS_NAMES: Record<string, string> = { inventorying: '盤點中', needs_answer: '待回答' }
+
 function statusLabel(status: StatusKey | null | undefined): string {
-  return status ? STATUS_DEFS[status].name : '—'
+  if (!status) return '—'
+  return STATUS_DEFS[status]?.name ?? RETIRED_STATUS_NAMES[status] ?? status
 }
 
 function time(ms: number | undefined): string {

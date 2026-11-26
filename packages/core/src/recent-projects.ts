@@ -40,7 +40,7 @@ export function rememberProject(
 /** Seed the list from projects the board's cards already use, newest first. */
 export function recentProjectsFromBoard(board: BoardState): RecentProject[] {
   const byPath = new Map<string, RecentProject>()
-  for (const task of [...board.backlog, ...(board.inventory ?? []), ...board.in_progress, ...board.done]) {
+  for (const task of [...board.backlog, ...board.in_progress, ...board.done]) {
     if (!task.projectPath) continue
     const lastUsedAt = task.createdAt ?? 0
     const prev = byPath.get(task.projectPath)

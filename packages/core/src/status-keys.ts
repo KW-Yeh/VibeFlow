@@ -4,8 +4,6 @@
  * not change what the program reads. No imports: the renderer may use it.
  */
 export const STATUS_KEYS = [
-  'inventorying',
-  'needs_answer',
   'ready',
   'running',
   'quota_wait',

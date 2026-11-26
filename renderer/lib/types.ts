@@ -18,9 +18,7 @@ export type {
   ReleaseBatch,
   StatusEvent,
   AutonomousSettings,
-  TaskInventory,
   QuotaWait,
-  TaskKind,
 } from '../../packages/core/src/store'
 export type { StatusKey } from '../../packages/core/src/status-keys'
 export type { TagColor } from '../../packages/core/src/tag-colors'

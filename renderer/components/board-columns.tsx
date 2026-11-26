@@ -6,7 +6,6 @@ import {
   GitPullRequest,
   GitPullRequestDraft,
   GripVertical,
-  Bug,
   Layers,
   Loader2,
   Moon,
@@ -63,13 +62,12 @@ import {
 } from '@/lib/board-filter'
 import { readBoardFilters, writeBoardFilters } from '@/lib/view-persistence'
 
-const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
+const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 
 const COLUMN_LABEL = COLUMN_LABELS
 
 const COLUMN_DOT: Record<ColumnId, string> = {
   backlog: 'bg-muted-foreground/60',
-  inventory: 'bg-tag-blue',
   in_progress: 'bg-warning animate-pulse',
   done: 'bg-success',
 }
@@ -128,7 +126,7 @@ function CardMenu({
   anchor: { top: number; right: number }
   /** Absent = the card is read-only (only Backlog cards are editable). */
   onEdit?: () => void
-  /** 待辦 / 盤點 cards: put on or take off tonight's list. */
+  /** 待辦 cards: put on or take off tonight's list. */
   onTonight?: () => void
   /** Running cards: go out again with the next 下班派工. */
   onRedo?: () => void
@@ -265,7 +263,6 @@ export function slaveState(
   doneIds?: ReadonlySet<string>
 ): { dot: string; label: string; spinning?: boolean } {
   if (column === 'done') return { dot: 'bg-success', label: COLUMN_LABELS.done }
-  if (column === 'inventory') return { dot: 'bg-tag-blue', label: '盤點' }
   if (column === 'backlog') {
     if (task.launchError) return { dot: 'bg-destructive', label: '開始失敗' }
     const waitingOn = (task.after ?? []).filter((id) => !doneIds?.has(id))
@@ -412,7 +409,7 @@ function TaskCard({
   const terminalDirectory = isMaster ? '工作' : running || (done && task.worktreePath) ? '分支' : '專案'
 
   const status = taskStatus(task)
-  const canTonight = !isMaster && (column === 'backlog' || (column === 'inventory' && (status === 'ready' || status === 'needs_answer')))
+  const canTonight = !isMaster && column === 'backlog'
   const toggleTonight = () => {
     const off = status === 'ready'
     void setTaskStatus(task.id, off ? null : 'ready', off ? undefined : '排進今晚').catch(() => {})
@@ -469,12 +466,7 @@ function TaskCard({
         <span className={cn('min-w-0 flex-1 truncate', isMaster && 'font-medium text-master')}>
           {projectLabel(task)}
         </span>
-        {task.kind === 'ebug' && (
-          <span className="flex shrink-0 items-center gap-0.5 rounded-xs bg-muted px-1 py-0.5 text-[11px] text-foreground" title="eBug 卡片">
-            <Bug className="size-2.5" />
-            eBug
-          </span>
-        )}
+
         <TaskId id={task.id} />
         <IconButton
           aria-label={`在${terminalDirectory}目錄開啟 Terminal：${task.title}`}
@@ -578,7 +570,7 @@ function TaskCard({
         </p>
       )}
 
-      {(column === 'inventory' || running) && task.statusNote?.reason && task.tags?.includes(`status:${task.statusNote.status}`) && (
+      {running && task.statusNote?.reason && task.tags?.includes(`status:${task.statusNote.status}`) && (
         <p className="mt-1.5 truncate text-xs text-muted-foreground" title={task.statusNote.reason}>
           {task.statusNote.reason}
         </p>
@@ -690,7 +682,7 @@ export function BoardColumns({
   }
   // Run times are shown to the minute, so a 30s tick is enough to keep them honest.
 
-  const allTasks = [...board.backlog, ...board.inventory, ...board.in_progress, ...board.done]
+  const allTasks = [...board.backlog, ...board.in_progress, ...board.done]
   const reducedMotion = useReducedMotion() ?? false
   const allIds = new Set(allTasks.map((task) => task.id))
   // Cards already on the board when it first showed any are not "new": only a
@@ -774,7 +766,7 @@ export function BoardColumns({
           tree on return so workspace updates cannot leave stale projections.
           Filter and master expansion state stay in BoardColumns. */}
       {view === 'board' && <LayoutGroup id="board-cards">
-      <div className="grid min-h-0 flex-1 grid-cols-4 gap-4 overflow-hidden px-5 pb-4 pt-3">
+      <div className="grid min-h-0 flex-1 grid-cols-3 gap-4 overflow-hidden px-5 pb-4 pt-3">
         {COLUMNS.map((column) => {
           const tasks = visible(column)
           const droppable = dragging !== null && cardMove(dragging.from, column) !== null

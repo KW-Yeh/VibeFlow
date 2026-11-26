@@ -11,7 +11,7 @@ import { editFormState, editInEditor, loadFormContext, newFormState, showForm } 
 
 const h = React.createElement
 
-const COLUMNS: ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
+const COLUMNS: ColumnId[] = ['backlog', 'in_progress', 'done']
 const COLUMN_TITLES = COLUMN_LABELS
 
 /** Ctrl+] leaves a pty passthrough, as in telnet. */
@@ -102,17 +102,12 @@ export function moveCard(
   now = Date.now()
 ): { board: BoardState; task: Task; to: ColumnId; column: number; effect: 'launch' | 'cleanup' | 'reset' | null } | null {
   const from = COLUMNS[sel.column]
-  // The TUI shows the inventory column but offers no inventory operations:
-  // its cards stay put, and moves step over it.
-  if (from === 'inventory') return null
-  const step = COLUMNS[sel.column + direction] === 'inventory' ? 2 * direction : direction
-  const to = COLUMNS[sel.column + step]
+  const to = COLUMNS[sel.column + direction]
   const task = board[from][sel.index]
   if (!to || !task) return null
   const moved = from === 'backlog' && to === 'in_progress' ? { ...task, launchedAt: now } : task
   const next: BoardState = {
     backlog: board.backlog.filter((t) => t.id !== task.id),
-    inventory: board.inventory.filter((t) => t.id !== task.id),
     in_progress: board.in_progress.filter((t) => t.id !== task.id),
     done: board.done.filter((t) => t.id !== task.id),
   }
@@ -125,7 +120,7 @@ export function moveCard(
         : from === 'in_progress' && to === 'backlog'
           ? 'reset'
           : null
-  return { board: next, task: moved, to, effect, column: sel.column + step }
+  return { board: next, task: moved, to, effect, column: sel.column + direction }
 }
 
 function truncate(text: string, width: number): string {
@@ -230,7 +225,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
           const { state, task } = await api.resetTaskRun(move.task.id)
           const b = state.board
           const without = (list: Task[]) => list.filter((t) => t.id !== task.id)
-          const next = { backlog: [task, ...without(b.backlog)], inventory: without(b.inventory), in_progress: without(b.in_progress), done: without(b.done) }
+          const next = { backlog: [task, ...without(b.backlog)], in_progress: without(b.in_progress), done: without(b.done) }
           setBoard((await api.setBoard(next)).board)
         } else {
           setBoard((await api.setBoard(move.board)).board)
@@ -373,7 +368,7 @@ function BoardView({ opts, initial, initialMessage, onAction }: BoardViewProps) 
             const masterTitle = t.masterId ? COLUMNS.flatMap((c) => board[c]).find((m) => m.id === t.masterId)?.title : undefined
             const detail = t.role === 'master'
               ? `Master · ${COLUMNS.flatMap((c) => board[c]).filter((x) => x.masterId === t.id).length} 個 slave`
-              : `${t.kind === 'ebug' ? 'eBug · ' : ''}${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
+              : `${t.projectName ?? ''} · ${t.branch}${masterTitle ? ` · ◆ ${masterTitle}` : ''}`
             const waitingOn = col === 'backlog' ? (t.after ?? []).filter((id) => !board.done.some((d) => d.id === id)) : []
             const summary = col === 'backlog'
               ? (waitingOn.length ? `等待 ${waitingOn.join('、')}` : '')

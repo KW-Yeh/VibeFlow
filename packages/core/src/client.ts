@@ -216,21 +216,13 @@ export function createBridge(t: BridgeTransport) {
    */
   continueTask: (payload: { taskId: string; force?: boolean }): Promise<{ state: VibeFlowState; task: Task }> =>
     t.invoke('vibeflow:continueTask', payload),
-  /** Backlog → 盤點: provision the card and start its headless inventory pass. */
-  startInventory: (taskId: string): Promise<{ state: VibeFlowState; task: Task }> =>
-    t.invoke('vibeflow:startInventory', taskId),
-  /** Run an inventory card's pass again, with its extra context. Refused while one runs (`INVENTORY_RUNNING`). */
-  rerunInventory: (taskId: string): Promise<VibeFlowState> =>
-    t.invoke('vibeflow:rerunInventory', taskId),
-  /** The inventory panel's extra context (replaces the text) and attachments (added). */
-  setInventoryContext: (payload: { taskId: string; context?: string; attachments?: AttachmentInput[] }): Promise<VibeFlowState> =>
-    t.invoke('vibeflow:setInventoryContext', payload),
-  /** The release switch: on opens a batch and starts 準備開工 cards up to the concurrency limit; off closes it. */
+  /**
+   * 下班派工: on opens a night-shift batch and sends 準備開工 cards out up to the
+   * concurrency limit (`NOTHING_READY` when there are none); it closes itself
+   * once they all stopped. Off stops sending and closes it.
+   */
   setRelease: (payload: { enabled: boolean }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setRelease', payload),
-  /** The spec.md / plan.md an inventory card's passes wrote, with their text. */
-  readInventoryDocs: (taskId: string): Promise<{ path: string; content: string }[]> =>
-    t.invoke('vibeflow:readInventoryDocs', taskId),
   /** Batch reports, newest first. */
   listReports: (): Promise<ReportEntry[]> => t.invoke('reports:list'),
   /** One report's index entry and markdown; null when it is gone. */

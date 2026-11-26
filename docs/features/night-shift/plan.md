@@ -2,8 +2,8 @@
 
 - 狀態：已確認
 - 對應 Spec：[spec.md](./spec.md)
-- 更新日期：2026-11-26
-- 確認紀錄：2026-11-26 使用者回覆「可以，寫完規格與計畫就開始實作」，授權直接實作。分支：`feat/night-shift`。
+- 更新日期：2026-11-26（第二版）
+- 確認紀錄：2026-11-26 使用者回覆「可以，寫完規格與計畫就開始實作」，授權直接實作。分支：`feat/night-shift`。同日回覆「刪掉盤點，改用 work-mode」，第二版見最後一節；第一版的 `kind` 與 Feature／eBug 步驟已撤除，下方第一版內容保留作為決策紀錄。
 
 ## 現有程式碼調查
 
@@ -80,3 +80,30 @@
 
 - activity 的判斷依賴 transcript 格式。如果 agent 中途結束回合、後來又被 hook 喚醒，卡片可能被提早標成「待你確認」。後果是名額提早讓出、晨報多列一張，不會遺失工作。
 - 舊版程式在夜班進行中改寫 store，可能丟掉 `dispatch` 欄位，那張卡就不會收到夜班 brief。這和 autonomous-run 記載的風險相同。
+
+## 第二版：移除盤點、夜班改用 work-mode、移除 kind
+
+### 所有使用端（契約變更檢查）
+
+| 契約 | 使用端 |
+| --- | --- |
+| `ColumnId` 的 `inventory`、`BoardState.inventory`、`COLUMN_IDS` | core：`store.ts`、`service.ts`、`release.ts`、`github.ts`、`recent-projects.ts`、`column-labels.ts`；CLI：`task-command.ts`（`--status`）；TUI；renderer：`kanban-board.tsx`、`board-columns.tsx`、`workspace-task-rail.tsx`、`lib/board-moves.ts`、`pages/home.tsx`、`autonomous.tsx`；測試：`board-moves`、`store-migration`、`tui`、`release`、`report`、`night-shift` |
+| handler：`vibeflow:startInventory`、`rerunInventory`、`setInventoryContext`、`readInventoryDocs` | `client.ts`、`renderer/lib/api.ts`、`autonomous.tsx`、`IPC_API_MAP.md`、CLI `task inventory` |
+| 狀態 key `inventorying`、`needs_answer` | `status-keys.ts`、`status-tags.ts`、`report.ts`（舊事件）、renderer 的狀態顯示 |
+| `Task.inventory`、`QuotaWait.phase: 'inventory'` | `service.ts`（pass、啟動、額度）、`launch.ts`（`inventoryPrompt`、`executionBrief`）、`autonomous.tsx`（盤點面板） |
+| `settings.autonomous.inventoryCommands` | `store.ts`、`autonomous.tsx`（設定區）、`inventory.ts` |
+| `Task.kind`、`--kind`、類型選項 | 第一版才加，尚未發佈：`store.ts`、`tasks.ts`、`service.ts`、`launch.ts`、`task-command.ts`、renderer 對話框與卡片、TUI、測試 |
+
+### 做法
+
+1. **夜班 brief**：`nightShiftBrief` 不再有步驟表，改成「用 work-mode 處理」加上覆寫規則（不等確認、不問、Draft PR、回報後結束、不盯 PR）。重派時修正方向與上一輪進度放法不變。
+2. **刪除**：`inventory.ts`、`inventoryPrompt`、`executionBrief`、盤點 pass 與四個 handler、`leftInventory`、`startInventory`、`QuotaWait.phase` 的 `inventory`、CLI `task inventory`、盤點面板與設定區的 `inventoryCommands`、`test/inventory.test.mjs`。
+3. **`dispatchable()`** 只看待辦和進行中的重派卡。
+4. **狀態 key** 移除兩個。`report.ts` 的狀態名稱對未知 key 退回固定名稱表，舊批次事件照常顯示。
+5. **migration（v5 → v6）**，依欄位而不是只看版本號：board 上還有 `inventory` 陣列就搬卡（到待辦最前面），清掉兩個狀態標籤與盤點額度等待，把 `Task.inventory.context` 附加到描述，最後寫回三欄的 board；標籤清單移除兩個保留標籤。`Task.inventory` 其餘欄位不再讀，留在資料裡不刪（和 store 既有的做法一致：舊 key 不讀，但不毀掉使用者資料）。`normalizeBoard` 只回傳三欄，舊版程式寫回的空 `inventory` 也會被丟掉。
+6. **移除 `kind`**：還沒發佈，直接撤掉，不需要 migration。
+
+### 驗證
+
+- 兩個 typecheck、`npm test`（`store-migration` 加 v5 → v6 案例、`night-shift` 改寫 brief 斷言、刪除 `inventory.test.mjs`）、`npm run build:web`、`npm run test:e2e`。
+- 用一份手寫的 v5 store（盤點欄有準備開工、待回答、帶 context 的卡）啟動 host，在 Web UI 確認三欄與卡片位置。

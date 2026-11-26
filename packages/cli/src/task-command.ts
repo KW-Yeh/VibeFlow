@@ -10,16 +10,15 @@ import { createNodePlatform, defaultUserDataDir, setPlatform } from '../../core/
 import { findTask, getStoreAtPath, isMasterTask } from '../../core/src/store'
 import { liveHost } from '../../core/src/lock'
 import { connectToHost } from './remote'
-import type { ColumnId, TaskKind } from '../../core/src/store'
+import type { ColumnId } from '../../core/src/store'
 import { TAG_COLORS } from '../../core/src/tag-colors'
 
 const AGENT_IDS: string[] = AGENT_CLIS.map((agent) => agent.id)
-const STATUSES = ['backlog', 'inventory', 'in_progress', 'done']
-const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list', 'show', 'send', 'inventory', 'artifact']
+const STATUSES = ['backlog', 'in_progress', 'done']
+const SUBCOMMANDS = ['create', 'update', 'tag', 'status', 'move', 'start', 'list', 'show', 'send', 'artifact']
 /** Write the store directly, so they work without a host — and default to the calling card's store. */
 const SHELL_COMMANDS = ['artifact', 'tag', 'status', 'move']
 const ROLES = ['slave', 'master']
-const KINDS = ['feature', 'ebug']
 const MODES = ['existing', 'new']
 const AUTO_MODES = ['on', 'off']
 
@@ -36,8 +35,6 @@ Usage:
   vibeflow task list [--master <id>] [options]
   vibeflow task show --task <id> [options]
   vibeflow task send --task <id> --text <text> [options]
-  vibeflow task inventory start|rerun --task <id> [options]
-  vibeflow task inventory context --task <id> [--text <text>] [--attach <path>]… [options]
   vibeflow task artifact add --file <path> [options]
 
 task create options:
@@ -56,8 +53,6 @@ task create options:
   --title <text>         Task title (required)
   --prompt <text>        Task prompt / description (required)
   --status <column>      ${STATUSES.join(' | ')}  (default: backlog)
-  --kind <kind>          ${KINDS.join(' | ')}  (default: feature). An ebug card's prompt
-                         can be just the eBug numbers; the night shift reads them
   --ready                Mark the card 準備開工: it goes out with the next 下班派工
                          (vibeflow dispatch)
   --base-branch <name>   Branch the worktree is created from (default: repo's current branch)
@@ -83,13 +78,12 @@ task update options:
   --prompt <text>        New card description (empty string clears it)
   --status <column>      ${STATUSES.join(' | ')}  — moves the card between columns
   --master <id|none>     Put the card under a master, or "none" to take it out
-  --kind <kind>          ${KINDS.join(' | ')}
   --after <id|none>      Cards of the same master this one waits on (repeat for
                          several), or "none" to clear them
   --store-path <dir>     Explicit store directory
   --profile <name>       dev | prod — shorthand for common store paths
 
-  At least one of --title / --prompt / --status / --master / --after / --kind is required. Branch,
+  At least one of --title / --prompt / --status / --master / --after is required. Branch,
   worktree and project path are provisioned on disk and cannot be changed here.
 
 task tag options (no host needed; see also \`vibeflow tag --help\`):
@@ -105,9 +99,8 @@ task tag options (no host needed; see also \`vibeflow tag --help\`):
 task status options (no host needed):
   --task <id>            Card to set (defaults to VIBEFLOW_TASK_ID in a task shell)
   --set <status>         One of the reserved statuses, by key or by its tag's name:
-                         inventorying（盤點中）, needs_answer（待回答）, ready（準備開工）,
-                         running（執行中）, quota_wait（等待額度）, needs_review（待你確認）,
-                         stuck（卡住）, pr_opened（已開 PR）
+                         ready（準備開工）, running（執行中）, quota_wait（等待額度）,
+                         needs_review（待你確認）, stuck（卡住）, pr_opened（已開 PR）
   --reason <text>        Why; kept on the card and in the release batch's history
   --clear                Remove the card's status instead
   The card's other status tag is removed: a card has at most one. An unknown
@@ -138,15 +131,6 @@ task start / list / show / send (need the running VibeFlow host):
                          sender. Only a master and its own cards can message each
                          other. --from defaults to VIBEFLOW_TASK_ID; --force types
                          even into a permission dialog
-
-task inventory (needs the running VibeFlow host):
-  start --task <id>      Move a Backlog card to 盤點: its branch and worktree are
-                         created and a headless pass writes spec.md / plan.md with
-                         執行準備. The card ends up 準備開工 or 待回答
-  rerun --task <id>      Run the pass again on an inventory card, with its context
-  context --task <id> [--text <text>] [--attach <path>]…
-                         Set the card's extra context (replaces the text) and attach
-                         files; the description is never changed
 
 task artifact add options:
   --file <path>         Copy a file into the card's user-facing Artifacts folder
@@ -223,7 +207,6 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
         project:       { type: 'string', multiple: true },
         after:         { type: 'string', multiple: true },
         role:          { type: 'string' },
-        kind:          { type: 'string' },
         ready:         { type: 'boolean' },
         'work-dir':    { type: 'string' },
         master:        { type: 'string' },
@@ -340,14 +323,13 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (values['new-session'] && sub !== 'start') fail('INVALID_ARGUMENT', '--new-session only goes with task start')
   if (sub === 'start' && values.force && !values['new-session']) fail('INVALID_ARGUMENT', '--force goes with task start --new-session')
 
-  if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath, action)
+  if (HOST_COMMANDS.includes(sub)) return hostCommand(sub, values, storePath)
 
   if (sub === 'update') {
     if (!values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
     requireOneOf('--status', values.status, STATUSES)
-    requireOneOf('--kind', values.kind, KINDS)
-    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined && values.after === undefined && values.kind === undefined) {
-      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master, --after, --kind')
+    if (values.title === undefined && values.prompt === undefined && values.status === undefined && values.master === undefined && values.after === undefined) {
+      fail('MISSING_ARGUMENT', 'task update needs at least one of: --title, --prompt, --status, --master, --after')
     }
     if (values.project !== undefined) fail('INVALID_ARGUMENT', 'task update cannot change --project')
     const { task, storePath: resolvedPath } = updateTaskFromInput({
@@ -357,7 +339,6 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
       status: values.status as ColumnId | undefined,
       masterId: values.master === undefined ? undefined : values.master === 'none' ? null : values.master,
       after: values.after === undefined ? undefined : values.after.filter((id) => id !== 'none'),
-      kind: values.kind as TaskKind | undefined,
       storePath,
     })
     return {
@@ -381,9 +362,9 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     fail('INVALID_ARGUMENT', 'A master card has no project of its own: drop --base-branch / --branch / --mode')
   }
   if (master && values.after) fail('INVALID_ARGUMENT', 'A master card cannot wait on other cards: drop --after')
-  if (master && (values.kind !== undefined || values.ready)) fail('INVALID_ARGUMENT', 'A master card has no kind and never goes out with the night shift: drop --kind / --ready')
-  if (values.ready && values.status !== undefined && values.status !== 'backlog' && values.status !== 'inventory') {
-    fail('INVALID_ARGUMENT', '--ready is for a card in backlog or inventory')
+  if (master && values.ready) fail('INVALID_ARGUMENT', 'A master card never goes out with the night shift: drop --ready')
+  if (values.ready && values.status !== undefined && values.status !== 'backlog') {
+    fail('INVALID_ARGUMENT', '--ready is for a card in backlog')
   }
   if (!master && (values.project?.length ?? 0) > 1) fail('INVALID_ARGUMENT', 'A card has one project: give --project once')
   if (master && values['no-branch']) fail('INVALID_ARGUMENT', 'A master card has no branch already: drop --no-branch')
@@ -395,7 +376,6 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   if (missing.length) fail('MISSING_ARGUMENT', `Missing required arguments: ${missing.join(', ')}`)
 
   requireOneOf('--status', values.status, STATUSES)
-  requireOneOf('--kind', values.kind, KINDS)
   requireOneOf('--mode', values.mode, MODES)
   requireOneOf('--agent', values.agent, AGENT_IDS)
   requireOneOf('--effort', values.effort, AGENT_EFFORTS)
@@ -422,7 +402,6 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     title: values.title!,
     description: values.prompt,
     status: (values.status ?? 'backlog') as ColumnId,
-    kind: values.kind as TaskKind | undefined,
     baseBranch: values['base-branch'] ?? null,
     branch: values.branch,
     createBranch: values['no-branch'] ? false : undefined,
@@ -442,7 +421,6 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
     task: {
       id: task.id,
       title: task.title,
-      kind: task.role === 'master' ? null : task.kind ?? 'feature',
       status: ready,
       role: task.role ?? 'slave',
       masterId: task.masterId ?? null,
@@ -461,7 +439,7 @@ async function taskCommand(argv: string[]): Promise<Record<string, unknown> | nu
   }
 }
 
-const HOST_COMMANDS = ['start', 'list', 'show', 'send', 'inventory']
+const HOST_COMMANDS = ['start', 'list', 'show', 'send']
 
 /**
  * Starting a card runs its agent, and only the host owns sessions; summaries
@@ -470,22 +448,9 @@ const HOST_COMMANDS = ['start', 'list', 'show', 'send', 'inventory']
  */
 async function hostCommand(
   sub: string,
-  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean; 'new-session'?: boolean; attach?: string[] },
-  storePath: string,
-  action?: string
+  values: { task?: string; master?: string; text?: string; from?: string; force?: boolean; 'new-session'?: boolean },
+  storePath: string
 ): Promise<Record<string, unknown>> {
-  if (sub === 'inventory' && !['start', 'rerun', 'context'].includes(action ?? '')) {
-    fail('UNKNOWN_COMMAND', 'Use: task inventory start | rerun | context')
-  }
-  let inventoryAttachments: AttachmentInput[] = []
-  if (sub === 'inventory' && action === 'context') {
-    if (values.text === undefined && !values.attach?.length) fail('MISSING_ARGUMENT', 'task inventory context needs --text or --attach')
-    try {
-      inventoryAttachments = (values.attach ?? []).map(fileToAttachmentInput)
-    } catch (err) {
-      fail('ATTACHMENT_READ_FAILED', `無法讀取附件：${(err as Error).message}`)
-    }
-  }
   if (sub !== 'list' && !values.task) fail('MISSING_ARGUMENT', 'Missing required arguments: --task')
   const from = values.from ?? process.env.VIBEFLOW_TASK_ID
   if (sub === 'send' && (!values.text || !from)) {
@@ -501,26 +466,6 @@ async function hostCommand(
         return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null }, newSession: true }
       } catch (err) {
         // The caller acts on why it was refused (not running, busy, …).
-        const e = err as { code?: string; message?: string }
-        fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
-      }
-    }
-    if (sub === 'inventory') {
-      try {
-        if (action === 'start') {
-          const { task } = await remote.api.startInventory(values.task!)
-          return { task: { id: task.id, title: task.title, worktreePath: task.worktreePath ?? null } }
-        }
-        const state = action === 'rerun'
-          ? await remote.api.rerunInventory(values.task!)
-          : await remote.api.setInventoryContext({
-              taskId: values.task!,
-              ...(values.text !== undefined ? { context: values.text } : {}),
-              ...(inventoryAttachments.length ? { attachments: inventoryAttachments } : {}),
-            })
-        const task = state.board.inventory.find((t) => t.id === values.task)
-        return { task: { id: values.task, inventory: task?.inventory ?? null } }
-      } catch (err) {
         const e = err as { code?: string; message?: string }
         fail(e.code ?? 'HOST_ERROR', e.message ?? String(err))
       }

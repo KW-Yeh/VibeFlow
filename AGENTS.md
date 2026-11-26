@@ -76,9 +76,8 @@ npm run vibeflow -- task create \
 ```
 
 - Required flags: `--project`, `--title`, and `--prompt`.
-- `--status` accepts `backlog`, `inventory`, `in_progress`, or `done`; it defaults to `backlog`.
-  A card written straight into `inventory` is provisioned but no pass starts — use
-  `task inventory rerun` (or `task inventory start` from Backlog).
+- `--status` accepts `backlog`, `in_progress`, or `done`; it defaults to `backlog`.
+  `--ready` marks a backlog card 準備開工 so the next 下班派工 sends it out.
   A card written straight into `in_progress` does **not** auto-launch — that only
   happens when a card is moved in the app — so leave CLI-created cards in backlog
   unless you intend to start them from the UI.
@@ -173,58 +172,40 @@ npm run vibeflow -- tag list | create --name … [--color …] | update --tag �
 - Card order is the column array's order. `task move` / `vibeflow:moveTask` move one
   card within its column; the board and the workspace rail show the same order.
 
-### Inventory, status tags, night shift and reports
+### Status tags, night shift and reports
 
-Specs: `docs/features/autonomous-run/` (盤點, status tags, usage limits, reports) and
-`docs/features/night-shift/` (下班派工, card kinds, the morning report, which replaced
-the release switch's on/off semantics). The board has a fourth column, **盤點**
-(`inventory`), between Backlog and In Progress. Masters never enter it; it is an
-optional daytime step, not a gate — a Backlog card marked 準備開工 goes out too.
+Specs: `docs/features/night-shift/` (下班派工, the night brief, the morning report;
+the 盤點 column was removed there) and `docs/features/autonomous-run/` (status tags,
+usage limits, reports). The board has three columns: Backlog, In Progress, Done.
 
 ```sh
-npm run vibeflow -- task inventory start --task <id>          # Backlog → 盤點 (host)
-npm run vibeflow -- task inventory context --task <id> --text "…" [--attach <path>]
-npm run vibeflow -- task inventory rerun --task <id>
 npm run vibeflow -- task status --set <key|名稱> [--reason "…"] | --clear   # no host
-npm run vibeflow -- task create … [--kind feature|ebug] [--ready]           # --ready = 排進今晚
+npm run vibeflow -- task create … --ready                                   # 排進今晚
 npm run vibeflow -- dispatch [--stop | --status]                             # 下班派工 (host); = release on|off|status
 npm run vibeflow -- report list | show --report <id>                       # no host
 ```
 
-- **Inventory** (`inventory.ts`, `inventoryPrompt` in `launch.ts`): the card is
-  provisioned, then one headless pass (`runAgentPrint`, no terminal) writes
-  `docs/features/<slug>/spec.md` and `plan.md` with a 「執行準備」 section and checks
-  resources without reading secrets. It may use any MCP server, skill (the Library
-  included) or subagent to find the best approach, but writes to external systems stay
-  out. Claude runs `-p --permission-mode auto` with the Library's `--plugin-dir`, the
-  checks pre-approved (`Bash(<check>:*)`, plus `settings.autonomous.inventoryCommands`)
-  and secret paths denied; Codex runs `exec --sandbox workspace-write` with network and
-  `CODEX_HOME=<library>/codex-home`. A pass may experiment in the worktree but must undo
-  it: any change left outside `docs/features/` makes the card 待回答 with the files named,
-  and core never reverts it. The pass ends with `VIBEFLOW_INVENTORY_RESULT: ready|needs_answer`,
-  which core turns into the status. Extra context lives in `Task.inventory.context`; an
-  inventory card's description is not editable. Leaving the column aborts the pass.
-- **Status tags** (`status-tags.ts`, keys in `status-keys.ts`): eight reserved tags
-  with fixed ids `status:<key>` (inventorying, needs_answer, ready, running, quota_wait,
-  needs_review, stuck, pr_opened), added at host start, not deletable, one per card.
-  Code reads the id, never the name. `setTaskStatus` is the only writer; it keeps the
-  reason in `Task.statusNote` and logs a `StatusEvent` in the open release batch.
-- **Running from an inventory**: `startTask` accepts an inventory card (new `runId`);
-  its first launch, however it reached In Progress, gets `executionBrief()` instead
-  of the card text (`Task.inventory.handedOffAt` makes that once).
+- **Status tags** (`status-tags.ts`, keys in `status-keys.ts`): six reserved tags
+  with fixed ids `status:<key>` (ready, running, quota_wait, needs_review, stuck,
+  pr_opened), added at host start, not deletable, one per card. Code reads the id,
+  never the name. `setTaskStatus` is the only writer; it keeps the reason in
+  `Task.statusNote` and logs a `StatusEvent` in the open batch.
 - **Night shift** (`release.ts`, `setRelease` / `dispatchCard` / `closeBatch` in
   `service.ts`): on = 下班派工 — refused with `NOTHING_READY` when `dispatchable()` is
-  empty, else a batch, then 準備開工 cards in order (盤點, 待辦, then In Progress cards
-  marked to go again; cards whose `after` is not Done wait) up to `concurrency`. Every
+  empty, else a batch, then 準備開工 cards in order (待辦, then In Progress cards marked
+  to go again; cards whose `after` is not Done wait) up to `concurrency`. Every
   non-master In Progress card holds a slot unless its status is needs_review / stuck /
   pr_opened / ready. A sent card gets `Task.dispatch`; its first launch sends
-  `nightShiftBrief()` (per `Task.kind`: feature / ebug) once (`dispatch.briefedAt`), and
-  a card going again gets a `continueTask` session with `dispatch.redo` (the reason the
-  person wrote) first. A sent card that ends its turn with no status, or sits on a
-  permission prompt, becomes 待你確認 (`settleIdleDispatched`). The batch closes itself
-  once `batchDrained()` (it sent something, none of its cards holds a slot, nothing left
-  to send), recording what it skipped. Ticks run on `state:changed`, board writes,
-  cleanup and host start (deferred to a microtask).
+  `nightShiftBrief()` once (`dispatch.briefedAt`): use work-mode, with the night's
+  overrides only — confirmations count as given, no questions, a Draft PR, report a
+  status and end the turn, never watch the PR. A card going again gets a
+  `continueTask` session with `dispatch.redo` (the reason the person wrote) first. A
+  card started by hand drops its 準備開工 and gets no brief. A sent card that ends its
+  turn with no status, or sits on a permission prompt, becomes 待你確認
+  (`settleIdleDispatched`). The batch closes itself once `batchDrained()` (it sent
+  something, none of its cards holds a slot, nothing left to send), recording what it
+  skipped. Ticks run on `state:changed`, board writes, cleanup and host start
+  (deferred to a microtask).
 - **Usage limits** (`claudeQuotaLimit` in `progress.ts`, `heartbeat.ts`): a Claude
   transcript line with `isApiErrorMessage` + `error: 'rate_limit'` gives
   `activity.waitingFor: 'quota'` and `resetsAt`; the host stores `Task.quotaWait`,
@@ -401,7 +382,6 @@ packages/                  npm workspaces (see packages/core/IPC_API_MAP.md)
 │   ├── github.ts          Issues & PRs view: account-wide GitHub search via `gh`, card ↔ Issue/PR links
 │   ├── progress.ts        pure reducers: agent transcript lines → todos, token usage, activity (incl. usage limits), notifications
 │   ├── status-keys.ts / status-tags.ts  reserved status tags (`status:<key>`) and the one status writer
-│   ├── inventory.ts       headless inventory pass: allowlist / sandbox arguments, result parsing
 │   ├── heartbeat.ts / quota-probe.ts  per-card usage-limit timers and the provider probe
 │   ├── release.ts / report.ts  release slots and order; batch reports (table, narrative, retention)
 │   ├── progress-tracker.ts finds and tails each running card's transcripts + hook events
@@ -428,7 +408,7 @@ renderer/                  Next.js app (Pages Router)
 │   ├── done-task-sheet.tsx a done card's sheet from the board: description + outcome, usage, Git diff by commit
 │   ├── diff-file.tsx      shared diff pieces: file viewer, modal, layout toggles, entry row
 │   ├── commit-diff.tsx    the Git diff tab grouped by commit (running) and a done card's commit view
-│   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards, then 盤點 cards
+│   ├── workspace-task-rail.tsx   the workspace page's foldable list of running cards
 │   └── ui/button.tsx      shadcn button
 ├── lib/
 │   ├── types.ts           re-exports domain types FROM core (single source of truth)
@@ -513,13 +493,15 @@ docs/                      everything that is not code (index: docs/README.md)
   live in `<workspace>/.attachments/<taskId>/` (`taskAttachmentStagingPath`).
   An `inPlace` card runs in the user's own folder: `gitWorktree()` returns nothing
   for it, and nothing that tears a card down may remove or rewrite that folder.
-- **Column names shown to people come from `column-labels.ts`** (待辦 / 盤點 / 進行中 /
+- **Column names shown to people come from `column-labels.ts`** (待辦 / 進行中 /
   已完成), in the Web UI, TUI, reports and messages alike; column ids stay English in
   data, the CLI's JSON and its flags. Jira's own column names are external data and stay as Jira has them.
-- **The store is v5** (`STATE_VERSION`): `board.inventory`, `release`, `batches`,
-  `reports` are added by field in `migrateStore`; read a board through `normalizeBoard`
-  (an older binary may have written three columns) and iterate `COLUMN_IDS`, never a
-  hard-coded column list.
+- **The store is v6** (`STATE_VERSION`): `release`, `batches`, `reports` are added
+  by field in `migrateStore`, and a board that still has an `inventory` column (v5,
+  or rewritten by a v5 binary) has its cards moved to the head of Backlog —
+  準備開工 kept, the inventory statuses and limit waits dropped, the person's inventory
+  context appended to the description. Read a board through `normalizeBoard` and
+  iterate `COLUMN_IDS`, never a hard-coded column list.
 - **Only Backlog cards are editable** (`vibeflow:updateTask` refuses others; the
   CLI's `task update` is the exception). Editing a Backlog card's project, base or
   branch only rewrites the store; one that already has a clean worktree gives it

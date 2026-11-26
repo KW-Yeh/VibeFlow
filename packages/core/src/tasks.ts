@@ -11,7 +11,6 @@ import {
   writeBoard,
   type ColumnId,
   type Task,
-  type TaskKind,
 } from './store'
 import { generateBranchName, type TitleTranslator } from './branch-name'
 import {
@@ -45,8 +44,6 @@ export interface CreateTaskInput {
   title: string
   description?: string
   status?: ColumnId
-  /** Absent = feature. Ignored on a master. */
-  kind?: TaskKind
   baseBranch?: string | null
   /**
    * Branch name chosen by the user. Absent/blank = derive one from the card
@@ -256,7 +253,6 @@ export async function createTaskFromInput(
     model: input.model || undefined,
     effort: input.effort ?? DEFAULT_TASK_EFFORT,
     autoMode: input.autoMode,
-    ...(input.kind === 'ebug' ? { kind: 'ebug' as const } : {}),
     ...(input.masterId ? { masterId: input.masterId } : {}),
     ...(after.length ? { after } : {}),
     ...(input.github ? { github: input.github } : {}),
@@ -408,8 +404,6 @@ export interface UpdateTaskInput {
   /** Empty string clears the description; absent leaves it untouched. */
   description?: string
   status?: ColumnId
-  /** Absent leaves the kind untouched. */
-  kind?: TaskKind
   /** A master's id to dispatch the card under; null removes it from its master. */
   masterId?: string | null
   /** Cards this one waits on; an empty list clears them. */
@@ -464,10 +458,6 @@ export function updateTaskFromInput(input: UpdateTaskInput): UpdateTaskResult {
     ...(after.length ? { after } : {}),
   }
   if (!after.length) delete task.after
-  if (input.kind !== undefined && !isMasterTask(current)) {
-    if (input.kind === 'ebug') task.kind = 'ebug'
-    else delete task.kind
-  }
 
   const to = input.status ?? from
   if (to === from) {

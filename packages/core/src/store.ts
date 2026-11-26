@@ -11,10 +11,10 @@ import type { TagColor } from './tag-colors'
 import type { ManualEffort } from './effort'
 import type { StatusKey } from './status-keys'
 export { moveTaskInColumn } from './board-order'
-export type ColumnId = 'backlog' | 'inventory' | 'in_progress' | 'done'
+export type ColumnId = 'backlog' | 'in_progress' | 'done'
 
 /** Every column, in board order. */
-export const COLUMN_IDS: readonly ColumnId[] = ['backlog', 'inventory', 'in_progress', 'done']
+export const COLUMN_IDS: readonly ColumnId[] = ['backlog', 'in_progress', 'done']
 
 /**
  * A card stopped by a usage limit, waiting for it to reset. Kept on the card
@@ -26,36 +26,12 @@ export interface QuotaWait {
   /** Epoch ms the limit was seen. */
   since: number
   agent: AgentCliId
-  /** What was stopped: the card's own run or its headless inventory. */
-  phase: 'run' | 'inventory'
+  /** What was stopped; only a card's own run waits now. */
+  phase: 'run'
   /** Status to restore once the card carries on. */
   statusBefore?: StatusKey
   /** Epoch ms of the next probe the heartbeat will try. */
   nextProbeAt?: number
-}
-
-/** A card's inventory: the headless pass that writes spec.md / plan.md before it runs. */
-export interface TaskInventory {
-  /** Extra context the user pasted in the inventory panel, newest last. Never written into the description. */
-  context?: string
-  /** Files the user attached in the inventory panel, relative to the worktree. */
-  attachments?: string[]
-  /** The last pass's closing summary, shown in the inventory panel. */
-  lastSummary?: string
-  /** Epoch ms the running pass started; absent = no pass is running. */
-  runningSince?: number
-  /** Epoch ms the last pass ended. */
-  finishedAt?: number
-  /** Why the last pass failed. */
-  error?: string
-  /** Claude session id of the last pass, so its transcript can be read for a usage limit. */
-  sessionId?: string
-  /** How many passes have run. */
-  passes?: number
-  /** spec.md / plan.md the passes wrote, relative to the worktree. */
-  docs?: string[]
-  /** Epoch ms the card's first run started from its inventory, with the execution brief. */
-  handedOffAt?: number
 }
 
 /** The last status written by `task status --set` or a status-tag change. */
@@ -180,21 +156,10 @@ export interface Task {
   tags?: string[]
   /** Set while the card waits for a usage limit to reset. */
   quotaWait?: QuotaWait
-  /** The card's inventory state; absent = never inventoried. */
-  inventory?: TaskInventory
   /** The reason that came with the card's current status. */
   statusNote?: TaskStatusNote
-  /** What the work is; decides the night-shift steps. Absent = feature. Never set on a master. */
-  kind?: TaskKind
   /** Set when a night-shift batch sent the card out; absent = never dispatched. */
   dispatch?: TaskDispatch
-}
-
-export const TASK_KINDS = ['feature', 'ebug'] as const
-export type TaskKind = (typeof TASK_KINDS)[number]
-
-export function taskKind(task: Pick<Task, 'kind'>): TaskKind {
-  return task.kind === 'ebug' ? 'ebug' : 'feature'
 }
 
 export interface TaskDispatch {
@@ -300,7 +265,7 @@ export interface AppSettings {
   /** Stage notifications. Absent = DEFAULT_NOTIFICATION_SETTINGS. */
   notifications?: NotificationSettings
   jira?: { storyPointsFields?: string[] }
-  /** Inventory, release and report settings. Absent = DEFAULT_AUTONOMOUS_SETTINGS. */
+  /** Night shift and report settings. Absent = DEFAULT_AUTONOMOUS_SETTINGS. */
   autonomous?: Partial<AutonomousSettings>
 }
 
@@ -315,8 +280,6 @@ export interface AutonomousSettings {
   /** Absent = the agent's low-cost default. */
   reportModel?: string
   reportEffort: ManualEffort
-  /** Extra shell command prefixes a headless inventory may run (Claude), on top of the built-in list. */
-  inventoryCommands: string[]
 }
 
 export const DEFAULT_AUTONOMOUS_SETTINGS: AutonomousSettings = {
@@ -326,7 +289,6 @@ export const DEFAULT_AUTONOMOUS_SETTINGS: AutonomousSettings = {
   reportAgent: 'claude',
   reportModel: 'haiku',
   reportEffort: 'low',
-  inventoryCommands: [],
 }
 
 const positiveInt = (v: unknown, fallback: number, max: number): number =>
@@ -346,9 +308,6 @@ export function resolveAutonomousSettings(settings?: Pick<AppSettings, 'autonomo
       ? s.reportModel.trim()
       : s.reportAgent === 'codex' ? undefined : d.reportModel,
     reportEffort: efforts.includes(s.reportEffort as ManualEffort) ? (s.reportEffort as ManualEffort) : d.reportEffort,
-    inventoryCommands: Array.isArray(s.inventoryCommands)
-      ? s.inventoryCommands.filter((c): c is string => typeof c === 'string' && c.trim() !== '').map((c) => c.trim())
-      : [],
   }
 }
 
@@ -471,20 +430,68 @@ export interface StandaloneTerminalEntry {
 
 const DEFAULT_BOARD: BoardState = {
   backlog: [],
-  inventory: [],
   in_progress: [],
   done: [],
 }
 
-/** A board read from disk with every column present: an older binary may have written one without `inventory`. */
+/**
+ * A board read from disk with exactly the current columns. A v5 binary still
+ * writes an `inventory` column; it is dropped here, and `migrateStore` moves
+ * any cards in it back to 待辦 first.
+ */
 export function normalizeBoard(board: Partial<BoardState> | undefined): BoardState {
   const b = board ?? {}
   return {
     backlog: b.backlog ?? [],
-    inventory: b.inventory ?? [],
     in_progress: b.in_progress ?? [],
     done: b.done ?? [],
   }
+}
+
+/** Status tags of the removed 盤點 column. Literal ids: status-tags.ts imports this module. */
+const RETIRED_STATUS_TAGS = ['status:inventorying', 'status:needs_answer']
+
+/** What a v5 card kept about its inventory; only the person's own words are carried over. */
+interface LegacyInventory {
+  context?: string
+}
+
+function withoutRetiredStatus(task: Task): Task {
+  const tags = task.tags?.filter((id) => !RETIRED_STATUS_TAGS.includes(id))
+  const next: Task = { ...task, ...(tags ? { tags } : {}) }
+  if (next.statusNote && RETIRED_STATUS_TAGS.includes(`status:${next.statusNote.status}`)) delete next.statusNote
+  return next
+}
+
+/**
+ * A card of the old 盤點 column, as a 待辦 card. Its worktree and branch stay;
+ * 準備開工 stays so it can go out tonight; a wait on the inventory pass's
+ * limit goes with the pass; context the person added joins the description.
+ */
+function fromInventoryColumn(task: Task & { inventory?: LegacyInventory }): Task {
+  const next = withoutRetiredStatus(task)
+  if (next.quotaWait) {
+    delete next.quotaWait
+    next.tags = next.tags?.filter((id) => id !== 'status:quota_wait')
+    if (next.statusNote?.status === 'quota_wait') delete next.statusNote
+  }
+  const context = task.inventory?.context?.trim()
+  if (context) next.description = [next.description?.trim(), `## 盤點時的補充\n\n${context}`].filter(Boolean).join('\n\n')
+  return next
+}
+
+/** v6: the 盤點 column and its two status tags are gone. Keyed on the field, like the other migrations. */
+function retireInventory(store: JsonStore<VibeFlowState>): void {
+  const raw = store.get('board') as (Partial<BoardState> & { inventory?: unknown }) | undefined
+  if (raw && 'inventory' in raw) {
+    const moved = Array.isArray(raw.inventory) ? (raw.inventory as Task[]).map(fromInventoryColumn) : []
+    const board = normalizeBoard(raw)
+    for (const col of COLUMN_IDS) board[col] = board[col].map(withoutRetiredStatus)
+    board.backlog = [...moved, ...board.backlog]
+    store.set('board', board)
+  }
+  const tags = store.get('tags') ?? []
+  if (tags.some((t) => RETIRED_STATUS_TAGS.includes(t.id))) store.set('tags', tags.filter((t) => !RETIRED_STATUS_TAGS.includes(t.id)))
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -494,9 +501,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 /**
  * Current persisted-state schema version. Bumped when a migration must run on
  * existing stores (see `migrateStore`). v3 introduced workspaces; v4 the
- * recent-projects list; v5 the inventory column, release batches and reports.
+ * recent-projects list; v5 the inventory column, release batches and reports;
+ * v6 removed the inventory column again (night shift).
  */
-export const STATE_VERSION = 5
+export const STATE_VERSION = 6
 
 const defaults: VibeFlowState = {
   version: STATE_VERSION,
@@ -535,8 +543,7 @@ function migrateStore(store: JsonStore<VibeFlowState>): void {
   }
   if (!store.has('terminals')) store.set('terminals', [])
   if (!store.has('tags')) store.set('tags', [])
-  const board = store.get('board') as Partial<BoardState> | undefined
-  if (board && !Array.isArray(board.inventory)) store.set('board', normalizeBoard(board))
+  retireInventory(store)
   if (!store.has('release')) store.set('release', { enabled: false })
   if (!store.has('batches')) store.set('batches', [])
   if (!store.has('reports')) store.set('reports', [])

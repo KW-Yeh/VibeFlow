@@ -7,8 +7,6 @@ import { STATUS_KEYS, isStatusKey, statusKeyOfTag, statusTagId, taskStatus, type
 export { STATUS_KEYS, statusTagId, statusKeyOfTag, taskStatus, isStatusKey, type StatusKey }
 
 export const STATUS_DEFS: Record<StatusKey, { name: string; color: TagColor }> = {
-  inventorying: { name: '盤點中', color: 'blue' },
-  needs_answer: { name: '待回答', color: 'amber' },
   ready: { name: '準備開工', color: 'green' },
   running: { name: '執行中', color: 'teal' },
   quota_wait: { name: '等待額度', color: 'orange' },

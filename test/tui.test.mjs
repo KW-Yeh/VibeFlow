@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { clampSelection, moveCard } from '../packages/tui/src/index.ts'
 
 const card = (id) => ({ id, title: id, branch: `b-${id}` })
-const board = () => ({ backlog: [card('a'), card('b')], inventory: [card('i')], in_progress: [card('c')], done: [] })
+const board = () => ({ backlog: [card('a'), card('b')], in_progress: [card('c')], done: [] })
 
 test('starting a Backlog card stamps it and asks for a launch', () => {
   const move = moveCard(board(), { column: 0, index: 1 }, 1, 42)
@@ -15,26 +15,17 @@ test('starting a Backlog card stamps it and asks for a launch', () => {
 })
 
 test('finishing asks for cleanup; sending a running card back asks for a reset', () => {
-  assert.equal(moveCard(board(), { column: 2, index: 0 }, 1).effect, 'cleanup')
-  assert.equal(moveCard(board(), { column: 2, index: 0 }, -1).effect, 'reset')
-})
-
-test('moves step over the inventory column, whose cards the TUI leaves alone', () => {
-  const start = moveCard(board(), { column: 0, index: 0 }, 1)
-  assert.equal(start.to, 'in_progress')
-  assert.equal(start.column, 2)
-  assert.equal(moveCard(board(), { column: 2, index: 0 }, -1).to, 'backlog')
-  assert.equal(moveCard(board(), { column: 1, index: 0 }, 1), null)
-  assert.equal(moveCard(board(), { column: 1, index: 0 }, -1), null)
+  assert.equal(moveCard(board(), { column: 1, index: 0 }, 1).effect, 'cleanup')
+  assert.equal(moveCard(board(), { column: 1, index: 0 }, -1).effect, 'reset')
 })
 
 test('there is nothing left of Backlog or right of Done', () => {
   assert.equal(moveCard(board(), { column: 0, index: 0 }, -1), null)
-  assert.equal(moveCard(board(), { column: 3, index: 0 }, 1), null)
+  assert.equal(moveCard(board(), { column: 2, index: 0 }, 1), null)
 })
 
 test('the selection stays inside the board as it changes', () => {
-  assert.deepEqual(clampSelection(board(), { column: 5, index: 9 }), { column: 3, index: 0 })
+  assert.deepEqual(clampSelection(board(), { column: 5, index: 9 }), { column: 2, index: 0 })
   assert.deepEqual(clampSelection(board(), { column: 0, index: 9 }), { column: 0, index: 1 })
   assert.deepEqual(clampSelection(board(), { column: -1, index: -1 }), { column: 0, index: 0 })
 })

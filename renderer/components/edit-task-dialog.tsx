@@ -23,7 +23,6 @@ import {
 } from '@/components/task-form-layout'
 import { cn } from '@/lib/utils'
 import { COLUMN_LABELS } from '@/lib/column-labels'
-import { TASK_KIND_OPTIONS, taskKind } from '@/lib/task-kind'
 import type {
   AgentCli,
   AgentCliId,
@@ -32,7 +31,6 @@ import type {
   GitInfo,
   RecentProjectEntry,
   Task,
-  TaskKind,
 } from '@/lib/types'
 
 export interface EditTaskPayload {
@@ -48,8 +46,6 @@ export interface EditTaskPayload {
   branch?: string
   /** Master to belong to; null takes the card out of its master; absent keeps it. */
   masterId?: string | null
-  /** Absent on a master. */
-  kind?: TaskKind
 }
 
 const COLUMN_LABEL: Record<ColumnId, string> = COLUMN_LABELS
@@ -95,7 +91,6 @@ export function EditTaskDialog({
   onClose,
 }: EditTaskDialogProps) {
   const [masterId, setMasterId] = useState('')
-  const [kind, setKind] = useState<TaskKind>('feature')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [agentCli, setAgentCli] = useState<AgentCliId>('claude')
@@ -136,7 +131,6 @@ export function EditTaskDialog({
     setBaseBranch(task.baseBranch ?? '')
     setBranch(task.branch)
     setMasterId(task.masterId ?? '')
-    setKind(taskKind(task))
     setGitInfo(null)
     setLoadingInfo(false)
     setProjectChanged(false)
@@ -210,8 +204,7 @@ export function EditTaskDialog({
     projectChanged ||
     baseBranch !== (displayedTask.baseBranch ?? '') ||
     branch.trim() !== displayedTask.branch ||
-    masterId !== (displayedTask.masterId ?? '') ||
-    (displayedTask.role !== 'master' && kind !== taskKind(displayedTask)))
+    masterId !== (displayedTask.masterId ?? ''))
 
   const handleClose = () => {
     if (saving) return
@@ -277,7 +270,6 @@ export function EditTaskDialog({
       ...shared,
       ...(projectPath ? { projectPath, baseBranch: baseBranch || null } : {}),
       branch: branch.trim(),
-      kind,
       ...(masterId !== (displayedTask?.masterId ?? '') ? { masterId: masterId || null } : {}),
     }
   }
@@ -412,19 +404,6 @@ export function EditTaskDialog({
       ) : !readOnly && !displayedTask.noBranch ? (
         <PropertyNote>分支在卡片開始執行時才建立並推到 origin。</PropertyNote>
       ) : null}
-      {displayedTask.role !== 'master' && (
-        <PropertyRow label="類型">
-          <Select
-            name="edit-kind"
-            aria-label="類型"
-            value={kind}
-            onChange={(value) => setKind(value as TaskKind)}
-            disabled={readOnly || saving}
-            className={ROW_FIELD}
-            options={TASK_KIND_OPTIONS}
-          />
-        </PropertyRow>
-      )}
       {masters.length > 0 && (
         <PropertyRow label="隸屬於">
           <Select

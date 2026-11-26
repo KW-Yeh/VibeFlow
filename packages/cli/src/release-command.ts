@@ -12,7 +12,7 @@ VibeFlow night shift (下班派工)
 
 Usage:
   vibeflow dispatch [options]          Open a night-shift batch and send tonight's cards out:
-                                       every 準備開工 card in 盤點, then 待辦, then In Progress
+                                       every 準備開工 card in 待辦, then In Progress
                                        cards marked to go again, up to the concurrency limit.
                                        The batch closes itself once every card it sent stopped
                                        (已開 PR / 卡住 / 待你確認) and the morning report is written

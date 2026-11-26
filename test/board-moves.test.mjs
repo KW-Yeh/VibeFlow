@@ -17,17 +17,8 @@ test('cardMove — a Done card can be pulled back to either column', () => {
   assert.equal(cardMove('done', 'in_progress'), 'rerun')
 })
 
-test('cardMove — a Backlog card goes into inventory; an inventory card goes back or on to In Progress', () => {
-  assert.equal(cardMove('backlog', 'inventory'), 'inventory')
-  assert.equal(cardMove('inventory', 'backlog'), 'uninventory')
-  assert.equal(cardMove('inventory', 'in_progress'), 'release')
-  assert.equal(cardMove('inventory', 'done'), null)
-  assert.equal(cardMove('in_progress', 'inventory'), null)
-  assert.equal(cardMove('done', 'inventory'), null)
-})
-
 test('cardMove — dropping on its own column does nothing', () => {
-  for (const column of ['backlog', 'inventory', 'in_progress', 'done']) {
+  for (const column of ['backlog', 'in_progress', 'done']) {
     assert.equal(cardMove(column, column), null)
   }
 })

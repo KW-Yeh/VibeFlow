@@ -8,7 +8,7 @@
 import type { AgentCliId } from './agents'
 import type { BoardCliLaunchInfo } from './board-cli'
 import type { LibraryLaunchInfo } from './library'
-import type { Task, TaskKind } from './store'
+import type { Task } from './store'
 
 /**
  * Temporary-artifact directory suffix. User-facing files are copied to
@@ -351,9 +351,9 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
     opts.autoMode
       ? '3. 確認：auto mode 開著，不必等使用者確認，寫完計畫就建卡。'
       : '3. 確認：寫完計畫就停下來，等使用者同意或修改；使用者同意之前不要建任何卡。',
-    '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--kind feature|ebug] [--after <前置卡 id>]',
+    '4. 建卡：VF task create --store-path "$VIBEFLOW_STORE_DIR" --master "$VIBEFLOW_TASK_ID" --project <repo 絕對路徑> --title <標題> --prompt <內容> [--after <前置卡 id>]',
     '   prompt 必須自包含：背景、範圍、驗收條件、與其他卡的介面約定——卡片看不到你的對話。',
-    '   eBug 卡用 --kind ebug，prompt 列出單號即可；同一個元件的多張 eBug 合併成一張卡。',
+    '   eBug 卡的 prompt 列出單號即可；同一個元件的多張 eBug 合併成一張卡。',
     '   使用者說要「今晚派工」或「下班派」時，建卡加上 --ready（排進今晚），不要 task start；派工由使用者按「下班派工」。',
     '   每張卡要是一晚做得完、隔天早上審得完的大小；做法還不確定的，在 prompt 寫明「先寫 plan」。',
     '   標題要短、彼此一眼分得出來：以這張卡負責的部分開頭（例如「後端：…」「驗收：…」），不要讓多張卡共用同一段開頭。',
@@ -369,50 +369,28 @@ export function masterSystemPrompt(opts: { canWrite: boolean; autoMode: boolean;
   return lines.join('\n')
 }
 
-const NIGHT_STEPS: Record<TaskKind, string[]> = {
-  feature: [
-    '1. 做法不確定時先寫 plan（照 feature-spec-plan 的 plan.md），確定了再實作。',
-    '2. 實作，補上對應的 unit test。',
-    '3. 自己 review 一遍 diff，修掉看到的問題。',
-    '4. 專案的 lint／typecheck／test 全部跑過且通過。',
-    '5. commit、push 到這張卡的分支，開 Draft PR；有寫 plan 就把 plan 附在 PR 內文。',
-  ],
-  ebug: [
-    '1. 讀單：用 ebug skill（或 eCL）讀任務描述裡列出的每一張 eBug 單，照單上的網址、步驟與預期值。',
-    '2. 照單重現並量測，記下修正前的數據或畫面。',
-    '3. 修正，修完再量一次；修正前後的截圖存進 "$VIBEFLOW_ARTIFACTS_DIR"，也附進 PR。',
-    '4. 自己 review 一遍 diff；專案的 lint／typecheck／test 全部跑過且通過。',
-    '5. commit、push 到這張卡的分支，開 Draft PR，PR 內文逐張列出單號、原因與修正前後。',
-  ],
-}
-
 /**
- * The first message of a card a night-shift batch sent out. Nobody is around
- * until morning, so the card must not wait on a question; it ends with a
- * status a person can read in the morning report.
+ * The first message of a card a night-shift batch sent out. The work itself
+ * follows work-mode; this only overrides what work-mode would wait on while
+ * nobody is around until morning: confirmations, questions and watching the PR.
  */
 export function nightShiftBrief(
-  task: Pick<Task, 'title' | 'description' | 'kind'>,
-  opts: { canWrite: boolean; docs?: string[]; redo?: string; progress?: string }
+  task: Pick<Task, 'title' | 'description'>,
+  opts: { canWrite: boolean; redo?: string; progress?: string }
 ): string {
-  const kind: TaskKind = task.kind === 'ebug' ? 'ebug' : 'feature'
   const lines: string[] = []
   const redo = opts.redo?.trim()
   if (redo) lines.push('## 修正方向（最優先）', redo, '', '這張卡之前已經做過一輪，上面是使用者驗收後要你改的方向。在同一個分支上接著做，PR 也沿用。', '')
   lines.push(
     `任務標題：${task.title}`,
-    `類型：${kind === 'ebug' ? 'eBug' : 'Feature'}`,
     '',
-    '這張卡是 VibeFlow 下班派工派出的夜班任務。現在沒有人在線上，明天早上才會有人看結果。',
-    '- 不要停下來問問題，也不要等確認。能判斷的照最合理的解讀做下去，把你的假設寫進 PR 內文。',
-    '- 推到共用分支、force push、處理 secret、更動 lock 檔都不在授權內；碰到時就停止並回報。',
-    '- PR 一律開成 Draft。'
+    '這張卡是 VibeFlow 下班派工派出的夜班任務。用 work-mode 處理：讀需求來源、判斷任務類型、照對應的 playbook 做。',
+    '現在沒有人在線上，明天早上才會有人看結果，所以以下規則優先於 work-mode：',
+    '- spec.md／plan.md 的確認視為使用者已預先授權：寫完就往下做，確認紀錄寫「夜班預先授權，早上驗收」。',
+    '- 不要停下來問問題。兩種解讀都說得通時選比較保守的，把假設寫進 PR 內文。',
+    '- PR 一律開成 Draft。開出來之後回報狀態就結束這一回合，不要盯 PR、不要啟動 pr-watch。',
+    '- 推到共用分支、force push、處理 secret、更動 lock 檔都不在授權內；碰到時停止並回報。'
   )
-  const docs = opts.docs ?? []
-  if (docs.length) {
-    lines.push('', '這張卡白天已經盤點過，先讀完這些文件；plan.md 的「執行準備」是這次的授權範圍：', ...docs.map((d) => `- ${d}`))
-  }
-  lines.push('', '## 步驟', ...NIGHT_STEPS[kind])
   if (opts.canWrite) {
     lines.push(
       '',
@@ -420,7 +398,7 @@ export function nightShiftBrief(
       ...BOARD_CLI_SETUP,
       '- 開出 Draft PR 之後：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set pr_opened --reason "<PR 連結>"',
       '- 需要人決定才能繼續：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set needs_review --reason "<需要決定什麼>"，然後停止。',
-      '- 卡住、無法繼續：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set stuck --reason "<卡在哪裡>"，然後停止。',
+      '- 卡住、無法繼續（例如重現不了、讀不到需求來源、缺權限或資源）：VF task status --store-path "$VIBEFLOW_STORE_DIR" --set stuck --reason "<卡在哪裡>"，然後停止。',
       '結束這一回合前一定要設好其中一個狀態；沒有設，VibeFlow 會把卡片標成「待你確認」。'
     )
   } else {
@@ -708,109 +686,3 @@ export function buildAgentCommand(
   )
 }
 
-/** What an inventory pass is told about the card and the pass. */
-export interface InventoryPromptInput {
-  title: string
-  description?: string
-  /** Text the user added in the inventory panel. */
-  context?: string
-  /** Files the user attached in the inventory panel. */
-  attachments?: string[]
-  /** spec.md / plan.md an earlier pass wrote, relative to the worktree. */
-  existingDocs?: string[]
-  /** Shell command prefixes the pass may run (Claude); empty = the agent's sandbox decides (Codex). */
-  commands: string[]
-  docsDir: string
-  resultMark: string
-}
-
-/**
- * The prompt of a headless inventory pass. Nobody can answer it while it
- * runs, so everything it needs from a person goes into 執行準備 instead of a
- * question, and its last line tells VibeFlow whether the card is ready.
- */
-export function inventoryPrompt(input: InventoryPromptInput): string {
-  const lines = [
-    '你在 VibeFlow 的「盤點」階段，以 headless 模式執行：沒有終端機，也沒有人能即時回答你。不要使用 AskUserQuestion 或任何需要互動的工具。',
-    '',
-    '## 這一次要做的事',
-    `1. 依 feature-spec-plan 的做法，在 ${input.docsDir}/<功能 slug>/ 產出或更新 spec.md 與 plan.md。不要 commit 或 push。`,
-    '2. plan.md 必須有「## 執行準備」段落，依序列出：',
-    '   - 需要使用者決定的事項（每項附建議）',
-    '   - 執行階段會用到的指令與權限',
-    '   - 需要的資源（檔案、帳號、token、測試資料）與這次的驗證結果（通過或失敗）',
-    '   - 允許的遠端操作（例如 commit、push 到卡片分支、開 draft PR）',
-    '   - 停止條件：碰到就要停下來回報的情況',
-    '3. 實際驗證資源。需要 secret 的資源（例如 JFrog auth token）只能用會用到認證、但不會印出值的檢查（例如 `npm whoami --registry <url>`）。不要讀取、輸出或記錄任何 secret 的值，也不要讀 .env、.npmrc 或憑證檔；文件裡只寫「通過」或「失敗」與缺什麼。',
-    '4. 推到共用分支、force push、處理 secret、更動 lock 檔不能事先授權，只能列在停止條件。',
-    '5. 所有項目都已就緒時，在 plan.md 的執行準備開頭寫明「可直接執行」。',
-    '',
-    '## 找出最佳做法',
-    '這一階段的目標是讓執行階段照著 plan 就能做對。盡量用手上的工具把做法查清楚、比較過再寫進 plan：',
-    '- 可以用任何 MCP server 與 skill 讀取資料，例如 ticket、eBug、Jira、設計稿、文件、既有 PR；也可以查網路、開 subagent 平行調查。',
-    '- 外部系統只能讀。送單、建立或修改 ticket、改狀態、留言、發訊息或 email 這類寫入一律不做；需要時寫進執行準備的待決定事項，或列為執行階段的步驟。',
-    `- 可以在 worktree 裡試寫程式碼、跑測試或實驗來比較方案，但結束前必須全部還原，只留下 ${input.docsDir}/ 的變更。還原後用 git status 確認；VibeFlow 檢查到其他殘留會把這張卡標成待回答。`,
-    '- 被權限擋下的動作不要繞過，把需要什麼、用途寫進待決定事項。',
-  ]
-  if (input.commands.length) {
-    lines.push('', '## 不需審核的指令', '以下開頭的指令直接放行；其他指令由權限模式判斷，被拒絕時把「需要允許指令 X（用途）」寫進執行準備的待決定事項：', ...input.commands.map((c) => `- \`${c}\``))
-  }
-  lines.push('', '## 卡片', `任務標題：${input.title}`)
-  const description = input.description?.trim()
-  if (description) lines.push('', '任務描述：', description)
-  if (input.existingDocs?.length) {
-    lines.push('', '## 上一次盤點的文件', '以這些檔案為基礎更新，不要另開新的功能目錄：', ...input.existingDocs.map((d) => `- ${d}`))
-  }
-  const context = input.context?.trim()
-  if (context) lines.push('', '## 使用者補充的 context', context)
-  if (input.attachments?.length) {
-    lines.push('', '## 使用者附加的檔案', ...input.attachments.map((a) => `- ${a}`))
-  }
-  lines.push(
-    '',
-    '## 結束時',
-    '用幾行摘要說明：文件在哪裡、還有哪些待回答的問題或缺少的資源（逐條列出）、驗證結果。',
-    `最後一行只寫 \`${input.resultMark} ready\`（全部就緒）或 \`${input.resultMark} needs_answer\`（還有待決定的事或缺少的資源）。`
-  )
-  return lines.join('\n')
-}
-
-/**
- * The first message of a card that comes out of its inventory: a new session
- * that works from the spec and plan the inventory wrote, within what its
- * 執行準備 allows, and reports how it ended through its status.
- */
-export function executionBrief(task: Pick<Task, 'title' | 'description'>, docs: string[], opts: { canWrite: boolean }): string {
-  const spec = docs.filter((d) => d.endsWith('spec.md'))
-  const plan = docs.filter((d) => d.endsWith('plan.md'))
-  const lines = [
-    `任務標題：${task.title}`,
-    '',
-    '這張卡已經在 VibeFlow 的「盤點」階段完成 spec 與 plan，現在開始執行。',
-    spec.length ? `Spec：${spec.join('、')}` : 'Spec：盤點文件在 docs/features/ 下，先找出這張卡的 spec.md。',
-    plan.length ? `Plan：${plan.join('、')}` : 'Plan：同一個目錄的 plan.md。',
-    '',
-    '## 做法',
-    '1. 先讀完 spec.md 與 plan.md。plan.md 的「執行準備」是這次的授權範圍：裡面列出的指令、權限與遠端操作視為使用者已經明確授權，不用再問。',
-    '2. 照 plan 的實作順序實作、驗收、修正，完成後依「執行準備」允許的範圍 commit、push 到這張卡的分支並開 PR。',
-    '3. 推到共用分支、force push、處理 secret、更動 lock 檔不在預先授權內；碰到時停下來。',
-  ]
-  if (opts.canWrite) {
-    lines.push(
-      '',
-      '## 回報狀態',
-      ...BOARD_CLI_SETUP,
-      '- 碰到「執行準備」的停止條件，或需要它沒有列出的授權：',
-      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set needs_review --reason "<需要使用者確認什麼>"，然後停止。',
-      '- 卡住、無法繼續：',
-      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set stuck --reason "<卡在哪裡>"，然後停止。',
-      '- 開出 PR 之後：',
-      '  VF task status --store-path "$VIBEFLOW_STORE_DIR" --set pr_opened --reason "<PR 連結>"。'
-    )
-  } else {
-    lines.push('', '這次啟動無法使用 board CLI（找不到 VIBEFLOW_CLI）；需要停下來時，把原因寫在回覆裡。')
-  }
-  const description = task.description?.trim()
-  if (description) lines.push('', '## 原始任務描述', description)
-  return lines.join('\n')
-}

@@ -23,19 +23,19 @@ async function storeWith(board, tags) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-status-'))
   tempDirs.push(dir)
   const store = getStoreAtPath(dir)
-  writeBoard(store, { backlog: [], inventory: [], in_progress: [], done: [], ...board })
+  writeBoard(store, { backlog: [], in_progress: [], done: [], ...board })
   if (tags) store.set('tags', tags)
   return store
 }
 
 const find = (store, id) => Object.values(store.get('board')).flat().find((t) => t.id === id)
 
-test('the eight reserved status tags are added once, under fixed ids', async () => {
+test('the six reserved status tags are added once, under fixed ids', async () => {
   const store = await storeWith({}, [{ id: 'tag_1', name: '卡住', color: 'gray' }])
   ensureStatusTags(store)
   ensureStatusTags(store)
   const tags = store.get('tags')
-  assert.equal(tags.length, 9)
+  assert.equal(tags.length, 7)
   for (const key of STATUS_KEYS) assert.ok(tags.some((t) => t.id === statusTagId(key)), key)
   assert.equal(tags.find((t) => t.id === 'status:stuck').name, '卡住（狀態）', 'a user tag keeps its name')
 })

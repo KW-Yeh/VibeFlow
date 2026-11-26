@@ -11,7 +11,6 @@ import { BoardColumns } from '@/components/board-columns'
 import { NewTaskButton } from '@/components/new-task-button'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
-import { InventoryWorkspacePanel } from '@/components/autonomous'
 import { WorkspaceTaskRail } from '@/components/workspace-task-rail'
 import { ViewTabs, type BoardView } from '@/components/ui/view-tabs'
 import { Button } from '@/components/ui/button'
@@ -19,8 +18,6 @@ import { DialogShell } from '@/components/ui/dialog-shell'
 import {
   resetTaskRun,
   continueTask,
-  startInventory,
-  startTaskOnHost,
   termSessionExists,
 } from '@/lib/api'
 import { cardMove } from '@/lib/board-moves'
@@ -58,8 +55,6 @@ interface KanbanBoardProps {
   onSelectTask: (taskId: string) => void
   /** A click on a board card: its sheet, not the workspace. */
   onOpenTaskSheet: (taskId: string) => void
-  /** 開始執行 on an inventory card shown on the workspace page. */
-  onStartInventoryTask: (taskId: string) => void
   /** A Backlog card to start, staying on the current page; null once taken. */
   startRequest: string | null
   onStartRequest: (taskId: string | null) => void
@@ -171,7 +166,6 @@ export function KanbanBoard({
   selectedTaskId,
   onSelectTask,
   onOpenTaskSheet,
-  onStartInventoryTask,
   startRequest,
   onStartRequest,
   onNewTask,
@@ -249,7 +243,6 @@ export function KanbanBoard({
   const moveTask = (task: Task, to: ColumnId) => {
     const next: BoardState = {
       backlog: board.backlog.filter((t) => t.id !== task.id),
-      inventory: board.inventory.filter((t) => t.id !== task.id),
       in_progress: board.in_progress.filter((t) => t.id !== task.id),
       done: board.done.filter((t) => t.id !== task.id),
     }
@@ -265,7 +258,6 @@ export function KanbanBoard({
     const withStamp = { ...task, launchedAt: Date.now() }
     onBoardChange({
       backlog: board.backlog.filter((t) => t.id !== task.id),
-      inventory: board.inventory.filter((t) => t.id !== task.id),
       in_progress: [withStamp, ...board.in_progress],
       done: board.done,
     })
@@ -294,7 +286,6 @@ export function KanbanBoard({
     const next = result.state.board
     onBoardChange({
       backlog: [result.task, ...next.backlog.filter((t) => t.id !== task.id)],
-      inventory: next.inventory.filter((t) => t.id !== task.id),
       in_progress: next.in_progress.filter((t) => t.id !== task.id),
       done: next.done.filter((t) => t.id !== task.id),
     })
@@ -339,7 +330,6 @@ export function KanbanBoard({
     const ids = new Set(finishing.map((t) => t.id))
     onBoardChange({
       backlog: board.backlog,
-      inventory: board.inventory,
       in_progress: board.in_progress.filter((t) => !ids.has(t.id)),
       done: [...finishing, ...board.done],
     })
@@ -348,18 +338,9 @@ export function KanbanBoard({
     for (const t of finishing) await onTaskDone(t.id)
   }
 
-  const [boardError, setBoardError] = useState<string | null>(null)
-  const reportBoardError = (err: unknown) => setBoardError(err instanceof Error ? err.message : String(err))
-
   const dropCard = (task: Task, from: ColumnId, to: ColumnId) => {
     const move = cardMove(from, to)
-    setBoardError(null)
-    // Inventory and its hand-off run on the host: the pass is headless, and
-    // the first run's brief is built there from the card's spec and plan.
-    if (move === 'inventory') void startInventory(task.id).catch(reportBoardError)
-    else if (move === 'uninventory') moveTask(task, 'backlog')
-    else if (move === 'release') void startTaskOnHost(task.id).catch(reportBoardError)
-    else if (move === 'start') startTask(task)
+    if (move === 'start') startTask(task)
     else if (move === 'complete') completeTask(task)
     else if (move) {
       setPullBackError(null)
@@ -417,19 +398,6 @@ export function KanbanBoard({
             toolbar={boardToolbar}
           />
         )}
-        {boardError && (
-          <div role="alert" className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-destructive/40 bg-background px-3 py-2 text-sm text-destructive">
-            <AlertTriangle className="size-4 shrink-0" />
-            <span>{boardError}</span>
-            <button
-              type="button"
-              onClick={() => setBoardError(null)}
-              className="rounded-sm px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              關閉
-            </button>
-          </div>
-        )}
       </div>
 
       {(() => {
@@ -451,7 +419,6 @@ export function KanbanBoard({
         const selected = selectedTaskId
           ? allTasks.find(({ task, column }) => column === 'in_progress' && task.id === selectedTaskId)
           : null
-        const selectedInventory = selectedTaskId ? board.inventory.find((t) => t.id === selectedTaskId) ?? null : null
 
         // The workspace is for running cards only. A mounted panel stays in the
         // DOM (hidden when not selected) so its PTY survives switching tasks or
@@ -473,7 +440,6 @@ export function KanbanBoard({
             <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail
               running={board.in_progress}
-              inventory={board.inventory}
               selectedTaskId={selectedTaskId ?? null}
               progress={progress}
               onSelect={onSelectTask}
@@ -515,13 +481,7 @@ export function KanbanBoard({
                 )
               })}
 
-              {selectedInventory && (
-                <WorkspaceSurface key={selectedInventory.id} active>
-                  <InventoryWorkspacePanel task={selectedInventory} onStart={(task) => onStartInventoryTask(task.id)} />
-                </WorkspaceSurface>
-              )}
-
-              {!selected && !selectedInventory && (
+              {!selected && (
                 <motion.div
                   initial="hidden"
                   animate="visible"
@@ -532,9 +492,7 @@ export function KanbanBoard({
                     <p className="text-base text-muted-foreground">
                       {board.in_progress.length > 0
                         ? '從左側選一張執行中的卡片。'
-                        : board.inventory.length > 0
-                          ? '從左側選一張盤點中的卡片。'
-                          : '目前沒有執行中的卡片，到看板開始一個任務，或建立新的任務。'}
+                        : '目前沒有執行中的卡片，到看板開始一個任務，或建立新的任務。'}
                     </p>
                     <Button size="sm" onClick={onNewTask} className="rounded-full px-4">
                       <Plus />

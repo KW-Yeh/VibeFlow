@@ -9,7 +9,7 @@ import { DoneTaskSheet } from '@/components/done-task-sheet'
 import { EditTaskDialog, type EditTaskPayload } from '@/components/edit-task-dialog'
 import { NewTaskDialog, type NewTaskDraft, type NewTaskInitial } from '@/components/new-task-dialog'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { InventorySheet, ReleaseControl, ReportsDialog } from '@/components/autonomous'
+import { ReleaseControl, ReportsDialog } from '@/components/autonomous'
 import { SideMenu } from '@/components/side-menu'
 import { InboxView, type InboxTab } from '@/components/inbox-view'
 import type { BoardView } from '@/components/ui/view-tabs'
@@ -38,7 +38,6 @@ import {
   onUpdateAvailable,
   openUpdateTerminal,
   onStateChanged,
-  startTaskOnHost,
   persistBoard,
   pickFolder,
   setSettings,
@@ -84,7 +83,6 @@ import type {
 // unreachable (static export preview).
 const FALLBACK_BOARD: BoardState = {
   backlog: [],
-  inventory: [],
   in_progress: [],
   done: [],
 }
@@ -110,7 +108,7 @@ function findTask(board: BoardState, taskId: string): Task | null {
 }
 
 function slavesOf(board: BoardState, masterId: string): SlaveEntry[] {
-  return (['in_progress', 'inventory', 'backlog', 'done'] as const).flatMap((column) =>
+  return (['in_progress', 'backlog', 'done'] as const).flatMap((column) =>
     board[column].filter((t) => t.masterId === masterId).map((task) => ({ task, column }))
   )
 }
@@ -137,7 +135,6 @@ export default function HomePage() {
   const [release, setReleaseState] = useState<ReleaseState | undefined>(undefined)
   const [concurrency, setConcurrency] = useState(2)
   const [reportsOpen, setReportsOpen] = useState(false)
-  const [inventoryTaskId, setInventoryTaskId] = useState<string | null>(null)
   const [tags, setTags] = useState<TagDef[]>([])
   // Live progress of running cards, read by core from each agent's transcript.
   // Session-only; a done card shows its stored Task.usage.
@@ -278,10 +275,10 @@ export default function HomePage() {
     }
   }, [runningIds])
 
-  // The workspace shows running and inventory cards: one that leaves both (done,
+  // The workspace only shows running cards: one that leaves In Progress (done,
   // sent back, deleted) or a stale one restored from the URL leaves nothing selected.
   useEffect(() => {
-    const ids = new Set([...board.in_progress, ...board.inventory].map((t) => t.id))
+    const ids = new Set(board.in_progress.map((t) => t.id))
     setSelectedTaskId((current) => (current && !ids.has(current) ? null : current))
   }, [board])
 
@@ -352,9 +349,9 @@ export default function HomePage() {
     })
   }
 
-  // A running or inventory card opens in the workspace; any other card opens its sheet.
+  // Only a running card opens in the workspace; any other card opens its sheet.
   const openTask = (taskId: string) => {
-    if (![...board.in_progress, ...board.inventory].some((t) => t.id === taskId)) {
+    if (!board.in_progress.some((t) => t.id === taskId)) {
       handleOpenEditTask(taskId)
       return
     }
@@ -365,9 +362,8 @@ export default function HomePage() {
 
   // The workspace with nothing picked yet opens on the first running card.
   const selectView = (next: BoardView) => {
-    const first = board.in_progress[0] ?? board.inventory[0]
-    if (next === 'workspace' && !selectedTaskId && first) {
-      setSelectedTaskId(first.id)
+    if (next === 'workspace' && !selectedTaskId && board.in_progress[0]) {
+      setSelectedTaskId(board.in_progress[0].id)
     }
     setView(next)
   }
@@ -477,12 +473,6 @@ export default function HomePage() {
 
   // A done card opens its read-only account; the others open the edit sheet.
   const handleOpenEditTask = (taskId: string) => {
-    if (columnOf(board, taskId) === 'inventory') {
-      setEditTask(null)
-      setDoneTaskId(null)
-      setInventoryTaskId(taskId)
-      return
-    }
     if (columnOf(board, taskId) === 'done') {
       setEditTask(null)
       setDoneTaskId(taskId)
@@ -519,7 +509,6 @@ export default function HomePage() {
         baseBranch: payload.baseBranch,
         branch: payload.branch,
         masterId: payload.masterId,
-        kind: payload.kind,
       })
       if (state) setBoard(state.board)
       return true
@@ -636,7 +625,6 @@ export default function HomePage() {
                 <KanbanBoard
                   onSelectTask={openTask}
                   onOpenTaskSheet={handleOpenEditTask}
-                  onStartInventoryTask={(taskId) => void startTaskOnHost(taskId)}
                   startRequest={startRequest}
                   onStartRequest={setStartRequest}
                   onNewTask={handleOpenNewTask}
@@ -767,14 +755,6 @@ export default function HomePage() {
                 void handleDeleteTask(doneTask.id)
               }}
               onClose={() => setDoneTaskId(null)}
-            />
-            <InventorySheet
-              task={inventoryTaskId ? board.inventory.find((t) => t.id === inventoryTaskId) ?? null : null}
-              onStart={(task) => {
-                setInventoryTaskId(null)
-                void startTaskOnHost(task.id)
-              }}
-              onClose={() => setInventoryTaskId(null)}
             />
             <ReportsDialog open={reportsOpen} onClose={() => setReportsOpen(false)} />
             <SettingsDialog

@@ -100,7 +100,7 @@ import {
   type LibraryKind,
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
-import { buildAgentCommand, executionBrief, executorSessionId, inventoryPrompt, nightShiftBrief, taskAgent, taskModel, type MasterContext } from './launch'
+import { buildAgentCommand, executorSessionId, nightShiftBrief, taskAgent, taskModel, type MasterContext } from './launch'
 import { batchDrained, dispatchable, releaseCandidates, waitingOnDependencies } from './release'
 import { columnLabel } from './column-labels'
 import { createReporter, isReportId, readReport } from './report'
@@ -117,20 +117,9 @@ import { getPlatform } from './platform'
 import type { PickFolderResult } from './folder-dialog'
 import { createHeartbeat, type HeartbeatClock, type ResumeResult } from './heartbeat'
 import { runAgentPrint } from './agent-print'
-import {
-  INVENTORY_DOCS_DIR,
-  INVENTORY_RESULT_MARK,
-  inventoryArgs,
-  inventoryCommands,
-  inventoryEnv,
-  inventoryLeftovers,
-  parseInventoryResult,
-} from './inventory'
-import { execEnv } from './env'
-import { initialClaudeState, reduceClaudeLine } from './progress'
 import { probeAgent } from './quota-probe'
 import { taskStatus, type StatusKey } from './status-keys'
-import { resolveAutonomousSettings, TASK_KINDS, type QuotaWait, type TaskKind } from './store'
+import { resolveAutonomousSettings, type QuotaWait } from './store'
 
 /** What a terminal start asks for. Core turns it into a command. */
 export interface LaunchIntent {
@@ -187,8 +176,6 @@ export interface CreateTaskPayload {
   model?: string
   effort?: AgentEffort
   autoMode?: boolean
-  /** Absent = feature. */
-  kind?: TaskKind
   attachments?: AttachmentInput[]
   github?: GithubRef
   jira?: JiraRef
@@ -202,8 +189,6 @@ export interface UpdateTaskPayload {
   model?: string
   effort?: AgentEffort
   autoMode?: boolean
-  /** Absent keeps the card's kind. */
-  kind?: TaskKind
   projectPath?: string
   baseBranch?: string | null
   /** New branch name; blank/absent keeps the current one. */
@@ -334,9 +319,6 @@ function requireTask(taskId: unknown): Task {
 
 function validBoard(value: unknown): BoardState {
   const board = { ...obj<BoardState>(value, 'board') }
-  // A frontend built before the inventory column sends three columns; its
-  // inventory cards stay where they are instead of disappearing.
-  if (board.inventory === undefined) board.inventory = getState().board.inventory
   for (const col of COLUMNS) {
     if (!Array.isArray(board[col])) invalid(`board.${col} must be an array`)
   }
@@ -344,7 +326,7 @@ function validBoard(value: unknown): BoardState {
   // rewrite their provisioned fields (worktree, project) from the outside.
   const known = new Map<string, Task>()
   for (const col of COLUMNS) for (const t of getState().board[col]) known.set(t.id, t)
-  const next: BoardState = { backlog: [], inventory: [], in_progress: [], done: [] }
+  const next: BoardState = { backlog: [], in_progress: [], done: [] }
   for (const col of COLUMNS) {
     for (const t of board[col]) {
       const current = known.get(obj<Task>(t, 'task').id)
@@ -385,13 +367,10 @@ export interface CoreOptions {
   heartbeatClock?: HeartbeatClock
   /** How long a resumed session gets to start before "continue" is sent to it. */
   resumeSettleMs?: number
-  /** Runs a headless agent (inventory passes); tests pass a fake one. */
+  /** Runs a headless agent (report narratives); tests pass a fake one. */
   agentRunner?: typeof runAgentPrint
 }
 
-/** An inventory pass that runs longer than this is stopped. */
-const INVENTORY_TIMEOUT_MS = 30 * 60_000
-const MAX_CONTEXT_LENGTH = 20_000
 const LIMIT_TEXT = /hit your [\w -]*limit|usage limit reached/i
 
 /** What a card stopped by a usage limit is told once the limit has reset. */
@@ -693,11 +672,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  const rerunInventoryAfterQuota = (taskId: string): Promise<void> => runInventoryPass(taskId)
-
-  /** Running inventory passes, so moving a card out of the column can stop its pass. */
-  const inventories = new Map<string, AbortController>()
-
   /** Move a card to the head of a column, patched. */
   function moveToColumn(taskId: string, to: ColumnId, patch: Partial<Task> = {}): Task {
     const board = getState().board
@@ -711,168 +685,14 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     return moved
   }
 
-  async function inventoryChanges(worktree: string): Promise<{ docs: string[]; leftovers: string[] }> {
-    const paths = (await collectWorkingEntries(worktree).catch(() => [])).map((e) => e.path)
-    return {
-      docs: paths.filter((p) => p.startsWith(`${INVENTORY_DOCS_DIR}/`) && /\/(spec|plan)\.md$/.test(p)),
-      leftovers: inventoryLeftovers(paths),
-    }
-  }
-
-  /** A usage limit a finished pass ran into, from its transcript, else from what it printed. */
-  function inventoryQuota(task: Task, sessionId: string, output: string): { resetsAt?: number } | null {
-    if (taskAgent(task) === 'claude' && task.worktreePath) {
-      const cwds = new Set([task.worktreePath])
-      try {
-        cwds.add(fs.realpathSync(task.worktreePath))
-      } catch {
-        // Gone already; the stored spelling is all there is.
-      }
-      for (const cwd of cwds) {
-        const file = path.join(claudeProjectDir(home, cwd), `${sessionId}.jsonl`)
-        let text: string
-        try {
-          text = fs.readFileSync(file, 'utf8')
-        } catch {
-          continue
-        }
-        const state = text.split('\n').filter(Boolean).reduce(reduceClaudeLine, initialClaudeState())
-        if (state.activity.waitingFor === 'quota') return { ...(state.activity.resetsAt ? { resetsAt: state.activity.resetsAt } : {}) }
-      }
-    }
-    return LIMIT_TEXT.test(output) ? {} : null
-  }
-
-  /**
-   * One headless pass over a card in the inventory column. Its result is the
-   * card's status: 準備開工, 待回答, or 等待額度 when a limit cut it short.
-   */
-  async function runInventoryPass(taskId: string): Promise<void> {
-    const task = findTask(taskId)
-    if (!task?.worktreePath || columnOf(taskId) !== 'inventory' || inventories.has(taskId)) return
-    const controller = new AbortController()
-    inventories.set(taskId, controller)
-    const worktree = task.worktreePath
-    const agent = taskAgent(task)
-    const sessionId = randomUUID()
-    const settings = resolveAutonomousSettings(getSettings())
-    const commands = agent === 'claude' ? inventoryCommands(settings.inventoryCommands) : []
-    const model = taskModel(task)
-    const found = models.findModel(agent, model)
-    const wanted = task.effort && task.effort !== 'auto' ? task.effort : undefined
-    const effort = found?.efforts ? clampEffort(wanted, found.efforts) : wanted
-    const prompt = inventoryPrompt({
-      title: task.title,
-      description: task.description,
-      context: task.inventory?.context,
-      attachments: task.inventory?.attachments,
-      existingDocs: task.inventory?.docs,
-      commands,
-      docsDir: INVENTORY_DOCS_DIR,
-      resultMark: INVENTORY_RESULT_MARK,
-    })
-    const library = await libraryLaunchInfo(worktree).catch(() => null)
-    if (controller.signal.aborted) {
-      inventories.delete(taskId)
-      return
-    }
-    updateTask(taskId, { inventory: { ...task.inventory, runningSince: Date.now(), sessionId, error: undefined } })
-    setTaskStatus(getStore(), { taskId, status: 'inventorying', source: 'host' })
-    bus.emit('state:changed', getState())
-
-    let output = ''
-    let failure: Error | null = null
-    try {
-      output = await agentRunner(agent, inventoryArgs({
-        agent,
-        model,
-        effort,
-        sessionId,
-        extraCommands: settings.inventoryCommands,
-        library,
-      }), prompt, {
-        cwd: worktree,
-        timeout: INVENTORY_TIMEOUT_MS,
-        maxBuffer: 2 * 1024 * 1024,
-        signal: controller.signal,
-        env: inventoryEnv(agent, library, execEnv()),
-      })
-    } catch (err) {
-      failure = err as Error
-    } finally {
-      inventories.delete(taskId)
-    }
-
-    const current = findTask(taskId)
-    if (!current) return
-    const parsed = parseInventoryResult(output)
-    const { docs, leftovers } = await inventoryChanges(worktree)
-    const inventory = {
-      ...current.inventory,
-      runningSince: undefined,
-      finishedAt: Date.now(),
-      passes: (current.inventory?.passes ?? 0) + 1,
-      sessionId,
-      ...(docs.length ? { docs } : {}),
-      ...(parsed.summary ? { lastSummary: parsed.summary } : {}),
-    }
-    if (controller.signal.aborted || columnOf(taskId) !== 'inventory') {
-      updateTask(taskId, { inventory: { ...inventory, error: '盤點已停止' } })
-      bus.emit('state:changed', getState())
-      return
-    }
-    const quota = inventoryQuota(current, sessionId, `${output}\n${failure?.message ?? ''}`)
-    if (quota) {
-      updateTask(taskId, { inventory })
-      startQuotaWait(findTask(taskId)!, 'inventory', quota.resetsAt)
-      return
-    }
-    if (failure && !parsed.result) {
-      const message = failure.message.slice(0, 2000)
-      updateTask(taskId, { inventory: { ...inventory, error: message } })
-      setTaskStatus(getStore(), { taskId, status: 'needs_answer', reason: `盤點失敗：${message.slice(0, 300)}`, source: 'host' })
-    } else if (leftovers.length) {
-      const listed = leftovers.slice(0, 10).join('、') + (leftovers.length > 10 ? ` 等 ${leftovers.length} 個檔案` : '')
-      const message = `盤點結束時 worktree 仍有 ${INVENTORY_DOCS_DIR}/ 以外的變更：${listed}。確認後自行還原，再重新盤點。`
-      updateTask(taskId, { inventory: { ...inventory, error: message } })
-      setTaskStatus(getStore(), { taskId, status: 'needs_answer', reason: message.slice(0, 300), source: 'host' })
-    } else {
-      updateTask(taskId, { inventory })
-      setTaskStatus(getStore(), parsed.result === 'ready'
-        ? { taskId, status: 'ready', reason: '盤點完成，可以直接執行', source: 'host' }
-        : { taskId, status: 'needs_answer', reason: parsed.result ? '盤點列出待回答的問題或缺少的資源' : '盤點沒有回報結果', source: 'host' })
-    }
-    bus.emit('state:changed', getState())
-  }
-
-  /** A card that left the inventory column stops its pass and its inventory status. */
-  function leftInventory(taskId: string): void {
-    inventories.get(taskId)?.abort()
-    const task = findTask(taskId)
-    if (!task) return
-    if (task.quotaWait?.phase === 'inventory') updateTask(taskId, { quotaWait: undefined })
-    const status = taskStatus(findTask(taskId)!)
-    if (status && ['inventorying', 'needs_answer', 'ready', 'quota_wait'].includes(status) && columnOf(taskId) !== 'done') {
-      setTaskStatus(getStore(), { taskId, status: null, source: 'host' })
-    }
-  }
-
-  /**
-   * Backlog or 盤點 → In Progress, agent started. A card from the inventory
-   * column gets a new session that works from its spec and plan.
-   */
+  /** Backlog → In Progress, agent started. */
   async function startTask(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
     const task = requireTask(taskId)
     const column = columnOf(task.id)
-    if (column !== 'backlog' && column !== 'inventory') throw new Error(`只有待辦或盤點欄的卡片可以啟動（目前在${columnLabel(column)}）`)
-    if (column === 'inventory') {
-      if (inventories.has(task.id)) throw coded('INVENTORY_RUNNING', '這張卡正在盤點，等盤點結束再啟動')
-      if (task.quotaWait?.phase === 'inventory') updateTask(task.id, { quotaWait: undefined })
-    }
+    if (column !== 'backlog') throw new Error(`只有待辦的卡片可以啟動（目前在${columnLabel(column)}）`)
     const started = moveToColumn(task.id, 'in_progress', {
       launchedAt: Date.now(),
       launchError: undefined,
-      ...(column === 'inventory' ? { runId: randomUUID() } : {}),
     })
     bus.emit('state:changed', getState())
     await startTaskSession(started, task.id, { taskId: task.id, launch: {} })
@@ -885,8 +705,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   let releaseAgain = false
 
   /**
-   * While the switch is on, fill the free slots with 準備開工 cards in
-   * inventory-column order. Re-entrant calls (a release changes the state it
+   * While the switch is on, fill the free slots with tonight's 準備開工 cards
+   * in order. Re-entrant calls (a release changes the state it
    * reacts to) only ask for one more round.
    */
   async function releaseTick(): Promise<void> {
@@ -908,7 +728,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         if (!batchId) return
         const concurrency = resolveAutonomousSettings(state.settings).concurrency
         for (const card of releaseCandidates(state.board, concurrency)) {
-          if (inventories.has(card.id)) continue
           const batches = getStore().get('batches') ?? []
           getStore().set('batches', batches.map((b) => (b.id === batchId && !b.taskIds.includes(card.id)
             ? { ...b, taskIds: [...b.taskIds, card.id], titles: { ...b.titles, [card.id]: card.title } }
@@ -932,7 +751,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   /**
-   * Send one card of tonight's list out. A card from 待辦 or 盤點 starts; an
+   * Send one card of tonight's list out. A card from 待辦 starts; an
    * In Progress card marked to go again gets a new session on the same branch,
    * with the correction the person wrote on its status first.
    */
@@ -1041,34 +860,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     void reporter.create(batchId).catch(() => {})
   }
 
-  async function startInventory(taskId: string): Promise<{ state: VibeFlowState; task: Task }> {
-    const task = requireTask(taskId)
-    if (isMasterTask(task)) throw coded('MASTER_CARD', 'master 卡片不經過盤點')
-    const column = columnOf(task.id)
-    if (column !== 'backlog') throw coded('NOT_IN_BACKLOG', `只有待辦的卡片可以開始盤點（目前在${columnLabel(column)}）`)
-    moveToColumn(task.id, 'inventory', { launchError: undefined })
-    setTaskStatus(getStore(), { taskId: task.id, status: 'inventorying', source: 'host' })
-    bus.emit('state:changed', getState())
-    try {
-      await ensureProvisioned(findTask(task.id)!)
-    } catch (err) {
-      // ensureProvisioned sent the card back to Backlog with the reason.
-      if (findTask(task.id)) setTaskStatus(getStore(), { taskId: task.id, status: null, source: 'host' })
-      bus.emit('state:changed', getState())
-      throw err
-    }
-    void runInventoryPass(task.id)
-    return { state: getState(), task: findTask(task.id)! }
-  }
-
   async function resumeAfterQuota(taskId: string, wait: QuotaWait): Promise<ResumeResult> {
     const task = findTask(taskId)
     if (!task) return 'done'
-    if (wait.phase === 'inventory') {
-      endQuotaWait(taskId)
-      if (columnOf(taskId) === 'inventory') await rerunInventoryAfterQuota?.(taskId)
-      return 'done'
-    }
     if (columnOf(taskId) !== 'in_progress') {
       endQuotaWait(taskId)
       return 'done'
@@ -1221,31 +1015,17 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     const boardCli = await boardCliLaunchInfo()
     const isContinuation = Boolean(continuation)
     const firstLaunch = !continuation && !intent.resume && intent.includeTaskPrompt !== false
-    let briefed = false
     if (firstLaunch && task.dispatch && !task.dispatch.briefedAt) {
-      briefed = true
-      const inventoried = Boolean(task.inventory?.finishedAt && !task.inventory.handedOffAt)
-      continuation = nightShiftBrief(task, { canWrite: Boolean(boardCli?.cliPath), docs: inventoried ? task.inventory?.docs ?? [] : [] })
-      updateTask(task.id, {
-        dispatch: { ...task.dispatch, briefedAt: Date.now() },
-        ...(inventoried ? { inventory: { ...task.inventory, handedOffAt: Date.now() } } : {}),
-      })
+      continuation = nightShiftBrief(task, { canWrite: Boolean(boardCli?.cliPath) })
+      updateTask(task.id, { dispatch: { ...task.dispatch, briefedAt: Date.now() } })
       if (columnOf(task.id) === 'in_progress') setTaskStatus(getStore(), { taskId: task.id, status: 'running', source: 'host' })
-    } else if (firstLaunch && taskStatus(task) === 'ready' && !(task.inventory?.finishedAt && !task.inventory.handedOffAt) && columnOf(task.id) === 'in_progress') {
+    } else if (firstLaunch && taskStatus(task) === 'ready' && columnOf(task.id) === 'in_progress') {
       // Started by hand instead of by the night shift: it is no longer waiting to go out.
       setTaskStatus(getStore(), { taskId: task.id, status: null, source: 'host' })
     }
-    // A card's first run after its inventory starts from the spec and plan,
-    // whichever way it reached In Progress (released, started, dragged).
-    if (!continuation && !intent.resume && intent.includeTaskPrompt !== false && task.inventory?.finishedAt && !task.inventory.handedOffAt) {
-      briefed = true
-      continuation = executionBrief(task, task.inventory.docs ?? [], { canWrite: Boolean(boardCli?.cliPath) })
-      updateTask(task.id, { inventory: { ...task.inventory, handedOffAt: Date.now() } })
-      if (columnOf(task.id) === 'in_progress') setTaskStatus(getStore(), { taskId: task.id, status: 'running', source: 'host' })
-    }
     let route = settledRoute(task)
     // A continuation keeps the model and effort the card's run already settled on.
-    const needsRoute = !isContinuation && !(briefed && task.inventory?.finishedAt) && (!taskModel(task) || task.effort === 'auto')
+    const needsRoute = !isContinuation && (!taskModel(task) || task.effort === 'auto')
     if (needsRoute && !intent.resume && intent.includeTaskPrompt !== false) {
       let pending = routing.get(task.id)
       if (!pending) {
@@ -1391,7 +1171,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         { ...current, launchedAt: undefined, launchError },
         ...board.backlog.filter((t) => t.id !== taskId),
       ],
-      inventory: board.inventory.filter((t) => t.id !== taskId),
       in_progress: board.in_progress.filter((t) => t.id !== taskId),
       done: board.done.filter((t) => t.id !== taskId),
     }
@@ -1555,16 +1334,10 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     'app:getVersion': () => version,
 
     'vibeflow:setBoard': (board) => {
-      const before = getState().board.inventory.map((t) => t.id)
       setBoard(validBoard(board))
-      for (const id of before) if (columnOf(id) !== 'inventory') leftInventory(id)
       scheduleRelease()
       return getState()
     },
-
-    // Backlog → 盤點: the card gets its branch and worktree and a headless pass
-    // writes its spec, plan and 執行準備. It returns at once; the status says how the pass went.
-    'vibeflow:startInventory': (taskId) => startInventory(str(taskId, 'taskId')),
 
     'vibeflow:setRelease': (payload) => {
       const p = obj<{ enabled: unknown }>(payload, 'payload')
@@ -1572,61 +1345,11 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return setRelease(p.enabled)
     },
 
-    // The spec and plan an inventory wrote, for the inventory panel. Only the
-    // files the card's own passes recorded, and only inside its worktree.
-    'vibeflow:readInventoryDocs': (taskId) => {
-      const task = requireTask(taskId)
-      const worktree = gitWorktree(task)
-      if (!worktree) return []
-      const root = path.resolve(worktree)
-      return (task.inventory?.docs ?? []).flatMap((rel) => {
-        const file = path.resolve(root, rel)
-        if (!file.startsWith(root + path.sep)) return []
-        try {
-          const content = fs.readFileSync(file, 'utf8')
-          return [{ path: rel, content: content.length > 200_000 ? `${content.slice(0, 200_000)}\n…` : content }]
-        } catch {
-          return []
-        }
-      })
-    },
-
     // Batch reports, newest first; the text of one.
     'reports:list': () => getStore().get('reports') ?? [],
     'reports:read': (reportId) => {
       if (!isReportId(reportId)) invalid('reportId must be a report id')
       return readReport(path.dirname(getStorePath()), getStore().get('reports') ?? [], reportId)
-    },
-
-    'vibeflow:rerunInventory': (taskId) => {
-      const task = requireTask(taskId)
-      if (columnOf(task.id) !== 'inventory') throw coded('NOT_IN_INVENTORY', '只有盤點欄的卡片可以重新盤點')
-      if (inventories.has(task.id)) throw coded('INVENTORY_RUNNING', '這張卡正在盤點')
-      if (task.quotaWait) updateTask(task.id, { quotaWait: undefined })
-      void runInventoryPass(task.id)
-      return getState()
-    },
-
-    // The inventory panel's extra context: kept apart from the description,
-    // which an inventory card no longer edits.
-    'vibeflow:setInventoryContext': (payload) => {
-      const p = obj<{ taskId: unknown; context?: unknown; attachments?: unknown }>(payload, 'payload')
-      const task = requireTask(p.taskId)
-      if (columnOf(task.id) !== 'inventory') throw coded('NOT_IN_INVENTORY', '只有盤點欄的卡片可以補充 context')
-      const context = p.context === undefined ? task.inventory?.context : str(p.context, 'context').trim()
-      if (context && context.length > MAX_CONTEXT_LENGTH) invalid(`context must be at most ${MAX_CONTEXT_LENGTH} characters`)
-      let attachments = task.inventory?.attachments ?? []
-      if (p.attachments !== undefined) {
-        if (!Array.isArray(p.attachments)) invalid('attachments must be an array')
-        if (!task.worktreePath) throw new Error('找不到任務 worktree')
-        const written = writeAttachments(task.worktreePath, p.attachments as AttachmentInput[])
-        attachments = [...attachments, ...written.map((a) => a.path)]
-      }
-      updateTask(task.id, {
-        inventory: { ...task.inventory, context: context || undefined, ...(attachments.length ? { attachments } : {}) },
-      })
-      bus.emit('state:changed', getState())
-      return getState()
     },
 
     'vibeflow:setSettings': (patch) => {
@@ -1733,7 +1456,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (p.github !== undefined && !isGithubRef(p.github)) invalid('github must be an issue or pr ref on github.com')
       if (p.jira !== undefined && !isJiraRef(p.jira)) invalid('jira must be a Jira ticket ref')
       if (p.createBranch !== undefined && typeof p.createBranch !== 'boolean') invalid('createBranch must be a boolean')
-      if (p.kind !== undefined && !TASK_KINDS.includes(p.kind)) invalid('unknown kind')
       const { task } = await createTaskFromInput({
         projectPath: p.projectPath,
         role: p.role,
@@ -1751,7 +1473,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         model: p.model,
         effort: p.effort,
         autoMode: p.autoMode,
-        kind: p.role === 'master' ? undefined : p.kind,
         attachments: p.attachments,
         github: p.github,
         jira: p.jira,
@@ -1825,7 +1546,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         throw new Error('只有待辦的任務可以編輯')
       }
       if (p.effort !== undefined && !AGENT_EFFORTS.includes(p.effort)) invalid('unknown effort')
-      if (p.kind !== undefined && !TASK_KINDS.includes(p.kind)) invalid('unknown kind')
       let masterPatch: Partial<Task> = {}
       if (p.masterId !== undefined) {
         if (p.masterId !== null) {
@@ -1896,7 +1616,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         jevRoute: undefined,
         effort: p.effort,
         autoMode: p.autoMode,
-        ...(p.kind !== undefined && !isMasterTask(existing) ? { kind: p.kind === 'ebug' ? 'ebug' as const : undefined } : {}),
         ...masterPatch,
         ...gitPatch,
       })
@@ -2466,7 +2185,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       stopReleaseWatch()
       reporter.stop()
       heartbeat.stop()
-      for (const controller of inventories.values()) controller.abort()
       cancelJiraLogin()
       sessions.shutdown()
       cancelAllChatSends()

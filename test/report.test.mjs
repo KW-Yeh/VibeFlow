@@ -10,14 +10,14 @@ import { createReporter, reportPath, reportRows, reportTable } from '../packages
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
-import { findTask, getStore, getStoreAtPath, updateTask } from '../packages/core/src/store.ts'
+import { findTask, getStore, getStoreAtPath } from '../packages/core/src/store.ts'
 import { createTaskFromInput } from '../packages/core/src/tasks.ts'
 import { setTaskStatus } from '../packages/core/src/status-tags.ts'
 import { makeRepo } from './support/repo.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const card = (id, extra = {}) => ({ id, title: `Card ${id}`, branch: '', ...extra })
-const board = (b) => ({ backlog: [], inventory: [], in_progress: [], done: [], ...b })
+const board = (b) => ({ backlog: [], in_progress: [], done: [], ...b })
 const usage = (n) => ({ input: n, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 })
 const H = 3_600_000
 
@@ -157,7 +157,7 @@ const fakeSessions = () => ({
 
 const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms))
 
-test('switching release off writes a report the host lists and reads, and the CLI shows (AC-8)', async (t) => {
+test('a closed night shift writes a report the host lists and reads, and the CLI shows (AC-8)', async (t) => {
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(cleanup)
   const runs = []
@@ -166,11 +166,11 @@ test('switching release off writes a report the host lists and reads, and the CL
     agentRunner: async (bin, args, input) => { runs.push({ bin, args, input }); return '一張卡開了 PR。' },
   })
   t.after(() => core.shutdown())
-  const { task } = await createTaskFromInput({ projectPath, title: 'Report me', status: 'inventory' })
-  updateTask(task.id, { inventory: { finishedAt: Date.now(), docs: [] } })
+  const { task } = await createTaskFromInput({ projectPath, title: 'Report me', model: 'sonnet', effort: 'high' })
   setTaskStatus(getStore(), { taskId: task.id, status: 'ready', source: 'host' })
   core.handlers['vibeflow:setRelease']({ enabled: true })
-  await settle()
+  const end = Date.now() + 8000
+  while (!findTask(task.id).tags?.includes('status:running') && Date.now() < end) await settle(20)
   assert.equal(findTask(task.id).tags.includes('status:running'), true)
   setTaskStatus(getStore(), { taskId: task.id, status: 'pr_opened', reason: 'https://github.com/acme/x/pull/9', source: 'cli' })
   await core.handlers['vibeflow:cleanupTask'](task.id).catch(() => {})
