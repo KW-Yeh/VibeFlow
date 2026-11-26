@@ -440,6 +440,8 @@ export function KanbanBoard({
             <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail
               running={board.in_progress}
+              backlog={board.backlog}
+              done={board.done}
               selectedTaskId={selectedTaskId ?? null}
               progress={progress}
               onSelect={onSelectTask}

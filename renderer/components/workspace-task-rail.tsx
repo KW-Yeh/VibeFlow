@@ -1,7 +1,7 @@
 import { useState, type DragEvent } from 'react'
 import { Network, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
-import { branchLabel, TaskId } from '@/components/board-columns'
+import { branchLabel, SlaveList, TaskId, type SlaveEntry } from '@/components/board-columns'
 import { activityMark, StatusMark, TaskProgressChip } from '@/components/task-progress'
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
@@ -12,6 +12,9 @@ import type { Task, TaskProgress } from '@/lib/types'
 interface WorkspaceTaskRailProps {
   /** The In Progress column, in board order. */
   running: Task[]
+  /** The other columns: a running master lists its cards there in brief, as the board does. */
+  backlog: Task[]
+  done: Task[]
   selectedTaskId: string | null
   progress: Record<string, TaskProgress>
   onSelect: (taskId: string) => void
@@ -55,6 +58,8 @@ function TreeLine({ branch }: { branch: Exclude<Branch, 'none'> }) {
 
 export function WorkspaceTaskRail({
   running,
+  backlog,
+  done,
   selectedTaskId,
   progress,
   onSelect,
@@ -63,6 +68,10 @@ export function WorkspaceTaskRail({
   onCollapsedChange,
 }: WorkspaceTaskRailProps) {
   const rows = orderRunning(running)
+  const waitingOf = (masterId: string): SlaveEntry[] => [
+    ...backlog.filter((t) => t.masterId === masterId).map((task) => ({ task, column: 'backlog' as const })),
+    ...done.filter((t) => t.masterId === masterId).map((task) => ({ task, column: 'done' as const })),
+  ]
   const [dragId, setDragId] = useState<string | null>(null)
   // Where the dragged card would land among its group: before `before`, or at the group's end (null).
   const [aim, setAim] = useState<{ group: string; before: string | null } | null>(null)
@@ -143,6 +152,7 @@ export function WorkspaceTaskRail({
   const row = (task: Task, branch: Branch) => {
     const selected = task.id === selectedTaskId
     const isMaster = task.role === 'master'
+    const waiting = isMaster ? waitingOf(task.id) : []
     const button = (
       <button
         type="button"
@@ -204,6 +214,9 @@ export function WorkspaceTaskRail({
         {branch !== 'none' && <TreeLine branch={branch} />}
         {lineBefore && <span aria-hidden="true" className="pointer-events-none absolute -top-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
         {button}
+        {waiting.length > 0 && (
+          <SlaveList slaves={waiting} progress={progress} selectedTaskId={selectedTaskId} onSelectTask={onSelect} />
+        )}
         {lineAfter && <span aria-hidden="true" className="pointer-events-none absolute -bottom-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
       </div>
     )

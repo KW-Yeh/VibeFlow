@@ -295,7 +295,7 @@ export function todoCount(progress: TaskProgress | undefined): string | null {
 }
 
 /** A master's dispatched cards, nested under it whichever column each is in. */
-function SlaveList({
+export function SlaveList({
   slaves,
   shown = slaves,
   progress,
