@@ -610,7 +610,9 @@ the Web UI is driven in a browser against a real host.
   `node:assert/strict`). The harness strips types, so tests import the `.ts` helper
   directly. `test/support/repo.mjs` provides `makeRepo()` for a throwaway repo with an
   optional bare remote, plus `git()` / `writeFile()` / `exists()` — use it instead of
-  hand-rolling git fixtures. `test/ui-consistency.test.mjs` is the odd one out: it greps
+  hand-rolling git fixtures. A test that creates cards through a store directory takes it
+  from `test/support/store.mjs` (`makeStore()`), whose `workstationPath` is a temp folder —
+  the default is the real `~/Desktop`. `test/ui-consistency.test.mjs` is the odd one out: it greps
   renderer sources for design-system violations (radius ladder, `focus-visible:ring-[3px]`
   on hand-written buttons, `DialogShell` headers) rather than executing anything.
 - **Handler behaviour** is unit-testable with `createCore` and a fake `SessionBackend`

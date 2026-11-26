@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { getStoreAtPath } from '../packages/core/src/store.ts'
 import { makeRepo } from './support/repo.mjs'
+import { makeStore } from './support/store.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const run = promisify(execFile)
@@ -24,7 +25,7 @@ async function task(args, env = {}) {
 }
 
 test('a card created from a master shell belongs to that master unless told otherwise', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
   const store = ['--store-path', storeDir]
@@ -41,7 +42,7 @@ test('a card created from a master shell belongs to that master unless told othe
 })
 
 test('task send needs a running host and says so', async () => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const out = await task(['send', '--task', 'abc', '--text', 'hi', '--store-path', storeDir], { VIBEFLOW_TASK_ID: 'def' })
   assert.equal(out.error.code, 'HOST_NOT_RUNNING')
   const missing = await task(['send', '--task', 'abc', '--store-path', storeDir])
@@ -50,7 +51,7 @@ test('task send needs a running host and says so', async () => {
 })
 
 test('task start --new-session needs a running host; a misplaced flag fails before it', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   t.after(() => fs.rm(storeDir, { recursive: true, force: true }))
   const store = ['--store-path', storeDir]
   assert.equal((await task(['start', '--task', 'abc', '--new-session', ...store])).error.code, 'HOST_NOT_RUNNING')
@@ -61,7 +62,7 @@ test('task start --new-session needs a running host; a misplaced flag fails befo
 })
 
 test('task create --no-branch records a branchless card and refuses --branch with it', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const workstation = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-ws-'))
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-folder-'))
   t.after(() => Promise.all([storeDir, workstation, folder].map((d) => fs.rm(d, { recursive: true, force: true }))))
@@ -76,7 +77,7 @@ test('task create --no-branch records a branchless card and refuses --branch wit
 })
 
 test('a master names related projects and its cards wait on each other with --after', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
   const store = ['--store-path', storeDir]
@@ -106,7 +107,7 @@ async function tagCli(args, env = {}) {
 }
 
 async function seededStore(t) {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-tag-cli-'))
+  const { storeDir } = await makeStore('vf-tag-cli-')
   t.after(() => fs.rm(storeDir, { recursive: true, force: true }))
   const card = (id) => ({ id, title: id, branch: '' })
   getStoreAtPath(storeDir).set('board', { backlog: [card('a'), card('b'), card('c')], in_progress: [card('run')], done: [card('fin')] })
@@ -166,7 +167,7 @@ test('task move reorders a card within its column', async (t) => {
 })
 
 test('task status --set replaces the card status and refuses an unknown one (AC-4)', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
   const store = ['--store-path', storeDir]
@@ -187,7 +188,7 @@ test('task status --set replaces the card status and refuses an unknown one (AC-
 })
 
 test('task create --ready puts a card on tonight\'s list without provisioning it; dispatch needs a host (night shift)', async (t) => {
-  const storeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vf-task-cli-'))
+  const { storeDir } = await makeStore('vf-task-cli-')
   const { projectPath, cleanup } = await makeRepo({ withRemote: false })
   t.after(() => Promise.all([cleanup(), fs.rm(storeDir, { recursive: true, force: true })]))
   const store = ['--store-path', storeDir]

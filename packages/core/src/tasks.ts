@@ -188,14 +188,13 @@ export async function createTaskFromInput(
 
   // The task's workspace folder is `<workstationRoot>/<projectName>` under the
   // global workstation (settings.workstationPath, default ~/Desktop). The
-  // worktree and runtime artifact files
-  // live directly inside it. Create it up front so provisioning has a home.
+  // worktree and runtime artifact files live directly inside it. It is not
+  // created here: a backlog card leaves the disk alone until it starts.
   const projectName = path.basename(projectPath)
   const workspacePath = projectWorkstationPath(
     resolveWorkstationPath(store.get('settings')),
     projectName
   )
-  await fs.mkdir(workspacePath, { recursive: true })
 
   // Vet the user's name now so a bad one surfaces as its own error at creation,
   // not later at launch. Generating a name is skipped entirely when one was

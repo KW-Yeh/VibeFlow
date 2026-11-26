@@ -68,6 +68,7 @@ test('a backlog card names its branch but creates nothing in git', async (t) => 
   assert.equal(task.branchExplicit, true)
   assert.equal(task.baseBranch, 'main')
   assert.equal(task.worktreePath, undefined)
+  assert.equal(await exists(task.workspacePath), false, 'no workspace folder until the card starts')
   assert.equal(await git(project, 'branch', '--list', 'fix/login-flow'), '')
   assert.equal(await git(remotePath, 'branch', '--list', 'fix/login-flow'), '')
 })

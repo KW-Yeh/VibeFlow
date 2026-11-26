@@ -100,7 +100,9 @@ NODE_OPTIONS="--experimental-strip-types --import ./test/support/register.mjs" \
 
 `test/support/` holds the harness: the resolve hook, its registrar, and
 `repo.mjs` (creates isolated throwaway git repos with deterministic identity so
-tests never touch the user's git config or network).
+tests never touch the user's git config or network), and `store.mjs`
+(`makeStore()`: a throwaway store whose `workstationPath` sits inside it, so
+creating a card never makes folders under the real `~/Desktop` default).
 
 ## Known gaps (not covered here)
 
