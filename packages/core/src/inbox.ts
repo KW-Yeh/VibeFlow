@@ -44,26 +44,42 @@ export function pendingMessages(dir: string): number {
   return messageNames(dir).length
 }
 
-export function postMessage(dir: string, text: string): void {
+/** Returns the message's name, which sorts after every earlier one. */
+export function postMessage(dir: string, text: string): string {
   fs.mkdirSync(dir, { recursive: true })
   const name = `${String(Date.now()).padStart(13, '0')}-${String(seq++ % 1e6).padStart(6, '0')}`
   const tmp = path.join(dir, `.tmp-${name}`)
   fs.writeFileSync(tmp, text)
   fs.renameSync(tmp, path.join(dir, name))
+  return name
 }
 
-/** Claim every waiting message for the host to type itself; what a hook already took is gone. */
-export function takeMessages(dir: string): string[] {
-  const texts: string[] = []
+export interface InboxMessage {
+  name: string
+  text: string
+}
+
+/**
+ * Claim waiting messages for the host to type itself, oldest first, up to and
+ * including `upTo` when given; what a hook already took is gone.
+ */
+export function takeMessages(dir: string, upTo?: string): InboxMessage[] {
+  const taken: InboxMessage[] = []
   for (const name of messageNames(dir)) {
+    if (upTo !== undefined && name > upTo) break
     const claimed = path.join(dir, `.host-${name}`)
     try {
       fs.renameSync(path.join(dir, name), claimed)
     } catch {
       continue
     }
-    texts.push(fs.readFileSync(claimed, 'utf8'))
+    taken.push({ name, text: fs.readFileSync(claimed, 'utf8') })
     fs.rmSync(claimed, { force: true })
   }
-  return texts
+  return taken
+}
+
+/** Whether a message is still in the inbox, waiting or mid-claim by a hook or the host. */
+export function inboxHas(dir: string, name: string): boolean {
+  return [name, `.hook-${name}`, `.host-${name}`].some((n) => fs.existsSync(path.join(dir, n)))
 }

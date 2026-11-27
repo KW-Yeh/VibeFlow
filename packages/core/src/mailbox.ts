@@ -31,6 +31,8 @@ export interface MailboxOptions {
   timeoutMs?: number
   /** How often to try again to wake an agent whose inbox still holds a message. */
   retryMs?: number
+  /** The host typed these inbox messages into the session itself. */
+  onTyped?(key: string, names: string[]): void
 }
 
 export interface DeliverOptions {
@@ -44,7 +46,13 @@ export type DeliveryVia = 'typed' | 'queued' | 'hook'
 export interface Mailbox {
   /** A person's keys: written now, or held while a delivery is mid-way. */
   userInput(key: string, data: string): void
-  deliver(key: string, text: string, opts?: DeliverOptions): Promise<{ queuedMs: number; via: DeliveryVia }>
+  deliver(key: string, text: string, opts?: DeliverOptions): Promise<{ queuedMs: number; via: DeliveryVia; inboxName?: string }>
+  /**
+   * Type what waits for the session now instead of waiting for the agent to be
+   * idle or the person to stop typing; inbox messages up to `upTo` only. Still
+   * refused over a permission dialog or text the person has not sent.
+   */
+  sendNow(key: string, upTo?: string): Promise<{ via: 'typed' | 'queued' | 'none' }>
   /** The agent's state changed: an inbox message may now be typed to wake it. */
   poke(key: string): void
   /** The session is gone: drop what was kept for it. */
@@ -68,8 +76,8 @@ export function bracketedPaste(text: string): string {
  * Wrap a message so the receiving agent can tell who sent it. `from` null =
  * VibeFlow itself. A sender cannot forge the tag from inside its text.
  */
-export function frameMessage(from: { id: string; title: string } | null, text: string): string {
-  const sender = from ? `${from.id} ${from.title}`.replace(/["\r\n]/g, ' ') : 'vibeflow'
+export function frameMessage(from: { id: string; title: string } | 'person' | null, text: string): string {
+  const sender = from === 'person' ? 'person' : from ? `${from.id} ${from.title}`.replace(/["\r\n]/g, ' ') : 'vibeflow'
   const body = text.replace(/<(\/?)vibeflow/gi, '‹$1vibeflow')
   return `<vibeflow from="${sender}">\n${body}\n</vibeflow>`
 }
@@ -113,6 +121,8 @@ export function createMailbox(options: MailboxOptions): Mailbox {
   const held = new Map<string, string[]>()
   const turns = new Map<string, Promise<unknown>>()
   const retries = new Map<string, ReturnType<typeof setTimeout>>()
+  const hurried = new Set<string>()
+  const hurry = (key: string) => hurried.has(key) && !drafts.has(key)
 
   /** Whether this input emptied a box that held a draft. */
   function noteInput(key: string, data: string): boolean {
@@ -147,6 +157,7 @@ export function createMailbox(options: MailboxOptions): Mailbox {
     const quiet = options.quietMs ?? quietFromEnv()
     const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     for (;;) {
+      if (hurry(key)) return
       const left = drafts.has(key) ? 250 : (lastInput.get(key) ?? 0) + quiet - Date.now()
       if (left <= 0) return
       if (Date.now() - started > timeout) {
@@ -160,7 +171,9 @@ export function createMailbox(options: MailboxOptions): Mailbox {
     const run = (turns.get(key) ?? Promise.resolve()).catch(() => {}).then(job)
     turns.set(key, run)
     void run.finally(() => {
-      if (turns.get(key) === run) turns.delete(key)
+      if (turns.get(key) !== run) return
+      turns.delete(key)
+      hurried.delete(key)
     }).catch(() => {})
     return run
   }
@@ -178,14 +191,26 @@ export function createMailbox(options: MailboxOptions): Mailbox {
         retryLater(key)
         return 'queued'
       }
-      const left = (lastInput.get(key) ?? 0) + quiet - Date.now()
+      const left = hurry(key) ? 0 : (lastInput.get(key) ?? 0) + quiet - Date.now()
       if (left <= 0) break
       await sleep(Math.min(left, 250))
     }
-    const texts = takeMessages(dir)
-    if (!texts.length) return 'hook'
-    await write(key, texts.join('\n\n'))
-    return 'typed'
+    return (await typeInbox(key, dir)) ? 'typed' : 'hook'
+  }
+
+  async function typeInbox(key: string, dir: string, upTo?: string): Promise<boolean> {
+    const taken = takeMessages(dir, upTo)
+    if (!taken.length) return false
+    await write(key, taken.map((m) => m.text).join('\n\n'))
+    options.onTyped?.(key, taken.map((m) => m.name))
+    return true
+  }
+
+  function refuseNow(key: string): void {
+    if (drafts.has(key)) throw coded('DRAFT_PENDING', 'the input box still holds unsent text')
+    if (isBlocked(options.activity(key))) {
+      throw coded('TARGET_BLOCKED', 'the agent is on a permission dialog; typing could answer it')
+    }
   }
 
   async function type(key: string, text: string, opts: DeliverOptions, started: number) {
@@ -226,9 +251,23 @@ export function createMailbox(options: MailboxOptions): Mailbox {
       return enqueue(key, async () => {
         const dir = options.inbox?.(key)
         if (!dir) return type(key, text, opts, started)
-        postMessage(dir, text)
+        const inboxName = postMessage(dir, text)
         const via = await wake(key, dir)
-        return { queuedMs: Date.now() - started, via }
+        return { queuedMs: Date.now() - started, via, inboxName }
+      })
+    },
+
+    async sendNow(key, upTo) {
+      refuseNow(key)
+      const dir = options.inbox?.(key)
+      if (!dir) {
+        if (!turns.has(key)) return { via: 'none' }
+        hurried.add(key)
+        return { via: 'queued' }
+      }
+      return enqueue(key, async () => {
+        refuseNow(key)
+        return { via: (await typeInbox(key, dir, upTo)) ? 'typed' : 'none' }
       })
     },
 

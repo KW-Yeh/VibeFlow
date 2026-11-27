@@ -26,6 +26,7 @@ import type { BoardCliLaunchInfo } from './board-cli'
 import type { RecentProjectEntry } from './recent-projects'
 import type { SubAgentRun } from './subagents'
 import type { DeliveryVia } from './mailbox'
+import type { CardMessage, CardMessageThreadSummary } from './card-messages'
 import type { ProgressNotification, TaskProgress } from './progress'
 import type { ChatAttachment, Conversation } from './chat-store'
 import type { AttachmentInput } from './attachments'
@@ -237,6 +238,17 @@ export function createBridge(t: BridgeTransport) {
   /** Type a message into another card's agent: a master to its cards, a card to its master. */
   sendMessage: (payload: { from: string; to: string; text: string; force?: boolean }): Promise<{ delivered: true; queuedMs: number; via: DeliveryVia }> =>
     t.invoke('vibeflow:sendMessage', payload),
+  /** Every recorded conversation (source card → recipient card), newest first. */
+  messageThreads: (): Promise<CardMessageThreadSummary[]> => t.invoke('messages:threads'),
+  messageThread: (payload: { from: string; to: string }): Promise<CardMessage[]> => t.invoke('messages:thread', payload),
+  /** Type the recipient's unread messages into its session now, up to `messageId` when given. */
+  sendMessageNow: (payload: { to: string; messageId?: string }): Promise<{ via: 'typed' | 'queued' | 'none' }> =>
+    t.invoke('messages:sendNow', payload),
+  /** The person writes to `to` inside the conversation that comes from `threadFrom`. */
+  sendPersonMessage: (payload: { to: string; threadFrom: string; text: string }): Promise<{ id: string; via: DeliveryVia }> =>
+    t.invoke('messages:send', payload),
+  onMessagesChanged: (callback: (payload: { taskIds: string[] }) => void): (() => void) =>
+    t.on('messages:changed', (payload) => callback(payload as never)),
   /** Clear prior execution state and prepare a fresh run of this task. */
   resetTaskRun: (
     taskId: string

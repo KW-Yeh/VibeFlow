@@ -107,7 +107,19 @@ import { createReporter, isReportId, readReport } from './report'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
 import { MAX_REPLY_CHARS, buildContinuationPrompt, readLastClaudeReply, type ContinuationFacts } from './continuation'
 import { createMailbox, frameMessage, isBlocked } from './mailbox'
-import { inboxDir, inboxReady, pendingMessages, prepareInbox } from './inbox'
+import { inboxDir, inboxHas, inboxReady, pendingMessages, prepareInbox } from './inbox'
+import {
+  deleteMessagesFor,
+  findCardMessage,
+  listCardMessages,
+  readPatches,
+  recordCardMessage,
+  summarizeThreads,
+  threadMessages,
+  unreadMessagesTo,
+  updateCardMessages,
+  type CardMessage,
+} from './card-messages'
 import { createNotifier } from './notifier'
 import { readyDependents } from './dependencies'
 import type { Activity, ProgressNotification, TaskProgress, TokenUsage } from './progress'
@@ -420,6 +432,7 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       bus.emit('progress:update', { taskId, progress: value })
       notifier.retry(taskId)
       mailbox.poke(taskId)
+      reconcileMessages(taskId)
       quotaFromActivity(taskId, value.activity)
       settleIdleDispatched(taskId, value.activity)
     },
@@ -451,7 +464,59 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       return inboxReady(dir) ? dir : null
     },
     typedElsewhere: async (key) => (await sessions.hasForeignClients?.(key)) ?? false,
+    onTyped: (key, names) => {
+      for (const name of names) typedInboxNames.add(name)
+      reconcileMessages(key)
+    },
   })
+
+  const typedInboxNames = new Set<string>()
+  const cardsWithUnreadInbox = new Set<string>()
+
+  function emitMessages(taskIds: string[]): void {
+    if (taskIds.length) bus.emit('messages:changed', { taskIds: [...new Set(taskIds)] })
+  }
+
+  function reconcileMessages(taskId: string): void {
+    if (!cardsWithUnreadInbox.has(taskId)) return
+    const worktree = findTask(taskId)?.worktreePath
+    const unread = unreadMessagesTo(taskId).filter((m) => m.inboxName)
+    if (!worktree || !unread.length) {
+      if (!unread.length) cardsWithUnreadInbox.delete(taskId)
+      return
+    }
+    const dir = inboxDir(worktree)
+    const patches = readPatches(unread, (name) => inboxHas(dir, name), typedInboxNames)
+    for (const m of unread) if (patches.get(m.id)?.via === 'typed') typedInboxNames.delete(m.inboxName!)
+    if (!updateCardMessages(patches).length) return
+    if (patches.size === unread.length) cardsWithUnreadInbox.delete(taskId)
+    emitMessages([taskId])
+  }
+
+  function recordMessage(input: Omit<CardMessage, 'id' | 'sentAt' | 'state'>): CardMessage {
+    const message = recordCardMessage(input)
+    emitMessages([input.to])
+    return message
+  }
+
+  async function deliverRecorded(message: CardMessage, framed: string, force: boolean) {
+    try {
+      const result = await mailbox.deliver(message.to, framed, { force })
+      if (result.inboxName) {
+        updateCardMessages(new Map([[message.id, { inboxName: result.inboxName }]]))
+        cardsWithUnreadInbox.add(message.to)
+        reconcileMessages(message.to)
+      } else {
+        updateCardMessages(new Map([[message.id, { state: 'read', via: 'typed', readAt: Date.now() }]]))
+        emitMessages([message.to])
+      }
+      return result
+    } catch (err) {
+      updateCardMessages(new Map([[message.id, { state: 'failed', error: (err as Error).message }]]))
+      emitMessages([message.to])
+      throw err
+    }
+  }
 
   const notifier = createNotifier({
     cardOf: (taskId) => {
@@ -931,6 +996,19 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
     for (const task of getState().board.in_progress) trackProgress(task)
   } catch {
     // No store yet (first run): nothing is running.
+  }
+  // Messages waiting in host memory died with the previous host; inbox ones may have been read meanwhile.
+  try {
+    const failed = new Map<string, Partial<CardMessage>>()
+    for (const m of listCardMessages()) {
+      if (m.state !== 'unread') continue
+      if (m.inboxName) cardsWithUnreadInbox.add(m.to)
+      else failed.set(m.id, { state: 'failed', error: 'host 重啟，訊息未送達' })
+    }
+    updateCardMessages(failed)
+    for (const taskId of cardsWithUnreadInbox) reconcileMessages(taskId)
+  } catch {
+    // No store yet (first run): no messages either.
   }
   // Waits a previous host left on the cards get their timers back.
   heartbeat.sync()
@@ -1735,8 +1813,56 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
       if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
       if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
       await attachAgent(to.id)
-      const { queuedMs, via } = await mailbox.deliver(to.id, frameMessage({ id: from.id, title: from.title }, text), { force: p.force === true })
+      const message = recordMessage({
+        thread: { from: from.id, to: to.id },
+        sender: { kind: 'task', id: from.id, title: from.title },
+        to: to.id,
+        text,
+      })
+      const { queuedMs, via } = await deliverRecorded(message, frameMessage({ id: from.id, title: from.title }, text), p.force === true)
       return { delivered: true, queuedMs, via }
+    },
+
+    'messages:threads': () => summarizeThreads(listCardMessages(), (id) => findTask(id)?.title),
+
+    'messages:thread': (payload) => {
+      const p = obj<{ from: unknown; to: unknown }>(payload, 'payload')
+      return threadMessages(str(p.from, 'from'), str(p.to, 'to'))
+    },
+
+    // The person writes inside a conversation they opened, to that conversation's recipient.
+    'messages:send': async (payload) => {
+      const p = obj<{ to: unknown; threadFrom: unknown; text: unknown }>(payload, 'payload')
+      const to = requireTask(p.to)
+      const threadFrom = str(p.threadFrom, 'threadFrom')
+      const source = findTask(threadFrom)
+      const related = source && ((isMasterTask(source) && to.masterId === source.id) || (isMasterTask(to) && source.masterId === to.id))
+      if (!related && !threadMessages(threadFrom, to.id).length) invalid('no conversation from that card to this one')
+      const text = str(p.text, 'text').trim()
+      if (!text) invalid('text must not be empty')
+      if (text.length > MAX_MESSAGE_LENGTH) invalid(`text must be at most ${MAX_MESSAGE_LENGTH} characters`)
+      if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
+      await attachAgent(to.id)
+      const message = recordMessage({ thread: { from: threadFrom, to: to.id }, sender: { kind: 'person' }, to: to.id, text })
+      const { via } = await deliverRecorded(message, frameMessage('person', text), false)
+      return { id: message.id, via }
+    },
+
+    'messages:sendNow': async (payload) => {
+      const p = obj<{ to: unknown; messageId?: unknown }>(payload, 'payload')
+      const to = requireTask(p.to)
+      let upTo: string | undefined
+      if (p.messageId !== undefined) {
+        const message = findCardMessage(str(p.messageId, 'messageId'))
+        if (!message || message.to !== to.id) invalid('unknown message for this card')
+        if (message.state !== 'unread') throw coded('ALREADY_READ', '這則訊息已經讀過了')
+        upTo = message.inboxName
+      }
+      if (!(await sessions.isAlive(to.id))) throw coded('NOT_RUNNING', `卡片 ${to.id} 的 agent 沒有在執行`)
+      await attachAgent(to.id)
+      const result = await mailbox.sendNow(to.id, upTo)
+      reconcileMessages(to.id)
+      return result
     },
 
     'terminal:start': async (payload) => {
@@ -2118,6 +2244,8 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
         fs.rmSync(task.workspacePath, { recursive: true, force: true })
       }
       clearConversation(task.id)
+      cardsWithUnreadInbox.delete(task.id)
+      emitMessages(deleteMessagesFor(task.id))
       removeTask(task.id)
       return getState()
     },

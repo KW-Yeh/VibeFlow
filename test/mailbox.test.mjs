@@ -8,8 +8,10 @@ import { pendingMessages, postMessage } from '../packages/core/src/inbox.ts'
 
 function setup({ activity = null, quietMs = 0, inbox = null, timeoutMs, elsewhere = false, retryMs } = {}) {
   const writes = []
+  const typed = []
   const state = { activity, elsewhere }
   const mailbox = createMailbox({
+    onTyped: (key, names) => typed.push(...names),
     write: (key, data) => writes.push({ key, data }),
     activity: () => state.activity,
     inbox: () => inbox,
@@ -18,7 +20,7 @@ function setup({ activity = null, quietMs = 0, inbox = null, timeoutMs, elsewher
     timeoutMs,
     retryMs,
   })
-  return { mailbox, writes, state }
+  return { mailbox, writes, state, typed }
 }
 
 function tempInbox(t) {
@@ -229,4 +231,58 @@ test('postMessage keeps arrival order and hides in-flight files from the hook', 
   const names = fs.readdirSync(inbox).sort()
   assert.equal(names.length, 3)
   assert.deepEqual(names.map((n) => fs.readFileSync(path.join(inbox, n), 'utf8')), ['a', 'b', 'c'])
+})
+
+test('sendNow types what waits in the inbox up to the given message, even while the agent works', async (t) => {
+  const inbox = tempInbox(t)
+  const { mailbox, writes, typed } = setup({ inbox, activity: { state: 'working' } })
+  const a = (await mailbox.deliver('t1', 'a')).inboxName
+  const b = (await mailbox.deliver('t1', 'b')).inboxName
+  const c = (await mailbox.deliver('t1', 'c')).inboxName
+  assert.equal(writes.length, 0)
+  assert.deepEqual(await mailbox.sendNow('t1', b), { via: 'typed' })
+  assert.deepEqual(writes.map((w) => w.data), [PASTE('a\n\nb'), '\r'])
+  assert.deepEqual(typed, [a, b])
+  assert.equal(pendingMessages(inbox), 1)
+  await mailbox.sendNow('t1')
+  assert.deepEqual(typed, [a, b, c])
+  assert.deepEqual(await mailbox.sendNow('t1'), { via: 'none' })
+})
+
+test('sendNow never types over a draft or into a permission dialog', async (t) => {
+  const inbox = tempInbox(t)
+  const { mailbox, writes, state } = setup({ inbox, activity: { state: 'working' } })
+  await mailbox.deliver('t1', 'hi')
+  mailbox.userInput('t1', 'mine')
+  await assert.rejects(mailbox.sendNow('t1'), (err) => err.code === 'DRAFT_PENDING')
+  mailbox.userInput('t1', '\x15')
+  state.activity = { state: 'waiting', waitingFor: 'permission' }
+  await assert.rejects(mailbox.sendNow('t1'), (err) => err.code === 'TARGET_BLOCKED')
+  assert.deepEqual(writes.map((w) => w.data), ['mine', '\x15'])
+  assert.equal(pendingMessages(inbox), 1)
+})
+
+test('without an inbox, sendNow stops a queued message waiting for the person to stop typing', async () => {
+  const { mailbox, writes } = setup({ quietMs: 60_000 })
+  assert.deepEqual(await mailbox.sendNow('t1'), { via: 'none' }, 'nothing waits')
+  mailbox.userInput('t1', 'x\r')
+  const started = Date.now()
+  const delivery = mailbox.deliver('t1', 'hi')
+  await new Promise((r) => setTimeout(r, 20))
+  assert.deepEqual(await mailbox.sendNow('t1'), { via: 'queued' })
+  assert.equal((await delivery).via, 'typed')
+  assert.ok(Date.now() - started < 2000)
+  assert.deepEqual(writes.map((w) => w.data).slice(-2), [PASTE('hi'), '\r'])
+})
+
+test('without an inbox, sendNow is refused while the input box holds a draft', async () => {
+  const { mailbox } = setup({ quietMs: 0, timeoutMs: 300 })
+  mailbox.userInput('t1', 'draft')
+  const delivery = mailbox.deliver('t1', 'hi')
+  await assert.rejects(mailbox.sendNow('t1'), (err) => err.code === 'DRAFT_PENDING')
+  await assert.rejects(delivery, (err) => err.code === 'TIMEOUT')
+})
+
+test('the person is framed as such', () => {
+  assert.equal(frameMessage('person', 'hi'), '<vibeflow from="person">\nhi\n</vibeflow>')
 })
