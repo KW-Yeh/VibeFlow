@@ -97,7 +97,7 @@ interface CardMessage {
 | `renderer/components/workspace-task-rail.tsx` | 未讀數徽章 | AC-1b |
 | `test/card-messages.test.mjs`（新增） | 紀錄 CRUD、thread 分組、刪卡清理、reconcile | AC-3、7、8 |
 | `test/mailbox.test.mjs` | `sendNow`（inbox 和 type 兩條路）、草稿與權限拒絕、`upTo`、`onTyped` | AC-4、5、10 |
-| `test/service.test.mjs` | sendMessage 有紀錄、`messages:send` 驗證、`NOT_RUNNING`、host 通知不記錄、刪卡清理、事件推送 | AC-1、2、6、8、9 |
+| `test/master-cards.test.mjs`（原計畫放 `service.test.mjs`，改放已有 master／卡片傳訊測試環境的這支） | sendMessage 有紀錄、`messages:send` 驗證、`NOT_RUNNING`、`sendNow` 拒絕與送出、刪卡清理、事件推送 | AC-1、2、4、5、6、8 |
 | `test/README.md`、`docs/README.md`、`AGENTS.md` | 新 suite、plan 連結、訊息紀錄的一段說明 | 工程品質 |
 
 ## 實作順序
@@ -140,4 +140,37 @@ interface CardMessage {
 
 ## 實作與驗證紀錄
 
-尚未實作。
+2026-11-27，分支 `feat/card-messages`。
+
+**完成內容**：照預計修改表實作。和計畫不同的地方：
+
+- service 層測試放在 `test/master-cards.test.mjs`，那裡已經有 master 與卡片互傳的假 session 環境。
+- 工作區泡泡的位置不讀 `--vf-workspace-aside` 變數，改成直接量 aside 的實際寬度與右緣（aside 加了 `data-workspace-aside`）。原因是變數會被 `max-w` 夾住，實際寬度可能比變數小，而且 aside 右邊還有一排圖示，貼齊容器右緣會蓋到它。
+- 對話框的拒絕提示只在訊息仍未讀時顯示；輸入框單行時隱藏捲軸。這兩點是實機驗證時發現後修正的。
+
+**檢查結果**：
+
+| 檢查 | 結果 |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | 通過 |
+| `npx tsc --noEmit -p renderer/tsconfig.json` | 通過 |
+| `npm test` | 735 通過、0 失敗 |
+| `npm run build:web` | 成功 |
+| `npm run test:e2e` | 5 通過、0 失敗 |
+
+**實機驗證**（拋棄式 store、假 claude agent、`--backend pty`，master 加兩張子卡）：
+
+- AC-1、AC-2：master 用 `task send` 傳兩則給工作中的卡，看板與工作區都出現同一顆泡泡，未讀 2；頂列訊息按鈕和左側列表都顯示未讀數。
+- AC-1b：工作區 aside 約 270px，泡泡縮成圓點、標在 aside 右下角，沒有蓋到 terminal 或右側圖示列；寬 aside 時顯示「這張卡」標記。
+- AC-5：收件卡 terminal 有未送出的草稿時按「立即送進 session」，顯示草稿提示，terminal 沒有被打入任何字。
+- AC-3：清掉草稿後閒置的 agent 被叫醒，對話框不重新整理就變成「已讀 · 打進 terminal」。手動刪掉 inbox 檔（模擬 hook 讀走）後，下一次送達時那則變成「已讀 · hook 帶入」。
+- AC-6：在對話框輸入中文按 Enter，agent 收到 `<vibeflow from="person">`，訊息顯示在右側並標已讀。輸入框與送出按鈕同高並排。
+- AC-7：`vibeflow shutdown` 後重開 host，紀錄、已讀狀態、未讀泡泡與已收起的泡泡都保留。
+- 泡泡 × 收起、頂列訊息中心列表點開對話，都正常。
+
+**沒有驗到的**：
+
+- AC-4 在 agent「工作中」時立即送：假 agent 沒有 transcript，活動狀態永遠是閒置，實機上無法製造工作中的狀態。這條由 `mailbox.test.mjs` 和 `master-cards.test.mjs` 涵蓋；真的 Claude Code 在工作中收到輸入時如何排隊，沒有實際確認。
+- AC-8 刪卡：只有 `master-cards.test.mjs` 的單元測試，沒有在 UI 上實際刪卡。
+- AC-9 host 通知不記錄：程式上 notifier 與額度 continue 走 `mailbox.deliver`，不經過 `recordMessage`，沒有獨立測試。
+- Codex 卡片與舊 session（type 路）只有單元測試。

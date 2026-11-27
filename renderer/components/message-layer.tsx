@@ -1,27 +1,44 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
 import { MessageBubbles } from '@/components/message-bubbles'
 import { MessageDialog } from '@/components/message-dialog'
 import type { Task, TaskProgress } from '@/lib/types'
 import type { CardMessages } from '@/lib/use-card-messages'
 
-const ASIDE_WIDTH_VAR = '--vf-workspace-aside'
 const COMPACT_BELOW_PX = 360
+const EDGE_PX = 16
 
-function useAsideWidth(enabled: boolean): number | null {
-  const [width, setWidth] = useState<number | null>(null)
+type AsideBox = { width: number; right: number }
+
+function useAsideBox(enabled: boolean, layerRef: RefObject<HTMLDivElement | null>): AsideBox | null {
+  const [box, setBox] = useState<AsideBox | null>(null)
   useEffect(() => {
-    if (!enabled) return
-    const read = () => {
-      const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(ASIDE_WIDTH_VAR))
-      setWidth(Number.isFinite(px) ? px : null)
+    if (!enabled) {
+      setBox(null)
+      return
     }
-    read()
-    const observer = new MutationObserver(read)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
-    return () => observer.disconnect()
-  }, [enabled])
-  return width
+    const measure = () => {
+      const container = layerRef.current?.parentElement
+      const aside = Array.from(document.querySelectorAll<HTMLElement>('[data-workspace-aside]')).find((el) => el.offsetWidth > 0)
+      if (!container || !aside) return setBox(null)
+      const a = aside.getBoundingClientRect()
+      const c = container.getBoundingClientRect()
+      setBox((prev) => {
+        const next = { width: Math.round(a.width), right: Math.round(c.right - a.right) }
+        return prev && prev.width === next.width && prev.right === next.right ? prev : next
+      })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    for (const el of document.querySelectorAll('[data-workspace-aside]')) observer.observe(el)
+    if (layerRef.current?.parentElement) observer.observe(layerRef.current.parentElement)
+    const timer = window.setInterval(measure, 1000)
+    return () => {
+      observer.disconnect()
+      window.clearInterval(timer)
+    }
+  }, [enabled, layerRef])
+  return box
 }
 
 interface MessageLayerProps {
@@ -33,15 +50,20 @@ interface MessageLayerProps {
 }
 
 export function MessageLayer({ messages, onWorkspace, focusTaskId, tasks, progress }: MessageLayerProps) {
-  const asideWidth = useAsideWidth(onWorkspace)
-  const compact = onWorkspace && asideWidth !== null && asideWidth < COMPACT_BELOW_PX
+  const layerRef = useRef<HTMLDivElement>(null)
+  const aside = useAsideBox(onWorkspace, layerRef)
+  const compact = !!aside && aside.width < COMPACT_BELOW_PX
   const titleOf = (id: string) => tasks.get(id)?.task.title
   const isMaster = (id: string) => tasks.get(id)?.task.role === 'master'
   const { open, setOpen, dismiss, revision } = messages
   const thread = open ? messages.threads.find((t) => t.from === open.from && t.to === open.to) : undefined
 
   return (
-    <div className="pointer-events-none absolute bottom-4 right-4 top-16 z-40 flex flex-col items-end justify-end">
+    <div
+      ref={layerRef}
+      style={{ right: (aside?.right ?? 0) + EDGE_PX }}
+      className="pointer-events-none absolute bottom-4 top-16 z-40 flex flex-col items-end justify-end"
+    >
       {thread ? (
         <MessageDialog
           key={`${thread.from}>${thread.to}`}

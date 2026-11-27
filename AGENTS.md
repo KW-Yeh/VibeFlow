@@ -302,6 +302,16 @@ npm run vibeflow -- task send --task <id> --text "…" [--force]   # type a mess
   forced (`TARGET_BLOCKED`), only once the person has no draft and stopped typing for
   `VIBEFLOW_QUIET_MS` (3 s), never split by another write. Codex reports no permission
   dialog, so for Codex that guard and the blocked note do not apply.
+- **Card messages are recorded** (`card-messages.ts`, `vibeflow-messages.json` in the
+  store dir; spec: `docs/features/card-messages/`). Every `vibeflow:sendMessage` and every
+  message the person writes from the Web UI (`messages:send`, framed `from="person"`) is
+  kept per conversation (source card → recipient). An inbox message is read once its file
+  leaves the inbox (`via: 'hook'`, or `'typed'` when the mailbox reports it typed it);
+  a typed delivery is read when it lands, failed with the reason otherwise; a host
+  restart fails what was still queued in memory. VibeFlow's own notes (notifier, quota
+  continue) are not recorded. `messages:sendNow` (`mailbox.sendNow`) skips the waits for
+  an idle agent and a quiet person but still refuses a draft (`DRAFT_PENDING`) or a
+  permission dialog. Deleting a card drops every conversation it is part of.
 
 ### CLI artifact delivery
 

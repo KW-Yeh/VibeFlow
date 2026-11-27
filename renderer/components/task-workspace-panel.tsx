@@ -1701,6 +1701,7 @@ export function TaskWorkspacePanel({
             </div>
             <aside
               ref={asideRef}
+              data-workspace-aside=""
               className="flex min-h-0 w-[var(--vf-workspace-aside,24rem)] min-w-0 max-w-[calc(100%-23.375rem)] shrink-0 flex-col bg-card/40 xl:w-[var(--vf-workspace-aside,27rem)]"
             >
               {inspector}

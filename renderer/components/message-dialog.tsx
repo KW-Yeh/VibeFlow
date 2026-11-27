@@ -94,6 +94,7 @@ export function MessageDialog({ thread, revision, running, progress, titleOf, is
     input.style.height = 'auto'
     const max = MAX_INPUT_LINES * LINE_PX + INPUT_PAD_PX
     input.style.height = `${Math.min(input.scrollHeight, max)}px`
+    input.style.overflowY = input.scrollHeight > max ? 'auto' : 'hidden'
   }, [draft])
 
   const status = agentStatus(running, progress)
@@ -236,7 +237,7 @@ export function MessageDialog({ thread, revision, running, progress, titleOf, is
                   sending={sending.has(m.id)}
                   onSendNow={() => void sendNow(m)}
                 />
-                {refusals[m.id] && (
+                {refusals[m.id] && m.state === 'unread' && (
                   <div className="rounded-md bg-warning/10 px-2.5 py-2 text-xs leading-normal text-warning">{refusals[m.id]}</div>
                 )}
               </div>
