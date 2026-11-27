@@ -1,5 +1,7 @@
 import type {
   AvailableUpdate,
+  CardMessage,
+  CardMessageThreadSummary,
   UpdateCheckResult,
   AgentCli,
   AgentCliId,
@@ -738,4 +740,31 @@ export async function existingTerminalFiles(sessionKey: string, paths: string[])
 export async function openTerminalFile(sessionKey: string, path: string) {
   const b = bridge()
   return b ? b.term.openFile(sessionKey, path) : null
+}
+
+/** Every recorded conversation between cards, newest first; empty without a bridge. */
+export async function getMessageThreads(): Promise<CardMessageThreadSummary[]> {
+  const b = bridge()
+  return b ? b.messageThreads() : []
+}
+
+export async function getMessageThread(from: string, to: string): Promise<CardMessage[]> {
+  const b = bridge()
+  return b ? b.messageThread({ from, to }) : []
+}
+
+/** Throws with the core's error code (DRAFT_PENDING, TARGET_BLOCKED, NOT_RUNNING, …) when refused. */
+export async function sendMessageNow(to: string, messageId?: string): Promise<{ via: 'typed' | 'queued' | 'none' } | null> {
+  const b = bridge()
+  return b ? b.sendMessageNow({ to, messageId }) : null
+}
+
+export async function sendPersonMessage(to: string, threadFrom: string, text: string): Promise<{ id: string } | null> {
+  const b = bridge()
+  return b ? b.sendPersonMessage({ to, threadFrom, text }) : null
+}
+
+export function onMessagesChanged(callback: (payload: { taskIds: string[] }) => void): () => void {
+  const b = bridge()
+  return b ? b.onMessagesChanged(callback) : () => {}
 }

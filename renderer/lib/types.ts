@@ -21,6 +21,7 @@ export type {
   QuotaWait,
 } from '../../packages/core/src/store'
 export type { StatusKey } from '../../packages/core/src/status-keys'
+export type { CardMessage, CardMessageThreadSummary } from '../../packages/core/src/card-messages'
 export type { TagColor } from '../../packages/core/src/tag-colors'
 export type { JevRoute } from '../../packages/core/src/jev-router'
 export type {

@@ -6,6 +6,7 @@ import { activityMark, StatusMark, TaskProgressChip } from '@/components/task-pr
 import { IconButton } from '@/components/ui/icon-button'
 import { SECTION_LABEL } from '@/components/ui/section-label'
 import { TagChips } from '@/components/task-tags'
+import { UnreadBadge } from '@/components/message-bubbles'
 import { cn } from '@/lib/utils'
 import type { Task, TaskProgress } from '@/lib/types'
 
@@ -17,6 +18,8 @@ interface WorkspaceTaskRailProps {
   done: Task[]
   selectedTaskId: string | null
   progress: Record<string, TaskProgress>
+  /** Unread card messages waiting for each card. */
+  unreadByTask?: Record<string, number>
   onSelect: (taskId: string) => void
   /** Reorder a card within In Progress; `beforeId` null = the column's end. */
   onMoveTask: (taskId: string, beforeId: string | null) => void
@@ -62,6 +65,7 @@ export function WorkspaceTaskRail({
   done,
   selectedTaskId,
   progress,
+  unreadByTask = {},
   onSelect,
   onMoveTask,
   collapsed,
@@ -132,16 +136,17 @@ export function WorkspaceTaskRail({
             <button
               key={task.id}
               type="button"
-              aria-label={task.title}
+              aria-label={unreadByTask[task.id] ? `${task.title}，${unreadByTask[task.id]} 則未讀訊息` : task.title}
               aria-current={selected ? 'page' : undefined}
               title={task.title}
               onClick={() => onSelect(task.id)}
               className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                'relative flex size-8 shrink-0 items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                 selected ? 'bg-primary/15' : 'hover:bg-accent'
               )}
             >
               <StatusMark {...activityMark(progress[task.id]?.activity)} className="size-2" />
+              {unreadByTask[task.id] ? <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary" /> : null}
             </button>
           )
         })}
@@ -175,6 +180,9 @@ export function WorkspaceTaskRail({
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">{task.title}</span>
+          {unreadByTask[task.id] ? (
+            <UnreadBadge count={unreadByTask[task.id]} className="h-[18px] min-w-[18px] px-1 text-[11px]" />
+          ) : null}
           <TaskId id={task.id} className="font-normal" />
         </span>
         {!isMaster && (

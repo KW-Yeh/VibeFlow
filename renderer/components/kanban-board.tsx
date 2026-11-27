@@ -5,9 +5,11 @@ import {
   useReducedMotion,
 } from 'motion/react'
 import { AlertTriangle, Loader2, Plus } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { BoardColumns } from '@/components/board-columns'
+import { MessageCenter } from '@/components/message-center'
+import { MessageLayer } from '@/components/message-layer'
 import { NewTaskButton } from '@/components/new-task-button'
 import type { GridTerminal } from '@/components/terminal-grid'
 import { TaskWorkspacePanel } from '@/components/task-workspace-panel'
@@ -22,6 +24,7 @@ import {
 } from '@/lib/api'
 import { cardMove } from '@/lib/board-moves'
 import { createEnterVariants } from '@/lib/motion'
+import { useCardMessages } from '@/lib/use-card-messages'
 import { cn } from '@/lib/utils'
 import {
   readWorkspaceRailCollapsed,
@@ -373,8 +376,20 @@ export function KanbanBoard({
 
   const onWorkspace = view === 'workspace'
 
+  const messages = useCardMessages()
+  const messageTasks = useMemo(() => {
+    const map = new Map<string, { task: Task; running: boolean }>()
+    for (const column of ['backlog', 'in_progress', 'done'] as const) {
+      for (const task of board[column]) map.set(task.id, { task, running: column === 'in_progress' })
+    }
+    return map
+  }, [board])
+  const messageCenter = (
+    <MessageCenter threads={messages.threads} totalUnread={messages.totalUnread} onOpen={messages.setOpen} />
+  )
+
   return (
-    <div className="flex h-full overflow-hidden bg-background text-foreground">
+    <div className="relative flex h-full overflow-hidden bg-background text-foreground">
       <div className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', onWorkspace && 'hidden')}>
         {view === 'github' ? (
           githubView
@@ -395,7 +410,7 @@ export function KanbanBoard({
             view={view}
             onViewChange={onViewChange}
             taskLinks={taskLinks}
-            toolbar={boardToolbar}
+            toolbar={<>{boardToolbar}{messageCenter}</>}
           />
         )}
       </div>
@@ -435,7 +450,8 @@ export function KanbanBoard({
           <div className={cn('min-h-0 min-w-0 flex-1 flex-col', onWorkspace ? 'flex' : 'hidden')}>
             <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
               <ViewTabs value={view} onChange={onViewChange} />
-              <NewTaskButton onClick={onNewTask} />
+              <div className="ml-auto">{messageCenter}</div>
+              <NewTaskButton onClick={onNewTask} className="ml-0" />
             </div>
             <div className="flex min-h-0 min-w-0 flex-1">
             <WorkspaceTaskRail
@@ -444,6 +460,7 @@ export function KanbanBoard({
               done={board.done}
               selectedTaskId={selectedTaskId ?? null}
               progress={progress}
+              unreadByTask={messages.unreadByTask}
               onSelect={onSelectTask}
               onMoveTask={onMoveTask}
               collapsed={railCollapsed}
@@ -650,6 +667,13 @@ export function KanbanBoard({
         )}
       </AnimatePresence>
 
+      <MessageLayer
+        messages={messages}
+        onWorkspace={onWorkspace}
+        focusTaskId={selectedTaskId ?? null}
+        tasks={messageTasks}
+        progress={progress}
+      />
     </div>
   )
 }
