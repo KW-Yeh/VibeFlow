@@ -58,7 +58,7 @@ async function readOptions(trigger) {
  */
 const FAKE_AGENT = `#!/bin/sh
 if [ "$1" = "-p" ]; then NODE_OPTIONS= exec "${process.execPath}" "${path.join(root, 'e2e', 'fake-claude-models.mjs')}"; fi
-if [ -n "$FAKE_AGENT_ARGV_LOG" ]; then { echo '=== launch'; printf '%s\\n' "$@"; } >> "$FAKE_AGENT_ARGV_LOG"; fi
+if [ -n "$FAKE_AGENT_ARGV_LOG" ]; then { echo '=== launch'; printf '%s\\n' "$@"; echo '=== end'; } >> "$FAKE_AGENT_ARGV_LOG"; fi
 echo "fake-claude ready"
 echo 'cjk-row:你「你」你「你」你「你」你「你」你「你」你「你」'
 echo 'cjk-row:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -542,7 +542,8 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
 
   // New session: holding the button swaps the agent for a fresh one whose first
   // message is a brief of the card's state, not the old conversation.
-  const launches = () => fs.readFileSync(argvLog, 'utf8').split('=== launch\n').slice(1)
+  // Only launches the fake agent has finished logging: it writes one argument per line.
+  const launches = () => fs.readFileSync(argvLog, 'utf8').split('=== launch\n').slice(1).filter((entry) => entry.includes('=== end\n'))
   const launchedBefore = launches().length
   const runBefore = (await page.evaluate(() => window.vibeflow.getState())).board.in_progress[0].runId
   await page.getByRole('button', { name: /新 Session 接續/ }).click({ delay: 1500 })
