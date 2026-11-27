@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GitBranch, Loader2, Network, Play, SquareArrowOutUpRight, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -118,8 +118,13 @@ export function EditTaskDialog({
     if (task) taskSnapshotRef.current = task
   }, [task])
 
-  // Seed the fields from the task whenever a new one is opened.
-  useEffect(() => {
+  // Seed the fields only when a different card is opened: a board push or a
+  // settings change while the sheet is open must not wipe what the person typed.
+  const seedRef = useRef({ task, defaultAutoMode })
+  seedRef.current = { task, defaultAutoMode }
+  const taskId = task?.id
+  useLayoutEffect(() => {
+    const { task, defaultAutoMode } = seedRef.current
     if (!task) return
     setTitle(task.title)
     setDescription(task.description ?? '')
@@ -135,7 +140,7 @@ export function EditTaskDialog({
     setLoadingInfo(false)
     setProjectChanged(false)
     setConfirmClose(false)
-  }, [task, defaultAutoMode])
+  }, [taskId])
 
   useEffect(() => {
     if (!task) return

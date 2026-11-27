@@ -348,7 +348,9 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   await page.locator('.xterm').first().waitFor({ state: 'visible' })
   await waitForTerminal(page, 'fake-claude ready')
   // Both rows span 56 cells, so CJK beside brackets must render as wide as ASCII.
-  const [cjkWidth, asciiWidth] = await page.evaluate(() =>
+  // On the macOS runner the first measurement has come out one cell short
+  // (v4.11.79 CI); the trimming regression this guards never converges.
+  const rowWidths = () => page.evaluate(() =>
     ['cjk-row:你', 'cjk-row:x'].map((prefix) => {
       const row = [...document.querySelectorAll('.xterm-rows > div')].find((el) => el.textContent.startsWith(prefix))
       const range = document.createRange()
@@ -356,6 +358,13 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
       return range.getBoundingClientRect().width
     })
   )
+  let [cjkWidth, asciiWidth] = await rowWidths()
+  const firstWidths = [cjkWidth, asciiWidth]
+  for (let i = 0; i < 50 && Math.abs(cjkWidth - asciiWidth) > 2; i += 1) {
+    await page.waitForTimeout(100)
+    ;[cjkWidth, asciiWidth] = await rowWidths()
+  }
+  if (Math.abs(firstWidths[0] - firstWidths[1]) > 2) console.log(`# CJK row first measured ${firstWidths[0]}px vs ASCII ${firstWidths[1]}px`)
   assert.ok(Math.abs(cjkWidth - asciiWidth) <= 2, `CJK row ${cjkWidth}px matches ASCII row ${asciiWidth}px`)
   // The started card joins the running list; leaving for the board and coming
   // back keeps the same terminal on screen.
@@ -930,6 +939,8 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await card('Sheet card').click()
   const sheet = page.getByRole('dialog', { name: '編輯任務' })
   await sheet.getByLabel('任務標題').fill('Sheet card renamed')
+  await page.waitForTimeout(300)
+  assert.equal(await sheet.getByLabel('任務標題').inputValue(), 'Sheet card renamed', 'the typed title survives the sheet settling')
   await sheet.getByRole('button', { name: '儲存變更' }).click()
   await sheet.waitFor({ state: 'detached' })
   assert.equal(await sidebar.getByRole('button', { name: '看板', exact: true }).getAttribute('aria-current'), 'page')
@@ -944,6 +955,8 @@ test('Web UI: board cards close gaps after completing or deleting in the workspa
   await page.reload()
   await card('Start from sheet').click()
   await sheet.getByLabel('任務標題').fill('Started from sheet')
+  await page.waitForTimeout(300)
+  assert.equal(await sheet.getByLabel('任務標題').inputValue(), 'Started from sheet', 'the typed title survives the sheet settling')
   await sheet.getByRole('button', { name: '開始', exact: true }).click()
   await sheet.waitFor({ state: 'detached' })
   const columnOf = (title) => {
