@@ -353,19 +353,22 @@ test('Web UI: create, start, type, diff, approve, finish', { skip: !hasWeb && 'r
   const rowWidths = () => page.evaluate(() =>
     ['cjk-row:你', 'cjk-row:x'].map((prefix) => {
       const row = [...document.querySelectorAll('.xterm-rows > div')].find((el) => el.textContent.startsWith(prefix))
+      if (!row) return null
       const range = document.createRange()
       range.selectNodeContents(row)
       return range.getBoundingClientRect().width
     })
   )
-  let [cjkWidth, asciiWidth] = await rowWidths()
-  const firstWidths = [cjkWidth, asciiWidth]
-  for (let i = 0; i < 50 && Math.abs(cjkWidth - asciiWidth) > 2; i += 1) {
+  // On the Windows runner a row has been missing between two paints (fix/e2e-argv-log CI).
+  const settled = ([cjk, ascii]) => cjk !== null && ascii !== null && Math.abs(cjk - ascii) <= 2
+  let widths = await rowWidths()
+  const firstWidths = widths
+  for (let i = 0; i < 50 && !settled(widths); i += 1) {
     await page.waitForTimeout(100)
-    ;[cjkWidth, asciiWidth] = await rowWidths()
+    widths = await rowWidths()
   }
-  if (Math.abs(firstWidths[0] - firstWidths[1]) > 2) console.log(`# CJK row first measured ${firstWidths[0]}px vs ASCII ${firstWidths[1]}px`)
-  assert.ok(Math.abs(cjkWidth - asciiWidth) <= 2, `CJK row ${cjkWidth}px matches ASCII row ${asciiWidth}px`)
+  if (!settled(firstWidths)) console.log(`# CJK row first measured ${firstWidths[0]}px vs ASCII ${firstWidths[1]}px`)
+  assert.ok(settled(widths), `CJK row ${widths[0]}px matches ASCII row ${widths[1]}px`)
   // The started card joins the running list; leaving for the board and coming
   // back keeps the same terminal on screen.
   const runningList = page.getByRole('navigation', { name: '進行中的任務' })
