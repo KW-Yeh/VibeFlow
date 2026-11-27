@@ -301,23 +301,27 @@ export function SlaveList({
   progress,
   selectedTaskId,
   onSelectTask,
+  className = 'ml-3 mt-1 border-l-2 border-master/40 pl-2',
+  itemClassName,
 }: {
   slaves: SlaveEntry[]
   /** The ones the board filter lets through; waits still resolve against every slave. */
   shown?: SlaveEntry[]
+  className?: string
+  itemClassName?: string
   progress: Record<string, TaskProgress>
   selectedTaskId: string | null
   onSelectTask: (taskId: string) => void
 }) {
   const doneIds = new Set(slaves.filter((s) => s.column === 'done').map((s) => s.task.id))
   return (
-    <ul className="ml-3 mt-1 space-y-0.5 border-l-2 border-master/40 pl-2" aria-label="Slave 卡片">
+    <ul className={cn('space-y-0.5', className)} aria-label="Slave 卡片">
       {shown.map(({ task, column }) => {
         const state = slaveState(column, task, progress[task.id], doneIds)
         const waiting = column === 'backlog' && Boolean(task.after?.length) && !task.launchError
         const todos = column === 'in_progress' ? todoCount(progress[task.id]) : null
         return (
-          <li key={task.id}>
+          <li key={task.id} className={itemClassName}>
             <button
               type="button"
               onClick={() => onSelectTask(task.id)}

@@ -153,6 +153,7 @@ export function WorkspaceTaskRail({
     const selected = task.id === selectedTaskId
     const isMaster = task.role === 'master'
     const waiting = isMaster ? waitingOf(task.id) : []
+    const runningSlaves = isMaster && running.some((t) => t.masterId === task.id)
     const button = (
       <button
         type="button"
@@ -215,7 +216,20 @@ export function WorkspaceTaskRail({
         {lineBefore && <span aria-hidden="true" className="pointer-events-none absolute -top-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
         {button}
         {waiting.length > 0 && (
-          <SlaveList slaves={waiting} progress={progress} selectedTaskId={selectedTaskId} onSelectTask={onSelect} />
+          <div className="relative mt-1 pl-7">
+            <span
+              aria-hidden="true"
+              className={cn('pointer-events-none absolute -top-1 left-[18px] border-l border-master/50', runningSlaves ? 'bottom-0' : 'bottom-3')}
+            />
+            <SlaveList
+              slaves={waiting}
+              progress={progress}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={onSelect}
+              className=""
+              itemClassName="relative before:pointer-events-none before:absolute before:-left-2.5 before:top-1/2 before:w-2.5 before:border-t before:border-master/50"
+            />
+          </div>
         )}
         {lineAfter && <span aria-hidden="true" className="pointer-events-none absolute -bottom-[3px] inset-x-0 h-0.5 rounded-full bg-primary" />}
       </div>
