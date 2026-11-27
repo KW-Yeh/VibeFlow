@@ -20,7 +20,7 @@
 
 ## 方案與取捨
 
-**1. 用既有的 release 狀態承載夜班，不另外開新的 state。** `release.enabled` 就是「夜班進行中」，`batches` 和 `reports` 照舊。差別只在三處：開啟時要有可派出的卡、批次會自動結束、可派出的卡涵蓋待辦和重派卡。`release on` 成為 `dispatch` 的別名。這樣不必改 store 形狀，也不必寫 migration。
+**1. 用既有的 release 狀態承載夜班，不另外開新的 state。** `release.enabled` 就是「夜班進行中」，`batches` 和 `reports` 照舊。差別只在兩處：開啟時要有可派出的卡、可派出的卡涵蓋待辦和重派卡。`release on` 成為 `dispatch` 的別名。這樣不必改 store 形狀，也不必寫 migration。
 
 **2. 卡片上新增兩個選填欄位。**
 - `kind?: 'feature' | 'ebug'`：沒有值就是 feature。
@@ -32,7 +32,7 @@
 
 **5. 自動讓出名額（`settleIdleDispatched`）。** 掛在 `progress.onUpdate`。只處理派出中的卡：卡片在進行中、`dispatch.batchId` 是目前的批次、已經送過 brief、activity 時間晚於 `briefedAt`、狀態是執行中或沒有狀態。activity 是 `waiting/input` 就掛「待你確認：agent 結束回合但沒有回報狀態」，除非 `activity.background` 顯示還有背景任務沒回報（`progress.ts` 從 `backgroundTaskId`／`isAsync` 的 tool result 記下，看到對應的 `<task-notification>` 才移除）；是 `waiting/permission` 就掛「待你確認：卡在權限確認」。
 
-**6. 批次自動結束（`maybeCloseBatch`）。** 每次 `releaseTick` 結束時檢查：批次裡沒有任何卡佔著名額，而且已經沒有可派出的卡，就走和手動關閉相同的路徑（寫 `endedAt`、產生報告）。為了避免剛開批次、卡片還沒啟動就被判定結束，批次至少要派出過一張卡才會自動關閉。
+**6. 批次只在手動關閉時結束。** 原本每次 `releaseTick` 結束時，批次裡沒有卡佔名額、也沒有可派出的卡就自動關閉（`batchDrained`）。2026-11-27 起拿掉：一張卡被誤判停下就會讓整晚提早收工，所以改成只有 `setRelease(false)`（停止派工）走 `closeBatch`。
 
 **7. 晨報。** `reportTable` 的標題改成「晨報 YYYY-MM-DD」，卡片分成三組：「需要你處理」、「等你驗收」、「已完成」。批次另外記一份 `skipped`：結束時仍帶準備開工但沒派出的卡，列成「沒有派出」。`ReleaseBatch.skipped?` 是選填欄位。
 
@@ -43,9 +43,9 @@
 | 檔案 | 修改內容 | AC |
 | --- | --- | --- |
 | `packages/core/src/store.ts` | `Task.kind`、`Task.dispatch`、`ReleaseBatch.skipped`、`TaskKind`、`TASK_KINDS`、`taskKind()` | 1, 8, 9, 10 |
-| `packages/core/src/release.ts` | `dispatchable()`、`waitingOnDependencies()`、`batchDrained()`；`ready` 不佔名額 | 3, 4, 9 |
+| `packages/core/src/release.ts` | `dispatchable()`、`waitingOnDependencies()`；`ready` 不佔名額 | 3, 4, 9 |
 | `packages/core/src/launch.ts` | `nightShiftBrief()`；master 提示補上 `--kind`、`--ready` 和今晚派工的做法 | 5, 8 |
-| `packages/core/src/service.ts` | `setRelease` 開啟前檢查 `NOTHING_READY`；`dispatchCard`（待辦和盤點走 `startTask`，重派走 `continueTask` 包上夜班 brief）；`closeBatch`（記錄 skipped）；`releaseTick` 結束時自動關閉；`settleIdleDispatched`；`launchCommand` 送夜班 brief、手動啟動時清掉「準備開工」；create／update handler 接受 `kind` | 3–9 |
+| `packages/core/src/service.ts` | `setRelease` 開啟前檢查 `NOTHING_READY`；`dispatchCard`（待辦和盤點走 `startTask`，重派走 `continueTask` 包上夜班 brief）；`closeBatch`（記錄 skipped，只在停止派工時呼叫）；`settleIdleDispatched`；`launchCommand` 送夜班 brief、手動啟動時清掉「準備開工」；create／update handler 接受 `kind` | 3–9 |
 | `packages/core/src/tasks.ts` | 建立和更新卡片時處理 `kind` | 1 |
 | `packages/core/src/report.ts` | 晨報標題、三個分組、「沒有派出」、敘述 prompt | 7, 9 |
 | `packages/cli/src/release-command.ts`、`main.ts` | `vibeflow dispatch [--stop｜--status]` | 3, 4 |
@@ -65,7 +65,7 @@
 ## 實作順序
 
 1. core：型別、`release.ts`、`nightShiftBrief`、`report.ts`，加上單元測試。
-2. core：`service.ts` 的派工、自動讓出名額、自動結束、重派，加上 `service.test.mjs`。
+2. core：`service.ts` 的派工、自動讓出名額、手動結束、重派，加上 `service.test.mjs`。
 3. CLI 與 handler table：`dispatch`、`task create --kind --ready`，加上 `task-cli.test.mjs`。
 4. renderer：派工按鈕、類型、排進今晚、改方向重派。
 5. TUI 顯示類型；文件。

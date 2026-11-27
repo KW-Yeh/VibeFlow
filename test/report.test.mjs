@@ -55,6 +55,18 @@ test('the table lists every released card with its last status, reason, usage, t
   }
 })
 
+test('a status the card reached after the batch closed wins over the batch\'s last event, with its own reason and PR', () => {
+  const pr = 'https://github.com/acme/x/pull/9'
+  const b = board({
+    in_progress: [card('run1', { tags: ['status:pr_opened'], statusNote: { status: 'pr_opened', reason: pr, at: 6 * H } })],
+  })
+  const [, row] = reportRows(batch(), b, () => undefined, 7 * H)
+  assert.equal(row.status, 'pr_opened')
+  assert.equal(row.reason, pr, 'not the stale 額度重置時間 reason')
+  assert.equal(row.pr, pr)
+  assert.equal(row.durationMs, 5 * H)
+})
+
 /** Timers that only move when told. */
 function fakeClock() {
   let now = 1_000

@@ -218,8 +218,8 @@ export function createBridge(t: BridgeTransport) {
     t.invoke('vibeflow:continueTask', payload),
   /**
    * 下班派工: on opens a night-shift batch and sends 準備開工 cards out up to the
-   * concurrency limit (`NOTHING_READY` when there are none); it closes itself
-   * once they all stopped. Off stops sending and closes it.
+   * concurrency limit (`NOTHING_READY` when there are none) and keeps filling
+   * free slots while on. Off stops sending, closes the batch and writes its report.
    */
   setRelease: (payload: { enabled: boolean }): Promise<VibeFlowState> =>
     t.invoke('vibeflow:setRelease', payload),

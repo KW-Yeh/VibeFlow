@@ -103,7 +103,7 @@ export function ReleaseControl({
           onClick={() => void run(true)}
           title={tonight === 0
             ? '還沒有排進今晚的卡片：在卡片選單按「排進今晚」，或把卡片標成「準備開工」'
-            : `依序派出 ${tonight} 張準備開工的卡片，同時最多 ${concurrency} 張；全部停下來後產生晨報`}
+            : `依序派出 ${tonight} 張準備開工的卡片，同時最多 ${concurrency} 張；早上按「停止派工」產生晨報`}
           className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-foreground outline-none transition-colors motion-reduce:transition-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:text-muted-foreground disabled:opacity-60"
         >
           {busy ? <Loader2 className="size-3 animate-spin" /> : <Moon className="size-3" />}
@@ -211,7 +211,7 @@ function ReportsDialogBody({ onClose }: { onClose: () => void }) {
       <div className="flex min-h-[320px] gap-4">
         <ul className="w-56 shrink-0 space-y-1" aria-label="報告列表">
           {reports === null && <li className="text-sm text-muted-foreground">讀取中…</li>}
-          {reports?.length === 0 && <li className="text-sm text-muted-foreground">還沒有晨報。夜班批次結束時會產生一份。</li>}
+          {reports?.length === 0 && <li className="text-sm text-muted-foreground">還沒有晨報。按「停止派工」結束夜班時會產生一份。</li>}
           {reports?.map((r) => (
             <li key={r.id}>
               <button

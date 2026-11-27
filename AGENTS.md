@@ -211,9 +211,9 @@ npm run vibeflow -- report list | show --report <id>                       # no 
   `continueTask` session with `dispatch.redo` (the reason the person wrote) first. A
   card started by hand drops its 準備開工 and gets no brief. A sent card that ends its
   turn with no status (and no background task of its own still running), or sits on a permission prompt, becomes 待你確認
-  (`settleIdleDispatched`). The batch closes itself once `batchDrained()` (it sent
-  something, none of its cards holds a slot, nothing left to send), recording what it
-  skipped. Ticks run on `state:changed`, board writes, cleanup and host start
+  (`settleIdleDispatched`). The batch stays open until the person turns it off
+  (`dispatch --stop` / 停止派工); only then does `closeBatch` record what it skipped and
+  write the report. It never closes itself. Ticks run on `state:changed`, board writes, cleanup and host start
   (deferred to a microtask).
 - **Usage limits** (`claudeQuotaLimit` in `progress.ts`, `heartbeat.ts`): a Claude
   transcript line with `isApiErrorMessage` + `error: 'rate_limit'` gives

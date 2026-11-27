@@ -102,19 +102,24 @@ export function reportRows(batch: ReleaseBatch, board: BoardState, usageOf: (tas
     const found = findOnBoard(board, taskId)
     const task = found?.task
     const status = found && found.column !== 'done' ? taskStatus(found.task) ?? last?.status ?? null : last?.status ?? null
+    // A status set after the batch closed is not in its events; the card's own note is newer.
+    const note = task?.statusNote && found?.column !== 'done' && task.statusNote.status === status && task.statusNote.at > (last?.at ?? -Infinity)
+      ? task.statusNote
+      : null
     const reasonEvent = [...events].reverse().find((e) => e.reason)
     const prEvent = [...events].reverse().find((e) => e.status === 'pr_opened' && e.reason && URL_IN.test(e.reason))
-    const pr = task?.outcome?.pr?.url ?? prEvent?.reason?.match(URL_IN)?.[0]
+    const prNote = note?.status === 'pr_opened' ? note.reason?.match(URL_IN)?.[0] : undefined
+    const pr = task?.outcome?.pr?.url ?? prNote ?? prEvent?.reason?.match(URL_IN)?.[0]
     const done = found?.column === 'done'
     const finished = done || (status !== null && ['needs_review', 'stuck', 'pr_opened'].includes(status))
     const start = events[0]?.at
-    const end = finished ? last?.at : batch.endedAt ?? now
+    const end = finished ? note?.at ?? last?.at : batch.endedAt ?? now
     return {
       taskId,
       title: task?.title ?? batch.titles?.[taskId] ?? taskId,
       ...(found ? { column: found.column } : {}),
       status,
-      ...(reasonEvent?.reason ? { reason: reasonEvent.reason } : task?.statusNote?.reason ? { reason: task.statusNote.reason } : {}),
+      ...(note ? (note.reason ? { reason: note.reason } : {}) : reasonEvent?.reason ? { reason: reasonEvent.reason } : task?.statusNote?.reason ? { reason: task.statusNote.reason } : {}),
       ...(task ? { usage: usageOf(task) } : {}),
       ...(start !== undefined && end !== undefined ? { durationMs: end - start } : {}),
       ...(pr ? { pr } : {}),

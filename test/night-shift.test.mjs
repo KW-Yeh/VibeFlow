@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { batchDrained, dispatchable, occupiedSlots, waitingOnDependencies } from '../packages/core/src/release.ts'
+import { dispatchable, occupiedSlots, waitingOnDependencies } from '../packages/core/src/release.ts'
 import { createCore } from '../packages/core/src/service.ts'
 import { EventBus } from '../packages/core/src/events.ts'
 import { createNodePlatform, setPlatform } from '../packages/core/src/platform.ts'
@@ -33,18 +33,6 @@ test('tonight goes out in order: 待辦, then running cards marked to go again; 
   assert.equal(occupiedSlots(b), 1, 'a card waiting to go again holds no slot')
   b.done.push(card('x'))
   assert.ok(dispatchable(b).some((t) => t.id === 'dep'), 'it goes once what it waits on is Done')
-})
-
-test('a batch is drained once it sent something, nothing it sent holds a slot and nothing is left', () => {
-  const batch = { id: 'n', startedAt: 0, taskIds: [], events: [] }
-  assert.equal(batchDrained(batch, board({})), false, 'an empty batch never closes itself')
-  batch.taskIds = ['a', 'b']
-  const b = board({ in_progress: [card('a', { tags: ['status:pr_opened'] }), card('b', { tags: ['status:running'] })] })
-  assert.equal(batchDrained(batch, b), false)
-  b.in_progress[1].tags = ['status:stuck']
-  assert.equal(batchDrained(batch, b), true)
-  b.backlog.push(card('c', { tags: READY }))
-  assert.equal(batchDrained(batch, b), false, 'more to send out')
 })
 
 // --- the brief ---
@@ -184,14 +172,23 @@ test('a dispatched card that ends its turn without a status waits for a person a
   assert.ok(columnIds('in_progress').includes(later.id), 'its slot went to the next card')
 })
 
-test('the batch closes itself once everything it sent stopped, and the morning report is written (AC-7)', async (t) => {
+test('the batch stays open after everything it sent stopped, and closes with its morning report only when turned off', async (t) => {
   const { core, bus, projectPath } = await nightCore(t)
   const a = await tonight(projectPath, 'only')
   core.handlers['vibeflow:setRelease']({ enabled: true })
   await until(() => taskStatus(findTask(a.id)) === 'running')
-  assert.equal(getStore().get('release').enabled, true)
   setTaskStatus(getStore(), { taskId: a.id, status: 'stuck', reason: '缺資料', source: 'cli' })
   bus.emit('state:changed', core.handlers['vibeflow:getState']())
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(getStore().get('release').enabled, true, 'the night shift waits for the person')
+  assert.equal((getStore().get('reports') ?? []).length, 0)
+
+  const late = await tonight(projectPath, 'late')
+  bus.emit('state:changed', core.handlers['vibeflow:getState']())
+  await until(() => taskStatus(findTask(late.id)) === 'running')
+  assert.ok(getStore().get('batches')[0].taskIds.includes(late.id), 'a card marked later joins the open batch')
+
+  core.handlers['vibeflow:setRelease']({ enabled: false })
   await until(() => (getStore().get('reports') ?? []).length === 1)
   assert.deepEqual(getStore().get('release'), { enabled: false })
   const [batch] = getStore().get('batches')
@@ -207,8 +204,7 @@ test('a running card marked to go again gets a new session with the correction f
   core.handlers['vibeflow:setRelease']({ enabled: true })
   await until(() => taskStatus(findTask(a.id)) === 'running')
   setTaskStatus(getStore(), { taskId: a.id, status: 'pr_opened', source: 'cli' })
-  bus.emit('state:changed', core.handlers['vibeflow:getState']())
-  await until(() => getStore().get('release').enabled === false)
+  core.handlers['vibeflow:setRelease']({ enabled: false })
 
   const runBefore = findTask(a.id).runId
   sessions.alive.delete(a.id)

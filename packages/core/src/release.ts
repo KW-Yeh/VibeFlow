@@ -1,4 +1,4 @@
-import { isMasterTask, type BoardState, type ReleaseBatch, type Task } from './store'
+import { isMasterTask, type BoardState, type Task } from './store'
 import { taskStatus, type StatusKey } from './status-keys'
 
 /**
@@ -50,15 +50,4 @@ export function waitingOnDependencies(board: BoardState): Task[] {
 export function releaseCandidates(board: BoardState, concurrency: number): Task[] {
   const free = Math.max(0, concurrency - occupiedSlots(board))
   return dispatchable(board).slice(0, free)
-}
-
-/**
- * A batch is over once it sent out at least one card, none of its cards holds
- * a slot any more and nothing is left to send out.
- */
-export function batchDrained(batch: ReleaseBatch, board: BoardState): boolean {
-  if (batch.taskIds.length === 0) return false
-  const ids = new Set(batch.taskIds)
-  if (board.in_progress.some((t) => ids.has(t.id) && holdsSlot(t))) return false
-  return dispatchable(board).length === 0
 }

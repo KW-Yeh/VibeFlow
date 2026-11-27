@@ -14,8 +14,8 @@ Usage:
   vibeflow dispatch [options]          Open a night-shift batch and send tonight's cards out:
                                        every 準備開工 card in 待辦, then In Progress
                                        cards marked to go again, up to the concurrency limit.
-                                       The batch closes itself once every card it sent stopped
-                                       (已開 PR / 卡住 / 待你確認) and the morning report is written
+                                       The batch stays open until --stop, filling free slots
+                                       with cards marked 準備開工 later on
   vibeflow dispatch --stop [options]   Send nothing more; running cards carry on. The batch
                                        closes and its report is written
   vibeflow dispatch --status [options] Whether a night shift is on, slots and tonight's cards
@@ -51,8 +51,8 @@ VibeFlow release switch (same as \`vibeflow dispatch\`)
 
 Usage:
   vibeflow release on [options]       下班派工: open a batch and send tonight's 準備開工 cards
-                                      out up to the concurrency limit; it closes itself once
-                                      every card it sent stopped
+                                      out up to the concurrency limit; it stays open until
+                                      \`release off\`
   vibeflow release off [options]      Stop sending; running cards carry on. The batch
                                       closes and its report is written
   vibeflow release status [options]   Whether it is on, the open batch, slots and ready cards

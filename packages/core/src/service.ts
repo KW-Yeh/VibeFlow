@@ -101,7 +101,7 @@ import {
 } from './library'
 import { builtinSkillsDir, removedBuiltinSkills, restoreBuiltinSkill } from './library-builtins'
 import { buildAgentCommand, executorSessionId, nightShiftBrief, taskAgent, taskModel, type MasterContext } from './launch'
-import { batchDrained, dispatchable, releaseCandidates, waitingOnDependencies } from './release'
+import { dispatchable, releaseCandidates, waitingOnDependencies } from './release'
 import { columnLabel } from './column-labels'
 import { createReporter, isReportId, readReport } from './report'
 import { claudeProjectDir, createProgressTracker, type ProgressTarget } from './progress-tracker'
@@ -742,8 +742,6 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
             }
           }
         }
-        const batch = (getStore().get('batches') ?? []).find((b) => b.id === batchId)
-        if (batch && batchDrained(batch, getState().board)) closeBatch()
       } while (releaseAgain)
     } finally {
       releasing = false
@@ -787,8 +785,9 @@ export function createCore({ sessions, bus, version, homeDir, ghRunner, githubAu
   }
 
   /**
-   * On = 下班派工: open a night-shift batch and send tonight's cards out; it
-   * closes itself once every card it sent stopped. Off = stop sending.
+   * On = 下班派工: open a night-shift batch and send tonight's cards out, and
+   * keep filling free slots until the person turns it off in the morning.
+   * Off = stop sending, close the batch and write its report.
    */
   function setRelease(enabled: boolean): VibeFlowState {
     const store = getStore()
